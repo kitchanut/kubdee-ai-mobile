@@ -43,7 +43,7 @@ export async function getAccessibilityStatus(): Promise<AccessibilityStatus> {
     available: Platform.OS === 'android',
     enabled: false,
     running: false,
-    packageName: 'com.kubdee.aimobile',
+    packageName: 'ai.kubdee.mobile',
     targetPackage: 'com.shopee.th',
   };
 }

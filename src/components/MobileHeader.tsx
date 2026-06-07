@@ -45,7 +45,7 @@ export default function MobileHeader({
         />
         <View style={styles.titleBlock}>
           <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-            Kubdee OneClick
+            Kubdee AI
           </Text>
           <Text style={[styles.subtitle, { color: theme.textSubtle }]} numberOfLines={1}>
             {subtitle}

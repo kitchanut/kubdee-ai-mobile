@@ -74,11 +74,11 @@ function withKubdeeAccessibility(config, props = {}) {
       [
         {
           $: { name: 'kubdee_accessibility_service_label' },
-          _: 'Kubdee Mobile Automation',
+          _: 'Kubdee AI Automation',
         },
         {
           $: { name: 'kubdee_accessibility_service_description' },
-          _: 'ใช้สำหรับควบคุม Shopee ตามสคริปต์ที่ผู้ใช้สั่งใน Kubdee Mobile',
+          _: 'ใช้สำหรับควบคุม Shopee ตามสคริปต์ที่ผู้ใช้สั่งใน Kubdee AI',
         },
       ],
       config.modResults
@@ -486,8 +486,16 @@ class KubdeeAccessibilityModule(
   @ReactMethod
   fun openAccessibilitySettings(promise: Promise) {
     try {
-      val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+      val explicitSettingsIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+        setClassName("com.android.settings", "com.android.settings.Settings\\$AccessibilitySettingsActivity")
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      val fallbackSettingsIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      val intent = when {
+        explicitSettingsIntent.resolveActivity(reactContext.packageManager) != null -> explicitSettingsIntent
+        else -> fallbackSettingsIntent
       }
       reactContext.startActivity(intent)
       promise.resolve(true)

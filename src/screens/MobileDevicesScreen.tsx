@@ -7,6 +7,7 @@ import {
   MonitorSmartphone,
   Play,
   RefreshCw,
+  Settings,
   ShieldCheck,
   Smartphone,
   Square,
@@ -67,6 +68,15 @@ export default function MobileDevicesScreen({
     }
   }, []);
 
+  const openAccessibilitySetup = useCallback(async (): Promise<void> => {
+    try {
+      await openAccessibilitySettings();
+      setBridgeMessage('เปิดหน้า Accessibility settings แล้ว');
+    } catch (error) {
+      setBridgeMessage(`เปิดหน้า settings ไม่สำเร็จ: ${String(error)}`);
+    }
+  }, []);
+
   useEffect(() => {
     refreshStatus();
     const subscription = AppState.addEventListener('change', (state) => {
@@ -115,24 +125,25 @@ export default function MobileDevicesScreen({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: selectedDeviceIds.size > 0 ? 74 : 12 }]}
       >
-        <View style={[styles.notice, { backgroundColor: theme.amberSoft, borderColor: theme.amber }]}>
-          <View style={styles.noticeTitle}>
-            <ShieldCheck size={12} color={theme.amber} strokeWidth={2.2} />
-            <Text style={[styles.noticeText, { color: theme.amber }]}>
-              ต้องเปิด Accessibility ก่อนเริ่ม automate
-            </Text>
+        {!accessibilityEnabled ? (
+          <View style={[styles.notice, { backgroundColor: theme.amberSoft, borderColor: theme.amber }]}>
+            <View style={styles.noticeTitle}>
+              <ShieldCheck size={12} color={theme.amber} strokeWidth={2.2} />
+              <Text style={[styles.noticeText, { color: theme.amber }]}>
+                ต้องเปิด Accessibility ก่อนเริ่ม automate
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={openAccessibilitySetup}
+              style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+            >
+              <View style={[styles.noticeButton, { backgroundColor: theme.card, borderColor: theme.amber }]}>
+                <Text style={[styles.noticeButtonText, { color: theme.amber }]}>เปิดตั้งค่า</Text>
+              </View>
+            </Pressable>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={openAccessibilitySettings}
-            style={({ pressed }) => [
-              styles.noticeButton,
-              { backgroundColor: theme.amber, opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <Text style={styles.noticeButtonText}>เปิดตั้งค่า</Text>
-          </Pressable>
-        </View>
+        ) : null}
 
         <View style={[styles.underlineTabs, { borderBottomColor: theme.border }]}>
           <UnderlineTab
@@ -156,11 +167,48 @@ export default function MobileDevicesScreen({
             <PermissionRow
               active={accessibilityEnabled}
               description={accessibilityRunning ? 'service bind แล้ว พร้อมรับคำสั่ง gesture' : 'ควบคุมการแตะ เลื่อน และพิมพ์ใน Shopee'}
-              label="Accessibility Service"
+              label="Accessibility Service (การช่วยเหลือการเข้าถึง)"
               theme={theme}
               right={
-                <Pressable accessibilityRole="button" onPress={refreshStatus} style={styles.refreshButton}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={refreshStatus}
+                  style={({ pressed }) => [
+                    styles.refreshButton,
+                    {
+                      backgroundColor: theme.input,
+                      borderColor: theme.border,
+                      opacity: pressed ? 0.72 : 1,
+                    },
+                  ]}
+                >
                   <RefreshCw size={13} color={theme.textSubtle} />
+                </Pressable>
+              }
+              action={
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={openAccessibilitySetup}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+                >
+                  <View
+                    style={[
+                      styles.settingsButton,
+                      {
+                        backgroundColor: accessibilityEnabled ? theme.input : theme.amberSoft,
+                        borderColor: accessibilityEnabled ? theme.blue : theme.amber,
+                      },
+                    ]}
+                  >
+                    <Settings
+                      size={13}
+                      color={accessibilityEnabled ? theme.blue : theme.amber}
+                      strokeWidth={2.3}
+                    />
+                    <Text style={[styles.settingsButtonText, { color: accessibilityEnabled ? theme.blue : theme.amber }]}>
+                      เปิดหน้า Accessibility Settings
+                    </Text>
+                  </View>
                 </Pressable>
               }
             />
@@ -372,12 +420,14 @@ function UnderlineTab({
 }
 
 function PermissionRow({
+  action,
   active,
   description,
   label,
   theme,
   right,
 }: {
+  action?: React.ReactNode;
   active: boolean;
   description: string;
   label: string;
@@ -386,19 +436,22 @@ function PermissionRow({
 }): React.JSX.Element {
   return (
     <View style={[styles.permissionRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <StatusPill
-        backgroundColor={active ? theme.emeraldSoft : theme.redSoft}
-        color={active ? theme.emerald : theme.red}
-        icon={active ? CheckCircle2 : Square}
-        label={active ? 'ON' : 'OFF'}
-      />
-      <View style={styles.permissionBody}>
-        <Text style={[styles.permissionLabel, { color: theme.text }]}>{label}</Text>
-        <Text style={[styles.permissionDescription, { color: theme.textSubtle }]} numberOfLines={2}>
-          {description}
-        </Text>
+      <View style={styles.permissionMain}>
+        <StatusPill
+          backgroundColor={active ? theme.emeraldSoft : theme.redSoft}
+          color={active ? theme.emerald : theme.red}
+          icon={active ? CheckCircle2 : Square}
+          label={active ? 'ON' : 'OFF'}
+        />
+        <View style={styles.permissionBody}>
+          <Text style={[styles.permissionLabel, { color: theme.text }]}>{label}</Text>
+          <Text style={[styles.permissionDescription, { color: theme.textSubtle }]} numberOfLines={2}>
+            {description}
+          </Text>
+        </View>
+        {right}
       </View>
-      {right}
+      {action}
     </View>
   );
 }
@@ -572,11 +625,11 @@ const styles = StyleSheet.create({
   },
   noticeButton: {
     borderRadius: radii.md,
+    borderWidth: 1,
     paddingHorizontal: 9,
     paddingVertical: 6,
   },
   noticeButtonText: {
-    color: '#ffffff',
     fontSize: typography.micro,
     fontWeight: '800',
   },
@@ -605,20 +658,39 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: '800',
   },
-  permissionRow: {
+  permissionMain: {
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  permissionRow: {
     borderRadius: radii.md,
     borderWidth: 1,
-    flexDirection: 'row',
     gap: 8,
     minHeight: 58,
     padding: 10,
   },
   refreshButton: {
     alignItems: 'center',
+    borderRadius: radii.md,
+    borderWidth: 1,
     height: 30,
     justifyContent: 'center',
     width: 30,
+  },
+  settingsButton: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: 10,
+  },
+  settingsButtonText: {
+    fontSize: typography.caption,
+    fontWeight: '900',
   },
   scriptBody: {
     flex: 1,

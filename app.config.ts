@@ -2,21 +2,22 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'Kubdee Mobile',
+  name: 'Kubdee AI',
   slug: 'kubdee-ai-mobile',
   scheme: 'kubdeeai',
-  version: '1.0.0',
+  version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/icon.png',
   ios: {
     ...config.ios,
     supportsTablet: true,
-    bundleIdentifier: 'com.kubdee.aimobile',
+    bundleIdentifier: 'ai.kubdee.mobile',
   },
   android: {
     ...config.android,
-    package: 'com.kubdee.aimobile',
+    package: 'ai.kubdee.mobile',
+    versionCode: 1,
     predictiveBackGestureEnabled: false,
     adaptiveIcon: {
       backgroundColor: '#111827',

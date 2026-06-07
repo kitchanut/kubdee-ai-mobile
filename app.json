@@ -1,17 +1,18 @@
 {
   "expo": {
-    "name": "Kubdee Mobile",
+    "name": "Kubdee AI",
     "slug": "kubdee-ai-mobile",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.kubdee.aimobile"
+      "bundleIdentifier": "ai.kubdee.mobile"
     },
     "android": {
-      "package": "com.kubdee.aimobile",
+      "package": "ai.kubdee.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#111827",
         "foregroundImage": "./assets/android-icon-foreground.png",
