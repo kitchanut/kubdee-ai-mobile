@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import Text from '@/components/ui/KubdeeText';
 import { radii, typography } from '@/theme/tokens';
 
 type IconProps = {

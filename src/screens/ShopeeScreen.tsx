@@ -1,7 +1,8 @@
 import { Bot, CheckCircle2, Play, Send, Settings, ShoppingBag, StopCircle } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import Text from '@/components/ui/KubdeeText';
 import NumberStepper from '@/components/ui/NumberStepper';
 import SectionHeader from '@/components/ui/SectionHeader';
 import StatusPill from '@/components/ui/StatusPill';
@@ -13,6 +14,7 @@ import {
 } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { radii, spacing, typography } from '@/theme/tokens';
+import { kubdeeFontFamilies } from '@/theme/fonts';
 
 interface ShopeeScreenProps {
   theme: KubdeeTheme;
@@ -314,6 +316,7 @@ const styles = StyleSheet.create({
   input: {
     borderRadius: radii.md,
     borderWidth: 1,
+    fontFamily: kubdeeFontFamilies.thai.regular,
     fontSize: typography.body,
     minHeight: 36,
     paddingHorizontal: 10,

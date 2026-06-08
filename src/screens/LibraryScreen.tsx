@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import {
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
   Video,
 } from 'lucide-react-native';
 
+import Text from '@/components/ui/KubdeeText';
 import { galleryItems, type GalleryCategoryId, type GalleryItemRecord } from '@/data/mockData';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha, radii, spacing, typography } from '@/theme/tokens';

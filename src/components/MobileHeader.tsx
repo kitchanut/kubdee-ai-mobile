@@ -5,9 +5,10 @@ import {
   Square,
   Sun,
 } from 'lucide-react-native';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import IconButton from '@/components/ui/IconButton';
+import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { typography } from '@/theme/tokens';
 

@@ -3,12 +3,16 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/auth/AuthContext';
 import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
 import PlaceholderScreen from '@/screens/PlaceholderScreen';
+import AuthLoadingScreen from '@/screens/AuthLoadingScreen';
 import LibraryScreen from '@/screens/LibraryScreen';
+import LoginScreen from '@/screens/LoginScreen';
 import LogsScreen from '@/screens/LogsScreen';
 import MobileDevicesScreen from '@/screens/MobileDevicesScreen';
+import PlanRequiredScreen from '@/screens/PlanRequiredScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import ShopeeScreen from '@/screens/ShopeeScreen';
 import { darkTheme, lightTheme } from '@/theme/tokens';
@@ -24,6 +28,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const theme = useMemo(() => (themeMode === 'light' ? lightTheme : darkTheme), [themeMode]);
   const [activeTab, setActiveTab] = useState<TabId>('shopee');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set(['local-android']));
+  const auth = useAuth();
 
   const toggleThemeMode = (): void => {
     setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
@@ -75,16 +80,38 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <View style={[styles.shell, { backgroundColor: theme.panel }]}>
-          <MobileHeader
-            libraryActive={activeTab === 'library'}
-            runningCount={0}
-            subtitle={activeTab === 'library' ? 'คลัง' : 'Shopee หลัก'}
-            theme={theme}
-            onLibraryPress={() => setActiveTab('library')}
-            onThemeModeToggle={toggleThemeMode}
-          />
-          <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />
-          <View style={styles.content}>{renderScreen()}</View>
+          {auth.isLoading ? (
+            <AuthLoadingScreen theme={theme} />
+          ) : !auth.user || !auth.token ? (
+            <LoginScreen
+              authError={auth.authError}
+              isLoggingIn={auth.isLoggingIn}
+              theme={theme}
+              onLogin={auth.login}
+              onThemeModeToggle={toggleThemeMode}
+            />
+          ) : !auth.isPlanValid ? (
+            <PlanRequiredScreen
+              isCheckingPlan={auth.isCheckingPlan}
+              planError={auth.planError}
+              theme={theme}
+              onLogout={auth.logout}
+              onRecheck={auth.recheckPlan}
+            />
+          ) : (
+            <>
+              <MobileHeader
+                libraryActive={activeTab === 'library'}
+                runningCount={0}
+                subtitle={activeTab === 'library' ? 'คลัง' : 'Shopee หลัก'}
+                theme={theme}
+                onLibraryPress={() => setActiveTab('library')}
+                onThemeModeToggle={toggleThemeMode}
+              />
+              <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />
+              <View style={styles.content}>{renderScreen()}</View>
+            </>
+          )}
         </View>
       </SafeAreaView>
     </View>

@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, CircleX, Info } from 'lucide-react-native';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
+import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
 import { logs } from '@/data/mockData';
 import type { KubdeeTheme } from '@/theme/tokens';

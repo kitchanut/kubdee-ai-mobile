@@ -15,8 +15,9 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
+import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
 import StatusPill from '@/components/ui/StatusPill';
 import { devices, scriptPresets } from '@/data/mockData';

@@ -4,9 +4,10 @@ import {
   Smartphone,
   UserCircle,
 } from 'lucide-react-native';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FacebookLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
+import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { radii, typography } from '@/theme/tokens';
 import type { TabId } from '@/types/navigation';
