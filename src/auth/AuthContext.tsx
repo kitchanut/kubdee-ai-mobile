@@ -13,7 +13,7 @@ import {
 import { HEARTBEAT_INTERVAL_MS, LOGIN_URL, PLAN_RECHECK_INTERVAL_MS } from '@/auth/constants';
 import { getRequiredPlanError } from '@/auth/plan';
 import { clearStoredAuthTokens, getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
-import type { AuthUser, StoredAuthTokens, SyncedProfile, SyncedProfileCredential, SyncedProfileGroup } from '@/auth/types';
+import type { AuthUser, StoredAuthTokens, SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -29,7 +29,6 @@ interface AuthContextType {
   profileSyncError: string | null;
   syncedProfileGroups: SyncedProfileGroup[];
   syncedProfiles: SyncedProfile[];
-  profileCredentials: SyncedProfileCredential[];
   isSyncingProfiles: boolean;
   profileDataError: string | null;
   lastProfilesSyncedAt: number | null;
@@ -63,7 +62,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [profileSyncError, setProfileSyncError] = useState<string | null>(null);
   const [syncedProfileGroups, setSyncedProfileGroups] = useState<SyncedProfileGroup[]>([]);
   const [syncedProfiles, setSyncedProfiles] = useState<SyncedProfile[]>([]);
-  const [profileCredentials, setProfileCredentials] = useState<SyncedProfileCredential[]>([]);
   const [isSyncingProfiles, setIsSyncingProfiles] = useState(false);
   const [profileDataError, setProfileDataError] = useState<string | null>(null);
   const [lastProfilesSyncedAt, setLastProfilesSyncedAt] = useState<number | null>(null);
@@ -77,7 +75,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setProfileSyncError(null);
     setSyncedProfileGroups([]);
     setSyncedProfiles([]);
-    setProfileCredentials([]);
     setProfileDataError(null);
     setLastProfilesSyncedAt(null);
   }, []);
@@ -146,7 +143,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       if (result.ok && result.data) {
         setSyncedProfileGroups(result.data.groups);
         setSyncedProfiles(result.data.profiles);
-        setProfileCredentials(result.data.credentials);
         setProfileDataError(null);
         setLastProfilesSyncedAt(Date.now());
         return true;
@@ -246,7 +242,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     if (!token) {
       setSyncedProfileGroups([]);
       setSyncedProfiles([]);
-      setProfileCredentials([]);
       setProfileDataError(null);
       setLastProfilesSyncedAt(null);
       return;
@@ -328,7 +323,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       profileSyncError,
       syncedProfileGroups,
       syncedProfiles,
-      profileCredentials,
       isSyncingProfiles,
       profileDataError,
       lastProfilesSyncedAt,
@@ -350,7 +344,6 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       lastProfilesSyncedAt,
       lastSyncedAt,
       planError,
-      profileCredentials,
       profileDataError,
       profileSyncError,
       recheckPlan,

@@ -28,17 +28,40 @@ const logoLight = require('../../assets/logo-light.png');
 const headerActionIconSize = 17;
 const headerActionSize = 34;
 
+function formatShortId(value: string): string {
+  if (value.length <= 12) {
+    return value;
+  }
+
+  return `${value.slice(0, 8)}…${value.slice(-4)}`;
+}
+
+function getSourceLabel(value?: string | null): string {
+  switch ((value || 'unknown').toLowerCase()) {
+    case 'desktop':
+      return 'Desktop';
+    case 'extension':
+      return 'Extension';
+    case 'mobile':
+      return 'Mobile';
+    case 'web':
+      return 'Web';
+    default:
+      return 'Cloud';
+  }
+}
+
 interface MobileHeaderProps {
   theme: KubdeeTheme;
   runningCount: number;
   profiles: SyncedProfile[];
   profileGroups: SyncedProfileGroup[];
-  selectedProfileLocalId: string;
+  selectedProfileId: string;
   isSyncingProfiles: boolean;
   profileDataError: string | null;
   onLogsPress: () => void;
   onProfilePress: () => void;
-  onSelectedProfileChange: (profileLocalId: string) => void;
+  onSelectedProfileChange: (profileId: string) => void;
   onThemeModeToggle: () => void;
 }
 
@@ -47,7 +70,7 @@ export default function MobileHeader({
   runningCount,
   profiles,
   profileGroups,
-  selectedProfileLocalId,
+  selectedProfileId,
   isSyncingProfiles,
   profileDataError,
   onLogsPress,
@@ -57,7 +80,7 @@ export default function MobileHeader({
 }: MobileHeaderProps): React.JSX.Element {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profileSelectVisible, setProfileSelectVisible] = useState(false);
-  const { logout, profileCredentials, syncedProfileGroups, syncedProfiles, user } = useAuth();
+  const { logout, syncedProfileGroups, syncedProfiles, user } = useAuth();
   const ThemeIcon = theme.isDark ? Moon : Sun;
   const displayName = user?.name || user?.email || 'Kubdee AI User';
   const planLabel = formatPlanLabel(user?.plan);
@@ -66,10 +89,20 @@ export default function MobileHeader({
     ? new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 }).format(user.credits)
     : '0';
   const devicesLabel = `${user?.activeDevices ?? 0}/${user?.maxDevices ?? 0}`;
-  const groupByLocalId = useMemo(() => {
-    return new Map(profileGroups.map((group) => [group.localId, group]));
+  const groupById = useMemo(() => {
+    return new Map(profileGroups.map((group) => [group.id, group]));
   }, [profileGroups]);
-  const selectedProfile = profiles.find((profile) => profile.localId === selectedProfileLocalId) ?? profiles[0] ?? null;
+  const sourceCount = useMemo(() => {
+    const sources = new Set<string>();
+    for (const profile of syncedProfiles) {
+      sources.add(getSourceLabel(profile.createdByApp || profile.originApp));
+    }
+    for (const group of syncedProfileGroups) {
+      sources.add(getSourceLabel(group.createdByApp || group.originApp));
+    }
+    return sources.size;
+  }, [syncedProfileGroups, syncedProfiles]);
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
   const profileSelectEnabled = profiles.length > 0 && !isSyncingProfiles;
   const selectedProfileLabel = selectedProfile
     ? selectedProfile.name
@@ -91,8 +124,8 @@ export default function MobileHeader({
     setProfileSelectVisible(true);
   };
 
-  const handleSelectProfile = (profileLocalId: string): void => {
-    onSelectedProfileChange(profileLocalId);
+  const handleSelectProfile = (profileId: string): void => {
+    onSelectedProfileChange(profileId);
     closeProfileSelect();
   };
 
@@ -187,16 +220,16 @@ export default function MobileHeader({
                 style={styles.profileSelectList}
               >
                 {profiles.map((profile) => {
-                  const active = profile.localId === selectedProfileLocalId;
-                  const group = profile.groupLocalId == null
+                  const active = profile.id === selectedProfileId;
+                  const group = profile.groupId == null
                     ? null
-                    : groupByLocalId.get(profile.groupLocalId) ?? null;
+                    : groupById.get(profile.groupId) ?? null;
 
                   return (
                     <Pressable
                       accessibilityRole="button"
-                      key={profile.localId}
-                      onPress={() => handleSelectProfile(profile.localId)}
+                      key={profile.id}
+                      onPress={() => handleSelectProfile(profile.id)}
                       style={({ pressed }) => [
                         styles.profileSelectOption,
                         {
@@ -211,7 +244,7 @@ export default function MobileHeader({
                           {profile.name}
                         </Text>
                         <Text style={[styles.profileSelectOptionMeta, { color: theme.textSubtle }]} numberOfLines={1}>
-                          {group?.name || 'ไม่มีกลุ่ม'} · {profile.localId}
+                          {group?.name || 'ไม่มีกลุ่ม'} · {getSourceLabel(profile.createdByApp || profile.originApp)} · {formatShortId(profile.id)}
                         </Text>
                       </View>
                     </Pressable>
@@ -321,7 +354,7 @@ export default function MobileHeader({
             <View style={styles.profileMetaGrid}>
               <MetaChip label="Profiles" theme={theme} value={syncedProfiles.length} />
               <MetaChip label="Groups" theme={theme} value={syncedProfileGroups.length} />
-              <MetaChip label="Accounts" theme={theme} value={profileCredentials.length} />
+              <MetaChip label="Sources" theme={theme} value={sourceCount} />
             </View>
 
             <View style={[styles.menuDivider, { backgroundColor: theme.border }]} />

@@ -28,7 +28,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const theme = useMemo(() => (themeMode === 'light' ? lightTheme : darkTheme), [themeMode]);
   const [activeTab, setActiveTab] = useState<TabId>('pipeline');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set(['local-android']));
-  const [selectedProfileLocalId, setSelectedProfileLocalId] = useState('');
+  const [selectedProfileId, setSelectedProfileId] = useState('');
   const auth = useAuth();
 
   const toggleThemeMode = (): void => {
@@ -62,13 +62,13 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   ]);
 
   useEffect(() => {
-    const hasSelectedProfile = auth.syncedProfiles.some((profile) => profile.localId === selectedProfileLocalId);
-    const nextProfileLocalId = hasSelectedProfile ? selectedProfileLocalId : auth.syncedProfiles[0]?.localId ?? '';
+    const hasSelectedProfile = auth.syncedProfiles.some((profile) => profile.id === selectedProfileId);
+    const nextProfileId = hasSelectedProfile ? selectedProfileId : auth.syncedProfiles[0]?.id ?? '';
 
-    if (nextProfileLocalId !== selectedProfileLocalId) {
-      setSelectedProfileLocalId(nextProfileLocalId);
+    if (nextProfileId !== selectedProfileId) {
+      setSelectedProfileId(nextProfileId);
     }
-  }, [auth.syncedProfiles, selectedProfileLocalId]);
+  }, [auth.syncedProfiles, selectedProfileId]);
 
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
@@ -139,11 +139,11 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 profileGroups={auth.syncedProfileGroups}
                 profiles={auth.syncedProfiles}
                 runningCount={0}
-                selectedProfileLocalId={selectedProfileLocalId}
+                selectedProfileId={selectedProfileId}
                 theme={theme}
                 onLogsPress={() => setActiveTab('logs')}
                 onProfilePress={() => setActiveTab('profile')}
-                onSelectedProfileChange={setSelectedProfileLocalId}
+                onSelectedProfileChange={setSelectedProfileId}
                 onThemeModeToggle={toggleThemeMode}
               />
               <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />

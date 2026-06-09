@@ -22,39 +22,46 @@ export interface StoredAuthTokens {
 
 export interface SyncedProfileGroup {
   id: string;
-  userId: string;
-  localId: number;
+  userId?: string;
   name: string;
   color?: string | null;
   icon?: string | null;
+  sortOrder?: number;
+  metadata?: Record<string, unknown>;
+  originApp?: string | null;
+  originDeviceId?: string | null;
+  createdByApp?: string | null;
+  sourceDeviceId?: string | null;
   createdAt?: string | number | null;
+  updatedAt?: string | number | null;
+  deletedAt?: string | number | null;
+  version?: number;
 }
 
 export interface SyncedProfile {
   id: string;
-  userId: string;
-  localId: string;
+  userId?: string;
   name: string;
-  groupLocalId?: number | null;
+  groupId?: string | null;
+  color?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
+  metadata?: Record<string, unknown>;
+  originApp?: string | null;
+  originDeviceId?: string | null;
+  createdByApp?: string | null;
+  sourceDeviceId?: string | null;
   createdAt?: string | number | null;
-}
-
-export interface SyncedProfileCredential {
-  id: string;
-  userId: string;
-  profileLocalId: string;
-  website: string;
-  websiteUrl?: string | null;
-  username?: string | null;
-  password?: string | null;
-  notes?: string | null;
-  createdAt?: string | number | null;
+  updatedAt?: string | number | null;
+  deletedAt?: string | number | null;
+  version?: number;
 }
 
 export interface SyncedProfilesResponse {
   groups: SyncedProfileGroup[];
   profiles: SyncedProfile[];
-  credentials: SyncedProfileCredential[];
+  serverTime?: number | null;
+  hasMore?: boolean;
 }
 
 export interface AuthApiResult<T> {

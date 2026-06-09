@@ -1,9 +1,57 @@
-import { APP_TYPE, BACKEND_URL, OAUTH_SCHEME } from '@/auth/constants';
-import type { AuthApiResult, AuthUser, StoredAuthTokens, SyncedProfilesResponse } from '@/auth/types';
+import { APP_TYPE, BACKEND_URL, CLIENT_APP, OAUTH_SCHEME } from '@/auth/constants';
+import type {
+  AuthApiResult,
+  AuthUser,
+  StoredAuthTokens,
+  SyncedProfile,
+  SyncedProfileGroup,
+  SyncedProfilesResponse,
+} from '@/auth/types';
 
 interface RefreshResponse {
   accessToken?: string;
   user?: AuthUser;
+  error?: string;
+}
+
+type SyncEntity = 'profile_group' | 'profile';
+type SyncOperation = 'upsert' | 'delete';
+
+interface ProfileSyncGroupData {
+  id?: unknown;
+  name?: unknown;
+  color?: unknown;
+  icon?: unknown;
+  sortOrder?: unknown;
+  metadata?: unknown;
+  originApp?: unknown;
+  originDeviceId?: unknown;
+  createdByApp?: unknown;
+  sourceDeviceId?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  deletedAt?: unknown;
+  version?: unknown;
+}
+
+interface ProfileSyncProfileData extends ProfileSyncGroupData {
+  groupId?: unknown;
+}
+
+interface SyncChange {
+  entity?: unknown;
+  op?: unknown;
+  id?: unknown;
+  version?: unknown;
+  updatedAt?: unknown;
+  data?: ProfileSyncGroupData | ProfileSyncProfileData | null;
+}
+
+interface SyncPullResponse {
+  success?: boolean;
+  serverTime?: number;
+  hasMore?: boolean;
+  changes?: SyncChange[];
   error?: string;
 }
 
@@ -16,11 +64,177 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function asOptionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function asTimestamp(value: unknown, fallback = 0): number {
+  const numberValue = asNumber(value, fallback);
+  if (numberValue <= 0) {
+    return fallback;
+  }
+
+  return numberValue > 1_000_000_000_000 ? Math.floor(numberValue / 1000) : Math.floor(numberValue);
+}
+
+function asMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function normalizeEntity(value: unknown): SyncEntity | null {
+  if (value === 'profile_group' || value === 'profile') {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeOperation(value: unknown): SyncOperation {
+  return value === 'delete' ? 'delete' : 'upsert';
+}
+
+function sortByOrderAndName<T extends { sortOrder?: number; name: string; updatedAt?: string | number | null }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const orderA = typeof a.sortOrder === 'number' ? a.sortOrder : 0;
+    const orderB = typeof b.sortOrder === 'number' ? b.sortOrder : 0;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+
+    const nameCompare = a.name.localeCompare(b.name, 'th');
+    if (nameCompare !== 0) {
+      return nameCompare;
+    }
+
+    return Number(b.updatedAt ?? 0) - Number(a.updatedAt ?? 0);
+  });
+}
+
+function mapSyncGroup(change: SyncChange): SyncedProfileGroup | null {
+  const data = change.data;
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const id = asString(data.id, asString(change.id));
+  if (!id) {
+    return null;
+  }
+
+  const updatedAt = asTimestamp(data.updatedAt ?? change.updatedAt);
+
+  return {
+    id,
+    name: asString(data.name, 'ไม่มีชื่อกลุ่ม'),
+    color: asOptionalString(data.color),
+    icon: asOptionalString(data.icon),
+    sortOrder: asNumber(data.sortOrder, 0),
+    metadata: asMetadata(data.metadata),
+    originApp: asOptionalString(data.originApp),
+    originDeviceId: asOptionalString(data.originDeviceId),
+    createdByApp: asOptionalString(data.createdByApp),
+    sourceDeviceId: asOptionalString(data.sourceDeviceId),
+    createdAt: asTimestamp(data.createdAt, updatedAt),
+    updatedAt,
+    deletedAt: data.deletedAt == null ? null : asTimestamp(data.deletedAt),
+    version: asNumber(data.version ?? change.version, 1),
+  };
+}
+
+function mapSyncProfile(change: SyncChange): SyncedProfile | null {
+  const data = change.data;
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const id = asString(data.id, asString(change.id));
+  if (!id) {
+    return null;
+  }
+
+  const profileData = data as ProfileSyncProfileData;
+  const groupId = asOptionalString(profileData.groupId);
+  const updatedAt = asTimestamp(data.updatedAt ?? change.updatedAt);
+
+  return {
+    id,
+    groupId,
+    name: asString(data.name, 'ไม่มีชื่อโปรไฟล์'),
+    color: asOptionalString(data.color),
+    icon: asOptionalString(data.icon),
+    sortOrder: asNumber(data.sortOrder, 0),
+    metadata: asMetadata(data.metadata),
+    originApp: asOptionalString(data.originApp),
+    originDeviceId: asOptionalString(data.originDeviceId),
+    createdByApp: asOptionalString(data.createdByApp),
+    sourceDeviceId: asOptionalString(data.sourceDeviceId),
+    createdAt: asTimestamp(data.createdAt, updatedAt),
+    updatedAt,
+    deletedAt: data.deletedAt == null ? null : asTimestamp(data.deletedAt),
+    version: asNumber(data.version ?? change.version, 1),
+  };
+}
+
+function mapSyncPullResponse(data: SyncPullResponse): SyncedProfilesResponse {
+  const groupMap = new Map<string, SyncedProfileGroup>();
+  const profileMap = new Map<string, SyncedProfile>();
+
+  for (const change of Array.isArray(data.changes) ? data.changes : []) {
+    const entity = normalizeEntity(change.entity);
+    const op = normalizeOperation(change.op);
+    const id = asString(change.id);
+
+    if (!entity || !id) {
+      continue;
+    }
+
+    if (entity === 'profile_group') {
+      if (op === 'delete') {
+        groupMap.delete(id);
+        continue;
+      }
+
+      const group = mapSyncGroup(change);
+      if (group && !group.deletedAt) {
+        groupMap.set(group.id, group);
+      }
+      continue;
+    }
+
+    if (op === 'delete') {
+      profileMap.delete(id);
+      continue;
+    }
+
+    const profile = mapSyncProfile(change);
+    if (profile && !profile.deletedAt) {
+      profileMap.set(profile.id, profile);
+    }
+  }
+
+  return {
+    groups: sortByOrderAndName(Array.from(groupMap.values())),
+    profiles: sortByOrderAndName(Array.from(profileMap.values())),
+    serverTime: typeof data.serverTime === 'number' ? data.serverTime : null,
+    hasMore: Boolean(data.hasMore),
+  };
+}
+
 export async function fetchUserProfile(token: string): Promise<AuthApiResult<AuthUser>> {
   try {
     const response = await fetch(`${BACKEND_URL}/api/user/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
+        'X-Client-App': CLIENT_APP,
         'X-App-Type': APP_TYPE,
       },
     });
@@ -52,9 +266,10 @@ export async function fetchUserProfile(token: string): Promise<AuthApiResult<Aut
 
 export async function fetchSyncedProfiles(token: string): Promise<AuthApiResult<SyncedProfilesResponse>> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/user/profiles`, {
+    const response = await fetch(`${BACKEND_URL}/api/sync/pull?since=0&limit=1000`, {
       headers: {
         Authorization: `Bearer ${token}`,
+        'X-Client-App': CLIENT_APP,
         'X-App-Type': APP_TYPE,
       },
     });
@@ -68,16 +283,12 @@ export async function fetchSyncedProfiles(token: string): Promise<AuthApiResult<
       };
     }
 
-    const data = (await response.json()) as Partial<SyncedProfilesResponse>;
+    const data = (await response.json()) as SyncPullResponse;
 
     return {
       ok: true,
       status: response.status,
-      data: {
-        groups: Array.isArray(data.groups) ? data.groups : [],
-        profiles: Array.isArray(data.profiles) ? data.profiles : [],
-        credentials: Array.isArray(data.credentials) ? data.credentials : [],
-      },
+      data: mapSyncPullResponse(data),
       error: null,
     };
   } catch {

@@ -1,5 +1,6 @@
 export const BACKEND_URL = 'https://kubdee.ai';
 export const APP_TYPE = 'autogen';
+export const CLIENT_APP = 'mobile';
 export const REQUIRED_PLAN = 'ultra';
 export const OAUTH_SCHEME = 'kubdeeai';
 export const LOGIN_URL = `${BACKEND_URL}/api/oauth/signin?theme=dark&v=2.0&scheme=${OAUTH_SCHEME}`;

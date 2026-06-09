@@ -17,7 +17,6 @@ import {
   CreditCard,
   Globe2,
   HardDrive,
-  KeyRound,
   LogOut,
   RefreshCw,
   ShieldCheck,
@@ -28,7 +27,7 @@ import {
 import { useAuth } from '@/auth/AuthContext';
 import { BACKEND_URL } from '@/auth/constants';
 import { formatExpiryLabel, formatPlanLabel } from '@/auth/plan';
-import type { SyncedProfile, SyncedProfileCredential, SyncedProfileGroup } from '@/auth/types';
+import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
 import StatusPill from '@/components/ui/StatusPill';
@@ -72,7 +71,7 @@ interface ActionRowProps {
 interface ProfileListRow {
   profile: SyncedProfile;
   group: SyncedProfileGroup | null;
-  credentials: SyncedProfileCredential[];
+  sourceLabel: string;
 }
 
 interface SyncedProfileRowProps {
@@ -105,9 +104,27 @@ function formatSyncLabel(timestamp: number | null): string {
   }).format(new Date(timestamp));
 }
 
-function getWebsites(credentials: SyncedProfileCredential[]): string[] {
-  const websites = credentials.map((credential) => credential.website).filter(Boolean);
-  return Array.from(new Set(websites));
+function formatShortId(value: string): string {
+  if (value.length <= 12) {
+    return value;
+  }
+
+  return `${value.slice(0, 8)}…${value.slice(-4)}`;
+}
+
+function getSourceLabel(value?: string | null): string {
+  switch ((value || 'unknown').toLowerCase()) {
+    case 'desktop':
+      return 'Desktop';
+    case 'extension':
+      return 'Extension';
+    case 'mobile':
+      return 'Mobile';
+    case 'web':
+      return 'Web';
+    default:
+      return 'Cloud';
+  }
 }
 
 function MetricCard({
@@ -140,10 +157,6 @@ function MetricCard({
 }
 
 function SyncedProfileRow({ row, theme }: SyncedProfileRowProps): React.JSX.Element {
-  const websites = getWebsites(row.credentials);
-  const visibleWebsites = websites.slice(0, 2);
-  const hiddenWebsiteCount = Math.max(websites.length - visibleWebsites.length, 0);
-
   return (
     <View style={[styles.syncedProfileRow, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
       <View style={[styles.syncedProfileIcon, { backgroundColor: theme.cyanSoft }]}>
@@ -154,28 +167,14 @@ function SyncedProfileRow({ row, theme }: SyncedProfileRowProps): React.JSX.Elem
           {row.profile.name}
         </Text>
         <Text style={[styles.syncedProfileMeta, { color: theme.textSubtle }]} numberOfLines={1}>
-          {row.group?.name || 'ไม่มีกลุ่ม'} · {row.profile.localId}
+          {row.group?.name || 'ไม่มีกลุ่ม'} · {formatShortId(row.profile.id)}
         </Text>
-        {visibleWebsites.length > 0 ? (
-          <View style={styles.websiteChips}>
-            {visibleWebsites.map((website) => (
-              <View key={website} style={[styles.websiteChip, { backgroundColor: theme.panelMuted }]}>
-                <Text style={[styles.websiteChipText, { color: theme.textSubtle }]} numberOfLines={1}>
-                  {website}
-                </Text>
-              </View>
-            ))}
-            {hiddenWebsiteCount > 0 ? (
-              <View style={[styles.websiteChip, { backgroundColor: theme.panelMuted }]}>
-                <Text style={[styles.websiteChipText, { color: theme.textSubtle }]}>+{hiddenWebsiteCount}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-      <View style={[styles.credentialBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <KeyRound size={12} color={theme.textSubtle} strokeWidth={2.2} />
-        <Text style={[styles.credentialCount, { color: theme.text }]}>{formatCount(row.credentials.length)}</Text>
+        <View style={[styles.sourceChip, { backgroundColor: theme.panelMuted }]}>
+          <Globe2 size={11} color={theme.textSubtle} strokeWidth={2.2} />
+          <Text style={[styles.sourceChipText, { color: theme.textSubtle }]} numberOfLines={1}>
+            สร้างจาก {row.sourceLabel}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -243,9 +242,9 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
   const {
     isCheckingPlan,
     isSyncingProfiles,
+    lastProfilesSyncedAt,
     lastSyncedAt,
     logout,
-    profileCredentials,
     profileDataError,
     profileSyncError,
     syncProfile,
@@ -263,21 +262,24 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
   const syncStatusColor = syncError ? theme.red : theme.emerald;
   const syncStatusBackground = syncError ? theme.redSoft : theme.emeraldSoft;
   const profileRows = useMemo<ProfileListRow[]>(() => {
-    const groupByLocalId = new Map(syncedProfileGroups.map((group) => [group.localId, group]));
-    const credentialsByProfile = new Map<string, SyncedProfileCredential[]>();
-
-    for (const credential of profileCredentials) {
-      const credentials = credentialsByProfile.get(credential.profileLocalId) ?? [];
-      credentials.push(credential);
-      credentialsByProfile.set(credential.profileLocalId, credentials);
-    }
+    const groupById = new Map(syncedProfileGroups.map((group) => [group.id, group]));
 
     return syncedProfiles.map((profile) => ({
       profile,
-      group: profile.groupLocalId == null ? null : groupByLocalId.get(profile.groupLocalId) ?? null,
-      credentials: credentialsByProfile.get(profile.localId) ?? [],
+      group: profile.groupId == null ? null : groupById.get(profile.groupId) ?? null,
+      sourceLabel: getSourceLabel(profile.createdByApp || profile.originApp),
     }));
-  }, [profileCredentials, syncedProfileGroups, syncedProfiles]);
+  }, [syncedProfileGroups, syncedProfiles]);
+  const sourceCount = useMemo(() => {
+    const sources = new Set<string>();
+    for (const profile of syncedProfiles) {
+      sources.add(getSourceLabel(profile.createdByApp || profile.originApp));
+    }
+    for (const group of syncedProfileGroups) {
+      sources.add(getSourceLabel(group.createdByApp || group.originApp));
+    }
+    return sources.size;
+  }, [syncedProfileGroups, syncedProfiles]);
 
   useEffect(() => {
     void syncProfile();
@@ -293,7 +295,7 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
           <StatusPill
             backgroundColor={syncStatusBackground}
             color={syncStatusColor}
-            icon={profileSyncError ? ShieldCheck : CheckCircle2}
+            icon={syncError ? ShieldCheck : CheckCircle2}
             label={syncStatusLabel}
           />
         }
@@ -317,11 +319,11 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
           <View style={styles.syncLine}>
             <Globe2 size={11} color={theme.textSubtle} strokeWidth={2.2} />
             <Text style={[styles.syncText, { color: theme.textSubtle }]} numberOfLines={1}>
-              kubdee.ai · ซิงก์ล่าสุด {formatSyncLabel(lastSyncedAt)}
+              kubdee.ai · ซิงก์โปรไฟล์ล่าสุด {formatSyncLabel(lastProfilesSyncedAt || lastSyncedAt)}
             </Text>
           </View>
         </View>
-        <StatusPill backgroundColor={theme.blue} color={theme.white} icon={BadgeCheck} label="WEB" />
+        <StatusPill backgroundColor={theme.blue} color={theme.white} icon={BadgeCheck} label="CLOUD" />
       </View>
 
       {profileSyncError ? (
@@ -359,17 +361,17 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
         />
       </View>
 
-      <SectionHeader icon={ShieldCheck} theme={theme} title="ข้อมูลจากเว็บ" />
+      <SectionHeader icon={ShieldCheck} theme={theme} title="บัญชีและแผน" />
       <View style={styles.infoGroup}>
         <InfoRow icon={CalendarDays} label="หมดอายุ" theme={theme} value={expiryLabel} />
-        <InfoRow icon={ShieldCheck} label="สิทธิ์" theme={theme} value="Ultra plan เหมือน Desktop" />
+        <InfoRow icon={ShieldCheck} label="สิทธิ์" theme={theme} value="Ultra plan สำหรับ Mobile" />
         <InfoRow icon={UserCircle} label="User ID" theme={theme} value={user?.id || '-'} />
       </View>
 
       <SectionHeader
         icon={Users}
         theme={theme}
-        title="โปรไฟล์ย่อยจาก Desktop"
+        title="โปรไฟล์จากระบบซิงก์"
         right={
           <StatusPill
             backgroundColor={theme.cyanSoft}
@@ -406,10 +408,11 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
         <MetricCard
           backgroundColor={theme.amberSoft}
           color={theme.amber}
-          icon={KeyRound}
-          label="Accounts"
+          icon={Globe2}
+          label="Sources"
+          subtext="รอ vault"
           theme={theme}
-          value={formatCount(profileCredentials.length)}
+          value={formatCount(sourceCount)}
         />
       </View>
 
@@ -423,15 +426,15 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
           <View style={[styles.emptyIcon, { backgroundColor: theme.panelMuted }]}>
             <UserCircle size={20} color={theme.textSubtle} strokeWidth={2.2} />
           </View>
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ย่อย</Text>
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ในระบบซิงก์</Text>
           <Text style={[styles.emptyDescription, { color: theme.textSubtle }]}>
-            ให้ซิงก์โปรไฟล์จาก Desktop ขึ้น kubdee.ai ก่อน
+            สร้างจากเว็บ หรือซิงก์จาก Desktop/Extension แล้ว Mobile จะเห็นที่นี่
           </Text>
         </View>
       ) : (
         <View style={styles.syncedProfileList}>
           {profileRows.map((row) => (
-            <SyncedProfileRow key={row.profile.localId} row={row} theme={theme} />
+            <SyncedProfileRow key={row.profile.id} row={row} theme={theme} />
           ))}
         </View>
       )}
@@ -442,7 +445,7 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
           icon={RefreshCw}
           iconBackground={theme.blue}
           iconColor={theme.white}
-          label="ซิงก์โปรไฟล์จากเว็บ"
+          label="ซิงก์โปรไฟล์จาก Cloud"
           loading={isSyncing}
           onPress={syncProfile}
           theme={theme}
@@ -525,22 +528,6 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: '700',
     lineHeight: 17,
-  },
-  credentialBadge: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 4,
-    height: 28,
-    justifyContent: 'center',
-    paddingHorizontal: 7,
-  },
-  credentialCount: {
-    fontSize: typography.caption,
-    fontWeight: '900',
-    includeFontPadding: false,
-    lineHeight: 14,
   },
   emptyDescription: {
     fontSize: typography.caption,
@@ -655,6 +642,24 @@ const styles = StyleSheet.create({
     fontSize: typography.caption,
     fontWeight: '700',
   },
+  sourceChip: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: radii.sm,
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 5,
+    maxWidth: '100%',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  sourceChipText: {
+    flexShrink: 1,
+    fontSize: typography.tiny,
+    fontWeight: '800',
+    includeFontPadding: false,
+    lineHeight: 12,
+  },
   syncedProfileBody: {
     flex: 1,
     minWidth: 0,
@@ -688,23 +693,5 @@ const styles = StyleSheet.create({
     gap: 9,
     minHeight: 58,
     padding: 9,
-  },
-  websiteChip: {
-    borderRadius: radii.sm,
-    maxWidth: 110,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  websiteChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 5,
-  },
-  websiteChipText: {
-    fontSize: typography.tiny,
-    fontWeight: '800',
-    includeFontPadding: false,
-    lineHeight: 12,
   },
 });
