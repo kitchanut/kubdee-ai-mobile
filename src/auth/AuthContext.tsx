@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Linking } from 'react-native';
 
 import {
+  createSyncedProfile as pushSyncedProfile,
   fetchSyncedProfiles,
   fetchUserProfile,
   logoutSession,
@@ -12,8 +13,14 @@ import {
 } from '@/auth/api';
 import { HEARTBEAT_INTERVAL_MS, LOGIN_URL, PLAN_RECHECK_INTERVAL_MS } from '@/auth/constants';
 import { getRequiredPlanError } from '@/auth/plan';
-import { clearStoredAuthTokens, getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
-import type { AuthUser, StoredAuthTokens, SyncedProfile, SyncedProfileGroup } from '@/auth/types';
+import { clearStoredAuthTokens, getOrCreateSyncDeviceId, getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
+import type {
+  AuthUser,
+  CreateSyncedProfileInput,
+  StoredAuthTokens,
+  SyncedProfile,
+  SyncedProfileGroup,
+} from '@/auth/types';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -30,13 +37,16 @@ interface AuthContextType {
   syncedProfileGroups: SyncedProfileGroup[];
   syncedProfiles: SyncedProfile[];
   isSyncingProfiles: boolean;
+  isCreatingProfile: boolean;
   profileDataError: string | null;
+  createProfileError: string | null;
   lastProfilesSyncedAt: number | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   recheckPlan: () => Promise<void>;
   syncProfile: () => Promise<void>;
   syncProfileData: () => Promise<void>;
+  createSyncedProfile: (input: CreateSyncedProfileInput) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -63,7 +73,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [syncedProfileGroups, setSyncedProfileGroups] = useState<SyncedProfileGroup[]>([]);
   const [syncedProfiles, setSyncedProfiles] = useState<SyncedProfile[]>([]);
   const [isSyncingProfiles, setIsSyncingProfiles] = useState(false);
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const [profileDataError, setProfileDataError] = useState<string | null>(null);
+  const [createProfileError, setCreateProfileError] = useState<string | null>(null);
   const [lastProfilesSyncedAt, setLastProfilesSyncedAt] = useState<number | null>(null);
 
   const resetAuthState = useCallback((): void => {
@@ -75,7 +87,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setProfileSyncError(null);
     setSyncedProfileGroups([]);
     setSyncedProfiles([]);
+    setIsCreatingProfile(false);
     setProfileDataError(null);
+    setCreateProfileError(null);
     setLastProfilesSyncedAt(null);
   }, []);
 
@@ -272,6 +286,48 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     }
   }, [loadSyncedProfileData, refreshToken, token, verifyTokens]);
 
+  const createSyncedProfile = useCallback(
+    async (input: CreateSyncedProfileInput): Promise<boolean> => {
+      const name = input.name.trim();
+      if (!name) {
+        setCreateProfileError('กรุณากรอกชื่อโปรไฟล์');
+        return false;
+      }
+
+      if (!token) {
+        setCreateProfileError('กรุณาเข้าสู่ระบบก่อนสร้างโปรไฟล์');
+        return false;
+      }
+
+      setIsCreatingProfile(true);
+      setCreateProfileError(null);
+      try {
+        const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
+        if (!verifiedTokens) {
+          setCreateProfileError('Online verification required. Please check your internet connection.');
+          return false;
+        }
+
+        const deviceId = await getOrCreateSyncDeviceId();
+        const result = await pushSyncedProfile(verifiedTokens.accessToken, {
+          ...input,
+          name,
+          deviceId,
+        });
+
+        if (!result.ok) {
+          setCreateProfileError(result.error || 'สร้างโปรไฟล์ไม่สำเร็จ');
+          return false;
+        }
+
+        return await loadSyncedProfileData(verifiedTokens.accessToken);
+      } finally {
+        setIsCreatingProfile(false);
+      }
+    },
+    [loadSyncedProfileData, refreshToken, token, verifyTokens]
+  );
+
   useEffect(() => {
     if (!token || !user) {
       return undefined;
@@ -324,17 +380,23 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       syncedProfileGroups,
       syncedProfiles,
       isSyncingProfiles,
+      isCreatingProfile,
       profileDataError,
+      createProfileError,
       lastProfilesSyncedAt,
       login,
       logout,
       recheckPlan,
       syncProfile,
       syncProfileData,
+      createSyncedProfile,
     }),
     [
       authError,
+      createProfileError,
+      createSyncedProfile,
       isCheckingPlan,
+      isCreatingProfile,
       isLoading,
       isLoggingIn,
       isPlanValid,

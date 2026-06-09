@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Linking,
   ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -15,13 +16,17 @@ import {
   CheckCircle2,
   Coins,
   CreditCard,
+  FolderPlus,
   Globe2,
   HardDrive,
   LogOut,
+  Plus,
   RefreshCw,
+  Save,
   ShieldCheck,
   Users,
   UserCircle,
+  X,
 } from 'lucide-react-native';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -31,6 +36,7 @@ import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
 import StatusPill from '@/components/ui/StatusPill';
+import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha, radii, spacing, typography } from '@/theme/tokens';
 
@@ -78,6 +84,9 @@ interface SyncedProfileRowProps {
   row: ProfileListRow;
   theme: KubdeeTheme;
 }
+
+const GROUP_NONE = '__none__';
+const GROUP_NEW = '__new__';
 
 function formatCredits(credits?: number | null): string {
   if (typeof credits !== 'number') {
@@ -240,7 +249,10 @@ function ActionRow({
 
 export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.Element {
   const {
+    createProfileError,
+    createSyncedProfile,
     isCheckingPlan,
+    isCreatingProfile,
     isSyncingProfiles,
     lastProfilesSyncedAt,
     lastSyncedAt,
@@ -252,12 +264,20 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
     syncedProfiles,
     user,
   } = useAuth();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(GROUP_NONE);
+  const [newGroupName, setNewGroupName] = useState('');
   const displayName = user?.name || user?.email || 'Kubdee AI User';
   const planLabel = formatPlanLabel(user?.plan);
   const expiryLabel = formatExpiryLabel(user?.expiryDate);
   const devicesLabel = `${user?.activeDevices ?? 0}/${user?.maxDevices ?? 0}`;
   const syncError = profileSyncError || profileDataError;
   const isSyncing = isCheckingPlan || isSyncingProfiles;
+  const createDisabled =
+    isCreatingProfile ||
+    !profileName.trim() ||
+    (selectedGroupId === GROUP_NEW && !newGroupName.trim());
   const syncStatusLabel = isSyncing ? 'SYNCING' : syncError ? 'ERROR' : 'SYNCED';
   const syncStatusColor = syncError ? theme.red : theme.emerald;
   const syncStatusBackground = syncError ? theme.redSoft : theme.emeraldSoft;
@@ -284,6 +304,38 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
   useEffect(() => {
     void syncProfile();
   }, [syncProfile]);
+
+  useEffect(() => {
+    const validSelectedGroup =
+      selectedGroupId === GROUP_NONE ||
+      selectedGroupId === GROUP_NEW ||
+      syncedProfileGroups.some((group) => group.id === selectedGroupId);
+
+    if (!validSelectedGroup) {
+      setSelectedGroupId(GROUP_NONE);
+    }
+  }, [selectedGroupId, syncedProfileGroups]);
+
+  const handleCreateProfile = async (): Promise<void> => {
+    if (createDisabled) {
+      return;
+    }
+
+    const ok = await createSyncedProfile({
+      name: profileName,
+      groupId: selectedGroupId === GROUP_NONE || selectedGroupId === GROUP_NEW ? null : selectedGroupId,
+      newGroupName: selectedGroupId === GROUP_NEW ? newGroupName : null,
+      profileSortOrder: syncedProfiles.length + 1,
+      groupSortOrder: syncedProfileGroups.length + 1,
+    });
+
+    if (ok) {
+      setProfileName('');
+      setSelectedGroupId(GROUP_NONE);
+      setNewGroupName('');
+      setCreateOpen(false);
+    }
+  };
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
@@ -416,6 +468,169 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
         />
       </View>
 
+      <ActionRow
+        icon={createOpen ? X : Plus}
+        iconBackground={createOpen ? theme.panelMuted : theme.cyanSoft}
+        iconColor={createOpen ? theme.textSubtle : theme.cyan}
+        label={createOpen ? 'ปิดฟอร์มสร้างโปรไฟล์' : 'สร้างโปรไฟล์บน Mobile'}
+        onPress={() => setCreateOpen((current) => !current)}
+        theme={theme}
+      />
+
+      {createOpen ? (
+        <View style={[styles.createPanel, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.createPanelHead}>
+            <View style={[styles.createPanelIcon, { backgroundColor: theme.cyanSoft }]}>
+              <UserCircle size={16} color={theme.cyan} strokeWidth={2.2} />
+            </View>
+            <View style={styles.createPanelTitleWrap}>
+              <Text style={[styles.createPanelTitle, { color: theme.text }]}>สร้างโปรไฟล์ใหม่</Text>
+              <Text style={[styles.createPanelSubtitle, { color: theme.textSubtle }]} numberOfLines={1}>
+                บันทึกขึ้น Cloud แล้วซิงก์กลับทุกอุปกรณ์
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อโปรไฟล์</Text>
+            <TextInput
+              autoCapitalize="none"
+              onChangeText={setProfileName}
+              placeholder="เช่น Shopee ร้านหลัก"
+              placeholderTextColor={theme.textSubtle}
+              returnKeyType="done"
+              style={[
+                styles.input,
+                { backgroundColor: theme.input, borderColor: theme.border, color: theme.text },
+              ]}
+              value={profileName}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>กลุ่ม</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.groupChipScroll}
+            >
+              <TouchableOpacity
+                activeOpacity={0.78}
+                onPress={() => setSelectedGroupId(GROUP_NONE)}
+                style={[
+                  styles.groupChip,
+                  {
+                    backgroundColor: selectedGroupId === GROUP_NONE ? theme.cyanSoft : theme.cardMuted,
+                    borderColor: selectedGroupId === GROUP_NONE ? alpha(theme.cyan, 0.45) : theme.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.groupChipText, { color: selectedGroupId === GROUP_NONE ? theme.cyan : theme.text }]}
+                  numberOfLines={1}
+                >
+                  ไม่มีกลุ่ม
+                </Text>
+              </TouchableOpacity>
+              {syncedProfileGroups.map((group) => {
+                const selected = group.id === selectedGroupId;
+
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.78}
+                    key={group.id}
+                    onPress={() => setSelectedGroupId(group.id)}
+                    style={[
+                      styles.groupChip,
+                      {
+                        backgroundColor: selected ? theme.cyanSoft : theme.cardMuted,
+                        borderColor: selected ? alpha(theme.cyan, 0.45) : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.groupChipText, { color: selected ? theme.cyan : theme.text }]}
+                      numberOfLines={1}
+                    >
+                      {group.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                activeOpacity={0.78}
+                onPress={() => setSelectedGroupId(GROUP_NEW)}
+                style={[
+                  styles.groupChip,
+                  {
+                    backgroundColor: selectedGroupId === GROUP_NEW ? theme.amberSoft : theme.cardMuted,
+                    borderColor: selectedGroupId === GROUP_NEW ? alpha(theme.amber, 0.45) : theme.border,
+                  },
+                ]}
+              >
+                <FolderPlus
+                  size={12}
+                  color={selectedGroupId === GROUP_NEW ? theme.amber : theme.textSubtle}
+                  strokeWidth={2.2}
+                />
+                <Text
+                  style={[styles.groupChipText, { color: selectedGroupId === GROUP_NEW ? theme.amber : theme.text }]}
+                  numberOfLines={1}
+                >
+                  กลุ่มใหม่
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+
+          {selectedGroupId === GROUP_NEW ? (
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อกลุ่มใหม่</Text>
+              <TextInput
+                autoCapitalize="none"
+                onChangeText={setNewGroupName}
+                placeholder="เช่น TikTok"
+                placeholderTextColor={theme.textSubtle}
+                returnKeyType="done"
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.input, borderColor: theme.border, color: theme.text },
+                ]}
+                value={newGroupName}
+              />
+            </View>
+          ) : null}
+
+          {createProfileError ? (
+            <View style={[styles.errorBox, { backgroundColor: theme.redSoft, borderColor: alpha(theme.red, 0.3) }]}>
+              <Text style={[styles.errorText, { color: theme.red }]}>{createProfileError}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            activeOpacity={0.78}
+            disabled={createDisabled}
+            onPress={handleCreateProfile}
+            style={[
+              styles.createButton,
+              {
+                backgroundColor: theme.cyan,
+                opacity: createDisabled ? 0.55 : 1,
+              },
+            ]}
+          >
+            {isCreatingProfile ? (
+              <ActivityIndicator color={theme.white} size="small" />
+            ) : (
+              <Save size={15} color={theme.white} strokeWidth={2.3} />
+            )}
+            <Text style={[styles.createButtonText, { color: theme.white }]}>
+              {isCreatingProfile ? 'กำลังสร้างและซิงก์' : 'สร้างและซิงก์ขึ้น Cloud'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {isSyncingProfiles && profileRows.length === 0 ? (
         <View style={[styles.emptyState, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
           <ActivityIndicator color={theme.blue} size="small" />
@@ -428,8 +643,16 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
           </View>
           <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ในระบบซิงก์</Text>
           <Text style={[styles.emptyDescription, { color: theme.textSubtle }]}>
-            สร้างจากเว็บ หรือซิงก์จาก Desktop/Extension แล้ว Mobile จะเห็นที่นี่
+            สร้างบน Mobile ได้ทันที หรือซิงก์จาก Desktop/Extension แล้ว Mobile จะเห็นที่นี่
           </Text>
+          <TouchableOpacity
+            activeOpacity={0.78}
+            onPress={() => setCreateOpen(true)}
+            style={[styles.emptyAction, { backgroundColor: theme.cyanSoft, borderColor: alpha(theme.cyan, 0.36) }]}
+          >
+            <Plus size={14} color={theme.cyan} strokeWidth={2.3} />
+            <Text style={[styles.emptyActionText, { color: theme.cyan }]}>สร้างโปรไฟล์แรก</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.syncedProfileList}>
@@ -518,6 +741,70 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
+  createButton: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  createButtonText: {
+    fontSize: typography.body,
+    fontWeight: '900',
+    includeFontPadding: false,
+    lineHeight: 16,
+  },
+  createPanel: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: 12,
+  },
+  createPanelHead: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 9,
+  },
+  createPanelIcon: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  createPanelSubtitle: {
+    fontSize: typography.caption,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  createPanelTitle: {
+    fontSize: typography.body,
+    fontWeight: '900',
+    includeFontPadding: false,
+    lineHeight: 17,
+  },
+  createPanelTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  emptyAction: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: spacing.xs,
+    minHeight: 34,
+    paddingHorizontal: 12,
+  },
+  emptyActionText: {
+    fontSize: typography.body,
+    fontWeight: '900',
+    includeFontPadding: false,
+    lineHeight: 16,
+  },
   errorBox: {
     borderRadius: radii.md,
     borderWidth: 1,
@@ -578,6 +865,43 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontWeight: '800',
     textAlign: 'right',
+  },
+  groupChip: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    height: 34,
+    maxWidth: 150,
+    paddingHorizontal: 10,
+  },
+  groupChipScroll: {
+    gap: 6,
+    paddingRight: 4,
+  },
+  groupChipText: {
+    flexShrink: 1,
+    fontSize: typography.caption,
+    fontWeight: '900',
+    includeFontPadding: false,
+    lineHeight: 14,
+  },
+  input: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    fontFamily: kubdeeFontFamilies.thai.regular,
+    fontSize: typography.body,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  inputGroup: {
+    gap: 5,
+  },
+  inputLabel: {
+    fontSize: typography.micro,
+    fontWeight: '800',
   },
   metricCard: {
     borderRadius: radii.md,

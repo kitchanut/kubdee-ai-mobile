@@ -64,6 +64,14 @@ export interface SyncedProfilesResponse {
   hasMore?: boolean;
 }
 
+export interface CreateSyncedProfileInput {
+  name: string;
+  groupId?: string | null;
+  newGroupName?: string | null;
+  profileSortOrder?: number;
+  groupSortOrder?: number;
+}
+
 export interface AuthApiResult<T> {
   ok: boolean;
   status: number;

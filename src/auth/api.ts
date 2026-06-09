@@ -2,6 +2,7 @@ import { APP_TYPE, BACKEND_URL, CLIENT_APP, OAUTH_SCHEME } from '@/auth/constant
 import type {
   AuthApiResult,
   AuthUser,
+  CreateSyncedProfileInput,
   StoredAuthTokens,
   SyncedProfile,
   SyncedProfileGroup,
@@ -52,6 +53,18 @@ interface SyncPullResponse {
   serverTime?: number;
   hasMore?: boolean;
   changes?: SyncChange[];
+  error?: string;
+}
+
+interface SyncPushResponse {
+  success?: boolean;
+  serverTime?: number;
+  rejected?: Array<{
+    index?: number;
+    id?: string;
+    entity?: string;
+    reason?: string;
+  }>;
   error?: string;
 }
 
@@ -116,6 +129,19 @@ function sortByOrderAndName<T extends { sortOrder?: number; name: string; update
     }
 
     return Number(b.updatedAt ?? 0) - Number(a.updatedAt ?? 0);
+  });
+}
+
+function newSyncId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
   });
 }
 
@@ -289,6 +315,122 @@ export async function fetchSyncedProfiles(token: string): Promise<AuthApiResult<
       ok: true,
       status: response.status,
       data: mapSyncPullResponse(data),
+      error: null,
+    };
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: 'Online verification required. Please check your internet connection.',
+    };
+  }
+}
+
+export async function createSyncedProfile(
+  token: string,
+  input: CreateSyncedProfileInput & { deviceId: string }
+): Promise<AuthApiResult<SyncPushResponse>> {
+  const name = input.name.trim();
+  const newGroupName = input.newGroupName?.trim() ?? '';
+  const now = Math.floor(Date.now() / 1000);
+  const profileId = newSyncId();
+  const changes: SyncChange[] = [];
+  let groupId = input.groupId?.trim() || null;
+
+  if (newGroupName) {
+    groupId = newSyncId();
+    changes.push({
+      entity: 'profile_group',
+      op: 'upsert',
+      id: groupId,
+      version: 1,
+      updatedAt: now,
+      data: {
+        id: groupId,
+        name: newGroupName,
+        color: null,
+        icon: 'folder',
+        sortOrder: input.groupSortOrder ?? 0,
+        metadata: { createdFrom: 'mobile' },
+        originApp: 'mobile',
+        originDeviceId: input.deviceId,
+        createdByApp: 'mobile',
+        sourceDeviceId: input.deviceId,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        version: 1,
+      },
+    });
+  }
+
+  changes.push({
+    entity: 'profile',
+    op: 'upsert',
+    id: profileId,
+    version: 1,
+    updatedAt: now,
+    data: {
+      id: profileId,
+      groupId,
+      name,
+      color: null,
+      icon: 'user',
+      sortOrder: input.profileSortOrder ?? 0,
+      metadata: { createdFrom: 'mobile' },
+      originApp: 'mobile',
+      originDeviceId: input.deviceId,
+      createdByApp: 'mobile',
+      sourceDeviceId: input.deviceId,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      version: 1,
+    },
+  });
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/sync/push`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Client-App': CLIENT_APP,
+        'X-App-Type': APP_TYPE,
+      },
+      body: JSON.stringify({
+        deviceId: input.deviceId,
+        app: CLIENT_APP,
+        appType: APP_TYPE,
+        clientSchemaVersion: 2,
+        changes,
+      }),
+    });
+    let data: SyncPushResponse = {};
+    try {
+      data = (await response.json()) as SyncPushResponse;
+    } catch {
+      data = {};
+    }
+
+    const rejectedReason = Array.isArray(data.rejected) && data.rejected.length > 0
+      ? data.rejected[0]?.reason
+      : null;
+
+    if (!response.ok || !data.success || rejectedReason) {
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        error: data.error || rejectedReason || response.statusText || 'สร้างโปรไฟล์ไม่สำเร็จ',
+      };
+    }
+
+    return {
+      ok: true,
+      status: response.status,
+      data,
       error: null,
     };
   } catch {

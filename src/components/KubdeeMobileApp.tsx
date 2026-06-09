@@ -47,8 +47,16 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     });
   };
 
+  const hasAttemptedProfileSync = auth.lastProfilesSyncedAt !== null || auth.profileDataError !== null;
+
   useEffect(() => {
-    if (!auth.token || !auth.isPlanValid || auth.syncedProfiles.length > 0 || auth.isSyncingProfiles) {
+    if (
+      !auth.token ||
+      !auth.isPlanValid ||
+      auth.syncedProfiles.length > 0 ||
+      auth.isSyncingProfiles ||
+      hasAttemptedProfileSync
+    ) {
       return;
     }
 
@@ -56,9 +64,12 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   }, [
     auth.isPlanValid,
     auth.isSyncingProfiles,
+    auth.lastProfilesSyncedAt,
+    auth.profileDataError,
     auth.syncProfileData,
     auth.syncedProfiles.length,
     auth.token,
+    hasAttemptedProfileSync,
   ]);
 
   useEffect(() => {
