@@ -16,7 +16,7 @@ interface RefreshResponse {
 }
 
 type SyncEntity = 'profile_group' | 'profile';
-type SyncOperation = 'upsert' | 'delete';
+type SyncOperation = 'upsert' | 'delete' | 'restore';
 
 interface ProfileSyncGroupData {
   id?: unknown;
@@ -517,12 +517,19 @@ export async function restoreSyncedProfile(
     changes: [
       {
         entity: 'profile',
-        op: 'upsert',
+        op: 'restore',
         id: profile.id,
         version: profile.version || 1,
         updatedAt: now,
         data: {
           ...profile,
+          metadata: {
+            ...profile.metadata,
+            syncAction: 'restore',
+            restoredAt: now,
+            restoredByDevice: input.deviceId,
+            restoredByDeviceType: CLIENT_APP,
+          },
           deletedAt: null,
           deletedByDevice: null,
           deletedByDeviceType: null,
