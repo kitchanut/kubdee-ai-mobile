@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
   profileSelectText: {
     flexShrink: 1,
     fontSize: typography.caption,
-    fontWeight: '700',
+    fontWeight: '400',
     includeFontPadding: false,
     lineHeight: 13,
   },
@@ -750,7 +750,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     minWidth: 0,
-    transform: [{ translateY: 2 }],
+    transform: [{ translateY: 1 }],
   },
   themeLabelWrap: {
     alignItems: 'center',
