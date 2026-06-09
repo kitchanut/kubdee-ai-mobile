@@ -32,6 +32,9 @@ interface ProfileSyncGroupData {
   createdAt?: unknown;
   updatedAt?: unknown;
   deletedAt?: unknown;
+  deletedByDevice?: unknown;
+  deletedByDeviceType?: unknown;
+  deletedByApp?: unknown;
   version?: unknown;
 }
 
@@ -66,6 +69,12 @@ interface SyncPushResponse {
     reason?: string;
   }>;
   error?: string;
+}
+
+interface PushSyncedProfileChangeInput {
+  token: string;
+  deviceId: string;
+  changes: SyncChange[];
 }
 
 async function readError(response: Response): Promise<string> {
@@ -172,6 +181,8 @@ function mapSyncGroup(change: SyncChange): SyncedProfileGroup | null {
     createdAt: asTimestamp(data.createdAt, updatedAt),
     updatedAt,
     deletedAt: data.deletedAt == null ? null : asTimestamp(data.deletedAt),
+    deletedByDevice: asOptionalString(data.deletedByDevice),
+    deletedByDeviceType: asOptionalString(data.deletedByDeviceType),
     version: asNumber(data.version ?? change.version, 1),
   };
 }
@@ -206,6 +217,8 @@ function mapSyncProfile(change: SyncChange): SyncedProfile | null {
     createdAt: asTimestamp(data.createdAt, updatedAt),
     updatedAt,
     deletedAt: data.deletedAt == null ? null : asTimestamp(data.deletedAt),
+    deletedByDevice: asOptionalString(data.deletedByDevice),
+    deletedByDeviceType: asOptionalString(data.deletedByDeviceType),
     version: asNumber(data.version ?? change.version, 1),
   };
 }
@@ -213,6 +226,7 @@ function mapSyncProfile(change: SyncChange): SyncedProfile | null {
 function mapSyncPullResponse(data: SyncPullResponse): SyncedProfilesResponse {
   const groupMap = new Map<string, SyncedProfileGroup>();
   const profileMap = new Map<string, SyncedProfile>();
+  const deletedProfileMap = new Map<string, SyncedProfile>();
 
   for (const change of Array.isArray(data.changes) ? data.changes : []) {
     const entity = normalizeEntity(change.entity);
@@ -236,20 +250,25 @@ function mapSyncPullResponse(data: SyncPullResponse): SyncedProfilesResponse {
       continue;
     }
 
-    if (op === 'delete') {
-      profileMap.delete(id);
+    const profile = mapSyncProfile(change);
+    if (!profile) {
       continue;
     }
 
-    const profile = mapSyncProfile(change);
-    if (profile && !profile.deletedAt) {
-      profileMap.set(profile.id, profile);
+    if (op === 'delete' || profile.deletedAt) {
+      profileMap.delete(id);
+      deletedProfileMap.set(profile.id, profile);
+      continue;
     }
+
+    deletedProfileMap.delete(profile.id);
+    profileMap.set(profile.id, profile);
   }
 
   return {
     groups: sortByOrderAndName(Array.from(groupMap.values())),
     profiles: sortByOrderAndName(Array.from(profileMap.values())),
+    deletedProfiles: sortByOrderAndName(Array.from(deletedProfileMap.values())),
     serverTime: typeof data.serverTime === 'number' ? data.serverTime : null,
     hasMore: Boolean(data.hasMore),
   };
@@ -360,6 +379,8 @@ export async function createSyncedProfile(
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
+        deletedByDevice: null,
+        deletedByDeviceType: null,
         version: 1,
       },
     });
@@ -386,10 +407,20 @@ export async function createSyncedProfile(
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      deletedByDevice: null,
+      deletedByDeviceType: null,
       version: 1,
     },
   });
 
+  return pushSyncedProfileChanges({ token, deviceId: input.deviceId, changes });
+}
+
+async function pushSyncedProfileChanges({
+  token,
+  deviceId,
+  changes,
+}: PushSyncedProfileChangeInput): Promise<AuthApiResult<SyncPushResponse>> {
   try {
     const response = await fetch(`${BACKEND_URL}/api/sync/push`, {
       method: 'POST',
@@ -400,7 +431,7 @@ export async function createSyncedProfile(
         'X-App-Type': APP_TYPE,
       },
       body: JSON.stringify({
-        deviceId: input.deviceId,
+        deviceId,
         app: CLIENT_APP,
         appType: APP_TYPE,
         clientSchemaVersion: 2,
@@ -441,6 +472,66 @@ export async function createSyncedProfile(
       error: 'Online verification required. Please check your internet connection.',
     };
   }
+}
+
+export async function softDeleteSyncedProfile(
+  token: string,
+  input: { profile: SyncedProfile; deviceId: string }
+): Promise<AuthApiResult<SyncPushResponse>> {
+  const now = Math.floor(Date.now() / 1000);
+  const profile = input.profile;
+
+  return pushSyncedProfileChanges({
+    token,
+    deviceId: input.deviceId,
+    changes: [
+      {
+        entity: 'profile',
+        op: 'delete',
+        id: profile.id,
+        version: profile.version || 1,
+        updatedAt: now,
+        data: {
+          ...profile,
+          deletedAt: now,
+          deletedByDevice: input.deviceId,
+          deletedByDeviceType: CLIENT_APP,
+          sourceDeviceId: input.deviceId,
+          updatedAt: now,
+        },
+      },
+    ],
+  });
+}
+
+export async function restoreSyncedProfile(
+  token: string,
+  input: { profile: SyncedProfile; deviceId: string }
+): Promise<AuthApiResult<SyncPushResponse>> {
+  const now = Math.floor(Date.now() / 1000);
+  const profile = input.profile;
+
+  return pushSyncedProfileChanges({
+    token,
+    deviceId: input.deviceId,
+    changes: [
+      {
+        entity: 'profile',
+        op: 'upsert',
+        id: profile.id,
+        version: profile.version || 1,
+        updatedAt: now,
+        data: {
+          ...profile,
+          deletedAt: null,
+          deletedByDevice: null,
+          deletedByDeviceType: null,
+          sourceDeviceId: input.deviceId,
+          updatedAt: now,
+        },
+      },
+    ],
+  });
 }
 
 export async function refreshAuthToken(refreshToken: string): Promise<AuthApiResult<RefreshResponse>> {

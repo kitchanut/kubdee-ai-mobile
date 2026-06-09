@@ -9,11 +9,21 @@ import {
   logoutSession,
   parseAuthCallbackUrl,
   refreshAuthToken,
+  restoreSyncedProfile as pushRestoreSyncedProfile,
   sendHeartbeat,
+  softDeleteSyncedProfile as pushSoftDeleteSyncedProfile,
 } from '@/auth/api';
 import { HEARTBEAT_INTERVAL_MS, LOGIN_URL, PLAN_RECHECK_INTERVAL_MS } from '@/auth/constants';
 import { getRequiredPlanError } from '@/auth/plan';
-import { clearStoredAuthTokens, getOrCreateSyncDeviceId, getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
+import {
+  clearDeletedProfileConfirmation,
+  clearStoredAuthTokens,
+  confirmDeletedProfile as saveDeletedProfileConfirmation,
+  getDeletedProfileConfirmations,
+  getOrCreateSyncDeviceId,
+  getStoredAuthTokens,
+  saveStoredAuthTokens,
+} from '@/auth/storage';
 import type {
   AuthUser,
   CreateSyncedProfileInput,
@@ -36,8 +46,10 @@ interface AuthContextType {
   profileSyncError: string | null;
   syncedProfileGroups: SyncedProfileGroup[];
   syncedProfiles: SyncedProfile[];
+  deletedSyncedProfiles: SyncedProfile[];
   isSyncingProfiles: boolean;
   isCreatingProfile: boolean;
+  isUpdatingProfile: boolean;
   profileDataError: string | null;
   createProfileError: string | null;
   lastProfilesSyncedAt: number | null;
@@ -47,6 +59,9 @@ interface AuthContextType {
   syncProfile: () => Promise<void>;
   syncProfileData: () => Promise<void>;
   createSyncedProfile: (input: CreateSyncedProfileInput) => Promise<boolean>;
+  deleteSyncedProfile: (profile: SyncedProfile) => Promise<boolean>;
+  restoreDeletedSyncedProfile: (profile: SyncedProfile) => Promise<boolean>;
+  confirmDeletedProfileLocally: (profile: SyncedProfile) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -57,6 +72,17 @@ function getSessionExpiredMessage(error: string | null): string {
   }
 
   return error || 'Session expired';
+}
+
+function profileDeletionTimestamp(profile: SyncedProfile): number {
+  const deletedAt = Number(profile.deletedAt ?? 0);
+  return Number.isFinite(deletedAt) && deletedAt > 0 ? Math.floor(deletedAt) : 0;
+}
+
+function isDeletedProfileConfirmed(profile: SyncedProfile, confirmations: Record<string, number>): boolean {
+  const confirmedAt = confirmations[profile.id] ?? 0;
+  const deletedAt = profileDeletionTimestamp(profile);
+  return confirmedAt > 0 && deletedAt > 0 && confirmedAt >= deletedAt;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
@@ -72,8 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [profileSyncError, setProfileSyncError] = useState<string | null>(null);
   const [syncedProfileGroups, setSyncedProfileGroups] = useState<SyncedProfileGroup[]>([]);
   const [syncedProfiles, setSyncedProfiles] = useState<SyncedProfile[]>([]);
+  const [deletedSyncedProfiles, setDeletedSyncedProfiles] = useState<SyncedProfile[]>([]);
   const [isSyncingProfiles, setIsSyncingProfiles] = useState(false);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [profileDataError, setProfileDataError] = useState<string | null>(null);
   const [createProfileError, setCreateProfileError] = useState<string | null>(null);
   const [lastProfilesSyncedAt, setLastProfilesSyncedAt] = useState<number | null>(null);
@@ -87,7 +115,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setProfileSyncError(null);
     setSyncedProfileGroups([]);
     setSyncedProfiles([]);
+    setDeletedSyncedProfiles([]);
     setIsCreatingProfile(false);
+    setIsUpdatingProfile(false);
     setProfileDataError(null);
     setCreateProfileError(null);
     setLastProfilesSyncedAt(null);
@@ -155,8 +185,12 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     try {
       const result = await fetchSyncedProfiles(accessToken);
       if (result.ok && result.data) {
+        const confirmations = await getDeletedProfileConfirmations();
         setSyncedProfileGroups(result.data.groups);
         setSyncedProfiles(result.data.profiles);
+        setDeletedSyncedProfiles(
+          result.data.deletedProfiles.filter((profile) => !isDeletedProfileConfirmed(profile, confirmations))
+        );
         setProfileDataError(null);
         setLastProfilesSyncedAt(Date.now());
         return true;
@@ -256,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     if (!token) {
       setSyncedProfileGroups([]);
       setSyncedProfiles([]);
+      setDeletedSyncedProfiles([]);
       setProfileDataError(null);
       setLastProfilesSyncedAt(null);
       return;
@@ -328,6 +363,80 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     [loadSyncedProfileData, refreshToken, token, verifyTokens]
   );
 
+  const deleteSyncedProfile = useCallback(
+    async (profile: SyncedProfile): Promise<boolean> => {
+      if (!token) {
+        setProfileDataError('กรุณาเข้าสู่ระบบก่อนลบโปรไฟล์');
+        return false;
+      }
+
+      setIsUpdatingProfile(true);
+      setProfileDataError(null);
+      try {
+        const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
+        if (!verifiedTokens) {
+          setProfileDataError('Online verification required. Please check your internet connection.');
+          return false;
+        }
+
+        const deviceId = await getOrCreateSyncDeviceId();
+        await clearDeletedProfileConfirmation(profile.id);
+        const result = await pushSoftDeleteSyncedProfile(verifiedTokens.accessToken, { profile, deviceId });
+        if (!result.ok) {
+          setProfileDataError(result.error || 'ลบโปรไฟล์ไม่สำเร็จ');
+          return false;
+        }
+
+        return await loadSyncedProfileData(verifiedTokens.accessToken);
+      } finally {
+        setIsUpdatingProfile(false);
+      }
+    },
+    [loadSyncedProfileData, refreshToken, token, verifyTokens]
+  );
+
+  const restoreDeletedSyncedProfile = useCallback(
+    async (profile: SyncedProfile): Promise<boolean> => {
+      if (!token) {
+        setProfileDataError('กรุณาเข้าสู่ระบบก่อนกู้คืนโปรไฟล์');
+        return false;
+      }
+
+      setIsUpdatingProfile(true);
+      setProfileDataError(null);
+      try {
+        const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
+        if (!verifiedTokens) {
+          setProfileDataError('Online verification required. Please check your internet connection.');
+          return false;
+        }
+
+        const deviceId = await getOrCreateSyncDeviceId();
+        await clearDeletedProfileConfirmation(profile.id);
+        const result = await pushRestoreSyncedProfile(verifiedTokens.accessToken, { profile, deviceId });
+        if (!result.ok) {
+          setProfileDataError(result.error || 'กู้คืนโปรไฟล์ไม่สำเร็จ');
+          return false;
+        }
+
+        return await loadSyncedProfileData(verifiedTokens.accessToken);
+      } finally {
+        setIsUpdatingProfile(false);
+      }
+    },
+    [loadSyncedProfileData, refreshToken, token, verifyTokens]
+  );
+
+  const confirmDeletedProfileLocally = useCallback(async (profile: SyncedProfile): Promise<void> => {
+    const deletedAt = profileDeletionTimestamp(profile);
+    if (deletedAt <= 0) {
+      return;
+    }
+
+    await saveDeletedProfileConfirmation(profile.id, deletedAt);
+    setDeletedSyncedProfiles((current) => current.filter((item) => item.id !== profile.id));
+  }, []);
+
   useEffect(() => {
     if (!token || !user) {
       return undefined;
@@ -379,8 +488,10 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       profileSyncError,
       syncedProfileGroups,
       syncedProfiles,
+      deletedSyncedProfiles,
       isSyncingProfiles,
       isCreatingProfile,
+      isUpdatingProfile,
       profileDataError,
       createProfileError,
       lastProfilesSyncedAt,
@@ -390,17 +501,24 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       syncProfile,
       syncProfileData,
       createSyncedProfile,
+      deleteSyncedProfile,
+      restoreDeletedSyncedProfile,
+      confirmDeletedProfileLocally,
     }),
     [
       authError,
+      confirmDeletedProfileLocally,
       createProfileError,
       createSyncedProfile,
+      deleteSyncedProfile,
+      deletedSyncedProfiles,
       isCheckingPlan,
       isCreatingProfile,
       isLoading,
       isLoggingIn,
       isPlanValid,
       isSyncingProfiles,
+      isUpdatingProfile,
       login,
       logout,
       lastProfilesSyncedAt,
@@ -410,6 +528,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       profileSyncError,
       recheckPlan,
       refreshToken,
+      restoreDeletedSyncedProfile,
       syncProfile,
       syncProfileData,
       syncedProfileGroups,

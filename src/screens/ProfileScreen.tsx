@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Linking,
   ScrollView,
@@ -27,6 +28,9 @@ import {
   Users,
   UserCircle,
   X,
+  Archive,
+  RotateCcw,
+  Trash2,
 } from 'lucide-react-native';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -82,7 +86,12 @@ interface ProfileListRow {
 
 interface SyncedProfileRowProps {
   row: ProfileListRow;
+  status: 'active' | 'deleted';
   theme: KubdeeTheme;
+  disabled?: boolean;
+  onConfirmDelete?: (profile: SyncedProfile) => void;
+  onDelete?: (profile: SyncedProfile) => void;
+  onRestore?: (profile: SyncedProfile) => void;
 }
 
 const GROUP_NONE = '__none__';
@@ -136,6 +145,21 @@ function getSourceLabel(value?: string | null): string {
   }
 }
 
+function formatDeletedLabel(profile: SyncedProfile): string {
+  const deletedAt = Number(profile.deletedAt ?? 0);
+  const source = getSourceLabel(profile.deletedByDeviceType || profile.createdByApp || profile.originApp);
+  if (!Number.isFinite(deletedAt) || deletedAt <= 0) {
+    return `ถูกลบจาก ${source}`;
+  }
+
+  const time = new Intl.DateTimeFormat('th-TH', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(deletedAt * 1000));
+
+  return `ถูกลบจาก ${source} · ${time}`;
+}
+
 function MetricCard({
   label,
   value,
@@ -165,26 +189,91 @@ function MetricCard({
   );
 }
 
-function SyncedProfileRow({ row, theme }: SyncedProfileRowProps): React.JSX.Element {
+function SyncedProfileRow({
+  row,
+  status,
+  theme,
+  disabled,
+  onConfirmDelete,
+  onDelete,
+  onRestore,
+}: SyncedProfileRowProps): React.JSX.Element {
+  const isDeleted = status === 'deleted';
+  const iconBackground = isDeleted ? theme.amberSoft : theme.cyanSoft;
+  const iconColor = isDeleted ? theme.amber : theme.cyan;
+
   return (
     <View style={[styles.syncedProfileRow, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-      <View style={[styles.syncedProfileIcon, { backgroundColor: theme.cyanSoft }]}>
-        <UserCircle size={18} color={theme.cyan} strokeWidth={2.2} />
+      <View style={[styles.syncedProfileIcon, { backgroundColor: iconBackground }]}>
+        {isDeleted ? (
+          <Archive size={18} color={iconColor} strokeWidth={2.2} />
+        ) : (
+          <UserCircle size={18} color={iconColor} strokeWidth={2.2} />
+        )}
       </View>
       <View style={styles.syncedProfileBody}>
         <Text style={[styles.syncedProfileName, { color: theme.text }]} numberOfLines={1}>
           {row.profile.name}
         </Text>
         <Text style={[styles.syncedProfileMeta, { color: theme.textSubtle }]} numberOfLines={1}>
-          {row.group?.name || 'ไม่มีกลุ่ม'} · {formatShortId(row.profile.id)}
+          {isDeleted ? formatDeletedLabel(row.profile) : `${row.group?.name || 'ไม่มีกลุ่ม'} · ${formatShortId(row.profile.id)}`}
         </Text>
-        <View style={[styles.sourceChip, { backgroundColor: theme.panelMuted }]}>
-          <Globe2 size={11} color={theme.textSubtle} strokeWidth={2.2} />
-          <Text style={[styles.sourceChipText, { color: theme.textSubtle }]} numberOfLines={1}>
-            สร้างจาก {row.sourceLabel}
-          </Text>
+        <View style={styles.profileChipRow}>
+          <View style={[styles.sourceChip, { backgroundColor: theme.panelMuted }]}>
+            <Globe2 size={11} color={theme.textSubtle} strokeWidth={2.2} />
+            <Text style={[styles.sourceChipText, { color: theme.textSubtle }]} numberOfLines={1}>
+              สร้างจาก {row.sourceLabel}
+            </Text>
+          </View>
+          {isDeleted ? (
+            <View style={[styles.sourceChip, { backgroundColor: theme.amberSoft }]}>
+              <Text style={[styles.sourceChipText, { color: theme.amber }]} numberOfLines={1}>
+                รอยืนยัน
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
+      {isDeleted ? (
+        <View style={styles.profileRowActions}>
+          <TouchableOpacity
+            activeOpacity={0.78}
+            disabled={disabled}
+            onPress={() => onRestore?.(row.profile)}
+            style={[
+              styles.profileRowAction,
+              { backgroundColor: theme.emeraldSoft, opacity: disabled ? 0.55 : 1 },
+            ]}
+          >
+            <RotateCcw size={12} color={theme.emerald} strokeWidth={2.3} />
+            <Text style={[styles.profileRowActionText, { color: theme.emerald }]}>กู้คืน</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.78}
+            disabled={disabled}
+            onPress={() => onConfirmDelete?.(row.profile)}
+            style={[
+              styles.profileRowAction,
+              { backgroundColor: theme.panelMuted, opacity: disabled ? 0.55 : 1 },
+            ]}
+          >
+            <X size={12} color={theme.textSubtle} strokeWidth={2.3} />
+            <Text style={[styles.profileRowActionText, { color: theme.textSubtle }]}>ซ่อน</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          activeOpacity={0.78}
+          disabled={disabled}
+          onPress={() => onDelete?.(row.profile)}
+          style={[
+            styles.deleteProfileButton,
+            { backgroundColor: theme.redSoft, opacity: disabled ? 0.55 : 1 },
+          ]}
+        >
+          <Trash2 size={13} color={theme.red} strokeWidth={2.3} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -249,16 +338,21 @@ function ActionRow({
 
 export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.Element {
   const {
+    confirmDeletedProfileLocally,
     createProfileError,
     createSyncedProfile,
+    deleteSyncedProfile,
+    deletedSyncedProfiles,
     isCheckingPlan,
     isCreatingProfile,
     isSyncingProfiles,
+    isUpdatingProfile,
     lastProfilesSyncedAt,
     lastSyncedAt,
     logout,
     profileDataError,
     profileSyncError,
+    restoreDeletedSyncedProfile,
     syncProfile,
     syncedProfileGroups,
     syncedProfiles,
@@ -290,17 +384,15 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
       sourceLabel: getSourceLabel(profile.createdByApp || profile.originApp),
     }));
   }, [syncedProfileGroups, syncedProfiles]);
-  const sourceCount = useMemo(() => {
-    const sources = new Set<string>();
-    for (const profile of syncedProfiles) {
-      sources.add(getSourceLabel(profile.createdByApp || profile.originApp));
-    }
-    for (const group of syncedProfileGroups) {
-      sources.add(getSourceLabel(group.createdByApp || group.originApp));
-    }
-    return sources.size;
-  }, [syncedProfileGroups, syncedProfiles]);
+  const deletedProfileRows = useMemo<ProfileListRow[]>(() => {
+    const groupById = new Map(syncedProfileGroups.map((group) => [group.id, group]));
 
+    return deletedSyncedProfiles.map((profile) => ({
+      profile,
+      group: profile.groupId == null ? null : groupById.get(profile.groupId) ?? null,
+      sourceLabel: getSourceLabel(profile.createdByApp || profile.originApp),
+    }));
+  }, [deletedSyncedProfiles, syncedProfileGroups]);
   useEffect(() => {
     void syncProfile();
   }, [syncProfile]);
@@ -335,6 +427,55 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
       setNewGroupName('');
       setCreateOpen(false);
     }
+  };
+
+  const handleDeleteProfile = (profile: SyncedProfile): void => {
+    Alert.alert(
+      'ลบโปรไฟล์นี้?',
+      'โปรไฟล์จะถูก soft delete บน Cloud และอุปกรณ์อื่นจะเห็นเป็นรายการรอยืนยันลบหลังซิงก์',
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'ลบ',
+          style: 'destructive',
+          onPress: () => {
+            void deleteSyncedProfile(profile);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRestoreProfile = (profile: SyncedProfile): void => {
+    Alert.alert(
+      'กู้คืนโปรไฟล์นี้?',
+      'โปรไฟล์จะกลับมาใช้งานและซิงก์กลับไปทุกอุปกรณ์',
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'กู้คืน',
+          onPress: () => {
+            void restoreDeletedSyncedProfile(profile);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleConfirmDeletedProfile = (profile: SyncedProfile): void => {
+    Alert.alert(
+      'ซ่อนโปรไฟล์ที่ถูกลบ?',
+      'รายการนี้จะถูกซ่อนจากมือถือเครื่องนี้เท่านั้น แต่ข้อมูลบน Cloud จะยังเป็น soft delete และยังดูได้จากเว็บ',
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'ซ่อน',
+          onPress: () => {
+            void confirmDeletedProfileLocally(profile);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -428,9 +569,9 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
           <StatusPill
             backgroundColor={theme.cyanSoft}
             color={theme.cyan}
-            icon={UserCircle}
-            label={`${formatCount(syncedProfiles.length)} โปรไฟล์`}
-          />
+          icon={UserCircle}
+          label={`${formatCount(syncedProfiles.length)} ใช้งาน`}
+        />
         }
       />
 
@@ -460,11 +601,11 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
         <MetricCard
           backgroundColor={theme.amberSoft}
           color={theme.amber}
-          icon={Globe2}
-          label="Sources"
-          subtext="รอ vault"
+          icon={Archive}
+          label="Deleted"
+          subtext="รอยืนยัน"
           theme={theme}
-          value={formatCount(sourceCount)}
+          value={formatCount(deletedSyncedProfiles.length)}
         />
       </View>
 
@@ -641,7 +782,7 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
           <View style={[styles.emptyIcon, { backgroundColor: theme.panelMuted }]}>
             <UserCircle size={20} color={theme.textSubtle} strokeWidth={2.2} />
           </View>
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ในระบบซิงก์</Text>
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ใช้งานอยู่</Text>
           <Text style={[styles.emptyDescription, { color: theme.textSubtle }]}>
             สร้างบน Mobile ได้ทันที หรือซิงก์จาก Desktop/Extension แล้ว Mobile จะเห็นที่นี่
           </Text>
@@ -657,10 +798,48 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
       ) : (
         <View style={styles.syncedProfileList}>
           {profileRows.map((row) => (
-            <SyncedProfileRow key={row.profile.id} row={row} theme={theme} />
+            <SyncedProfileRow
+              key={row.profile.id}
+              disabled={isUpdatingProfile}
+              row={row}
+              status="active"
+              theme={theme}
+              onDelete={handleDeleteProfile}
+            />
           ))}
         </View>
       )}
+
+      {deletedProfileRows.length > 0 ? (
+        <>
+          <SectionHeader
+            icon={Archive}
+            theme={theme}
+            title="โปรไฟล์ที่ถูกลบ"
+            right={
+              <StatusPill
+                backgroundColor={theme.amberSoft}
+                color={theme.amber}
+                icon={Archive}
+                label={`${formatCount(deletedProfileRows.length)} รอยืนยัน`}
+              />
+            }
+          />
+          <View style={styles.syncedProfileList}>
+            {deletedProfileRows.map((row) => (
+              <SyncedProfileRow
+                key={row.profile.id}
+                disabled={isUpdatingProfile}
+                row={row}
+                status="deleted"
+                theme={theme}
+                onConfirmDelete={handleConfirmDeletedProfile}
+                onRestore={handleRestoreProfile}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
 
       <View style={styles.actionList}>
         <ActionRow
@@ -955,6 +1134,37 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: typography.label,
     fontWeight: '900',
+  },
+  deleteProfileButton: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  profileChipRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  profileRowAction: {
+    alignItems: 'center',
+    borderRadius: radii.md,
+    flexDirection: 'row',
+    gap: 4,
+    minHeight: 28,
+    paddingHorizontal: 7,
+  },
+  profileRowActions: {
+    alignItems: 'flex-end',
+    gap: 5,
+  },
+  profileRowActionText: {
+    fontSize: typography.tiny,
+    fontWeight: '900',
+    includeFontPadding: false,
+    lineHeight: 12,
   },
   syncLine: {
     alignItems: 'center',

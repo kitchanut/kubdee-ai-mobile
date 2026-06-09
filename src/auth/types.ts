@@ -35,6 +35,8 @@ export interface SyncedProfileGroup {
   createdAt?: string | number | null;
   updatedAt?: string | number | null;
   deletedAt?: string | number | null;
+  deletedByDevice?: string | null;
+  deletedByDeviceType?: string | null;
   version?: number;
 }
 
@@ -54,12 +56,15 @@ export interface SyncedProfile {
   createdAt?: string | number | null;
   updatedAt?: string | number | null;
   deletedAt?: string | number | null;
+  deletedByDevice?: string | null;
+  deletedByDeviceType?: string | null;
   version?: number;
 }
 
 export interface SyncedProfilesResponse {
   groups: SyncedProfileGroup[];
   profiles: SyncedProfile[];
+  deletedProfiles: SyncedProfile[];
   serverTime?: number | null;
   hasMore?: boolean;
 }
