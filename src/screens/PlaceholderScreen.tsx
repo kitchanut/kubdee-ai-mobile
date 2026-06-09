@@ -9,12 +9,14 @@ interface PlaceholderScreenProps {
   theme: KubdeeTheme;
   title: string;
   accent: 'blue' | 'cyan' | 'red';
+  statusLabel?: string;
 }
 
 export default function PlaceholderScreen({
   theme,
   title,
   accent,
+  statusLabel = 'รอ script module',
 }: PlaceholderScreenProps): React.JSX.Element {
   const color = accent === 'blue' ? theme.blue : accent === 'cyan' ? theme.cyan : theme.red;
   const background = accent === 'blue' ? theme.cyanSoft : accent === 'cyan' ? theme.cyanSoft : theme.redSoft;
@@ -27,7 +29,7 @@ export default function PlaceholderScreen({
       <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
       <View style={[styles.status, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Clock3 size={13} color={theme.textSubtle} />
-        <Text style={[styles.statusText, { color: theme.textSubtle }]}>รอ script module</Text>
+        <Text style={[styles.statusText, { color: theme.textSubtle }]}>{statusLabel}</Text>
       </View>
     </View>
   );

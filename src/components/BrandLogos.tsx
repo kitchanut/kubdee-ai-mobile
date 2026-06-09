@@ -3,6 +3,8 @@ import Svg, { Circle, Path } from 'react-native-svg';
 interface BrandLogoProps {
   size?: number;
   isDark?: boolean;
+  color?: string;
+  cutoutColor?: string;
 }
 
 const tiktokPath =
@@ -17,7 +19,15 @@ const shopeeSPath =
 const youtubeOuterPath =
   'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z';
 
-export function TikTokLogo({ size = 18, isDark = false }: BrandLogoProps): React.JSX.Element {
+export function TikTokLogo({ size = 18, isDark = false, color }: BrandLogoProps): React.JSX.Element {
+  if (color) {
+    return (
+      <Svg width={size} height={size} viewBox="-2 -2 28 28">
+        <Path d={tiktokPath} fill={color} />
+      </Svg>
+    );
+  }
+
   return (
     <Svg width={size} height={size} viewBox="-2 -2 28 28">
       <Path d={tiktokPath} fill="#25F4EE" transform="translate(-1 0.8)" />
@@ -27,31 +37,43 @@ export function TikTokLogo({ size = 18, isDark = false }: BrandLogoProps): React
   );
 }
 
-export function ShopeeLogo({ size = 18 }: BrandLogoProps): React.JSX.Element {
+export function ShopeeLogo({
+  size = 18,
+  color = '#EE4D2D',
+  cutoutColor = '#ffffff',
+}: BrandLogoProps): React.JSX.Element {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d={shopeeBagPath} fill="#EE4D2D" />
-      <Path d={shopeeSPath} fill="#ffffff" />
+      <Path d={shopeeBagPath} fill={color} />
+      <Path d={shopeeSPath} fill={cutoutColor} />
     </Svg>
   );
 }
 
-export function YouTubeLogo({ size = 18 }: BrandLogoProps): React.JSX.Element {
+export function YouTubeLogo({
+  size = 18,
+  color = '#FF0000',
+  cutoutColor = '#ffffff',
+}: BrandLogoProps): React.JSX.Element {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d={youtubeOuterPath} fill="#FF0000" />
-      <Path d="M9.545 15.568V8.432L15.818 12z" fill="#ffffff" />
+      <Path d={youtubeOuterPath} fill={color} />
+      <Path d="M9.545 15.568V8.432L15.818 12z" fill={cutoutColor} />
     </Svg>
   );
 }
 
-export function FacebookLogo({ size = 18 }: BrandLogoProps): React.JSX.Element {
+export function FacebookLogo({
+  size = 18,
+  color = '#0866FF',
+  cutoutColor = '#ffffff',
+}: BrandLogoProps): React.JSX.Element {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx="12" cy="12" r="12" fill="#0866FF" />
+      <Circle cx="12" cy="12" r="12" fill={color} />
       <Path
         d="M15.117 8.847h2.512l-.327 3.196h-2.185V24h-4.772V12.043H8.33V8.847h2.015V6.79c0-2.76 1.276-4.79 4.94-4.79 1.043 0 1.868.088 2.167.129v3.085h-1.826c-.9 0-1.509.43-1.509 1.533v2.1z"
-        fill="#ffffff"
+        fill={cutoutColor}
       />
     </Svg>
   );

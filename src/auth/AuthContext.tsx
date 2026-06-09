@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Linking } from 'react-native';
 
 import {
+  fetchSyncedProfiles,
   fetchUserProfile,
   logoutSession,
   parseAuthCallbackUrl,
@@ -12,7 +13,7 @@ import {
 import { HEARTBEAT_INTERVAL_MS, LOGIN_URL, PLAN_RECHECK_INTERVAL_MS } from '@/auth/constants';
 import { getRequiredPlanError } from '@/auth/plan';
 import { clearStoredAuthTokens, getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
-import type { AuthUser, StoredAuthTokens } from '@/auth/types';
+import type { AuthUser, StoredAuthTokens, SyncedProfile, SyncedProfileCredential, SyncedProfileGroup } from '@/auth/types';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -24,9 +25,19 @@ interface AuthContextType {
   isPlanValid: boolean;
   planError: string | null;
   authError: string | null;
+  lastSyncedAt: number | null;
+  profileSyncError: string | null;
+  syncedProfileGroups: SyncedProfileGroup[];
+  syncedProfiles: SyncedProfile[];
+  profileCredentials: SyncedProfileCredential[];
+  isSyncingProfiles: boolean;
+  profileDataError: string | null;
+  lastProfilesSyncedAt: number | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   recheckPlan: () => Promise<void>;
+  syncProfile: () => Promise<void>;
+  syncProfileData: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,12 +59,27 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [isCheckingPlan, setIsCheckingPlan] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [profileSyncError, setProfileSyncError] = useState<string | null>(null);
+  const [syncedProfileGroups, setSyncedProfileGroups] = useState<SyncedProfileGroup[]>([]);
+  const [syncedProfiles, setSyncedProfiles] = useState<SyncedProfile[]>([]);
+  const [profileCredentials, setProfileCredentials] = useState<SyncedProfileCredential[]>([]);
+  const [isSyncingProfiles, setIsSyncingProfiles] = useState(false);
+  const [profileDataError, setProfileDataError] = useState<string | null>(null);
+  const [lastProfilesSyncedAt, setLastProfilesSyncedAt] = useState<number | null>(null);
 
   const resetAuthState = useCallback((): void => {
     setUser(null);
     setToken(null);
     setRefreshToken(null);
     setVerificationError(null);
+    setLastSyncedAt(null);
+    setProfileSyncError(null);
+    setSyncedProfileGroups([]);
+    setSyncedProfiles([]);
+    setProfileCredentials([]);
+    setProfileDataError(null);
+    setLastProfilesSyncedAt(null);
   }, []);
 
   const applyVerifiedSession = useCallback(
@@ -64,34 +90,42 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setUser(verifiedUser);
       setAuthError(null);
       setVerificationError(null);
+      setProfileSyncError(null);
+      setLastSyncedAt(Date.now());
     },
     []
   );
 
   const verifyTokens = useCallback(
-    async (tokens: StoredAuthTokens): Promise<boolean> => {
+    async (tokens: StoredAuthTokens): Promise<StoredAuthTokens | null> => {
       const profile = await fetchUserProfile(tokens.accessToken);
       if (profile.ok && profile.data) {
         await applyVerifiedSession(tokens, profile.data);
-        return true;
+        return tokens;
       }
 
       if (profile.status === 401 && tokens.refreshToken) {
         const refreshed = await refreshAuthToken(tokens.refreshToken);
         if (refreshed.ok && refreshed.data?.accessToken && refreshed.data.user) {
+          const nextTokens = {
+            accessToken: refreshed.data.accessToken,
+            refreshToken: tokens.refreshToken,
+          };
+
           await applyVerifiedSession(
-            {
-              accessToken: refreshed.data.accessToken,
-              refreshToken: tokens.refreshToken,
-            },
+            nextTokens,
             refreshed.data.user
           );
-          return true;
+          return nextTokens;
         }
 
-        setAuthError(getSessionExpiredMessage(refreshed.error));
+        const errorMessage = getSessionExpiredMessage(refreshed.error);
+        setAuthError(errorMessage);
+        setProfileSyncError(errorMessage);
       } else {
-        setAuthError(getSessionExpiredMessage(profile.error));
+        const errorMessage = getSessionExpiredMessage(profile.error);
+        setAuthError(errorMessage);
+        setProfileSyncError(errorMessage);
       }
 
       if (profile.status === 401) {
@@ -99,10 +133,32 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         resetAuthState();
       }
 
-      return false;
+      return null;
     },
     [applyVerifiedSession, resetAuthState]
   );
+
+  const loadSyncedProfileData = useCallback(async (accessToken: string): Promise<boolean> => {
+    setIsSyncingProfiles(true);
+
+    try {
+      const result = await fetchSyncedProfiles(accessToken);
+      if (result.ok && result.data) {
+        setSyncedProfileGroups(result.data.groups);
+        setSyncedProfiles(result.data.profiles);
+        setProfileCredentials(result.data.credentials);
+        setProfileDataError(null);
+        setLastProfilesSyncedAt(Date.now());
+        return true;
+      }
+
+      const errorMessage = result.error || 'โหลดข้อมูลโปรไฟล์ไม่สำเร็จ';
+      setProfileDataError(errorMessage);
+      return false;
+    } finally {
+      setIsSyncingProfiles(false);
+    }
+  }, []);
 
   useEffect(() => {
     const restoreAuth = async (): Promise<void> => {
@@ -171,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const recheckPlan = useCallback(async (): Promise<void> => {
     if (!token) {
       setVerificationError(null);
+      setProfileSyncError(null);
       return;
     }
 
@@ -184,6 +241,41 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setIsCheckingPlan(false);
     }
   }, [refreshToken, token, verifyTokens]);
+
+  const syncProfileData = useCallback(async (): Promise<void> => {
+    if (!token) {
+      setSyncedProfileGroups([]);
+      setSyncedProfiles([]);
+      setProfileCredentials([]);
+      setProfileDataError(null);
+      setLastProfilesSyncedAt(null);
+      return;
+    }
+
+    await loadSyncedProfileData(token);
+  }, [loadSyncedProfileData, token]);
+
+  const syncProfile = useCallback(async (): Promise<void> => {
+    if (!token) {
+      setVerificationError(null);
+      setProfileSyncError(null);
+      setProfileDataError(null);
+      return;
+    }
+
+    setIsCheckingPlan(true);
+    try {
+      const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
+      if (!verifiedTokens) {
+        setVerificationError('Online verification required. Please check your internet connection.');
+        return;
+      }
+
+      await loadSyncedProfileData(verifiedTokens.accessToken);
+    } finally {
+      setIsCheckingPlan(false);
+    }
+  }, [loadSyncedProfileData, refreshToken, token, verifyTokens]);
 
   useEffect(() => {
     if (!token || !user) {
@@ -232,9 +324,19 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       isPlanValid,
       planError,
       authError,
+      lastSyncedAt,
+      profileSyncError,
+      syncedProfileGroups,
+      syncedProfiles,
+      profileCredentials,
+      isSyncingProfiles,
+      profileDataError,
+      lastProfilesSyncedAt,
       login,
       logout,
       recheckPlan,
+      syncProfile,
+      syncProfileData,
     }),
     [
       authError,
@@ -242,11 +344,21 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       isLoading,
       isLoggingIn,
       isPlanValid,
+      isSyncingProfiles,
       login,
       logout,
+      lastProfilesSyncedAt,
+      lastSyncedAt,
       planError,
+      profileCredentials,
+      profileDataError,
+      profileSyncError,
       recheckPlan,
       refreshToken,
+      syncProfile,
+      syncProfileData,
+      syncedProfileGroups,
+      syncedProfiles,
       token,
       user,
     ]

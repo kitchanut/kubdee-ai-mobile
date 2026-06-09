@@ -1,5 +1,5 @@
 import { APP_TYPE, BACKEND_URL, OAUTH_SCHEME } from '@/auth/constants';
-import type { AuthApiResult, AuthUser, StoredAuthTokens } from '@/auth/types';
+import type { AuthApiResult, AuthUser, StoredAuthTokens, SyncedProfilesResponse } from '@/auth/types';
 
 interface RefreshResponse {
   accessToken?: string;
@@ -38,6 +38,46 @@ export async function fetchUserProfile(token: string): Promise<AuthApiResult<Aut
       ok: true,
       status: response.status,
       data: (await response.json()) as AuthUser,
+      error: null,
+    };
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: 'Online verification required. Please check your internet connection.',
+    };
+  }
+}
+
+export async function fetchSyncedProfiles(token: string): Promise<AuthApiResult<SyncedProfilesResponse>> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/user/profiles`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-App-Type': APP_TYPE,
+      },
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        error: await readError(response),
+      };
+    }
+
+    const data = (await response.json()) as Partial<SyncedProfilesResponse>;
+
+    return {
+      ok: true,
+      status: response.status,
+      data: {
+        groups: Array.isArray(data.groups) ? data.groups : [],
+        profiles: Array.isArray(data.profiles) ? data.profiles : [],
+        credentials: Array.isArray(data.credentials) ? data.credentials : [],
+      },
       error: null,
     };
   } catch {

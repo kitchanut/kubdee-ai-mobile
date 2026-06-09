@@ -1,6 +1,7 @@
 export type DeviceMode = 'desktop' | 'mobile';
 
 export type TabId =
+  | 'pipeline'
   | 'tiktok'
   | 'shopee'
   | 'youtube'

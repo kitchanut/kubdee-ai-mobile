@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,8 +26,9 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     colorScheme === 'light' ? 'light' : 'dark'
   );
   const theme = useMemo(() => (themeMode === 'light' ? lightTheme : darkTheme), [themeMode]);
-  const [activeTab, setActiveTab] = useState<TabId>('shopee');
+  const [activeTab, setActiveTab] = useState<TabId>('pipeline');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set(['local-android']));
+  const [selectedProfileLocalId, setSelectedProfileLocalId] = useState('');
   const auth = useAuth();
 
   const toggleThemeMode = (): void => {
@@ -46,8 +47,40 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     });
   };
 
+  useEffect(() => {
+    if (!auth.token || !auth.isPlanValid || auth.syncedProfiles.length > 0 || auth.isSyncingProfiles) {
+      return;
+    }
+
+    void auth.syncProfileData();
+  }, [
+    auth.isPlanValid,
+    auth.isSyncingProfiles,
+    auth.syncProfileData,
+    auth.syncedProfiles.length,
+    auth.token,
+  ]);
+
+  useEffect(() => {
+    const hasSelectedProfile = auth.syncedProfiles.some((profile) => profile.localId === selectedProfileLocalId);
+    const nextProfileLocalId = hasSelectedProfile ? selectedProfileLocalId : auth.syncedProfiles[0]?.localId ?? '';
+
+    if (nextProfileLocalId !== selectedProfileLocalId) {
+      setSelectedProfileLocalId(nextProfileLocalId);
+    }
+  }, [auth.syncedProfiles, selectedProfileLocalId]);
+
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
+      case 'pipeline':
+        return (
+          <PlaceholderScreen
+            accent="blue"
+            statusLabel="Coming soon"
+            theme={theme}
+            title="Auto Pipeline"
+          />
+        );
       case 'mobile':
         return (
           <MobileDevicesScreen
@@ -101,11 +134,16 @@ export default function KubdeeMobileApp(): React.JSX.Element {
           ) : (
             <>
               <MobileHeader
-                libraryActive={activeTab === 'library'}
+                isSyncingProfiles={auth.isSyncingProfiles}
+                profileDataError={auth.profileDataError}
+                profileGroups={auth.syncedProfileGroups}
+                profiles={auth.syncedProfiles}
                 runningCount={0}
-                subtitle={activeTab === 'library' ? 'คลัง' : 'Shopee หลัก'}
+                selectedProfileLocalId={selectedProfileLocalId}
                 theme={theme}
-                onLibraryPress={() => setActiveTab('library')}
+                onLogsPress={() => setActiveTab('logs')}
+                onProfilePress={() => setActiveTab('profile')}
+                onSelectedProfileChange={setSelectedProfileLocalId}
                 onThemeModeToggle={toggleThemeMode}
               />
               <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />

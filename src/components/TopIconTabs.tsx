@@ -1,15 +1,13 @@
 import type { ComponentType } from 'react';
 import {
-  ChartNoAxesColumn,
+  Bot,
+  FolderOpen,
   Smartphone,
-  UserCircle,
 } from 'lucide-react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FacebookLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
-import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { radii, typography } from '@/theme/tokens';
 import type { TabId } from '@/types/navigation';
 
 type TabIconProps = {
@@ -17,6 +15,7 @@ type TabIconProps = {
   color?: string;
   strokeWidth?: number;
   isDark?: boolean;
+  cutoutColor?: string;
 };
 
 const tabs: Array<{
@@ -25,15 +24,17 @@ const tabs: Array<{
   icon: ComponentType<TabIconProps>;
   brandIcon?: boolean;
 }> = [
+  { id: 'pipeline', label: 'Auto Pipeline', icon: Bot },
+  { id: 'library', label: 'คลัง', icon: FolderOpen },
   { id: 'tiktok', label: 'TikTok', icon: TikTokLogo, brandIcon: true },
   { id: 'shopee', label: 'Shopee', icon: ShopeeLogo, brandIcon: true },
   { id: 'youtube', label: 'YouTube', icon: YouTubeLogo, brandIcon: true },
   { id: 'facebook', label: 'Facebook', icon: FacebookLogo, brandIcon: true },
-  { id: 'profile', label: 'โปรไฟล์', icon: UserCircle },
   { id: 'mobile', label: 'มือถือ', icon: Smartphone },
-  { id: 'logs', label: 'Logs', icon: ChartNoAxesColumn },
 ];
 const menuHorizontalPadding = 8;
+const activePlateSize = 38;
+const activePlateRadius = 12;
 
 interface TopIconTabsProps {
   activeTab: TabId;
@@ -52,9 +53,15 @@ export default function TopIconTabs({
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
           const Icon = tab.icon;
+          const activeBackground = theme.isDark ? theme.card : theme.white;
+          const inactiveIconColor = theme.textSubtle;
+          const activeIconColor = theme.isDark ? theme.text : '#111827';
+          const iconColor = active ? activeIconColor : inactiveIconColor;
+          const cutoutColor = active ? activeBackground : theme.tabBar;
 
           return (
             <Pressable
+              accessibilityLabel={tab.label}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
               key={tab.id}
@@ -62,28 +69,29 @@ export default function TopIconTabs({
               style={({ pressed }) => [
                 styles.tab,
                 {
-                  backgroundColor: active ? theme.active : 'transparent',
                   opacity: pressed ? 0.72 : 1,
-                  shadowColor: theme.shadow,
                 },
-                active ? styles.activeShadow : null,
               ]}
             >
-              <View style={styles.iconSlot}>
-                {tab.brandIcon ? (
-                  <Icon size={18} isDark={theme.isDark} />
-                ) : (
-                  <Icon size={16} color={active ? theme.text : theme.textSubtle} strokeWidth={2.2} />
-                )}
+              <View style={styles.iconShell}>
+                <View
+                  style={[
+                    styles.iconPlate,
+                    active
+                      ? {
+                          backgroundColor: activeBackground,
+                          borderColor: theme.border,
+                        }
+                      : null,
+                  ]}
+                >
+                  {tab.brandIcon ? (
+                    <Icon size={19} color={iconColor} cutoutColor={cutoutColor} isDark={theme.isDark} />
+                  ) : (
+                    <Icon size={20} color={iconColor} strokeWidth={2.2} />
+                  )}
+                </View>
               </View>
-              <Text
-                adjustsFontSizeToFit
-                minimumFontScale={0.82}
-                numberOfLines={1}
-                style={[styles.label, { color: active ? theme.text : theme.textSubtle }]}
-              >
-                {tab.label}
-              </Text>
             </Pressable>
           );
         })}
@@ -93,40 +101,36 @@ export default function TopIconTabs({
 }
 
 const styles = StyleSheet.create({
-  activeShadow: {
-    elevation: 2,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.14,
-    shadowRadius: 3,
-  },
   content: {
     alignSelf: 'stretch',
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: menuHorizontalPadding,
-    paddingVertical: 6,
+    paddingVertical: 3,
     width: '100%',
   },
-  label: {
-    fontSize: typography.micro,
-    fontWeight: '700',
-    letterSpacing: 0,
-    textAlign: 'center',
-  },
-  iconSlot: {
+  iconPlate: {
     alignItems: 'center',
-    height: 18,
+    borderRadius: activePlateRadius,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    height: activePlateSize,
     justifyContent: 'center',
-    width: '100%',
+    overflow: 'hidden',
+    width: activePlateSize,
+  },
+  iconShell: {
+    alignItems: 'center',
+    height: activePlateSize,
+    justifyContent: 'center',
+    width: activePlateSize,
   },
   tab: {
     alignItems: 'center',
-    borderRadius: radii.lg,
-    gap: 3,
-    height: 48,
+    flex: 1,
+    height: 44,
     justifyContent: 'center',
     minWidth: 0,
-    paddingHorizontal: 2,
   },
   wrapper: {
     borderBottomWidth: 1,
