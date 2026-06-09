@@ -74,7 +74,7 @@ function withKubdeeAccessibility(config, props = {}) {
       [
         {
           $: { name: 'kubdee_accessibility_service_label' },
-          _: 'Kubdee AI Automation',
+          _: 'Kubdee AI',
         },
         {
           $: { name: 'kubdee_accessibility_service_description' },

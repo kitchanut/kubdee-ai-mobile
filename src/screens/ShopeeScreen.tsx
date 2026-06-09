@@ -41,7 +41,7 @@ export default function ShopeeScreen({ theme, selectedCount }: ShopeeScreenProps
       };
       const status = await getAccessibilityStatus();
       if (!status.running) {
-        updateRunMessage('กรุณาเปิด Kubdee AI Automation ใน Accessibility ก่อน');
+        updateRunMessage('กรุณาเปิด Kubdee AI ใน Accessibility ก่อน');
         return;
       }
 
