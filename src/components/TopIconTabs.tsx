@@ -3,6 +3,7 @@ import {
   Bot,
   FolderOpen,
   Smartphone,
+  UserCircle,
 } from 'lucide-react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -31,6 +32,7 @@ const tabs: Array<{
   { id: 'youtube', label: 'YouTube', icon: YouTubeLogo, brandIcon: true },
   { id: 'facebook', label: 'Facebook', icon: FacebookLogo, brandIcon: true },
   { id: 'mobile', label: 'มือถือ', icon: Smartphone },
+  { id: 'profile', label: 'โปรไฟล์', icon: UserCircle },
 ];
 const menuHorizontalPadding = 8;
 const activePlateSize = 38;

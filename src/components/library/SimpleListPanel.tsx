@@ -9,6 +9,7 @@ import {
   Trash2,
   User,
 } from 'lucide-react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import Text from '@/components/ui/KubdeeText';
 import { galleryItems, type GalleryCategoryId, type GalleryItemRecord } from '@/data/mockData';
@@ -16,11 +17,13 @@ import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
 import {
+  CardBackdrop,
   DarkActionButton,
   EmptyState,
   LibraryPanelHeader,
   darkButtonContentColor,
-  getSlateTone,
+  getAccentTone,
+  libraryCardStops,
 } from './shared';
 
 export type SimpleListKind = 'characters' | 'scenes';
@@ -40,6 +43,24 @@ const panelCopy: Record<SimpleListKind, { title: string; emptyTitle: string; emp
   },
 };
 
+/** Extension avatar colors — <tone>-100 gradient + <tone>-400/500 icon */
+const kindPalette: Record<
+  SimpleListKind,
+  {
+    avatarStops: [string, string];
+    avatarIcon: string;
+  }
+> = {
+  characters: {
+    avatarStops: ['#ede9fe', '#f3e8ff'],
+    avatarIcon: '#a78bfa',
+  },
+  scenes: {
+    avatarStops: ['#cffafe', '#e0f2fe'],
+    avatarIcon: '#06b6d4',
+  },
+};
+
 export default function SimpleListPanel({
   theme,
   kind,
@@ -48,7 +69,9 @@ export default function SimpleListPanel({
   kind: SimpleListKind;
 }): React.JSX.Element {
   const copy = panelCopy[kind];
-  const slate = getSlateTone(theme);
+  const accentColor =
+    kind === 'characters' ? (theme.isDark ? '#a78bfa' : '#7c3aed') : theme.cyan;
+  const accent = getAccentTone(theme, accentColor);
   const HeaderIcon = kind === 'characters' ? User : Presentation;
   const [disabledIds, setDisabledIds] = useState<Set<string>>(new Set());
 
@@ -78,7 +101,7 @@ export default function SimpleListPanel({
           count={items.length}
           total={items.length}
           icon={HeaderIcon}
-          tone={slate}
+          tone={accent}
           actions={
             <DarkActionButton
               theme={theme}
@@ -131,97 +154,113 @@ function SimpleRow({
   const showAiChip = item.badges.includes('Ref') || item.badges.includes('Prompt');
   const metaLine = kind === 'scenes' ? item.subtitle : item.meta;
   const detailLine = kind === 'scenes' ? item.meta : null;
+  const palette = kindPalette[kind];
+  const avatarStops = theme.isDark ? [theme.cardMuted, theme.card] : palette.avatarStops;
+  const avatarIconColor = theme.isDark ? theme.textSubtle : palette.avatarIcon;
 
   return (
     <View
       style={[
         styles.row,
         {
-          backgroundColor: theme.isDark ? theme.card : theme.cardMuted,
-          borderColor: theme.border,
+          backgroundColor: theme.panel,
+          borderColor: theme.isDark ? theme.border : '#f3f4f6',
           opacity: enabled ? 1 : 0.5,
         },
       ]}
     >
-      <View
-        style={[
-          styles.avatar,
-          {
-            backgroundColor: theme.isDark ? theme.cardMuted : theme.white,
-            borderColor: theme.isDark ? theme.borderStrong : theme.white,
-          },
-        ]}
-      >
-        <AvatarIcon size={20} color={theme.textSubtle} strokeWidth={1.5} />
-      </View>
+      <CardBackdrop theme={theme} id={kind} stops={libraryCardStops[kind]} />
 
-      <View style={styles.info}>
-        <View style={styles.nameRow}>
-          <Text numberOfLines={1} style={[styles.name, { color: theme.text }]}>
-            {item.title}
-          </Text>
-          {showAiChip ? (
-            <View
-              style={[
-                styles.aiChip,
-                {
-                  backgroundColor: alpha(theme.blue, theme.isDark ? 0.2 : 0.1),
-                  borderColor: alpha(theme.blue, theme.isDark ? 0.25 : 0.4),
-                },
-              ]}
-            >
-              <Text style={[styles.aiChipText, { color: theme.blue }]}>AI</Text>
-            </View>
-          ) : null}
-        </View>
-        <Text numberOfLines={1} style={[styles.meta, { color: theme.textSubtle }]}>
-          {metaLine}
-        </Text>
-        {detailLine ? (
-          <Text numberOfLines={1} style={[styles.detail, { color: theme.textSubtle }]}>
-            {detailLine}
-          </Text>
-        ) : null}
-      </View>
-
-      <View style={styles.actions}>
-        <Pressable
-          accessibilityLabel={enabled ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}
-          accessibilityRole="button"
-          onPress={onToggleEnabled}
+      <View style={styles.rowContent}>
+        <View
           style={[
-            styles.actionButton,
+            styles.avatar,
             {
-              backgroundColor: enabled
-                ? alpha(theme.emerald, theme.isDark ? 0.18 : 0.1)
-                : theme.isDark
-                  ? alpha(theme.cardMuted, 0.5)
-                  : alpha(theme.white, 0.5),
+              backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.8) : alpha(theme.white, 0.8),
+              borderColor: theme.isDark ? alpha(theme.borderStrong, 0.5) : alpha(theme.white, 0.5),
             },
           ]}
         >
-          <ToggleIcon size={14} color={enabled ? theme.emerald : theme.textSubtle} strokeWidth={2} />
-        </Pressable>
-        <Pressable
-          accessibilityLabel="แก้ไข"
-          accessibilityRole="button"
-          style={[
-            styles.actionButton,
-            { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.5) : alpha(theme.white, 0.5) },
-          ]}
-        >
-          <Pencil size={14} color={theme.textSubtle} strokeWidth={2} />
-        </Pressable>
-        <Pressable
-          accessibilityLabel="ลบ"
-          accessibilityRole="button"
-          style={[
-            styles.actionButton,
-            { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.5) : alpha(theme.white, 0.5) },
-          ]}
-        >
-          <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
-        </Pressable>
+          <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width="100%" height="100%">
+            <Defs>
+              <LinearGradient id={`avatar-grad-${kind}`} x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0" stopColor={avatarStops[0]} />
+                <Stop offset="1" stopColor={avatarStops[1]} />
+              </LinearGradient>
+            </Defs>
+            <Rect width="100%" height="100%" fill={`url(#avatar-grad-${kind})`} />
+          </Svg>
+          <AvatarIcon size={20} color={avatarIconColor} strokeWidth={1.5} />
+        </View>
+
+        <View style={styles.info}>
+          <View style={styles.nameRow}>
+            <Text numberOfLines={1} style={[styles.name, { color: theme.text }]}>
+              {item.title}
+            </Text>
+            {showAiChip ? (
+              <View
+                style={[
+                  styles.aiChip,
+                  {
+                    backgroundColor: alpha(theme.blue, theme.isDark ? 0.2 : 0.1),
+                    borderColor: alpha(theme.blue, theme.isDark ? 0.25 : 0.4),
+                  },
+                ]}
+              >
+                <Text style={[styles.aiChipText, { color: theme.blue }]}>AI</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text numberOfLines={1} style={[styles.meta, { color: theme.textSubtle }]}>
+            {metaLine}
+          </Text>
+          {detailLine ? (
+            <Text numberOfLines={1} style={[styles.detail, { color: theme.textSubtle }]}>
+              {detailLine}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.actions}>
+          <Pressable
+            accessibilityLabel={enabled ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}
+            accessibilityRole="button"
+            onPress={onToggleEnabled}
+            style={[
+              styles.actionButton,
+              {
+                backgroundColor: enabled
+                  ? alpha(theme.emerald, theme.isDark ? 0.18 : 0.1)
+                  : theme.isDark
+                    ? alpha(theme.cardMuted, 0.5)
+                    : alpha(theme.white, 0.5),
+              },
+            ]}
+          >
+            <ToggleIcon size={14} color={enabled ? theme.emerald : theme.textSubtle} strokeWidth={2} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="แก้ไข"
+            accessibilityRole="button"
+            style={[
+              styles.actionButton,
+              { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.5) : alpha(theme.white, 0.5) },
+            ]}
+          >
+            <Pencil size={14} color={theme.textSubtle} strokeWidth={2} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="ลบ"
+            accessibilityRole="button"
+            style={[
+              styles.actionButton,
+              { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.5) : alpha(theme.white, 0.5) },
+            ]}
+          >
+            <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -258,6 +297,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     height: 48,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 48,
   },
   container: {
@@ -295,9 +335,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   row: {
-    alignItems: 'center',
     borderRadius: 12,
     borderWidth: 1,
+    elevation: 1,
+    overflow: 'hidden',
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  rowContent: {
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 10,
     padding: 8,

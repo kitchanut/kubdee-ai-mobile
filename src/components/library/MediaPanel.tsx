@@ -9,6 +9,7 @@ import {
   Grid2X2,
   Heart,
   Image as ImageIcon,
+  Package,
   Pencil,
   Play,
   RefreshCw,
@@ -23,17 +24,19 @@ import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
 import {
+  CardBackdrop,
   EmptyHint,
   EmptyState,
   HeaderIconButton,
   LibraryPanelHeader,
-  PanelSubTabs,
   RowIconButton,
   SearchBox,
   SelectCircle,
   SelectionBar,
   SortPill,
   getAccentTone,
+  libraryCardStops,
+  type IconComponent,
 } from './shared';
 
 export type MediaKind = 'images' | 'videos';
@@ -135,6 +138,11 @@ export default function MediaPanel({
   const accent = getAccentTone(theme, accentColor);
   const HeaderIcon = kind === 'images' ? ImageIcon : Video;
 
+  const modeTabs: Array<{ key: MediaMode; icon: IconComponent; label: string }> = [
+    { key: 'product', icon: Package, label: copy.productTab },
+    { key: 'general', icon: HeaderIcon, label: copy.generalTab },
+  ];
+
   const [mediaMode, setMediaMode] = useState<MediaMode>('product');
   const [searchQuery, setSearchQuery] = useState('');
   const [groupByProduct, setGroupByProduct] = useState(true);
@@ -227,175 +235,185 @@ export default function MediaPanel({
           }
         />
 
-        <PanelSubTabs
-          theme={theme}
-          accent={accentColor}
-          active={mediaMode}
-          tabs={[
-            { key: 'product' as const, label: `${copy.productTab} (${totalMedia})` },
-            { key: 'general' as const, label: `${copy.generalTab} (0)` },
-          ]}
-          onChange={(next) => {
-            setMediaMode(next);
-            setSelectedIds(new Set());
-          }}
-        />
+        <View style={styles.section}>
+          <View style={styles.searchRow}>
+            <SearchBox
+              theme={theme}
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="ค้นหาชื่อ/รหัสสินค้า..."
+            />
+            <View style={[styles.modeTabs, { backgroundColor: theme.input, borderColor: theme.border }]}>
+              {modeTabs.map(({ key, icon: TabIcon, label }) => {
+                const isActive = mediaMode === key;
 
-        {mediaMode === 'product' ? (
-          totalMedia === 0 ? (
-            <EmptyState theme={theme} icon={HeaderIcon} title={copy.emptyTitle} copy={copy.emptyCopy} />
-          ) : (
-            <View style={styles.section}>
-              <View style={styles.searchRow}>
-                <SearchBox
-                  theme={theme}
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                  placeholder="ค้นหาชื่อ/รหัสสินค้า..."
-                />
-                <Pressable
-                  accessibilityLabel={groupByProduct ? 'ยกเลิกจัดกลุ่ม' : 'จัดกลุ่มตามสินค้า'}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: groupByProduct }}
-                  onPress={() => setGroupByProduct((current) => !current)}
-                  style={[
-                    styles.groupToggle,
-                    {
-                      backgroundColor: groupByProduct ? accent.soft : theme.input,
-                      borderColor: groupByProduct ? alpha(accentColor, 0.4) : theme.border,
-                    },
-                  ]}
-                >
-                  <Grid2X2 size={13} color={groupByProduct ? accentColor : theme.textSubtle} strokeWidth={2} />
-                </Pressable>
-              </View>
+                return (
+                  <Pressable
+                    accessibilityLabel={label}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isActive }}
+                    key={key}
+                    onPress={() => {
+                      setMediaMode(key);
+                      setSelectedIds(new Set());
+                    }}
+                    style={[styles.modeTab, isActive ? { backgroundColor: accent.soft } : null]}
+                  >
+                    <TabIcon size={13} color={isActive ? accentColor : theme.textSubtle} strokeWidth={2} />
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable
+              accessibilityLabel={groupByProduct ? 'ยกเลิกจัดกลุ่ม' : 'จัดกลุ่มตามสินค้า'}
+              accessibilityRole="button"
+              accessibilityState={{ selected: groupByProduct }}
+              onPress={() => setGroupByProduct((current) => !current)}
+              style={[
+                styles.groupToggle,
+                {
+                  backgroundColor: groupByProduct ? accent.soft : theme.input,
+                  borderColor: groupByProduct ? alpha(accentColor, 0.4) : theme.border,
+                },
+              ]}
+            >
+              <Grid2X2 size={13} color={groupByProduct ? accentColor : theme.textSubtle} strokeWidth={2} />
+            </Pressable>
+          </View>
 
-              <View style={styles.toolsRow}>
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: allSelected }}
-                  onPress={toggleAll}
-                  style={styles.selectAll}
-                >
-                  <SelectCircle theme={theme} selected={allSelected} accent={accentColor} size={15} />
-                  <Text style={[styles.selectAllText, { color: theme.textSubtle }]}>
-                    ทั้งหมด ({productMedia.length})
-                  </Text>
-                </Pressable>
+          {mediaMode === 'product' ? (
+            totalMedia === 0 ? (
+              <EmptyState theme={theme} icon={HeaderIcon} title={copy.emptyTitle} copy={copy.emptyCopy} />
+            ) : (
+              <>
+                <View style={styles.toolsRow}>
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: allSelected }}
+                    onPress={toggleAll}
+                    style={styles.selectAll}
+                  >
+                    <SelectCircle theme={theme} selected={allSelected} accent={accentColor} size={15} />
+                    <Text style={[styles.selectAllText, { color: theme.textSubtle }]}>
+                      ทั้งหมด ({productMedia.length})
+                    </Text>
+                  </Pressable>
 
-                <View style={styles.sortRow}>
-                  <SortPill
-                    theme={theme}
-                    accent={accentColor}
-                    active={sortKey === 'name'}
-                    ascending={sortAscending}
-                    label="ชื่อ"
-                    onPress={() => changeSort('name')}
-                  />
-                  {groupByProduct ? (
+                  <View style={styles.sortRow}>
                     <SortPill
                       theme={theme}
                       accent={accentColor}
-                      active={sortKey === 'code'}
+                      active={sortKey === 'name'}
                       ascending={sortAscending}
-                      label="รหัส"
-                      onPress={() => changeSort('code')}
+                      label="ชื่อ"
+                      onPress={() => changeSort('name')}
                     />
-                  ) : (
-                    <SortPill
-                      theme={theme}
-                      accent={accentColor}
-                      active={sortKey === 'date'}
-                      ascending={sortAscending}
-                      label="วันที่"
-                      onPress={() => changeSort('date')}
-                    />
-                  )}
-                  {groupByProduct && visibleGroups.length > 1 ? (
-                    <>
-                      <View style={[styles.toolsDivider, { backgroundColor: theme.border }]} />
-                      <Pressable
-                        accessibilityLabel="ขยายทั้งหมด"
-                        accessibilityRole="button"
-                        onPress={() => setCollapsedGroups(new Set())}
-                        style={styles.expandButton}
-                      >
-                        <ChevronsDown size={13} color={theme.textSubtle} strokeWidth={2} />
-                      </Pressable>
-                      <Pressable
-                        accessibilityLabel="ย่อทั้งหมด"
-                        accessibilityRole="button"
-                        onPress={() => setCollapsedGroups(new Set(visibleGroups.map((group) => group.item.id)))}
-                        style={styles.expandButton}
-                      >
-                        <ChevronsUp size={13} color={theme.textSubtle} strokeWidth={2} />
-                      </Pressable>
-                    </>
-                  ) : null}
+                    {groupByProduct ? (
+                      <SortPill
+                        theme={theme}
+                        accent={accentColor}
+                        active={sortKey === 'code'}
+                        ascending={sortAscending}
+                        label="รหัส"
+                        onPress={() => changeSort('code')}
+                      />
+                    ) : (
+                      <SortPill
+                        theme={theme}
+                        accent={accentColor}
+                        active={sortKey === 'date'}
+                        ascending={sortAscending}
+                        label="วันที่"
+                        onPress={() => changeSort('date')}
+                      />
+                    )}
+                    {groupByProduct && visibleGroups.length > 1 ? (
+                      <>
+                        <View style={[styles.toolsDivider, { backgroundColor: theme.border }]} />
+                        <Pressable
+                          accessibilityLabel="ขยายทั้งหมด"
+                          accessibilityRole="button"
+                          onPress={() => setCollapsedGroups(new Set())}
+                          style={styles.expandButton}
+                        >
+                          <ChevronsDown size={13} color={theme.textSubtle} strokeWidth={2} />
+                        </Pressable>
+                        <Pressable
+                          accessibilityLabel="ย่อทั้งหมด"
+                          accessibilityRole="button"
+                          onPress={() => setCollapsedGroups(new Set(visibleGroups.map((group) => group.item.id)))}
+                          style={styles.expandButton}
+                        >
+                          <ChevronsUp size={13} color={theme.textSubtle} strokeWidth={2} />
+                        </Pressable>
+                      </>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
 
-              {groupByProduct ? (
-                visibleGroups.map(({ item, media }) => (
-                  <MediaGroupCard
-                    key={item.id}
-                    theme={theme}
-                    kind={kind}
-                    accentColor={accentColor}
-                    item={item}
-                    media={media}
-                    unit={copy.unit}
-                    expanded={!collapsedGroups.has(item.id)}
-                    selectedIds={selectedIds}
-                    onToggleExpand={() => toggleGroup(item.id)}
-                    onToggleSelect={toggleSelect}
-                  />
-                ))
-              ) : (
-                <View
-                  style={[
-                    styles.flatContainer,
-                    {
-                      backgroundColor: theme.isDark ? alpha(theme.panelMuted, 0.4) : alpha(theme.white, 0.5),
-                      borderColor: theme.border,
-                    },
-                  ]}
-                >
-                  {kind === 'images' ? (
-                    <View style={styles.grid}>
-                      {productMedia.map((media) => (
-                        <ImageTile
-                          key={media.id}
-                          theme={theme}
-                          accentColor={accentColor}
-                          media={media}
-                          selected={selectedIds.has(media.id)}
-                          showProductInfo
-                          onToggleSelect={() => toggleSelect(media.id)}
-                        />
-                      ))}
-                    </View>
-                  ) : (
-                    productMedia.map((media, index) => (
-                      <VideoRow
+                {groupByProduct ? (
+                  visibleGroups.map(({ item, media }) => (
+                    <MediaGroupCard
+                      key={item.id}
+                      theme={theme}
+                      kind={kind}
+                      accentColor={accentColor}
+                      item={item}
+                      media={media}
+                      unit={copy.unit}
+                      expanded={!collapsedGroups.has(item.id)}
+                      selectedIds={selectedIds}
+                      onToggleExpand={() => toggleGroup(item.id)}
+                      onToggleSelect={toggleSelect}
+                    />
+                  ))
+                ) : kind === 'images' ? (
+                  <View style={styles.grid}>
+                    {productMedia.map((media) => (
+                      <ImageTile
                         key={media.id}
                         theme={theme}
                         accentColor={accentColor}
                         media={media}
                         selected={selectedIds.has(media.id)}
-                        showDivider={index > 0}
                         showProductInfo
                         onToggleSelect={() => toggleSelect(media.id)}
                       />
-                    ))
-                  )}
-                </View>
-              )}
-            </View>
-          )
-        ) : (
-          <EmptyHint theme={theme} label={copy.emptyGeneral} />
-        )}
+                    ))}
+                  </View>
+                ) : (
+                  productMedia.map((media) => (
+                    <View
+                      key={media.id}
+                      style={[
+                        styles.videoCard,
+                        {
+                          backgroundColor: theme.panel,
+                          borderColor: theme.isDark ? theme.border : '#f3f4f6',
+                        },
+                      ]}
+                    >
+                      <CardBackdrop theme={theme} id="videos-flat" stops={libraryCardStops.videos} />
+                      <View style={styles.videoCardContent}>
+                        <VideoRow
+                          theme={theme}
+                          accentColor={accentColor}
+                          media={media}
+                          selected={selectedIds.has(media.id)}
+                          showDivider={false}
+                          showProductInfo
+                          onToggleSelect={() => toggleSelect(media.id)}
+                        />
+                      </View>
+                    </View>
+                  ))
+                )}
+              </>
+            )
+          ) : (
+            <EmptyHint theme={theme} label={copy.emptyGeneral} />
+          )}
+        </View>
       </ScrollView>
 
       {selectedIds.size > 0 ? (
@@ -440,15 +458,22 @@ function MediaGroupCard({
   const ChevronIcon = expanded ? ChevronDown : ChevronRight;
 
   return (
-    <View style={[styles.groupCard, { borderColor: theme.border }]}>
+    <View
+      style={[
+        styles.groupCard,
+        {
+          backgroundColor: theme.panel,
+          borderColor: theme.isDark ? theme.border : '#f3f4f6',
+        },
+      ]}
+    >
+      <CardBackdrop theme={theme} id={kind} stops={libraryCardStops[kind]} />
+
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded }}
         onPress={onToggleExpand}
-        style={[
-          styles.groupHeader,
-          { backgroundColor: theme.isDark ? theme.card : alpha(accentColor, 0.06) },
-        ]}
+        style={styles.groupHeader}
       >
         <View
           style={[
@@ -686,12 +711,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 20,
   },
-  flatContainer: {
-    borderRadius: 12,
-    borderWidth: 1,
-    overflow: 'hidden',
-    padding: 8,
-  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -703,7 +722,11 @@ const styles = StyleSheet.create({
   groupCard: {
     borderRadius: 12,
     borderWidth: 1,
+    elevation: 1,
     overflow: 'hidden',
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
   groupChevron: {
     alignItems: 'center',
@@ -810,6 +833,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  modeTab: {
+    alignItems: 'center',
+    borderRadius: 4,
+    height: 26,
+    justifyContent: 'center',
+    width: 30,
+  },
+  modeTabs: {
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: 2,
+    height: 32,
+    paddingHorizontal: 2,
+  },
   providerBadge: {
     borderRadius: 4,
     paddingHorizontal: 5,
@@ -866,6 +906,18 @@ const styles = StyleSheet.create({
     right: 8,
     top: 8,
     zIndex: 1,
+  },
+  videoCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    elevation: 1,
+    overflow: 'hidden',
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  videoCardContent: {
+    paddingHorizontal: 6,
   },
   videoCode: {
     fontSize: 9,

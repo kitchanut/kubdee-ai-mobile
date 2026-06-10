@@ -105,7 +105,13 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'logs':
         return <LogsScreen theme={theme} />;
       case 'profile':
-        return <ProfileScreen theme={theme} />;
+        return (
+          <ProfileScreen
+            selectedProfileId={selectedProfileId}
+            theme={theme}
+            onSelectProfile={setSelectedProfileId}
+          />
+        );
       case 'tiktok':
         return <PlaceholderScreen theme={theme} title="TikTok" accent="cyan" />;
       case 'youtube':

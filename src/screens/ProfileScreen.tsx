@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -11,26 +12,21 @@ import {
   View,
 } from 'react-native';
 import {
-  BadgeCheck,
-  CalendarDays,
-  ChevronRight,
-  CheckCircle2,
-  Coins,
-  CreditCard,
+  Archive,
+  Check,
+  Cloud,
+  CloudCheck,
+  CloudOff,
   FolderPlus,
   Globe2,
-  HardDrive,
   LogOut,
   Plus,
-  RefreshCw,
-  Save,
-  ShieldCheck,
-  Users,
-  UserCircle,
-  X,
-  Archive,
   RotateCcw,
   Trash2,
+  User,
+  UserCircle,
+  Users,
+  X,
 } from 'lucide-react-native';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -38,60 +34,14 @@ import { BACKEND_URL } from '@/auth/constants';
 import { formatExpiryLabel, formatPlanLabel } from '@/auth/plan';
 import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import Text from '@/components/ui/KubdeeText';
-import SectionHeader from '@/components/ui/SectionHeader';
-import StatusPill from '@/components/ui/StatusPill';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha, radii, spacing, typography } from '@/theme/tokens';
+import { alpha } from '@/theme/tokens';
 
 interface ProfileScreenProps {
   theme: KubdeeTheme;
-}
-
-interface MetricCardProps {
-  label: string;
-  value: string;
-  subtext?: string;
-  color: string;
-  backgroundColor: string;
-  icon: typeof CreditCard;
-  theme: KubdeeTheme;
-}
-
-interface InfoRowProps {
-  label: string;
-  value: string;
-  icon: typeof CreditCard;
-  theme: KubdeeTheme;
-}
-
-interface ActionRowProps {
-  label: string;
-  icon: typeof RefreshCw;
-  iconColor: string;
-  iconBackground: string;
-  theme: KubdeeTheme;
-  disabled?: boolean;
-  role?: 'button' | 'link';
-  danger?: boolean;
-  loading?: boolean;
-  onPress: () => void;
-}
-
-interface ProfileListRow {
-  profile: SyncedProfile;
-  group: SyncedProfileGroup | null;
-  sourceLabel: string;
-}
-
-interface SyncedProfileRowProps {
-  row: ProfileListRow;
-  status: 'active' | 'deleted';
-  theme: KubdeeTheme;
-  disabled?: boolean;
-  onConfirmDelete?: (profile: SyncedProfile) => void;
-  onDelete?: (profile: SyncedProfile) => void;
-  onRestore?: (profile: SyncedProfile) => void;
+  selectedProfileId?: string;
+  onSelectProfile?: (profileId: string) => void;
 }
 
 const GROUP_NONE = '__none__';
@@ -145,198 +95,188 @@ function getSourceLabel(value?: string | null): string {
   }
 }
 
-function formatDeletedLabel(profile: SyncedProfile): string {
-  const deletedAt = Number(profile.deletedAt ?? 0);
-  const source = getSourceLabel(profile.deletedByDeviceType || profile.createdByApp || profile.originApp);
-  if (!Number.isFinite(deletedAt) || deletedAt <= 0) {
-    return `ถูกลบจาก ${source}`;
-  }
-
-  const time = new Intl.DateTimeFormat('th-TH', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(deletedAt * 1000));
-
-  return `ถูกลบจาก ${source} · ${time}`;
+function getDeletedSourceLabel(profile: SyncedProfile): string {
+  return getSourceLabel(profile.deletedByDeviceType || profile.createdByApp || profile.originApp);
 }
 
-function MetricCard({
-  label,
-  value,
-  subtext,
-  color,
-  backgroundColor,
-  icon: Icon,
+/** Extension ProfileRow: bordered row, 28px icon square (inverse when active), name + meta, trash strip */
+function ProfileRow({
   theme,
-}: MetricCardProps): React.JSX.Element {
+  profile,
+  group,
+  active,
+  disabled,
+  onSelect,
+  onDelete,
+}: {
+  theme: KubdeeTheme;
+  profile: SyncedProfile;
+  group: SyncedProfileGroup | null;
+  active: boolean;
+  disabled?: boolean;
+  onSelect?: (profileId: string) => void;
+  onDelete?: (profile: SyncedProfile) => void;
+}): React.JSX.Element {
+  const inverseBackground = theme.isDark ? theme.white : '#111827';
+  const inverseText = theme.isDark ? '#111827' : theme.white;
+
   return (
-    <View style={[styles.metricCard, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-      <View style={[styles.metricIcon, { backgroundColor }]}>
-        <Icon size={14} color={color} strokeWidth={2.3} />
-      </View>
-      <Text style={[styles.metricValue, { color: theme.text }]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={[styles.metricLabel, { color: theme.textSubtle }]} numberOfLines={1}>
-        {label}
-      </Text>
-      {subtext ? (
-        <Text style={[styles.metricSubtext, { color: theme.textSubtle }]} numberOfLines={1}>
-          {subtext}
-        </Text>
+    <View
+      style={[
+        styles.profileRow,
+        {
+          backgroundColor: active
+            ? theme.isDark
+              ? theme.cardMuted
+              : theme.panelMuted
+            : theme.panel,
+          borderColor: active ? theme.borderStrong : theme.border,
+        },
+      ]}
+    >
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        activeOpacity={0.78}
+        disabled={disabled}
+        onPress={() => onSelect?.(profile.id)}
+        style={[styles.profileRowMain, { opacity: disabled ? 0.6 : 1 }]}
+      >
+        <View
+          style={[
+            styles.profileRowIcon,
+            {
+              backgroundColor: active
+                ? inverseBackground
+                : theme.isDark
+                  ? theme.cardMuted
+                  : theme.panelMuted,
+            },
+          ]}
+        >
+          <User
+            size={14}
+            color={active ? inverseText : theme.textSubtle}
+            strokeWidth={2.2}
+          />
+        </View>
+        <View style={styles.profileRowInfo}>
+          <Text numberOfLines={1} style={[styles.profileRowName, { color: theme.text }]}>
+            {profile.name}
+          </Text>
+          <Text numberOfLines={1} style={[styles.profileRowMeta, { color: theme.textSubtle }]}>
+            {group?.name || 'ไม่มีกลุ่ม'} · {getSourceLabel(profile.createdByApp || profile.originApp)} ·{' '}
+            {formatShortId(profile.id)}
+          </Text>
+        </View>
+      </TouchableOpacity>
+
+      {onDelete ? (
+        <TouchableOpacity
+          accessibilityLabel="ลบโปรไฟล์"
+          accessibilityRole="button"
+          activeOpacity={0.7}
+          disabled={disabled}
+          onPress={() => onDelete(profile)}
+          style={[styles.profileRowDelete, { opacity: disabled ? 0.5 : 1 }]}
+        >
+          <Trash2 size={14} color={theme.red} strokeWidth={2} />
+        </TouchableOpacity>
       ) : null}
     </View>
   );
 }
 
-function SyncedProfileRow({
-  row,
-  status,
+/** Extension DeletedProfileRow: amber card + กู้คืน / ซ่อน buttons */
+function DeletedProfileRow({
   theme,
+  profile,
+  group,
   disabled,
-  onConfirmDelete,
-  onDelete,
   onRestore,
-}: SyncedProfileRowProps): React.JSX.Element {
-  const isDeleted = status === 'deleted';
-  const iconBackground = isDeleted ? theme.amberSoft : theme.cyanSoft;
-  const iconColor = isDeleted ? theme.amber : theme.cyan;
-
+  onConfirmDelete,
+}: {
+  theme: KubdeeTheme;
+  profile: SyncedProfile;
+  group: SyncedProfileGroup | null;
+  disabled?: boolean;
+  onRestore?: (profile: SyncedProfile) => void;
+  onConfirmDelete?: (profile: SyncedProfile) => void;
+}): React.JSX.Element {
   return (
-    <View style={[styles.syncedProfileRow, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-      <View style={[styles.syncedProfileIcon, { backgroundColor: iconBackground }]}>
-        {isDeleted ? (
-          <Archive size={18} color={iconColor} strokeWidth={2.2} />
-        ) : (
-          <UserCircle size={18} color={iconColor} strokeWidth={2.2} />
-        )}
-      </View>
-      <View style={styles.syncedProfileBody}>
-        <Text style={[styles.syncedProfileName, { color: theme.text }]} numberOfLines={1}>
-          {row.profile.name}
-        </Text>
-        <Text style={[styles.syncedProfileMeta, { color: theme.textSubtle }]} numberOfLines={1}>
-          {isDeleted ? formatDeletedLabel(row.profile) : `${row.group?.name || 'ไม่มีกลุ่ม'} · ${formatShortId(row.profile.id)}`}
-        </Text>
-        <View style={styles.profileChipRow}>
-          <View style={[styles.sourceChip, { backgroundColor: theme.panelMuted }]}>
-            <Globe2 size={11} color={theme.textSubtle} strokeWidth={2.2} />
-            <Text style={[styles.sourceChipText, { color: theme.textSubtle }]} numberOfLines={1}>
-              สร้างจาก {row.sourceLabel}
-            </Text>
-          </View>
-          {isDeleted ? (
-            <View style={[styles.sourceChip, { backgroundColor: theme.amberSoft }]}>
-              <Text style={[styles.sourceChipText, { color: theme.amber }]} numberOfLines={1}>
-                รอยืนยัน
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      </View>
-      {isDeleted ? (
-        <View style={styles.profileRowActions}>
-          <TouchableOpacity
-            activeOpacity={0.78}
-            disabled={disabled}
-            onPress={() => onRestore?.(row.profile)}
-            style={[
-              styles.profileRowAction,
-              { backgroundColor: theme.emeraldSoft, opacity: disabled ? 0.55 : 1 },
-            ]}
-          >
-            <RotateCcw size={12} color={theme.emerald} strokeWidth={2.3} />
-            <Text style={[styles.profileRowActionText, { color: theme.emerald }]}>กู้คืน</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.78}
-            disabled={disabled}
-            onPress={() => onConfirmDelete?.(row.profile)}
-            style={[
-              styles.profileRowAction,
-              { backgroundColor: theme.panelMuted, opacity: disabled ? 0.55 : 1 },
-            ]}
-          >
-            <X size={12} color={theme.textSubtle} strokeWidth={2.3} />
-            <Text style={[styles.profileRowActionText, { color: theme.textSubtle }]}>ซ่อน</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity
-          activeOpacity={0.78}
-          disabled={disabled}
-          onPress={() => onDelete?.(row.profile)}
-          style={[
-            styles.deleteProfileButton,
-            { backgroundColor: theme.redSoft, opacity: disabled ? 0.55 : 1 },
-          ]}
-        >
-          <Trash2 size={13} color={theme.red} strokeWidth={2.3} />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-
-function InfoRow({ label, value, icon: Icon, theme }: InfoRowProps): React.JSX.Element {
-  return (
-    <View style={[styles.infoRow, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-      <Icon size={14} color={theme.textSubtle} strokeWidth={2.2} />
-      <Text style={[styles.infoLabel, { color: theme.textSubtle }]}>{label}</Text>
-      <Text style={[styles.infoValue, { color: theme.text }]} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function ActionRow({
-  label,
-  icon: Icon,
-  iconColor,
-  iconBackground,
-  theme,
-  disabled,
-  role = 'button',
-  danger,
-  loading,
-  onPress,
-}: ActionRowProps): React.JSX.Element {
-  const labelColor = danger ? theme.red : theme.text;
-  const borderColor = danger ? alpha(theme.red, 0.3) : theme.border;
-  const backgroundColor = danger ? theme.redSoft : theme.cardMuted;
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.78}
-      accessibilityRole={role}
-      disabled={disabled}
-      onPress={onPress}
+    <View
       style={[
-        styles.actionRow,
+        styles.deletedRow,
         {
-          backgroundColor,
-          borderColor,
-          opacity: disabled ? 0.55 : 1,
+          backgroundColor: alpha(theme.amber, theme.isDark ? 0.1 : 0.08),
+          borderColor: alpha(theme.amber, theme.isDark ? 0.4 : 0.35),
         },
       ]}
     >
-      <View style={[styles.actionIconBox, { backgroundColor: iconBackground }]}>
-        {loading ? (
-          <ActivityIndicator color={iconColor} size="small" />
-        ) : (
-          <Icon size={16} color={iconColor} strokeWidth={2.2} />
-        )}
+      <View style={styles.deletedRowHead}>
+        <View style={[styles.deletedRowIcon, { backgroundColor: alpha(theme.amber, theme.isDark ? 0.2 : 0.16) }]}>
+          <Archive size={14} color={theme.amber} strokeWidth={2.2} />
+        </View>
+        <View style={styles.deletedRowInfo}>
+          <View style={styles.deletedRowTitleRow}>
+            <Text numberOfLines={1} style={[styles.deletedRowName, { color: theme.text }]}>
+              {profile.name}
+            </Text>
+            <Text numberOfLines={1} style={[styles.deletedRowSource, { color: theme.amber }]}>
+              ถูกลบจาก {getDeletedSourceLabel(profile)}
+            </Text>
+          </View>
+          <Text numberOfLines={1} style={[styles.deletedRowMeta, { color: alpha(theme.amber, 0.85) }]}>
+            {group?.name || 'ไม่มีกลุ่ม'} · {formatShortId(profile.id)}
+          </Text>
+        </View>
       </View>
-      <Text style={[styles.actionLabel, { color: labelColor }]} numberOfLines={1}>
-        {label}
-      </Text>
-      <ChevronRight size={15} color={danger ? theme.red : theme.textSubtle} strokeWidth={2.2} />
-    </TouchableOpacity>
+
+      <View style={styles.deletedRowActions}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.78}
+          disabled={disabled}
+          onPress={() => onRestore?.(profile)}
+          style={[
+            styles.deletedRowButton,
+            {
+              backgroundColor: alpha(theme.emerald, theme.isDark ? 0.16 : 0.1),
+              borderColor: alpha(theme.emerald, 0.4),
+              opacity: disabled ? 0.5 : 1,
+            },
+          ]}
+        >
+          <RotateCcw size={12} color={theme.emerald} strokeWidth={2.3} />
+          <Text style={[styles.deletedRowButtonText, { color: theme.emerald }]}>กู้คืน</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.78}
+          disabled={disabled}
+          onPress={() => onConfirmDelete?.(profile)}
+          style={[
+            styles.deletedRowButton,
+            {
+              backgroundColor: alpha(theme.red, theme.isDark ? 0.16 : 0.08),
+              borderColor: alpha(theme.red, 0.4),
+              opacity: disabled ? 0.5 : 1,
+            },
+          ]}
+        >
+          <Check size={12} color={theme.red} strokeWidth={2.3} />
+          <Text style={[styles.deletedRowButtonText, { color: theme.red }]}>ซ่อน</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
-export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.Element {
+export default function ProfileScreen({
+  theme,
+  selectedProfileId = '',
+  onSelectProfile,
+}: ProfileScreenProps): React.JSX.Element {
   const {
     confirmDeletedProfileLocally,
     createProfileError,
@@ -362,6 +302,7 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
   const [profileName, setProfileName] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<string>(GROUP_NONE);
   const [newGroupName, setNewGroupName] = useState('');
+
   const displayName = user?.name || user?.email || 'Kubdee AI User';
   const planLabel = formatPlanLabel(user?.plan);
   const expiryLabel = formatExpiryLabel(user?.expiryDate);
@@ -372,27 +313,38 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
     isCreatingProfile ||
     !profileName.trim() ||
     (selectedGroupId === GROUP_NEW && !newGroupName.trim());
-  const syncStatusLabel = isSyncing ? 'SYNCING' : syncError ? 'ERROR' : 'SYNCED';
-  const syncStatusColor = syncError ? theme.red : theme.emerald;
-  const syncStatusBackground = syncError ? theme.redSoft : theme.emeraldSoft;
-  const profileRows = useMemo<ProfileListRow[]>(() => {
-    const groupById = new Map(syncedProfileGroups.map((group) => [group.id, group]));
 
-    return syncedProfiles.map((profile) => ({
-      profile,
-      group: profile.groupId == null ? null : groupById.get(profile.groupId) ?? null,
-      sourceLabel: getSourceLabel(profile.createdByApp || profile.originApp),
-    }));
-  }, [syncedProfileGroups, syncedProfiles]);
-  const deletedProfileRows = useMemo<ProfileListRow[]>(() => {
-    const groupById = new Map(syncedProfileGroups.map((group) => [group.id, group]));
+  const groupById = useMemo(
+    () => new Map(syncedProfileGroups.map((group) => [group.id, group])),
+    [syncedProfileGroups]
+  );
+  const selectedProfile = useMemo(
+    () => syncedProfiles.find((profile) => profile.id === selectedProfileId) ?? null,
+    [selectedProfileId, syncedProfiles]
+  );
+  const selectedGroup = selectedProfile?.groupId
+    ? groupById.get(selectedProfile.groupId) ?? null
+    : null;
 
-    return deletedSyncedProfiles.map((profile) => ({
-      profile,
-      group: profile.groupId == null ? null : groupById.get(profile.groupId) ?? null,
-      sourceLabel: getSourceLabel(profile.createdByApp || profile.originApp),
-    }));
-  }, [deletedSyncedProfiles, syncedProfileGroups]);
+  // Extension sync button: blue spinner / emerald CloudCheck / red CloudOff / neutral Cloud
+  const syncStatus = isSyncing ? 'syncing' : syncError ? 'error' : lastProfilesSyncedAt || lastSyncedAt ? 'success' : 'idle';
+  const SyncIcon = syncStatus === 'success' ? CloudCheck : syncStatus === 'error' ? CloudOff : Cloud;
+  const syncToneColor =
+    syncStatus === 'syncing'
+      ? theme.blue
+      : syncStatus === 'success'
+        ? theme.emerald
+        : syncStatus === 'error'
+          ? theme.red
+          : theme.textMuted;
+  const syncToneBackground =
+    syncStatus === 'idle' ? theme.panel : alpha(syncToneColor, theme.isDark ? 0.16 : 0.09);
+  const syncToneBorder = syncStatus === 'idle' ? theme.border : alpha(syncToneColor, 0.4);
+
+  const inverseBackground = theme.isDark ? theme.white : '#111827';
+  const inverseText = theme.isDark ? '#111827' : theme.white;
+  const cellBackground = theme.isDark ? theme.panelMuted : theme.cardMuted;
+
   useEffect(() => {
     void syncProfile();
   }, [syncProfile]);
@@ -407,6 +359,17 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
       setSelectedGroupId(GROUP_NONE);
     }
   }, [selectedGroupId, syncedProfileGroups]);
+
+  const closeCreateModal = (): void => {
+    if (isCreatingProfile) {
+      return;
+    }
+
+    setProfileName('');
+    setSelectedGroupId(GROUP_NONE);
+    setNewGroupName('');
+    setCreateOpen(false);
+  };
 
   const handleCreateProfile = async (): Promise<void> => {
     if (createDisabled) {
@@ -479,599 +442,781 @@ export default function ProfileScreen({ theme }: ProfileScreenProps): React.JSX.
   };
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-      <SectionHeader
-        icon={UserCircle}
-        theme={theme}
-        title="โปรไฟล์"
-        right={
-          <StatusPill
-            backgroundColor={syncStatusBackground}
-            color={syncStatusColor}
-            icon={syncError ? ShieldCheck : CheckCircle2}
-            label={syncStatusLabel}
-          />
-        }
-      />
-
-      <View style={[styles.profileCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        {user?.image ? (
-          <Image source={{ uri: user.image }} style={styles.avatarImage} />
-        ) : (
-          <View style={[styles.avatar, { backgroundColor: theme.cyanSoft }]}>
-            <UserCircle size={24} color={theme.cyan} />
-          </View>
-        )}
-        <View style={styles.profileBody}>
-          <Text style={[styles.profileName, { color: theme.text }]} numberOfLines={1}>
-            {displayName}
-          </Text>
-          <Text style={[styles.profileMeta, { color: theme.textSubtle }]} numberOfLines={1}>
-            {user?.email || 'Google account'}
-          </Text>
-          <View style={styles.syncLine}>
-            <Globe2 size={11} color={theme.textSubtle} strokeWidth={2.2} />
-            <Text style={[styles.syncText, { color: theme.textSubtle }]} numberOfLines={1}>
-              kubdee.ai · ซิงก์โปรไฟล์ล่าสุด {formatSyncLabel(lastProfilesSyncedAt || lastSyncedAt)}
+    <>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        {/* Extension: โปรไฟล์ header — Users icon + sync button + เพิ่ม */}
+        <View style={styles.headerRow}>
+          <View style={styles.headerLeft}>
+            <Users size={14} color={theme.text} strokeWidth={2.4} />
+            <Text numberOfLines={1} style={[styles.headerTitle, { color: theme.textMuted }]}>
+              โปรไฟล์
             </Text>
           </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              accessibilityLabel="ซิงก์โปรไฟล์กับ Cloud"
+              accessibilityRole="button"
+              activeOpacity={0.78}
+              disabled={isSyncing}
+              onPress={() => {
+                void syncProfile();
+              }}
+              style={[
+                styles.syncButton,
+                { backgroundColor: syncToneBackground, borderColor: syncToneBorder },
+              ]}
+            >
+              {isSyncing ? (
+                <ActivityIndicator color={syncToneColor} size="small" />
+              ) : (
+                <SyncIcon size={14} color={syncToneColor} strokeWidth={2.2} />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.82}
+              onPress={() => setCreateOpen(true)}
+              style={[styles.addButton, { backgroundColor: inverseBackground }]}
+            >
+              <Plus size={12} color={inverseText} strokeWidth={2.5} />
+              <Text style={[styles.addButtonText, { color: inverseText }]}>เพิ่ม</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <StatusPill backgroundColor={theme.blue} color={theme.white} icon={BadgeCheck} label="CLOUD" />
-      </View>
 
-      {profileSyncError ? (
-        <View style={[styles.errorBox, { backgroundColor: theme.redSoft, borderColor: alpha(theme.red, 0.3) }]}>
-          <Text style={[styles.errorText, { color: theme.red }]}>{profileSyncError}</Text>
-        </View>
-      ) : null}
+        {/* Extension: sync stats card */}
+        <View style={[styles.statsCard, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+          <View style={styles.statsHeadRow}>
+            <Text style={[styles.statsHeadLabel, { color: theme.textSubtle }]}>ซิงก์ล่าสุด</Text>
+            <Text style={[styles.statsHeadValue, { color: theme.textMuted }]}>
+              {formatSyncLabel(lastProfilesSyncedAt || lastSyncedAt)}
+            </Text>
+          </View>
 
-      <View style={styles.metricsGrid}>
-        <MetricCard
-          backgroundColor={theme.blue}
-          color={theme.white}
-          icon={CreditCard}
-          label="Plan"
-          subtext={expiryLabel}
-          theme={theme}
-          value={planLabel}
-        />
-        <MetricCard
-          backgroundColor={theme.amberSoft}
-          color={theme.amber}
-          icon={Coins}
-          label="Credits"
-          theme={theme}
-          value={formatCredits(user?.credits)}
-        />
-        <MetricCard
-          backgroundColor={theme.emeraldSoft}
-          color={theme.emerald}
-          icon={HardDrive}
-          label="Devices"
-          subtext="active/max"
-          theme={theme}
-          value={devicesLabel}
-        />
-      </View>
-
-      <SectionHeader icon={ShieldCheck} theme={theme} title="บัญชีและแผน" />
-      <View style={styles.infoGroup}>
-        <InfoRow icon={CalendarDays} label="หมดอายุ" theme={theme} value={expiryLabel} />
-        <InfoRow icon={ShieldCheck} label="สิทธิ์" theme={theme} value="Ultra plan สำหรับ Mobile" />
-        <InfoRow icon={UserCircle} label="User ID" theme={theme} value={user?.id || '-'} />
-      </View>
-
-      <SectionHeader
-        icon={Users}
-        theme={theme}
-        title="โปรไฟล์จากระบบซิงก์"
-        right={
-          <StatusPill
-            backgroundColor={theme.cyanSoft}
-            color={theme.cyan}
-          icon={UserCircle}
-          label={`${formatCount(syncedProfiles.length)} ใช้งาน`}
-        />
-        }
-      />
-
-      {profileDataError ? (
-        <View style={[styles.errorBox, { backgroundColor: theme.redSoft, borderColor: alpha(theme.red, 0.3) }]}>
-          <Text style={[styles.errorText, { color: theme.red }]}>{profileDataError}</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.metricsGrid}>
-        <MetricCard
-          backgroundColor={theme.cyanSoft}
-          color={theme.cyan}
-          icon={UserCircle}
-          label="Profiles"
-          theme={theme}
-          value={formatCount(syncedProfiles.length)}
-        />
-        <MetricCard
-          backgroundColor={theme.emeraldSoft}
-          color={theme.emerald}
-          icon={Users}
-          label="Groups"
-          theme={theme}
-          value={formatCount(syncedProfileGroups.length)}
-        />
-        <MetricCard
-          backgroundColor={theme.amberSoft}
-          color={theme.amber}
-          icon={Archive}
-          label="Deleted"
-          subtext="รอยืนยัน"
-          theme={theme}
-          value={formatCount(deletedSyncedProfiles.length)}
-        />
-      </View>
-
-      <ActionRow
-        icon={createOpen ? X : Plus}
-        iconBackground={createOpen ? theme.panelMuted : theme.cyanSoft}
-        iconColor={createOpen ? theme.textSubtle : theme.cyan}
-        label={createOpen ? 'ปิดฟอร์มสร้างโปรไฟล์' : 'สร้างโปรไฟล์บน Mobile'}
-        onPress={() => setCreateOpen((current) => !current)}
-        theme={theme}
-      />
-
-      {createOpen ? (
-        <View style={[styles.createPanel, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.createPanelHead}>
-            <View style={[styles.createPanelIcon, { backgroundColor: theme.cyanSoft }]}>
-              <UserCircle size={16} color={theme.cyan} strokeWidth={2.2} />
+          <View style={styles.statsGrid}>
+            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
+              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>ใช้งานอยู่</Text>
+              <Text style={[styles.statsCellValue, { color: theme.text }]}>
+                {formatCount(syncedProfiles.length)}
+              </Text>
             </View>
-            <View style={styles.createPanelTitleWrap}>
-              <Text style={[styles.createPanelTitle, { color: theme.text }]}>สร้างโปรไฟล์ใหม่</Text>
-              <Text style={[styles.createPanelSubtitle, { color: theme.textSubtle }]} numberOfLines={1}>
-                บันทึกขึ้น Cloud แล้วซิงก์กลับทุกอุปกรณ์
+            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
+              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>กลุ่ม</Text>
+              <Text style={[styles.statsCellValue, { color: theme.text }]}>
+                {formatCount(syncedProfileGroups.length)}
+              </Text>
+            </View>
+            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
+              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>ถูกลบ</Text>
+              <Text style={[styles.statsCellValue, { color: theme.text }]}>
+                {formatCount(deletedSyncedProfiles.length)}
               </Text>
             </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อโปรไฟล์</Text>
-            <TextInput
-              autoCapitalize="none"
-              onChangeText={setProfileName}
-              placeholder="เช่น Shopee ร้านหลัก"
-              placeholderTextColor={theme.textSubtle}
-              returnKeyType="done"
+          {selectedProfile ? (
+            <View
               style={[
-                styles.input,
-                { backgroundColor: theme.input, borderColor: theme.border, color: theme.text },
+                styles.activeBox,
+                {
+                  backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted,
+                  borderColor: theme.borderStrong,
+                },
               ]}
-              value={profileName}
-            />
+            >
+              <View style={styles.activeBoxRow}>
+                <Text style={[styles.activeBoxBadge, { color: theme.textMuted }]}>ใช้งาน</Text>
+                <Text numberOfLines={1} style={[styles.activeBoxName, { color: theme.text }]}>
+                  {selectedProfile.name}
+                </Text>
+              </View>
+              <Text numberOfLines={1} style={[styles.activeBoxMeta, { color: theme.textSubtle }]}>
+                {selectedGroup?.name || 'ไม่มีกลุ่ม'} ·{' '}
+                {getSourceLabel(selectedProfile.createdByApp || selectedProfile.originApp)} ·{' '}
+                {formatShortId(selectedProfile.id)}
+              </Text>
+            </View>
+          ) : null}
+
+          {syncError ? (
+            <View
+              style={[
+                styles.errorBox,
+                { backgroundColor: alpha(theme.red, theme.isDark ? 0.12 : 0.07), borderColor: alpha(theme.red, 0.35) },
+              ]}
+            >
+              <Text style={[styles.errorText, { color: theme.red }]}>{syncError}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Extension: โปรไฟล์ทั้งหมด */}
+        <View style={styles.sectionHeadRow}>
+          <View style={styles.headerLeft}>
+            <User size={14} color={theme.text} strokeWidth={2.4} />
+            <Text style={[styles.headerTitle, { color: theme.textMuted }]}>โปรไฟล์ทั้งหมด</Text>
+          </View>
+          <Text style={[styles.sectionHeadCount, { color: theme.textSubtle }]}>
+            {formatCount(syncedProfiles.length)} รายการ
+          </Text>
+        </View>
+
+        {isSyncingProfiles && syncedProfiles.length === 0 ? (
+          <View
+            style={[
+              styles.emptyState,
+              { backgroundColor: cellBackground, borderColor: theme.border },
+            ]}
+          >
+            <ActivityIndicator color={theme.blue} size="small" />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>กำลังโหลดโปรไฟล์จาก Cloud</Text>
+          </View>
+        ) : syncedProfiles.length === 0 ? (
+          <View
+            style={[
+              styles.emptyState,
+              { backgroundColor: cellBackground, borderColor: theme.border },
+            ]}
+          >
+            <User size={20} color={theme.textSubtle} strokeWidth={2} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ใช้งานอยู่</Text>
+            <Text style={[styles.emptyDescription, { color: theme.textSubtle }]}>
+              สร้างโปรไฟล์แรกบนมือถือ แล้วระบบจะซิงก์ขึ้น Cloud
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.82}
+              onPress={() => setCreateOpen(true)}
+              style={[styles.emptyAction, { backgroundColor: inverseBackground }]}
+            >
+              <Text style={[styles.emptyActionText, { color: inverseText }]}>สร้างโปรไฟล์แรก</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.profileList}>
+            {syncedProfiles.map((profile) => (
+              <ProfileRow
+                key={profile.id}
+                active={profile.id === selectedProfileId}
+                disabled={isUpdatingProfile}
+                group={profile.groupId == null ? null : groupById.get(profile.groupId) ?? null}
+                profile={profile}
+                theme={theme}
+                onDelete={handleDeleteProfile}
+                onSelect={onSelectProfile}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* Extension: โปรไฟล์ที่ถูกลบ */}
+        {deletedSyncedProfiles.length > 0 ? (
+          <>
+            <View style={styles.sectionHeadRow}>
+              <View style={styles.headerLeft}>
+                <Archive size={14} color={theme.amber} strokeWidth={2.4} />
+                <Text style={[styles.headerTitle, { color: theme.amber }]}>โปรไฟล์ที่ถูกลบ</Text>
+              </View>
+              <Text style={[styles.sectionHeadCount, { color: theme.amber }]}>
+                {formatCount(deletedSyncedProfiles.length)} รอจัดการ
+              </Text>
+            </View>
+            <View style={styles.profileList}>
+              {deletedSyncedProfiles.map((profile) => (
+                <DeletedProfileRow
+                  key={profile.id}
+                  disabled={isUpdatingProfile}
+                  group={profile.groupId == null ? null : groupById.get(profile.groupId) ?? null}
+                  profile={profile}
+                  theme={theme}
+                  onConfirmDelete={handleConfirmDeletedProfile}
+                  onRestore={handleRestoreProfile}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        {/* บัญชี */}
+        <View style={styles.sectionHeadRow}>
+          <View style={styles.headerLeft}>
+            <UserCircle size={14} color={theme.text} strokeWidth={2.4} />
+            <Text style={[styles.headerTitle, { color: theme.textMuted }]}>บัญชี</Text>
+          </View>
+        </View>
+
+        <View style={[styles.accountCard, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+          <View style={styles.accountHead}>
+            {user?.image ? (
+              <Image source={{ uri: user.image }} style={styles.accountAvatarImage} />
+            ) : (
+              <View style={[styles.accountAvatar, { backgroundColor: cellBackground }]}>
+                <UserCircle size={20} color={theme.textSubtle} strokeWidth={2} />
+              </View>
+            )}
+            <View style={styles.accountInfo}>
+              <Text numberOfLines={1} style={[styles.accountName, { color: theme.text }]}>
+                {displayName}
+              </Text>
+              <Text numberOfLines={1} style={[styles.accountEmail, { color: theme.textSubtle }]}>
+                {user?.email || 'Google account'}
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>กลุ่ม</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.groupChipScroll}
-            >
-              <TouchableOpacity
-                activeOpacity={0.78}
-                onPress={() => setSelectedGroupId(GROUP_NONE)}
-                style={[
-                  styles.groupChip,
-                  {
-                    backgroundColor: selectedGroupId === GROUP_NONE ? theme.cyanSoft : theme.cardMuted,
-                    borderColor: selectedGroupId === GROUP_NONE ? alpha(theme.cyan, 0.45) : theme.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.groupChipText, { color: selectedGroupId === GROUP_NONE ? theme.cyan : theme.text }]}
-                  numberOfLines={1}
-                >
-                  ไม่มีกลุ่ม
-                </Text>
-              </TouchableOpacity>
-              {syncedProfileGroups.map((group) => {
-                const selected = group.id === selectedGroupId;
+          <View style={styles.statsGrid}>
+            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
+              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>แผน</Text>
+              <Text numberOfLines={1} style={[styles.statsCellValue, { color: theme.text }]}>
+                {planLabel}
+              </Text>
+              <Text numberOfLines={1} style={[styles.statsCellHint, { color: theme.textSubtle }]}>
+                {expiryLabel}
+              </Text>
+            </View>
+            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
+              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>เครดิต</Text>
+              <Text numberOfLines={1} style={[styles.statsCellValue, { color: theme.text }]}>
+                {formatCredits(user?.credits)}
+              </Text>
+            </View>
+            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
+              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>อุปกรณ์</Text>
+              <Text numberOfLines={1} style={[styles.statsCellValue, { color: theme.text }]}>
+                {devicesLabel}
+              </Text>
+              <Text numberOfLines={1} style={[styles.statsCellHint, { color: theme.textSubtle }]}>
+                active/max
+              </Text>
+            </View>
+          </View>
 
-                return (
+          <View style={styles.accountActions}>
+            <TouchableOpacity
+              accessibilityRole="link"
+              activeOpacity={0.78}
+              onPress={() => Linking.openURL(BACKEND_URL)}
+              style={[styles.accountButton, { backgroundColor: theme.panel, borderColor: theme.border }]}
+            >
+              <Globe2 size={13} color={theme.textMuted} strokeWidth={2.2} />
+              <Text style={[styles.accountButtonText, { color: theme.textMuted }]}>เปิดเว็บ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.78}
+              onPress={logout}
+              style={[
+                styles.accountButton,
+                {
+                  backgroundColor: alpha(theme.red, theme.isDark ? 0.12 : 0.06),
+                  borderColor: alpha(theme.red, 0.35),
+                },
+              ]}
+            >
+              <LogOut size={13} color={theme.red} strokeWidth={2.2} />
+              <Text style={[styles.accountButtonText, { color: theme.red }]}>ออกจากระบบ</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Extension: create profile modal overlay */}
+      <Modal animationType="fade" transparent visible={createOpen} onRequestClose={closeCreateModal}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.panel, borderColor: theme.border }]}>
+            <View style={[styles.modalHead, { borderBottomColor: theme.border }]}>
+              <View style={styles.modalHeadLeft}>
+                <View style={[styles.modalHeadIcon, { backgroundColor: cellBackground }]}>
+                  <User size={14} color={theme.textMuted} strokeWidth={2.2} />
+                </View>
+                <View style={styles.modalHeadTitleWrap}>
+                  <Text numberOfLines={1} style={[styles.modalTitle, { color: theme.text }]}>
+                    สร้างโปรไฟล์ใหม่
+                  </Text>
+                  <Text numberOfLines={1} style={[styles.modalSubtitle, { color: theme.textSubtle }]}>
+                    ซิงก์ขึ้น Cloud หลังสร้าง
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                activeOpacity={0.7}
+                disabled={isCreatingProfile}
+                onPress={closeCreateModal}
+                style={styles.modalClose}
+              >
+                <X size={14} color={theme.textSubtle} strokeWidth={2.4} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อโปรไฟล์</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  onChangeText={setProfileName}
+                  placeholder="เช่น ร้านหลัก"
+                  placeholderTextColor={theme.textSubtle}
+                  returnKeyType="done"
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: cellBackground,
+                      borderColor: theme.border,
+                      color: theme.text,
+                    },
+                  ]}
+                  value={profileName}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>กลุ่ม</Text>
+                <View style={styles.groupChipWrap}>
                   <TouchableOpacity
                     activeOpacity={0.78}
-                    key={group.id}
-                    onPress={() => setSelectedGroupId(group.id)}
+                    onPress={() => setSelectedGroupId(GROUP_NONE)}
                     style={[
                       styles.groupChip,
                       {
-                        backgroundColor: selected ? theme.cyanSoft : theme.cardMuted,
-                        borderColor: selected ? alpha(theme.cyan, 0.45) : theme.border,
+                        backgroundColor:
+                          selectedGroupId === GROUP_NONE
+                            ? theme.isDark
+                              ? theme.cardMuted
+                              : theme.panelMuted
+                            : cellBackground,
+                        borderColor: selectedGroupId === GROUP_NONE ? theme.borderStrong : theme.border,
                       },
                     ]}
                   >
                     <Text
-                      style={[styles.groupChipText, { color: selected ? theme.cyan : theme.text }]}
                       numberOfLines={1}
+                      style={[
+                        styles.groupChipText,
+                        { color: selectedGroupId === GROUP_NONE ? theme.text : theme.textSubtle },
+                      ]}
                     >
-                      {group.name}
+                      ไม่มีกลุ่ม
                     </Text>
                   </TouchableOpacity>
-                );
-              })}
-              <TouchableOpacity
-                activeOpacity={0.78}
-                onPress={() => setSelectedGroupId(GROUP_NEW)}
-                style={[
-                  styles.groupChip,
-                  {
-                    backgroundColor: selectedGroupId === GROUP_NEW ? theme.amberSoft : theme.cardMuted,
-                    borderColor: selectedGroupId === GROUP_NEW ? alpha(theme.amber, 0.45) : theme.border,
-                  },
-                ]}
-              >
-                <FolderPlus
-                  size={12}
-                  color={selectedGroupId === GROUP_NEW ? theme.amber : theme.textSubtle}
-                  strokeWidth={2.2}
-                />
-                <Text
-                  style={[styles.groupChipText, { color: selectedGroupId === GROUP_NEW ? theme.amber : theme.text }]}
-                  numberOfLines={1}
+                  {syncedProfileGroups.map((group) => {
+                    const selected = group.id === selectedGroupId;
+
+                    return (
+                      <TouchableOpacity
+                        activeOpacity={0.78}
+                        key={group.id}
+                        onPress={() => setSelectedGroupId(group.id)}
+                        style={[
+                          styles.groupChip,
+                          {
+                            backgroundColor: selected
+                              ? theme.isDark
+                                ? theme.cardMuted
+                                : theme.panelMuted
+                              : cellBackground,
+                            borderColor: selected ? theme.borderStrong : theme.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.groupChipText,
+                            { color: selected ? theme.text : theme.textSubtle },
+                          ]}
+                        >
+                          {group.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <TouchableOpacity
+                    activeOpacity={0.78}
+                    onPress={() => setSelectedGroupId(GROUP_NEW)}
+                    style={[
+                      styles.groupChip,
+                      {
+                        backgroundColor:
+                          selectedGroupId === GROUP_NEW
+                            ? theme.isDark
+                              ? theme.cardMuted
+                              : theme.panelMuted
+                            : cellBackground,
+                        borderColor: selectedGroupId === GROUP_NEW ? theme.borderStrong : theme.border,
+                      },
+                    ]}
+                  >
+                    <FolderPlus
+                      size={12}
+                      color={selectedGroupId === GROUP_NEW ? theme.text : theme.textSubtle}
+                      strokeWidth={2.2}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.groupChipText,
+                        { color: selectedGroupId === GROUP_NEW ? theme.text : theme.textSubtle },
+                      ]}
+                    >
+                      สร้างกลุ่มใหม่
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {selectedGroupId === GROUP_NEW ? (
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อกลุ่มใหม่</Text>
+                  <TextInput
+                    autoCapitalize="none"
+                    onChangeText={setNewGroupName}
+                    placeholder="เช่น TikTok"
+                    placeholderTextColor={theme.textSubtle}
+                    returnKeyType="done"
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: cellBackground,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
+                    value={newGroupName}
+                  />
+                </View>
+              ) : null}
+
+              {createProfileError ? (
+                <View
+                  style={[
+                    styles.errorBox,
+                    {
+                      backgroundColor: alpha(theme.red, theme.isDark ? 0.12 : 0.07),
+                      borderColor: alpha(theme.red, 0.35),
+                    },
+                  ]}
                 >
-                  กลุ่มใหม่
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
+                  <Text style={[styles.errorText, { color: theme.red }]}>{createProfileError}</Text>
+                </View>
+              ) : null}
 
-          {selectedGroupId === GROUP_NEW ? (
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อกลุ่มใหม่</Text>
-              <TextInput
-                autoCapitalize="none"
-                onChangeText={setNewGroupName}
-                placeholder="เช่น TikTok"
-                placeholderTextColor={theme.textSubtle}
-                returnKeyType="done"
-                style={[
-                  styles.input,
-                  { backgroundColor: theme.input, borderColor: theme.border, color: theme.text },
-                ]}
-                value={newGroupName}
-              />
+              <View style={styles.modalFooter}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  activeOpacity={0.78}
+                  disabled={isCreatingProfile}
+                  onPress={closeCreateModal}
+                  style={[
+                    styles.modalButton,
+                    {
+                      backgroundColor: theme.panel,
+                      borderColor: theme.border,
+                      opacity: isCreatingProfile ? 0.5 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.modalButtonText, { color: theme.textMuted }]}>ยกเลิก</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  activeOpacity={0.82}
+                  disabled={createDisabled}
+                  onPress={() => {
+                    void handleCreateProfile();
+                  }}
+                  style={[
+                    styles.modalButton,
+                    {
+                      backgroundColor: inverseBackground,
+                      borderColor: 'transparent',
+                      opacity: createDisabled ? 0.5 : 1,
+                    },
+                  ]}
+                >
+                  {isCreatingProfile ? (
+                    <ActivityIndicator color={inverseText} size="small" />
+                  ) : null}
+                  <Text style={[styles.modalButtonText, { color: inverseText }]}>
+                    {isCreatingProfile ? 'กำลังสร้าง' : 'สร้างโปรไฟล์'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          ) : null}
-
-          {createProfileError ? (
-            <View style={[styles.errorBox, { backgroundColor: theme.redSoft, borderColor: alpha(theme.red, 0.3) }]}>
-              <Text style={[styles.errorText, { color: theme.red }]}>{createProfileError}</Text>
-            </View>
-          ) : null}
-
-          <TouchableOpacity
-            activeOpacity={0.78}
-            disabled={createDisabled}
-            onPress={handleCreateProfile}
-            style={[
-              styles.createButton,
-              {
-                backgroundColor: theme.cyan,
-                opacity: createDisabled ? 0.55 : 1,
-              },
-            ]}
-          >
-            {isCreatingProfile ? (
-              <ActivityIndicator color={theme.white} size="small" />
-            ) : (
-              <Save size={15} color={theme.white} strokeWidth={2.3} />
-            )}
-            <Text style={[styles.createButtonText, { color: theme.white }]}>
-              {isCreatingProfile ? 'กำลังสร้างและซิงก์' : 'สร้างและซิงก์ขึ้น Cloud'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {isSyncingProfiles && profileRows.length === 0 ? (
-        <View style={[styles.emptyState, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-          <ActivityIndicator color={theme.blue} size="small" />
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>กำลังโหลดโปรไฟล์จากเว็บ</Text>
-        </View>
-      ) : profileRows.length === 0 ? (
-        <View style={[styles.emptyState, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-          <View style={[styles.emptyIcon, { backgroundColor: theme.panelMuted }]}>
-            <UserCircle size={20} color={theme.textSubtle} strokeWidth={2.2} />
           </View>
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ใช้งานอยู่</Text>
-          <Text style={[styles.emptyDescription, { color: theme.textSubtle }]}>
-            สร้างบน Mobile ได้ทันที หรือซิงก์จาก Desktop/Extension แล้ว Mobile จะเห็นที่นี่
-          </Text>
-          <TouchableOpacity
-            activeOpacity={0.78}
-            onPress={() => setCreateOpen(true)}
-            style={[styles.emptyAction, { backgroundColor: theme.cyanSoft, borderColor: alpha(theme.cyan, 0.36) }]}
-          >
-            <Plus size={14} color={theme.cyan} strokeWidth={2.3} />
-            <Text style={[styles.emptyActionText, { color: theme.cyan }]}>สร้างโปรไฟล์แรก</Text>
-          </TouchableOpacity>
         </View>
-      ) : (
-        <View style={styles.syncedProfileList}>
-          {profileRows.map((row) => (
-            <SyncedProfileRow
-              key={row.profile.id}
-              disabled={isUpdatingProfile}
-              row={row}
-              status="active"
-              theme={theme}
-              onDelete={handleDeleteProfile}
-            />
-          ))}
-        </View>
-      )}
-
-      {deletedProfileRows.length > 0 ? (
-        <>
-          <SectionHeader
-            icon={Archive}
-            theme={theme}
-            title="โปรไฟล์ที่ถูกลบ"
-            right={
-              <StatusPill
-                backgroundColor={theme.amberSoft}
-                color={theme.amber}
-                icon={Archive}
-                label={`${formatCount(deletedProfileRows.length)} รอยืนยัน`}
-              />
-            }
-          />
-          <View style={styles.syncedProfileList}>
-            {deletedProfileRows.map((row) => (
-              <SyncedProfileRow
-                key={row.profile.id}
-                disabled={isUpdatingProfile}
-                row={row}
-                status="deleted"
-                theme={theme}
-                onConfirmDelete={handleConfirmDeletedProfile}
-                onRestore={handleRestoreProfile}
-              />
-            ))}
-          </View>
-        </>
-      ) : null}
-
-      <View style={styles.actionList}>
-        <ActionRow
-          disabled={isSyncing}
-          icon={RefreshCw}
-          iconBackground={theme.blue}
-          iconColor={theme.white}
-          label="ซิงก์โปรไฟล์จาก Cloud"
-          loading={isSyncing}
-          onPress={syncProfile}
-          theme={theme}
-        />
-        <ActionRow
-          icon={Globe2}
-          iconBackground={theme.emeraldSoft}
-          iconColor={theme.emerald}
-          label="เปิดเว็บ Kubdee AI"
-          onPress={() => Linking.openURL(BACKEND_URL)}
-          role="link"
-          theme={theme}
-        />
-        <ActionRow
-          danger
-          icon={LogOut}
-          iconBackground={theme.redSoft}
-          iconColor={theme.red}
-          label="ออกจากระบบ"
-          onPress={logout}
-          theme={theme}
-        />
-      </View>
-    </ScrollView>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  actionIconBox: {
+  accountActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  accountAvatar: {
     alignItems: 'center',
-    borderRadius: radii.md,
+    borderRadius: 10,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  accountAvatarImage: {
+    borderRadius: 10,
+    height: 38,
+    width: 38,
+  },
+  accountButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    height: 34,
+    justifyContent: 'center',
+  },
+  accountButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  accountCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    padding: 8,
+  },
+  accountEmail: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  accountHead: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  accountInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  accountName: {
+    fontSize: 12,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  activeBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  activeBoxBadge: {
+    flexShrink: 0,
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  activeBoxMeta: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  activeBoxName: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    includeFontPadding: false,
+    minWidth: 0,
+  },
+  activeBoxRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  addButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 4,
+    height: 28,
+    paddingHorizontal: 10,
+  },
+  addButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  content: {
+    gap: 12,
+    paddingBottom: 80,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  deletedRow: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 8,
+  },
+  deletedRowActions: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+  },
+  deletedRowButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    height: 28,
+    justifyContent: 'center',
+  },
+  deletedRowButtonText: {
+    fontSize: 10,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  deletedRowHead: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  deletedRowIcon: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexShrink: 0,
     height: 28,
     justifyContent: 'center',
     width: 28,
   },
-  actionLabel: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '800',
-    includeFontPadding: false,
-    lineHeight: 16,
-  },
-  actionList: {
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  actionRow: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    minHeight: 44,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  avatar: {
-    alignItems: 'center',
-    borderRadius: radii.lg,
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
-  },
-  avatarImage: {
-    borderRadius: radii.lg,
-    height: 42,
-    width: 42,
-  },
-  content: {
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  createButton: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    minHeight: 42,
-    paddingHorizontal: 12,
-  },
-  createButtonText: {
-    fontSize: typography.body,
-    fontWeight: '900',
-    includeFontPadding: false,
-    lineHeight: 16,
-  },
-  createPanel: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: 12,
-  },
-  createPanelHead: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 9,
-  },
-  createPanelIcon: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
-  },
-  createPanelSubtitle: {
-    fontSize: typography.caption,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  createPanelTitle: {
-    fontSize: typography.body,
-    fontWeight: '900',
-    includeFontPadding: false,
-    lineHeight: 17,
-  },
-  createPanelTitleWrap: {
+  deletedRowInfo: {
     flex: 1,
     minWidth: 0,
   },
+  deletedRowMeta: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  deletedRowName: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    includeFontPadding: false,
+    minWidth: 0,
+  },
+  deletedRowSource: {
+    flexShrink: 0,
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  deletedRowTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
   emptyAction: {
     alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: spacing.xs,
-    minHeight: 34,
+    borderRadius: 8,
+    height: 28,
+    justifyContent: 'center',
+    marginTop: 4,
     paddingHorizontal: 12,
   },
   emptyActionText: {
-    fontSize: typography.body,
-    fontWeight: '900',
+    fontSize: 10,
+    fontWeight: '600',
     includeFontPadding: false,
-    lineHeight: 16,
+  },
+  emptyDescription: {
+    fontSize: 10,
+    fontWeight: '500',
+    lineHeight: 15,
+    textAlign: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    borderRadius: 10,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  emptyTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   errorBox: {
-    borderRadius: radii.md,
+    borderRadius: 8,
     borderWidth: 1,
+    marginTop: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   errorText: {
-    fontSize: typography.body,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  emptyDescription: {
-    fontSize: typography.caption,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '600',
     lineHeight: 16,
-    textAlign: 'center',
-  },
-  emptyIcon: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
-  },
-  emptyState: {
-    alignItems: 'center',
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    gap: spacing.xs,
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-  },
-  emptyTitle: {
-    fontSize: typography.body,
-    fontWeight: '900',
-    lineHeight: 17,
-    textAlign: 'center',
-  },
-  infoGroup: {
-    gap: spacing.sm,
-  },
-  infoLabel: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '700',
-  },
-  infoRow: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    minHeight: 40,
-    paddingHorizontal: 10,
-  },
-  infoValue: {
-    flex: 1.35,
-    fontSize: typography.body,
-    fontWeight: '800',
-    textAlign: 'right',
   },
   groupChip: {
     alignItems: 'center',
-    borderRadius: radii.md,
+    borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 5,
-    height: 34,
+    height: 30,
     maxWidth: 150,
     paddingHorizontal: 10,
   },
-  groupChipScroll: {
-    gap: 6,
-    paddingRight: 4,
-  },
   groupChipText: {
     flexShrink: 1,
-    fontSize: typography.caption,
-    fontWeight: '900',
+    fontSize: 10,
+    fontWeight: '600',
     includeFontPadding: false,
-    lineHeight: 14,
+  },
+  groupChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: 6,
+  },
+  headerLeft: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minWidth: 0,
+  },
+  headerRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '600',
   },
   input: {
-    borderRadius: radii.md,
+    borderRadius: 8,
     borderWidth: 1,
     fontFamily: kubdeeFontFamilies.thai.regular,
-    fontSize: typography.body,
-    minHeight: 38,
+    fontSize: 12,
+    minHeight: 36,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
@@ -1079,153 +1224,200 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   inputLabel: {
-    fontSize: typography.micro,
-    fontWeight: '800',
-  },
-  metricCard: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flex: 1,
-    minHeight: 88,
-    padding: 10,
-  },
-  metricIcon: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    height: 26,
-    justifyContent: 'center',
-    marginBottom: 8,
-    width: 26,
-  },
-  metricLabel: {
-    fontSize: typography.caption,
-    fontWeight: '800',
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  metricSubtext: {
-    fontSize: typography.tiny,
+    fontSize: 10,
     fontWeight: '700',
-    marginTop: 2,
   },
-  metricValue: {
-    fontSize: typography.label,
-    fontWeight: '900',
-    marginBottom: 2,
-  },
-  profileBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  profileCard: {
-    alignItems: 'center',
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
+  modalBody: {
+    gap: 12,
     padding: 12,
   },
-  profileMeta: {
-    fontSize: typography.caption,
-    marginTop: 2,
-  },
-  profileName: {
-    fontSize: typography.label,
-    fontWeight: '900',
-  },
-  deleteProfileButton: {
+  modalButton: {
     alignItems: 'center',
-    borderRadius: radii.md,
-    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+    height: 34,
     justifyContent: 'center',
-    width: 32,
   },
-  profileChipRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 5,
-  },
-  profileRowAction: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    flexDirection: 'row',
-    gap: 4,
-    minHeight: 28,
-    paddingHorizontal: 7,
-  },
-  profileRowActions: {
-    alignItems: 'flex-end',
-    gap: 5,
-  },
-  profileRowActionText: {
-    fontSize: typography.tiny,
-    fontWeight: '900',
+  modalButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
     includeFontPadding: false,
-    lineHeight: 12,
   },
-  syncLine: {
+  modalCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    maxWidth: 360,
+    width: '100%',
+  },
+  modalClose: {
     alignItems: 'center',
+    borderRadius: 8,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  modalFooter: {
     flexDirection: 'row',
-    gap: 4,
-    marginTop: 5,
+    gap: 8,
+    paddingTop: 2,
   },
-  syncText: {
-    fontSize: typography.caption,
-    fontWeight: '700',
-  },
-  sourceChip: {
+  modalHead: {
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    borderRadius: radii.sm,
+    borderBottomWidth: 1,
     flexDirection: 'row',
-    gap: 4,
-    marginTop: 5,
-    maxWidth: '100%',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    gap: 8,
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  sourceChipText: {
-    flexShrink: 1,
-    fontSize: typography.tiny,
-    fontWeight: '800',
-    includeFontPadding: false,
-    lineHeight: 12,
+  modalHeadIcon: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexShrink: 0,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
   },
-  syncedProfileBody: {
+  modalHeadLeft: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minWidth: 0,
+  },
+  modalHeadTitleWrap: {
     flex: 1,
     minWidth: 0,
   },
-  syncedProfileIcon: {
+  modalOverlay: {
     alignItems: 'center',
-    borderRadius: radii.md,
-    height: 34,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    flex: 1,
     justifyContent: 'center',
-    width: 34,
+    paddingHorizontal: 16,
   },
-  syncedProfileList: {
-    gap: spacing.sm,
-  },
-  syncedProfileMeta: {
-    fontSize: typography.caption,
-    fontWeight: '700',
+  modalSubtitle: {
+    fontSize: 10,
+    fontWeight: '500',
     marginTop: 1,
   },
-  syncedProfileName: {
-    fontSize: typography.body,
-    fontWeight: '900',
+  modalTitle: {
+    fontSize: 12,
+    fontWeight: '600',
     includeFontPadding: false,
-    lineHeight: 17,
   },
-  syncedProfileRow: {
-    alignItems: 'center',
-    borderRadius: radii.md,
+  profileList: {
+    gap: 8,
+  },
+  profileRow: {
+    alignItems: 'stretch',
+    borderRadius: 10,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 9,
-    minHeight: 58,
-    padding: 9,
+    overflow: 'hidden',
+  },
+  profileRowDelete: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+  },
+  profileRowIcon: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexShrink: 0,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  profileRowInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileRowMain: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  profileRowMeta: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  profileRowName: {
+    fontSize: 12,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  sectionHeadCount: {
+    flexShrink: 0,
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  sectionHeadRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  statsCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 8,
+  },
+  statsCell: {
+    borderRadius: 6,
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  statsCellHint: {
+    fontSize: 8,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  statsCellLabel: {
+    fontSize: 8,
+    fontWeight: '500',
+  },
+  statsCellValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    includeFontPadding: false,
+    marginTop: 1,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  statsHeadLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  statsHeadRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  statsHeadValue: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  syncButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
   },
 });

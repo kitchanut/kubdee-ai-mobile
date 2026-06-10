@@ -17,6 +17,7 @@ import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
 import {
+  CardBackdrop,
   DarkActionButton,
   EmptyState,
   HeaderIconButton,
@@ -27,6 +28,7 @@ import {
   SortPill,
   darkButtonContentColor,
   getAccentTone,
+  libraryCardStops,
 } from './shared';
 
 const mockProductStats: Record<string, { price: string; stock: string }> = {
@@ -230,9 +232,7 @@ function ProductCard({
 
   const backgroundColor = selected
     ? alpha(theme.emerald, theme.isDark ? 0.14 : 0.09)
-    : theme.isDark
-      ? theme.card
-      : alpha(theme.emerald, 0.04);
+    : theme.panel;
 
   return (
     <Pressable
@@ -242,58 +242,62 @@ function ProductCard({
         styles.productCard,
         {
           backgroundColor,
-          borderColor: selected ? alpha(theme.emerald, 0.5) : theme.border,
+          borderColor: selected ? alpha(theme.emerald, 0.5) : theme.isDark ? theme.border : '#f3f4f6',
         },
       ]}
     >
-      <View
-        style={[
-          styles.productThumb,
-          {
-            backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted,
-            borderColor: theme.isDark ? theme.borderStrong : theme.white,
-          },
-        ]}
-      >
-        <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.5} />
-      </View>
+      {!selected ? <CardBackdrop theme={theme} id="products" stops={libraryCardStops.products} /> : null}
 
-      <View style={styles.productInfo}>
-        <Text numberOfLines={1} style={[styles.productName, { color: theme.text }]}>
-          {item.title}
-        </Text>
-        <Text numberOfLines={1} style={[styles.productCode, { color: theme.textSubtle }]}>
-          #{getItemCode(item)} · สร้างจาก {sourceLabel}
-        </Text>
+      <View style={styles.productCardContent}>
+        <View
+          style={[
+            styles.productThumb,
+            {
+              backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted,
+              borderColor: theme.isDark ? theme.borderStrong : theme.white,
+            },
+          ]}
+        >
+          <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.5} />
+        </View>
 
-        <View style={styles.productFooter}>
-          <View style={styles.priceRow}>
-            <Text style={[styles.priceText, { color: theme.emerald }]}>{stats.price}</Text>
-            <Text style={[styles.priceDot, { color: theme.textSubtle }]}>·</Text>
-            <Text style={[styles.stockText, { color: theme.textMuted }]}>{stats.stock}</Text>
-          </View>
+        <View style={styles.productInfo}>
+          <Text numberOfLines={1} style={[styles.productName, { color: theme.text }]}>
+            {item.title}
+          </Text>
+          <Text numberOfLines={1} style={[styles.productCode, { color: theme.textSubtle }]}>
+            #{getItemCode(item)} · สร้างจาก {sourceLabel}
+          </Text>
 
-          <View style={styles.productActions}>
-            <Pressable
-              accessibilityLabel="แก้ไข"
-              accessibilityRole="button"
-              style={[
-                styles.cardIconButton,
-                { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.6) : alpha(theme.white, 0.6) },
-              ]}
-            >
-              <Pencil size={11} color={theme.textSubtle} strokeWidth={2} />
-            </Pressable>
-            <Pressable
-              accessibilityLabel="ลบ"
-              accessibilityRole="button"
-              style={[
-                styles.cardIconButton,
-                { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.6) : alpha(theme.white, 0.6) },
-              ]}
-            >
-              <Trash2 size={11} color={theme.textSubtle} strokeWidth={2} />
-            </Pressable>
+          <View style={styles.productFooter}>
+            <View style={styles.priceRow}>
+              <Text style={[styles.priceText, { color: theme.emerald }]}>{stats.price}</Text>
+              <Text style={[styles.priceDot, { color: theme.textSubtle }]}>·</Text>
+              <Text style={[styles.stockText, { color: theme.textMuted }]}>{stats.stock}</Text>
+            </View>
+
+            <View style={styles.productActions}>
+              <Pressable
+                accessibilityLabel="แก้ไข"
+                accessibilityRole="button"
+                style={[
+                  styles.cardIconButton,
+                  { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.6) : alpha(theme.white, 0.6) },
+                ]}
+              >
+                <Pencil size={11} color={theme.textSubtle} strokeWidth={2} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel="ลบ"
+                accessibilityRole="button"
+                style={[
+                  styles.cardIconButton,
+                  { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.6) : alpha(theme.white, 0.6) },
+                ]}
+              >
+                <Trash2 size={11} color={theme.textSubtle} strokeWidth={2} />
+              </Pressable>
+            </View>
           </View>
         </View>
       </View>
@@ -340,9 +344,16 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   productCard: {
-    alignItems: 'center',
     borderRadius: 12,
     borderWidth: 1,
+    elevation: 1,
+    overflow: 'hidden',
+    shadowOffset: { height: 1, width: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  productCardContent: {
+    alignItems: 'center',
     flexDirection: 'row',
     gap: 10,
     padding: 8,

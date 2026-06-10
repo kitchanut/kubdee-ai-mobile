@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Check, ChevronDown, ChevronUp, Pencil, Search, Star, Trash2, X } from 'lucide-react-native';
+import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -34,6 +35,54 @@ export function getAccentTone(theme: KubdeeTheme, color: string): ToneColors {
     color,
     soft: alpha(color, theme.isDark ? 0.16 : 0.1),
   };
+}
+
+export type LibraryCardKind = 'characters' | 'scenes' | 'products' | 'images' | 'videos';
+
+/** Extension-style card wash: tailwind *-50 tones left→right (80/50/30) */
+export const libraryCardStops: Record<LibraryCardKind, [string, string, string]> = {
+  characters: ['#f5f3ff', '#faf5ff', '#fdf4ff'],
+  scenes: ['#ecfeff', '#f0f9ff', '#eff6ff'],
+  products: ['#ecfdf5', '#f0fdf4', '#f0fdfa'],
+  images: ['#fffbeb', '#fefce8', '#fff7ed'],
+  videos: ['#fef2f2', '#fff1f2', '#fdf2f8'],
+};
+
+/**
+ * Replica of extension card backdrop: horizontal tone gradient (80/50/30)
+ * + 12px dot pattern at 3% (5% dark) opacity.
+ * Host card must have no padding (absolute children are inset by parent padding).
+ */
+export function CardBackdrop({
+  theme,
+  id,
+  stops,
+}: {
+  theme: KubdeeTheme;
+  id: string;
+  stops: [string, string, string];
+}): React.JSX.Element {
+  const gradientStops = theme.isDark
+    ? ([theme.cardMuted, theme.cardMuted, theme.cardMuted] as const)
+    : stops;
+  const stopOpacities = theme.isDark ? [0.8, 0.6, 0.4] : [0.8, 0.5, 0.3];
+
+  return (
+    <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width="100%" height="100%">
+      <Defs>
+        <LinearGradient id={`card-grad-${id}`} x1="0" y1="0" x2="1" y2="0">
+          <Stop offset="0" stopColor={gradientStops[0]} stopOpacity={stopOpacities[0]} />
+          <Stop offset="0.5" stopColor={gradientStops[1]} stopOpacity={stopOpacities[1]} />
+          <Stop offset="1" stopColor={gradientStops[2]} stopOpacity={stopOpacities[2]} />
+        </LinearGradient>
+        <Pattern id={`card-dots-${id}`} patternUnits="userSpaceOnUse" width="12" height="12">
+          <Circle cx="1.5" cy="1.5" r="1" fill="#000000" fillOpacity="0.4" />
+        </Pattern>
+      </Defs>
+      <Rect width="100%" height="100%" fill={`url(#card-grad-${id})`} />
+      <Rect width="100%" height="100%" fill={`url(#card-dots-${id})`} opacity={theme.isDark ? 0.05 : 0.03} />
+    </Svg>
+  );
 }
 
 /**

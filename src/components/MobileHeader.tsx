@@ -1,27 +1,28 @@
 import {
   ChartNoAxesColumn,
   ChevronDown,
-  Coins,
-  CreditCard,
-  ExternalLink,
-  HardDrive,
+  Globe2,
   LogOut,
   Moon,
   Square,
   Sun,
   UserCircle,
+  Users,
 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+
+import packageJson from '../../package.json';
 
 import { useAuth } from '@/auth/AuthContext';
 import { BACKEND_URL } from '@/auth/constants';
-import { formatExpiryLabel, formatPlanLabel } from '@/auth/plan';
+import { formatExpiryLabel, normalizeExpiryDate } from '@/auth/plan';
 import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import IconButton from '@/components/ui/IconButton';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha, radii, spacing, typography } from '@/theme/tokens';
+import { alpha, radii, typography } from '@/theme/tokens';
 
 const logoDark = require('../../assets/logo-dark.png');
 const logoLight = require('../../assets/logo-light.png');
@@ -80,10 +81,8 @@ export default function MobileHeader({
 }: MobileHeaderProps): React.JSX.Element {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profileSelectVisible, setProfileSelectVisible] = useState(false);
-  const { logout, syncedProfileGroups, syncedProfiles, user } = useAuth();
-  const ThemeIcon = theme.isDark ? Moon : Sun;
+  const { logout, user } = useAuth();
   const displayName = user?.name || user?.email || 'Kubdee AI User';
-  const planLabel = formatPlanLabel(user?.plan);
   const expiryLabel = formatExpiryLabel(user?.expiryDate);
   const creditsLabel = typeof user?.credits === 'number'
     ? new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 }).format(user.credits)
@@ -92,16 +91,13 @@ export default function MobileHeader({
   const groupById = useMemo(() => {
     return new Map(profileGroups.map((group) => [group.id, group]));
   }, [profileGroups]);
-  const sourceCount = useMemo(() => {
-    const sources = new Set<string>();
-    for (const profile of syncedProfiles) {
-      sources.add(getSourceLabel(profile.createdByApp || profile.originApp));
-    }
-    for (const group of syncedProfileGroups) {
-      sources.add(getSourceLabel(group.createdByApp || group.originApp));
-    }
-    return sources.size;
-  }, [syncedProfileGroups, syncedProfiles]);
+  const planKey = (user?.plan || 'free').toLowerCase();
+  const expiryDateValue = normalizeExpiryDate(user?.expiryDate ?? null);
+  const isPlanExpired = expiryDateValue ? expiryDateValue.getTime() < Date.now() : false;
+  const maxDevices = user?.maxDevices ?? 0;
+  const devicesFull = maxDevices > 0 && (user?.activeDevices ?? 0) >= maxDevices;
+  const planTone = getPlanTone(theme, planKey, isPlanExpired);
+  const popoverDivider = theme.isDark ? theme.border : '#f3f4f6';
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
   const profileSelectEnabled = profiles.length > 0 && !isSyncingProfiles;
   const selectedProfileLabel = selectedProfile
@@ -274,7 +270,7 @@ export default function MobileHeader({
             styles.avatarButton,
             {
               backgroundColor: theme.card,
-              borderColor: profileMenuOpen ? theme.blue : theme.borderStrong,
+              borderColor: profileMenuOpen ? (theme.isDark ? theme.white : '#0a0a0a') : theme.borderStrong,
               opacity: pressed ? 0.75 : 1,
             },
           ]}
@@ -300,169 +296,122 @@ export default function MobileHeader({
             style={[
               styles.profilePopover,
               {
-                backgroundColor: theme.card,
-                borderColor: theme.border,
+                backgroundColor: theme.panel,
+                borderColor: popoverDivider,
                 shadowColor: theme.shadow,
               },
             ]}
           >
-            <View style={styles.profilePopoverHeader}>
-              <View style={[styles.popoverAvatarFallback, { backgroundColor: theme.cyanSoft }]}>
-                <UserCircle size={24} color={theme.cyan} strokeWidth={2.1} />
-                {user?.image ? (
-                  <Image resizeMode="cover" source={{ uri: user.image }} style={styles.popoverAvatarImage} />
-                ) : null}
-              </View>
-              <View style={styles.profileNameBlock}>
-                <Text style={[styles.profileName, { color: theme.text }]} numberOfLines={1}>
-                  {displayName}
-                </Text>
-                <Text style={[styles.profileEmail, { color: theme.textSubtle }]} numberOfLines={1}>
-                  {user?.email || 'Google account'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.profileStatsGrid}>
-              <PopoverStat
-                icon={CreditCard}
-                label="Plan"
-                theme={theme}
-                value={planLabel}
-              />
-              <PopoverStat
-                icon={Coins}
-                label="Credits"
-                theme={theme}
-                value={creditsLabel}
-              />
-              <PopoverStat
-                icon={HardDrive}
-                label="Devices"
-                theme={theme}
-                value={devicesLabel}
-              />
-            </View>
-
-            <View style={[styles.expiryRow, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-              <Text style={[styles.expiryLabel, { color: theme.textSubtle }]}>หมดอายุ</Text>
-              <Text style={[styles.expiryValue, { color: theme.text }]} numberOfLines={1}>
-                {expiryLabel}
+            <View style={styles.popoverInfo}>
+              <Text numberOfLines={1} style={[styles.popoverName, { color: theme.text }]}>
+                {displayName}
               </Text>
+              <Text numberOfLines={1} style={[styles.popoverEmail, { color: theme.textSubtle }]}>
+                {user?.email || 'Google account'}
+              </Text>
+
+              <View style={[styles.popoverMetaBlock, { borderTopColor: popoverDivider }]}>
+                <View style={styles.popoverMetaRow}>
+                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Plan</Text>
+                  <View style={[styles.planBadge, { backgroundColor: planTone.background }]}>
+                    <Text style={[styles.planBadgeText, { color: planTone.color }]}>
+                      {(user?.plan || 'FREE').toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.popoverMetaRow}>
+                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Exp</Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.popoverMetaValue, { color: isPlanExpired ? theme.red : theme.text }]}
+                  >
+                    {expiryLabel}
+                  </Text>
+                </View>
+
+                <View style={styles.popoverMetaRow}>
+                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Devices</Text>
+                  <Text style={[styles.popoverMetaValue, { color: devicesFull ? theme.red : theme.text }]}>
+                    {devicesLabel}
+                  </Text>
+                </View>
+
+                <View style={styles.popoverMetaRow}>
+                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Credits</Text>
+                  <View style={styles.popoverCreditsValue}>
+                    <GemIcon />
+                    <Text style={[styles.popoverMetaValue, { color: theme.text }]}>{creditsLabel}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.popoverMetaRow}>
+                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Version</Text>
+                  <Text style={[styles.popoverMetaValue, { color: theme.text }]}>v{packageJson.version}</Text>
+                </View>
+
+                <View style={[styles.popoverThemeBlock, { borderTopColor: popoverDivider }]}>
+                  <View style={styles.popoverMetaRow}>
+                    <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>ธีม</Text>
+                    <Text style={[styles.popoverMetaHint, { color: theme.textSubtle }]}>
+                      {theme.isDark ? 'มืด' : 'สว่าง'}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.themeSegments,
+                      { backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted },
+                    ]}
+                  >
+                    {themeSegmentOptions.map((option) => {
+                      const SegmentIcon = option.icon;
+                      const isActive = (option.key === 'dark') === theme.isDark;
+
+                      return (
+                        <Pressable
+                          accessibilityLabel={`ธีม${option.label}`}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isActive }}
+                          key={option.key}
+                          onPress={() => {
+                            if (!isActive) {
+                              handleThemeToggle();
+                            }
+                          }}
+                          style={[
+                            styles.themeSegment,
+                            isActive
+                              ? { backgroundColor: theme.isDark ? theme.panelMuted : theme.white }
+                              : null,
+                          ]}
+                        >
+                          <SegmentIcon
+                            size={12}
+                            color={isActive ? theme.text : theme.textSubtle}
+                            strokeWidth={2.2}
+                          />
+                          <Text
+                            style={[
+                              styles.themeSegmentText,
+                              { color: isActive ? theme.text : theme.textSubtle },
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
             </View>
 
-            <View style={styles.profileMetaGrid}>
-              <MetaChip label="Profiles" theme={theme} value={syncedProfiles.length} />
-              <MetaChip label="Groups" theme={theme} value={syncedProfileGroups.length} />
-              <MetaChip label="Sources" theme={theme} value={sourceCount} />
-            </View>
+            <View style={[styles.menuDivider, { backgroundColor: popoverDivider }]} />
 
-            <View style={[styles.menuDivider, { backgroundColor: theme.border }]} />
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleOpenProfile}
-              style={({ pressed }) => [
-                styles.menuAction,
-                {
-                  backgroundColor: theme.cardMuted,
-                  borderColor: theme.border,
-                  opacity: pressed ? 0.76 : 1,
-                },
-              ]}
-            >
-              <View style={styles.menuActionContent}>
-                <View style={[styles.menuIconBox, { backgroundColor: theme.cyanSoft }]}>
-                  <UserCircle size={15} color={theme.cyan} strokeWidth={2.2} />
-                </View>
-                <Text style={[styles.menuLabel, { color: theme.text }]} numberOfLines={1}>
-                  โปรไฟล์และแผน
-                </Text>
-              </View>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleOpenLogs}
-              style={({ pressed }) => [
-                styles.menuAction,
-                {
-                  backgroundColor: theme.cardMuted,
-                  borderColor: theme.border,
-                  opacity: pressed ? 0.76 : 1,
-                },
-              ]}
-            >
-              <View style={styles.menuActionContent}>
-                <View style={[styles.menuIconBox, { backgroundColor: theme.panelMuted }]}>
-                  <ChartNoAxesColumn size={15} color={theme.textSubtle} strokeWidth={2.2} />
-                </View>
-                <Text style={[styles.menuLabel, { color: theme.text }]} numberOfLines={1}>
-                  Logs
-                </Text>
-              </View>
-            </Pressable>
-
-            <View style={[styles.themeRow, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-              <View style={styles.themeLabelWrap}>
-                <View style={[styles.menuIconBox, { backgroundColor: theme.isDark ? theme.active : theme.amberSoft }]}>
-                  <ThemeIcon size={15} color={theme.isDark ? theme.blue : theme.amber} strokeWidth={2.2} />
-                </View>
-                <Text style={[styles.menuLabel, { color: theme.text }]}>
-                  {theme.isDark ? 'Dark mode' : 'Light mode'}
-                </Text>
-              </View>
-              <Switch
-                onValueChange={handleThemeToggle}
-                thumbColor={theme.isDark ? theme.blue : theme.amber}
-                trackColor={{ false: theme.borderStrong, true: alpha(theme.blue, 0.24) }}
-                value={theme.isDark}
-              />
-            </View>
-
-            <Pressable
-              accessibilityRole="link"
-              onPress={handleOpenWebsite}
-              style={({ pressed }) => [
-                styles.menuAction,
-                {
-                  backgroundColor: theme.cardMuted,
-                  borderColor: theme.border,
-                  opacity: pressed ? 0.76 : 1,
-                },
-              ]}
-            >
-              <View style={styles.menuActionContent}>
-                <View style={[styles.menuIconBox, { backgroundColor: theme.emeraldSoft }]}>
-                  <ExternalLink size={15} color={theme.emerald} strokeWidth={2.2} />
-                </View>
-                <Text style={[styles.menuLabel, { color: theme.text }]} numberOfLines={1}>
-                  เปิดเว็บ Kubdee AI
-                </Text>
-              </View>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleLogout}
-              style={({ pressed }) => [
-                styles.menuAction,
-                {
-                  backgroundColor: theme.redSoft,
-                  borderColor: alpha(theme.red, 0.35),
-                  opacity: pressed ? 0.76 : 1,
-                },
-              ]}
-            >
-              <View style={styles.menuActionContent}>
-                <View style={[styles.menuIconBox, { backgroundColor: alpha(theme.red, theme.isDark ? 0.16 : 0.1) }]}>
-                  <LogOut size={15} color={theme.red} strokeWidth={2.2} />
-                </View>
-                <Text style={[styles.menuLabel, { color: theme.red }]} numberOfLines={1}>
-                  ออกจากระบบ
-                </Text>
-              </View>
-            </Pressable>
+            <PopoverMenuButton icon={Users} label="จัดการโปรไฟล์" theme={theme} onPress={handleOpenProfile} />
+            <PopoverMenuButton icon={ChartNoAxesColumn} label="Logs" theme={theme} onPress={handleOpenLogs} />
+            <PopoverMenuButton icon={Globe2} label="ไปเว็บไซต์" theme={theme} onPress={handleOpenWebsite} />
+            <PopoverMenuButton danger icon={LogOut} label="ออกจากระบบ" theme={theme} onPress={handleLogout} />
           </Pressable>
         </Pressable>
       </Modal>
@@ -470,33 +419,102 @@ export default function MobileHeader({
   );
 }
 
-interface PopoverStatProps {
-  icon: typeof CreditCard;
-  label: string;
-  value: string;
-  theme: KubdeeTheme;
+const themeSegmentOptions = [
+  { key: 'light', label: 'สว่าง', icon: Sun },
+  { key: 'dark', label: 'มืด', icon: Moon },
+] as const;
+
+/** Extension plan badge tones: ULTRA purple / PRO blue / BASIC green / FREE gray / expired red */
+function getPlanTone(
+  theme: KubdeeTheme,
+  plan: string,
+  expired: boolean
+): { background: string; color: string } {
+  if (expired) {
+    return {
+      background: alpha('#ef4444', theme.isDark ? 0.24 : 0.12),
+      color: theme.isDark ? '#fca5a5' : '#b91c1c',
+    };
+  }
+
+  switch (plan) {
+    case 'ultra':
+      return {
+        background: alpha('#a855f7', theme.isDark ? 0.24 : 0.14),
+        color: theme.isDark ? '#d8b4fe' : '#7e22ce',
+      };
+    case 'pro':
+      return {
+        background: alpha('#3b82f6', theme.isDark ? 0.24 : 0.12),
+        color: theme.isDark ? '#93c5fd' : '#1d4ed8',
+      };
+    case 'basic':
+      return {
+        background: alpha('#22c55e', theme.isDark ? 0.24 : 0.12),
+        color: theme.isDark ? '#86efac' : '#15803d',
+      };
+    default:
+      return {
+        background: theme.isDark ? theme.cardMuted : theme.panelMuted,
+        color: theme.textSubtle,
+      };
+  }
 }
 
-function PopoverStat({ icon: Icon, label, value, theme }: PopoverStatProps): React.JSX.Element {
+/** Extension credits gem: amber gradient diamond */
+function GemIcon(): React.JSX.Element {
   return (
-    <View style={[styles.statBox, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-      <Icon size={13} color={theme.textSubtle} strokeWidth={2.1} />
-      <Text style={[styles.statValue, { color: theme.text }]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text style={[styles.statLabel, { color: theme.textSubtle }]} numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
+    <Svg height={12} viewBox="0 0 24 24" width={12}>
+      <Defs>
+        <LinearGradient id="gem-gradient" x1="0" x2="1" y1="0" y2="1">
+          <Stop offset="0" stopColor="#FFD93D" />
+          <Stop offset="0.5" stopColor="#F59E0B" />
+          <Stop offset="1" stopColor="#D97706" />
+        </LinearGradient>
+      </Defs>
+      <Path d="M6 2L1 9L12 22L23 9L18 2H6Z" fill="url(#gem-gradient)" />
+    </Svg>
   );
 }
 
-function MetaChip({ label, value, theme }: { label: string; value: number; theme: KubdeeTheme }): React.JSX.Element {
+interface PopoverMenuButtonProps {
+  icon: typeof LogOut;
+  label: string;
+  theme: KubdeeTheme;
+  danger?: boolean;
+  onPress: () => void;
+}
+
+/** Extension account menu item: flat centered row, hover wash */
+function PopoverMenuButton({
+  icon: Icon,
+  label,
+  theme,
+  danger = false,
+  onPress,
+}: PopoverMenuButtonProps): React.JSX.Element {
+  const color = danger ? theme.red : theme.textMuted;
+
   return (
-    <View style={[styles.metaChip, { backgroundColor: theme.panelMuted }]}>
-      <Text style={[styles.metaChipValue, { color: theme.text }]}>{value.toLocaleString('th-TH')}</Text>
-      <Text style={[styles.metaChipLabel, { color: theme.textSubtle }]}>{label}</Text>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.popoverMenuButton,
+        pressed
+          ? {
+              backgroundColor: danger
+                ? alpha(theme.red, theme.isDark ? 0.14 : 0.07)
+                : theme.isDark
+                  ? theme.cardMuted
+                  : theme.panelMuted,
+            }
+          : null,
+      ]}
+    >
+      <Icon size={14} color={color} strokeWidth={2.3} />
+      <Text style={[styles.popoverMenuLabel, { color }]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -551,131 +569,102 @@ const styles = StyleSheet.create({
     height: 36,
     width: 36,
   },
-  expiryLabel: {
-    fontSize: typography.caption,
-    fontWeight: '700',
-  },
-  expiryRow: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'space-between',
-    minHeight: 36,
-    paddingHorizontal: 10,
-  },
-  expiryValue: {
-    flex: 1,
-    fontSize: typography.caption,
-    fontWeight: '900',
-    textAlign: 'right',
-  },
-  menuAction: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    minHeight: 40,
-    overflow: 'hidden',
-  },
-  menuActionContent: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    minHeight: 40,
-    paddingHorizontal: 9,
-  },
   menuDivider: {
     height: 1,
+    marginHorizontal: 4,
+    marginVertical: 2,
   },
-  menuIconBox: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
+  planBadge: {
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
-  menuLabel: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '900',
-    includeFontPadding: false,
-    lineHeight: 16,
-  },
-  metaChip: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    flex: 1,
-    minHeight: 38,
-    paddingVertical: 6,
-  },
-  metaChipLabel: {
-    fontSize: typography.tiny,
+  planBadgeText: {
+    fontSize: 9,
     fontWeight: '800',
     includeFontPadding: false,
-    lineHeight: 12,
-  },
-  metaChipValue: {
-    fontSize: typography.body,
-    fontWeight: '900',
-    includeFontPadding: false,
-    lineHeight: 15,
-  },
-  popoverAvatarFallback: {
-    alignItems: 'center',
-    borderRadius: 21,
-    height: 42,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 42,
-  },
-  popoverAvatarImage: {
-    borderRadius: 21,
-    height: 42,
-    left: 0,
-    position: 'absolute',
-    top: 0,
-    width: 42,
+    letterSpacing: 0.8,
   },
   popoverBackdrop: {
     flex: 1,
   },
-  profileEmail: {
-    fontSize: typography.caption,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  profileMetaGrid: {
+  popoverCreditsValue: {
+    alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: 4,
   },
-  profileName: {
-    fontSize: typography.label,
-    fontWeight: '900',
+  popoverEmail: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  popoverInfo: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  popoverMenuButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 8,
+    height: 34,
+    justifyContent: 'center',
+  },
+  popoverMenuLabel: {
+    fontSize: 12,
+    fontWeight: '600',
     includeFontPadding: false,
-    lineHeight: 18,
   },
-  profileNameBlock: {
-    flex: 1,
-    minWidth: 0,
+  popoverMetaBlock: {
+    borderTopWidth: 1,
+    gap: 7,
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  popoverMetaHint: {
+    fontSize: 9,
+    fontWeight: '500',
+  },
+  popoverMetaLabel: {
+    flexShrink: 0,
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  popoverMetaRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  popoverMetaValue: {
+    flexShrink: 1,
+    fontSize: 10,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  popoverName: {
+    fontSize: 12,
+    fontWeight: '600',
+    includeFontPadding: false,
+  },
+  popoverThemeBlock: {
+    borderTopWidth: 1,
+    gap: 6,
+    marginTop: 2,
+    paddingTop: 8,
   },
   profilePopover: {
-    borderRadius: radii.lg,
+    borderRadius: 12,
     borderWidth: 1,
     elevation: 10,
-    gap: spacing.sm,
-    padding: 10,
+    padding: 4,
     position: 'absolute',
     right: 12,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.18,
     shadowRadius: 20,
     top: 74,
-    width: 306,
-  },
-  profilePopoverHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
+    width: 248,
   },
   profileSelectButton: {
     alignItems: 'center',
@@ -750,26 +739,25 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     lineHeight: 15,
   },
-  profileStatsGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  statBox: {
-    borderRadius: radii.md,
-    borderWidth: 1,
+  themeSegment: {
+    alignItems: 'center',
+    borderRadius: 6,
     flex: 1,
-    minHeight: 62,
-    padding: 8,
+    flexDirection: 'row',
+    gap: 4,
+    height: 28,
+    justifyContent: 'center',
   },
-  statLabel: {
-    fontSize: typography.tiny,
-    fontWeight: '800',
-    marginTop: 2,
+  themeSegments: {
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 3,
+    padding: 2,
   },
-  statValue: {
-    fontSize: typography.body,
-    fontWeight: '900',
-    marginTop: 7,
+  themeSegmentText: {
+    fontSize: 9,
+    fontWeight: '700',
+    includeFontPadding: false,
   },
   title: {
     fontSize: typography.title,
@@ -784,20 +772,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 0,
     transform: [{ translateY: 1 }],
-  },
-  themeLabelWrap: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  themeRow: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    minHeight: 42,
-    paddingLeft: 9,
-    paddingRight: 8,
   },
 });
