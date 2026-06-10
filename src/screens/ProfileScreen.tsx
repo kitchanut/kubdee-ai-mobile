@@ -6,7 +6,6 @@ import {
   Linking,
   Modal,
   ScrollView,
-  StyleSheet,
   TextInput,
   TouchableOpacity,
   View,
@@ -36,7 +35,6 @@ import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import Text from '@/components/ui/KubdeeText';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha } from '@/theme/tokens';
 
 interface ProfileScreenProps {
   theme: KubdeeTheme;
@@ -117,22 +115,15 @@ function ProfileRow({
   onSelect?: (profileId: string) => void;
   onDelete?: (profile: SyncedProfile) => void;
 }): React.JSX.Element {
-  const inverseBackground = theme.isDark ? theme.white : '#111827';
   const inverseText = theme.isDark ? '#111827' : theme.white;
 
   return (
     <View
-      style={[
-        styles.profileRow,
-        {
-          backgroundColor: active
-            ? theme.isDark
-              ? theme.cardMuted
-              : theme.panelMuted
-            : theme.panel,
-          borderColor: active ? theme.borderStrong : theme.border,
-        },
-      ]}
+      className={`flex-row items-stretch overflow-hidden rounded-kd-xl border ${
+        active
+          ? 'border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted'
+          : 'border-kd-border bg-kd-panel'
+      }`}
     >
       <TouchableOpacity
         accessibilityRole="button"
@@ -140,19 +131,12 @@ function ProfileRow({
         activeOpacity={0.78}
         disabled={disabled}
         onPress={() => onSelect?.(profile.id)}
-        style={[styles.profileRowMain, { opacity: disabled ? 0.6 : 1 }]}
+        className="min-w-0 flex-1 flex-row items-center gap-2 px-2.5 py-2 disabled:opacity-60"
       >
         <View
-          style={[
-            styles.profileRowIcon,
-            {
-              backgroundColor: active
-                ? inverseBackground
-                : theme.isDark
-                  ? theme.cardMuted
-                  : theme.panelMuted,
-            },
-          ]}
+          className={`h-7 w-7 shrink-0 items-center justify-center rounded-kd-lg ${
+            active ? 'bg-gray-900 dark:bg-white' : 'bg-kd-panel-muted dark:bg-kd-card-muted'
+          }`}
         >
           <User
             size={14}
@@ -160,11 +144,11 @@ function ProfileRow({
             strokeWidth={2.2}
           />
         </View>
-        <View style={styles.profileRowInfo}>
-          <Text numberOfLines={1} style={[styles.profileRowName, { color: theme.text }]}>
+        <View className="min-w-0 flex-1">
+          <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
             {profile.name}
           </Text>
-          <Text numberOfLines={1} style={[styles.profileRowMeta, { color: theme.textSubtle }]}>
+          <Text numberOfLines={1} className="mt-0.5 text-kd-micro font-medium text-kd-text-subtle">
             {group?.name || 'ไม่มีกลุ่ม'} · {getSourceLabel(profile.createdByApp || profile.originApp)} ·{' '}
             {formatShortId(profile.id)}
           </Text>
@@ -178,7 +162,7 @@ function ProfileRow({
           activeOpacity={0.7}
           disabled={disabled}
           onPress={() => onDelete(profile)}
-          style={[styles.profileRowDelete, { opacity: disabled ? 0.5 : 1 }]}
+          className="w-9 items-center justify-center disabled:opacity-50"
         >
           <Trash2 size={14} color={theme.red} strokeWidth={2} />
         </TouchableOpacity>
@@ -204,68 +188,46 @@ function DeletedProfileRow({
   onConfirmDelete?: (profile: SyncedProfile) => void;
 }): React.JSX.Element {
   return (
-    <View
-      style={[
-        styles.deletedRow,
-        {
-          backgroundColor: alpha(theme.amber, theme.isDark ? 0.1 : 0.08),
-          borderColor: alpha(theme.amber, theme.isDark ? 0.4 : 0.35),
-        },
-      ]}
-    >
-      <View style={styles.deletedRowHead}>
-        <View style={[styles.deletedRowIcon, { backgroundColor: alpha(theme.amber, theme.isDark ? 0.2 : 0.16) }]}>
+    <View className="rounded-kd-xl border border-kd-amber/35 bg-kd-amber/10 p-2 dark:border-kd-amber/40">
+      <View className="flex-row items-start gap-2">
+        <View className="h-7 w-7 shrink-0 items-center justify-center rounded-kd-lg bg-kd-amber/15 dark:bg-kd-amber/20">
           <Archive size={14} color={theme.amber} strokeWidth={2.2} />
         </View>
-        <View style={styles.deletedRowInfo}>
-          <View style={styles.deletedRowTitleRow}>
-            <Text numberOfLines={1} style={[styles.deletedRowName, { color: theme.text }]}>
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-center justify-between gap-2">
+            <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-body font-semibold text-kd-text">
               {profile.name}
             </Text>
-            <Text numberOfLines={1} style={[styles.deletedRowSource, { color: theme.amber }]}>
+            <Text numberOfLines={1} className="shrink-0 text-kd-tiny font-semibold text-kd-amber">
               ถูกลบจาก {getDeletedSourceLabel(profile)}
             </Text>
           </View>
-          <Text numberOfLines={1} style={[styles.deletedRowMeta, { color: alpha(theme.amber, 0.85) }]}>
+          <Text numberOfLines={1} className="mt-0.5 text-kd-micro font-medium text-kd-amber/85">
             {group?.name || 'ไม่มีกลุ่ม'} · {formatShortId(profile.id)}
           </Text>
         </View>
       </View>
 
-      <View style={styles.deletedRowActions}>
+      <View className="mt-2 flex-row gap-1.5">
         <TouchableOpacity
           accessibilityRole="button"
           activeOpacity={0.78}
           disabled={disabled}
           onPress={() => onRestore?.(profile)}
-          style={[
-            styles.deletedRowButton,
-            {
-              backgroundColor: alpha(theme.emerald, theme.isDark ? 0.16 : 0.1),
-              borderColor: alpha(theme.emerald, 0.4),
-              opacity: disabled ? 0.5 : 1,
-            },
-          ]}
+          className="h-7 flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-kd-emerald/40 bg-kd-emerald/10 disabled:opacity-50 dark:bg-kd-emerald/15"
         >
           <RotateCcw size={12} color={theme.emerald} strokeWidth={2.3} />
-          <Text style={[styles.deletedRowButtonText, { color: theme.emerald }]}>กู้คืน</Text>
+          <Text className="text-kd-micro font-semibold text-kd-emerald">กู้คืน</Text>
         </TouchableOpacity>
         <TouchableOpacity
           accessibilityRole="button"
           activeOpacity={0.78}
           disabled={disabled}
           onPress={() => onConfirmDelete?.(profile)}
-          style={[
-            styles.deletedRowButton,
-            {
-              backgroundColor: alpha(theme.red, theme.isDark ? 0.16 : 0.08),
-              borderColor: alpha(theme.red, 0.4),
-              opacity: disabled ? 0.5 : 1,
-            },
-          ]}
+          className="h-7 flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-kd-red/40 bg-kd-red/10 disabled:opacity-50 dark:bg-kd-red/15"
         >
           <Check size={12} color={theme.red} strokeWidth={2.3} />
-          <Text style={[styles.deletedRowButtonText, { color: theme.red }]}>ซ่อน</Text>
+          <Text className="text-kd-micro font-semibold text-kd-red">ซ่อน</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -337,13 +299,16 @@ export default function ProfileScreen({
         : syncStatus === 'error'
           ? theme.red
           : theme.textMuted;
-  const syncToneBackground =
-    syncStatus === 'idle' ? theme.panel : alpha(syncToneColor, theme.isDark ? 0.16 : 0.09);
-  const syncToneBorder = syncStatus === 'idle' ? theme.border : alpha(syncToneColor, 0.4);
+  const syncToneClass =
+    syncStatus === 'syncing'
+      ? 'border-kd-blue/40 bg-kd-blue/10 dark:bg-kd-blue/15'
+      : syncStatus === 'success'
+        ? 'border-kd-emerald/40 bg-kd-emerald/10 dark:bg-kd-emerald/15'
+        : syncStatus === 'error'
+          ? 'border-kd-red/40 bg-kd-red/10 dark:bg-kd-red/15'
+          : 'border-kd-border bg-kd-panel';
 
-  const inverseBackground = theme.isDark ? theme.white : '#111827';
   const inverseText = theme.isDark ? '#111827' : theme.white;
-  const cellBackground = theme.isDark ? theme.panelMuted : theme.cardMuted;
 
   useEffect(() => {
     void syncProfile();
@@ -443,16 +408,16 @@ export default function ProfileScreen({
 
   return (
     <>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
         {/* Extension: โปรไฟล์ header — Users icon + sync button + เพิ่ม */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
+        <View className="flex-row items-center justify-between gap-2">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
             <Users size={14} color={theme.text} strokeWidth={2.4} />
-            <Text numberOfLines={1} style={[styles.headerTitle, { color: theme.textMuted }]}>
+            <Text numberOfLines={1} className="shrink text-kd-caption font-semibold text-kd-text-muted">
               โปรไฟล์
             </Text>
           </View>
-          <View style={styles.headerActions}>
+          <View className="shrink-0 flex-row items-center gap-1.5">
             <TouchableOpacity
               accessibilityLabel="ซิงก์โปรไฟล์กับ Cloud"
               accessibilityRole="button"
@@ -461,10 +426,7 @@ export default function ProfileScreen({
               onPress={() => {
                 void syncProfile();
               }}
-              style={[
-                styles.syncButton,
-                { backgroundColor: syncToneBackground, borderColor: syncToneBorder },
-              ]}
+              className={`h-7 w-7 items-center justify-center rounded-kd-lg border ${syncToneClass}`}
             >
               {isSyncing ? (
                 <ActivityIndicator color={syncToneColor} size="small" />
@@ -476,61 +438,53 @@ export default function ProfileScreen({
               accessibilityRole="button"
               activeOpacity={0.82}
               onPress={() => setCreateOpen(true)}
-              style={[styles.addButton, { backgroundColor: inverseBackground }]}
+              className="h-7 flex-row items-center gap-1 rounded-kd-lg bg-gray-900 px-2.5 dark:bg-white"
             >
               <Plus size={12} color={inverseText} strokeWidth={2.5} />
-              <Text style={[styles.addButtonText, { color: inverseText }]}>เพิ่ม</Text>
+              <Text className="text-kd-caption font-semibold text-white dark:text-gray-900">เพิ่ม</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Extension: sync stats card */}
-        <View style={[styles.statsCard, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-          <View style={styles.statsHeadRow}>
-            <Text style={[styles.statsHeadLabel, { color: theme.textSubtle }]}>ซิงก์ล่าสุด</Text>
-            <Text style={[styles.statsHeadValue, { color: theme.textMuted }]}>
+        <View className="rounded-kd-xl border border-kd-border bg-kd-panel p-2">
+          <View className="mb-1.5 flex-row items-center justify-between gap-2">
+            <Text className="text-kd-micro font-medium text-kd-text-subtle">ซิงก์ล่าสุด</Text>
+            <Text className="text-kd-caption font-semibold text-kd-text-muted">
               {formatSyncLabel(lastProfilesSyncedAt || lastSyncedAt)}
             </Text>
           </View>
 
-          <View style={styles.statsGrid}>
-            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
-              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>ใช้งานอยู่</Text>
-              <Text style={[styles.statsCellValue, { color: theme.text }]}>
+          <View className="flex-row gap-1">
+            <View className="flex-1 rounded-kd-md bg-kd-card-muted px-2 py-[5px] dark:bg-kd-panel-muted">
+              <Text className="text-[8px] font-medium text-kd-text-subtle">ใช้งานอยู่</Text>
+              <Text className="mt-px text-kd-body font-semibold text-kd-text">
                 {formatCount(syncedProfiles.length)}
               </Text>
             </View>
-            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
-              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>กลุ่ม</Text>
-              <Text style={[styles.statsCellValue, { color: theme.text }]}>
+            <View className="flex-1 rounded-kd-md bg-kd-card-muted px-2 py-[5px] dark:bg-kd-panel-muted">
+              <Text className="text-[8px] font-medium text-kd-text-subtle">กลุ่ม</Text>
+              <Text className="mt-px text-kd-body font-semibold text-kd-text">
                 {formatCount(syncedProfileGroups.length)}
               </Text>
             </View>
-            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
-              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>ถูกลบ</Text>
-              <Text style={[styles.statsCellValue, { color: theme.text }]}>
+            <View className="flex-1 rounded-kd-md bg-kd-card-muted px-2 py-[5px] dark:bg-kd-panel-muted">
+              <Text className="text-[8px] font-medium text-kd-text-subtle">ถูกลบ</Text>
+              <Text className="mt-px text-kd-body font-semibold text-kd-text">
                 {formatCount(deletedSyncedProfiles.length)}
               </Text>
             </View>
           </View>
 
           {selectedProfile ? (
-            <View
-              style={[
-                styles.activeBox,
-                {
-                  backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted,
-                  borderColor: theme.borderStrong,
-                },
-              ]}
-            >
-              <View style={styles.activeBoxRow}>
-                <Text style={[styles.activeBoxBadge, { color: theme.textMuted }]}>ใช้งาน</Text>
-                <Text numberOfLines={1} style={[styles.activeBoxName, { color: theme.text }]}>
+            <View className="mt-1.5 rounded-kd-lg border border-kd-border-strong bg-kd-panel-muted px-2 py-1.5 dark:bg-kd-card-muted">
+              <View className="flex-row items-center gap-2">
+                <Text className="shrink-0 text-kd-tiny font-semibold text-kd-text-muted">ใช้งาน</Text>
+                <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-body font-semibold text-kd-text">
                   {selectedProfile.name}
                 </Text>
               </View>
-              <Text numberOfLines={1} style={[styles.activeBoxMeta, { color: theme.textSubtle }]}>
+              <Text numberOfLines={1} className="mt-0.5 text-kd-micro font-medium text-kd-text-subtle">
                 {selectedGroup?.name || 'ไม่มีกลุ่ม'} ·{' '}
                 {getSourceLabel(selectedProfile.createdByApp || selectedProfile.originApp)} ·{' '}
                 {formatShortId(selectedProfile.id)}
@@ -539,61 +493,46 @@ export default function ProfileScreen({
           ) : null}
 
           {syncError ? (
-            <View
-              style={[
-                styles.errorBox,
-                { backgroundColor: alpha(theme.red, theme.isDark ? 0.12 : 0.07), borderColor: alpha(theme.red, 0.35) },
-              ]}
-            >
-              <Text style={[styles.errorText, { color: theme.red }]}>{syncError}</Text>
+            <View className="mt-1.5 rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
+              <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{syncError}</Text>
             </View>
           ) : null}
         </View>
 
         {/* Extension: โปรไฟล์ทั้งหมด */}
-        <View style={styles.sectionHeadRow}>
-          <View style={styles.headerLeft}>
+        <View className="mt-1 flex-row items-center justify-between gap-2">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
             <User size={14} color={theme.text} strokeWidth={2.4} />
-            <Text style={[styles.headerTitle, { color: theme.textMuted }]}>โปรไฟล์ทั้งหมด</Text>
+            <Text className="shrink text-kd-caption font-semibold text-kd-text-muted">โปรไฟล์ทั้งหมด</Text>
           </View>
-          <Text style={[styles.sectionHeadCount, { color: theme.textSubtle }]}>
+          <Text className="shrink-0 text-kd-micro font-medium text-kd-text-subtle">
             {formatCount(syncedProfiles.length)} รายการ
           </Text>
         </View>
 
         {isSyncingProfiles && syncedProfiles.length === 0 ? (
-          <View
-            style={[
-              styles.emptyState,
-              { backgroundColor: cellBackground, borderColor: theme.border },
-            ]}
-          >
+          <View className="items-center gap-1.5 rounded-kd-xl border border-dashed border-kd-border bg-kd-card-muted px-4 py-5 dark:bg-kd-panel-muted">
             <ActivityIndicator color={theme.blue} size="small" />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>กำลังโหลดโปรไฟล์จาก Cloud</Text>
+            <Text className="text-center text-kd-body font-semibold text-kd-text">กำลังโหลดโปรไฟล์จาก Cloud</Text>
           </View>
         ) : syncedProfiles.length === 0 ? (
-          <View
-            style={[
-              styles.emptyState,
-              { backgroundColor: cellBackground, borderColor: theme.border },
-            ]}
-          >
+          <View className="items-center gap-1.5 rounded-kd-xl border border-dashed border-kd-border bg-kd-card-muted px-4 py-5 dark:bg-kd-panel-muted">
             <User size={20} color={theme.textSubtle} strokeWidth={2} />
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>ยังไม่มีโปรไฟล์ใช้งานอยู่</Text>
-            <Text style={[styles.emptyDescription, { color: theme.textSubtle }]}>
+            <Text className="text-center text-kd-body font-semibold text-kd-text">ยังไม่มีโปรไฟล์ใช้งานอยู่</Text>
+            <Text className="text-center text-kd-micro font-medium leading-[15px] text-kd-text-subtle">
               สร้างโปรไฟล์แรกบนมือถือ แล้วระบบจะซิงก์ขึ้น Cloud
             </Text>
             <TouchableOpacity
               accessibilityRole="button"
               activeOpacity={0.82}
               onPress={() => setCreateOpen(true)}
-              style={[styles.emptyAction, { backgroundColor: inverseBackground }]}
+              className="mt-1 h-7 items-center justify-center rounded-kd-lg bg-gray-900 px-3 dark:bg-white"
             >
-              <Text style={[styles.emptyActionText, { color: inverseText }]}>สร้างโปรไฟล์แรก</Text>
+              <Text className="text-kd-micro font-semibold text-white dark:text-gray-900">สร้างโปรไฟล์แรก</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.profileList}>
+          <View className="gap-2">
             {syncedProfiles.map((profile) => (
               <ProfileRow
                 key={profile.id}
@@ -612,16 +551,16 @@ export default function ProfileScreen({
         {/* Extension: โปรไฟล์ที่ถูกลบ */}
         {deletedSyncedProfiles.length > 0 ? (
           <>
-            <View style={styles.sectionHeadRow}>
-              <View style={styles.headerLeft}>
+            <View className="mt-1 flex-row items-center justify-between gap-2">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
                 <Archive size={14} color={theme.amber} strokeWidth={2.4} />
-                <Text style={[styles.headerTitle, { color: theme.amber }]}>โปรไฟล์ที่ถูกลบ</Text>
+                <Text className="shrink text-kd-caption font-semibold text-kd-amber">โปรไฟล์ที่ถูกลบ</Text>
               </View>
-              <Text style={[styles.sectionHeadCount, { color: theme.amber }]}>
+              <Text className="shrink-0 text-kd-micro font-medium text-kd-amber">
                 {formatCount(deletedSyncedProfiles.length)} รอจัดการ
               </Text>
             </View>
-            <View style={styles.profileList}>
+            <View className="gap-2">
               {deletedSyncedProfiles.map((profile) => (
                 <DeletedProfileRow
                   key={profile.id}
@@ -638,83 +577,77 @@ export default function ProfileScreen({
         ) : null}
 
         {/* บัญชี */}
-        <View style={styles.sectionHeadRow}>
-          <View style={styles.headerLeft}>
+        <View className="mt-1 flex-row items-center justify-between gap-2">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
             <UserCircle size={14} color={theme.text} strokeWidth={2.4} />
-            <Text style={[styles.headerTitle, { color: theme.textMuted }]}>บัญชี</Text>
+            <Text className="shrink text-kd-caption font-semibold text-kd-text-muted">บัญชี</Text>
           </View>
         </View>
 
-        <View style={[styles.accountCard, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-          <View style={styles.accountHead}>
+        <View className="gap-2 rounded-kd-xl border border-kd-border bg-kd-panel p-2">
+          <View className="flex-row items-center gap-2">
             {user?.image ? (
-              <Image source={{ uri: user.image }} style={styles.accountAvatarImage} />
+              <Image source={{ uri: user.image }} className="h-[38px] w-[38px] rounded-kd-xl" />
             ) : (
-              <View style={[styles.accountAvatar, { backgroundColor: cellBackground }]}>
+              <View className="h-[38px] w-[38px] items-center justify-center rounded-kd-xl bg-kd-card-muted dark:bg-kd-panel-muted">
                 <UserCircle size={20} color={theme.textSubtle} strokeWidth={2} />
               </View>
             )}
-            <View style={styles.accountInfo}>
-              <Text numberOfLines={1} style={[styles.accountName, { color: theme.text }]}>
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
                 {displayName}
               </Text>
-              <Text numberOfLines={1} style={[styles.accountEmail, { color: theme.textSubtle }]}>
+              <Text numberOfLines={1} className="mt-px text-kd-micro font-medium text-kd-text-subtle">
                 {user?.email || 'Google account'}
               </Text>
             </View>
           </View>
 
-          <View style={styles.statsGrid}>
-            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
-              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>แผน</Text>
-              <Text numberOfLines={1} style={[styles.statsCellValue, { color: theme.text }]}>
+          <View className="flex-row gap-1">
+            <View className="flex-1 rounded-kd-md bg-kd-card-muted px-2 py-[5px] dark:bg-kd-panel-muted">
+              <Text className="text-[8px] font-medium text-kd-text-subtle">แผน</Text>
+              <Text numberOfLines={1} className="mt-px text-kd-body font-semibold text-kd-text">
                 {planLabel}
               </Text>
-              <Text numberOfLines={1} style={[styles.statsCellHint, { color: theme.textSubtle }]}>
+              <Text numberOfLines={1} className="mt-px text-[8px] font-medium text-kd-text-subtle">
                 {expiryLabel}
               </Text>
             </View>
-            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
-              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>เครดิต</Text>
-              <Text numberOfLines={1} style={[styles.statsCellValue, { color: theme.text }]}>
+            <View className="flex-1 rounded-kd-md bg-kd-card-muted px-2 py-[5px] dark:bg-kd-panel-muted">
+              <Text className="text-[8px] font-medium text-kd-text-subtle">เครดิต</Text>
+              <Text numberOfLines={1} className="mt-px text-kd-body font-semibold text-kd-text">
                 {formatCredits(user?.credits)}
               </Text>
             </View>
-            <View style={[styles.statsCell, { backgroundColor: cellBackground }]}>
-              <Text style={[styles.statsCellLabel, { color: theme.textSubtle }]}>อุปกรณ์</Text>
-              <Text numberOfLines={1} style={[styles.statsCellValue, { color: theme.text }]}>
+            <View className="flex-1 rounded-kd-md bg-kd-card-muted px-2 py-[5px] dark:bg-kd-panel-muted">
+              <Text className="text-[8px] font-medium text-kd-text-subtle">อุปกรณ์</Text>
+              <Text numberOfLines={1} className="mt-px text-kd-body font-semibold text-kd-text">
                 {devicesLabel}
               </Text>
-              <Text numberOfLines={1} style={[styles.statsCellHint, { color: theme.textSubtle }]}>
+              <Text numberOfLines={1} className="mt-px text-[8px] font-medium text-kd-text-subtle">
                 active/max
               </Text>
             </View>
           </View>
 
-          <View style={styles.accountActions}>
+          <View className="flex-row gap-2">
             <TouchableOpacity
               accessibilityRole="link"
               activeOpacity={0.78}
               onPress={() => Linking.openURL(BACKEND_URL)}
-              style={[styles.accountButton, { backgroundColor: theme.panel, borderColor: theme.border }]}
+              className="h-[34px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-kd-border bg-kd-panel"
             >
               <Globe2 size={13} color={theme.textMuted} strokeWidth={2.2} />
-              <Text style={[styles.accountButtonText, { color: theme.textMuted }]}>เปิดเว็บ</Text>
+              <Text className="text-kd-caption font-semibold text-kd-text-muted">เปิดเว็บ</Text>
             </TouchableOpacity>
             <TouchableOpacity
               accessibilityRole="button"
               activeOpacity={0.78}
               onPress={logout}
-              style={[
-                styles.accountButton,
-                {
-                  backgroundColor: alpha(theme.red, theme.isDark ? 0.12 : 0.06),
-                  borderColor: alpha(theme.red, 0.35),
-                },
-              ]}
+              className="h-[34px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-kd-red/35 bg-kd-red/5 dark:bg-kd-red/10"
             >
               <LogOut size={13} color={theme.red} strokeWidth={2.2} />
-              <Text style={[styles.accountButtonText, { color: theme.red }]}>ออกจากระบบ</Text>
+              <Text className="text-kd-caption font-semibold text-kd-red">ออกจากระบบ</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -722,18 +655,18 @@ export default function ProfileScreen({
 
       {/* Extension: create profile modal overlay */}
       <Modal animationType="fade" transparent visible={createOpen} onRequestClose={closeCreateModal}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.panel, borderColor: theme.border }]}>
-            <View style={[styles.modalHead, { borderBottomColor: theme.border }]}>
-              <View style={styles.modalHeadLeft}>
-                <View style={[styles.modalHeadIcon, { backgroundColor: cellBackground }]}>
+        <View className="flex-1 items-center justify-center bg-black/45 px-4">
+          <View className="w-full max-w-[360px] rounded-xl border border-kd-border bg-kd-panel">
+            <View className="flex-row items-center justify-between gap-2 border-b border-kd-border px-3 py-2.5">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <View className="h-7 w-7 shrink-0 items-center justify-center rounded-kd-lg bg-kd-card-muted dark:bg-kd-panel-muted">
                   <User size={14} color={theme.textMuted} strokeWidth={2.2} />
                 </View>
-                <View style={styles.modalHeadTitleWrap}>
-                  <Text numberOfLines={1} style={[styles.modalTitle, { color: theme.text }]}>
+                <View className="min-w-0 flex-1">
+                  <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
                     สร้างโปรไฟล์ใหม่
                   </Text>
-                  <Text numberOfLines={1} style={[styles.modalSubtitle, { color: theme.textSubtle }]}>
+                  <Text numberOfLines={1} className="mt-px text-kd-micro font-medium text-kd-text-subtle">
                     ซิงก์ขึ้น Cloud หลังสร้าง
                   </Text>
                 </View>
@@ -744,58 +677,44 @@ export default function ProfileScreen({
                 activeOpacity={0.7}
                 disabled={isCreatingProfile}
                 onPress={closeCreateModal}
-                style={styles.modalClose}
+                className="h-7 w-7 items-center justify-center rounded-kd-lg"
               >
                 <X size={14} color={theme.textSubtle} strokeWidth={2.4} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อโปรไฟล์</Text>
+            <View className="gap-3 p-3">
+              <View className="gap-[5px]">
+                <Text className="text-kd-micro font-bold text-kd-text-subtle">ชื่อโปรไฟล์</Text>
                 <TextInput
                   autoCapitalize="none"
                   onChangeText={setProfileName}
                   placeholder="เช่น ร้านหลัก"
                   placeholderTextColor={theme.textSubtle}
                   returnKeyType="done"
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: cellBackground,
-                      borderColor: theme.border,
-                      color: theme.text,
-                    },
-                  ]}
+                  className="min-h-[36px] rounded-kd-lg border border-kd-border bg-kd-card-muted px-2.5 py-2 text-kd-body text-kd-text dark:bg-kd-panel-muted"
+                  style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
                   value={profileName}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>กลุ่ม</Text>
-                <View style={styles.groupChipWrap}>
+              <View className="gap-[5px]">
+                <Text className="text-kd-micro font-bold text-kd-text-subtle">กลุ่ม</Text>
+                <View className="flex-row flex-wrap gap-1.5">
                   <TouchableOpacity
                     activeOpacity={0.78}
                     onPress={() => setSelectedGroupId(GROUP_NONE)}
-                    style={[
-                      styles.groupChip,
-                      {
-                        backgroundColor:
-                          selectedGroupId === GROUP_NONE
-                            ? theme.isDark
-                              ? theme.cardMuted
-                              : theme.panelMuted
-                            : cellBackground,
-                        borderColor: selectedGroupId === GROUP_NONE ? theme.borderStrong : theme.border,
-                      },
-                    ]}
+                    className={`h-[30px] max-w-[150px] flex-row items-center gap-[5px] rounded-kd-lg border px-2.5 ${
+                      selectedGroupId === GROUP_NONE
+                        ? 'border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted'
+                        : 'border-kd-border bg-kd-card-muted dark:bg-kd-panel-muted'
+                    }`}
                   >
                     <Text
                       numberOfLines={1}
-                      style={[
-                        styles.groupChipText,
-                        { color: selectedGroupId === GROUP_NONE ? theme.text : theme.textSubtle },
-                      ]}
+                      className={`shrink text-kd-micro font-semibold ${
+                        selectedGroupId === GROUP_NONE ? 'text-kd-text' : 'text-kd-text-subtle'
+                      }`}
                     >
                       ไม่มีกลุ่ม
                     </Text>
@@ -808,24 +727,17 @@ export default function ProfileScreen({
                         activeOpacity={0.78}
                         key={group.id}
                         onPress={() => setSelectedGroupId(group.id)}
-                        style={[
-                          styles.groupChip,
-                          {
-                            backgroundColor: selected
-                              ? theme.isDark
-                                ? theme.cardMuted
-                                : theme.panelMuted
-                              : cellBackground,
-                            borderColor: selected ? theme.borderStrong : theme.border,
-                          },
-                        ]}
+                        className={`h-[30px] max-w-[150px] flex-row items-center gap-[5px] rounded-kd-lg border px-2.5 ${
+                          selected
+                            ? 'border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted'
+                            : 'border-kd-border bg-kd-card-muted dark:bg-kd-panel-muted'
+                        }`}
                       >
                         <Text
                           numberOfLines={1}
-                          style={[
-                            styles.groupChipText,
-                            { color: selected ? theme.text : theme.textSubtle },
-                          ]}
+                          className={`shrink text-kd-micro font-semibold ${
+                            selected ? 'text-kd-text' : 'text-kd-text-subtle'
+                          }`}
                         >
                           {group.name}
                         </Text>
@@ -835,18 +747,11 @@ export default function ProfileScreen({
                   <TouchableOpacity
                     activeOpacity={0.78}
                     onPress={() => setSelectedGroupId(GROUP_NEW)}
-                    style={[
-                      styles.groupChip,
-                      {
-                        backgroundColor:
-                          selectedGroupId === GROUP_NEW
-                            ? theme.isDark
-                              ? theme.cardMuted
-                              : theme.panelMuted
-                            : cellBackground,
-                        borderColor: selectedGroupId === GROUP_NEW ? theme.borderStrong : theme.border,
-                      },
-                    ]}
+                    className={`h-[30px] max-w-[150px] flex-row items-center gap-[5px] rounded-kd-lg border px-2.5 ${
+                      selectedGroupId === GROUP_NEW
+                        ? 'border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted'
+                        : 'border-kd-border bg-kd-card-muted dark:bg-kd-panel-muted'
+                    }`}
                   >
                     <FolderPlus
                       size={12}
@@ -855,10 +760,9 @@ export default function ProfileScreen({
                     />
                     <Text
                       numberOfLines={1}
-                      style={[
-                        styles.groupChipText,
-                        { color: selectedGroupId === GROUP_NEW ? theme.text : theme.textSubtle },
-                      ]}
+                      className={`shrink text-kd-micro font-semibold ${
+                        selectedGroupId === GROUP_NEW ? 'text-kd-text' : 'text-kd-text-subtle'
+                      }`}
                     >
                       สร้างกลุ่มใหม่
                     </Text>
@@ -867,57 +771,36 @@ export default function ProfileScreen({
               </View>
 
               {selectedGroupId === GROUP_NEW ? (
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, { color: theme.textSubtle }]}>ชื่อกลุ่มใหม่</Text>
+                <View className="gap-[5px]">
+                  <Text className="text-kd-micro font-bold text-kd-text-subtle">ชื่อกลุ่มใหม่</Text>
                   <TextInput
                     autoCapitalize="none"
                     onChangeText={setNewGroupName}
                     placeholder="เช่น TikTok"
                     placeholderTextColor={theme.textSubtle}
                     returnKeyType="done"
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: cellBackground,
-                        borderColor: theme.border,
-                        color: theme.text,
-                      },
-                    ]}
+                    className="min-h-[36px] rounded-kd-lg border border-kd-border bg-kd-card-muted px-2.5 py-2 text-kd-body text-kd-text dark:bg-kd-panel-muted"
+                    style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
                     value={newGroupName}
                   />
                 </View>
               ) : null}
 
               {createProfileError ? (
-                <View
-                  style={[
-                    styles.errorBox,
-                    {
-                      backgroundColor: alpha(theme.red, theme.isDark ? 0.12 : 0.07),
-                      borderColor: alpha(theme.red, 0.35),
-                    },
-                  ]}
-                >
-                  <Text style={[styles.errorText, { color: theme.red }]}>{createProfileError}</Text>
+                <View className="mt-1.5 rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
+                  <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{createProfileError}</Text>
                 </View>
               ) : null}
 
-              <View style={styles.modalFooter}>
+              <View className="flex-row gap-2 pt-0.5">
                 <TouchableOpacity
                   accessibilityRole="button"
                   activeOpacity={0.78}
                   disabled={isCreatingProfile}
                   onPress={closeCreateModal}
-                  style={[
-                    styles.modalButton,
-                    {
-                      backgroundColor: theme.panel,
-                      borderColor: theme.border,
-                      opacity: isCreatingProfile ? 0.5 : 1,
-                    },
-                  ]}
+                  className="h-[34px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-kd-border bg-kd-panel disabled:opacity-50"
                 >
-                  <Text style={[styles.modalButtonText, { color: theme.textMuted }]}>ยกเลิก</Text>
+                  <Text className="text-kd-body font-semibold text-kd-text-muted">ยกเลิก</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -926,19 +809,12 @@ export default function ProfileScreen({
                   onPress={() => {
                     void handleCreateProfile();
                   }}
-                  style={[
-                    styles.modalButton,
-                    {
-                      backgroundColor: inverseBackground,
-                      borderColor: 'transparent',
-                      opacity: createDisabled ? 0.5 : 1,
-                    },
-                  ]}
+                  className="h-[34px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-transparent bg-gray-900 disabled:opacity-50 dark:bg-white"
                 >
                   {isCreatingProfile ? (
                     <ActivityIndicator color={inverseText} size="small" />
                   ) : null}
-                  <Text style={[styles.modalButtonText, { color: inverseText }]}>
+                  <Text className="text-kd-body font-semibold text-white dark:text-gray-900">
                     {isCreatingProfile ? 'กำลังสร้าง' : 'สร้างโปรไฟล์'}
                   </Text>
                 </TouchableOpacity>
@@ -950,474 +826,3 @@ export default function ProfileScreen({
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  accountActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  accountAvatar: {
-    alignItems: 'center',
-    borderRadius: 10,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
-  },
-  accountAvatarImage: {
-    borderRadius: 10,
-    height: 38,
-    width: 38,
-  },
-  accountButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    height: 34,
-    justifyContent: 'center',
-  },
-  accountButtonText: {
-    fontSize: 11,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  accountCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 8,
-    padding: 8,
-  },
-  accountEmail: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  accountHead: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  accountInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accountName: {
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  activeBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  activeBoxBadge: {
-    flexShrink: 0,
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  activeBoxMeta: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  activeBoxName: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-    minWidth: 0,
-  },
-  activeBoxRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  addButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 4,
-    height: 28,
-    paddingHorizontal: 10,
-  },
-  addButtonText: {
-    fontSize: 11,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  content: {
-    gap: 12,
-    paddingBottom: 80,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  deletedRow: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 8,
-  },
-  deletedRowActions: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 8,
-  },
-  deletedRowButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    height: 28,
-    justifyContent: 'center',
-  },
-  deletedRowButtonText: {
-    fontSize: 10,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  deletedRowHead: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  deletedRowIcon: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexShrink: 0,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  deletedRowInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  deletedRowMeta: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  deletedRowName: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-    minWidth: 0,
-  },
-  deletedRowSource: {
-    flexShrink: 0,
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  deletedRowTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-  },
-  emptyAction: {
-    alignItems: 'center',
-    borderRadius: 8,
-    height: 28,
-    justifyContent: 'center',
-    marginTop: 4,
-    paddingHorizontal: 12,
-  },
-  emptyActionText: {
-    fontSize: 10,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  emptyDescription: {
-    fontSize: 10,
-    fontWeight: '500',
-    lineHeight: 15,
-    textAlign: 'center',
-  },
-  emptyState: {
-    alignItems: 'center',
-    borderRadius: 10,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-  },
-  emptyTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  errorBox: {
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  errorText: {
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 16,
-  },
-  groupChip: {
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 5,
-    height: 30,
-    maxWidth: 150,
-    paddingHorizontal: 10,
-  },
-  groupChipText: {
-    flexShrink: 1,
-    fontSize: 10,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  groupChipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexShrink: 0,
-    gap: 6,
-  },
-  headerLeft: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    minWidth: 0,
-  },
-  headerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    flexShrink: 1,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  input: {
-    borderRadius: 8,
-    borderWidth: 1,
-    fontFamily: kubdeeFontFamilies.thai.regular,
-    fontSize: 12,
-    minHeight: 36,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  inputGroup: {
-    gap: 5,
-  },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  modalBody: {
-    gap: 12,
-    padding: 12,
-  },
-  modalButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    height: 34,
-    justifyContent: 'center',
-  },
-  modalButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  modalCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    maxWidth: 360,
-    width: '100%',
-  },
-  modalClose: {
-    alignItems: 'center',
-    borderRadius: 8,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingTop: 2,
-  },
-  modalHead: {
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  modalHeadIcon: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexShrink: 0,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  modalHeadLeft: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    minWidth: 0,
-  },
-  modalHeadTitleWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  modalOverlay: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  modalSubtitle: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  modalTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  profileList: {
-    gap: 8,
-  },
-  profileRow: {
-    alignItems: 'stretch',
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  profileRowDelete: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 36,
-  },
-  profileRowIcon: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexShrink: 0,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  profileRowInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  profileRowMain: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    minWidth: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  profileRowMeta: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  profileRowName: {
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  sectionHeadCount: {
-    flexShrink: 0,
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  sectionHeadRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  statsCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 8,
-  },
-  statsCell: {
-    borderRadius: 6,
-    flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  statsCellHint: {
-    fontSize: 8,
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  statsCellLabel: {
-    fontSize: 8,
-    fontWeight: '500',
-  },
-  statsCellValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-    marginTop: 1,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  statsHeadLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  statsHeadRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  statsHeadValue: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  syncButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-});

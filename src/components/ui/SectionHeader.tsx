@@ -1,9 +1,8 @@
 import type { ComponentType } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { typography } from '@/theme/tokens';
 
 type IconProps = {
   size?: number;
@@ -25,32 +24,14 @@ export default function SectionHeader({
   right,
 }: SectionHeaderProps): React.JSX.Element {
   return (
-    <View style={styles.row}>
-      <View style={styles.titleRow}>
+    <View className="min-h-[22px] flex-row items-center justify-between">
+      <View className="flex-row items-center gap-1.5">
         {Icon ? <Icon size={12} color={theme.textSubtle} strokeWidth={2.2} /> : null}
-        <Text style={[styles.title, { color: theme.textSubtle }]}>{title}</Text>
+        <Text className="text-kd-micro font-extrabold uppercase tracking-[0px] text-kd-text-subtle">
+          {title}
+        </Text>
       </View>
       {right}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 22,
-  },
-  title: {
-    fontSize: typography.micro,
-    fontWeight: '800',
-    letterSpacing: 0,
-    textTransform: 'uppercase',
-  },
-  titleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-});

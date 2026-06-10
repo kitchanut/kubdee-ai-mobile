@@ -14,7 +14,6 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import Text from '@/components/ui/KubdeeText';
 import { galleryItems, type GalleryCategoryId, type GalleryItemRecord } from '@/data/mockData';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha } from '@/theme/tokens';
 
 import {
   CardBackdrop,
@@ -93,8 +92,8 @@ export default function SimpleListPanel({
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+    <View className="flex-1">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
         <LibraryPanelHeader
           theme={theme}
           title={copy.title}
@@ -111,7 +110,7 @@ export default function SimpleListPanel({
           }
         />
 
-        <View style={styles.list}>
+        <View className="gap-2">
           {items.map((item) => (
             <SimpleRow
               key={item.id}
@@ -160,27 +159,20 @@ function SimpleRow({
 
   return (
     <View
-      style={[
-        styles.row,
-        {
-          backgroundColor: theme.panel,
-          borderColor: theme.isDark ? theme.border : '#f3f4f6',
-          opacity: enabled ? 1 : 0.5,
-        },
-      ]}
+      className={`overflow-hidden rounded-[12px] border border-[#f3f4f6] bg-kd-panel dark:border-kd-border ${
+        enabled ? '' : 'opacity-50'
+      }`}
+      style={{
+        elevation: 1,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      }}
     >
       <CardBackdrop theme={theme} id={kind} stops={libraryCardStops[kind]} />
 
-      <View style={styles.rowContent}>
-        <View
-          style={[
-            styles.avatar,
-            {
-              backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.8) : alpha(theme.white, 0.8),
-              borderColor: theme.isDark ? alpha(theme.borderStrong, 0.5) : alpha(theme.white, 0.5),
-            },
-          ]}
-        >
+      <View className="flex-row items-center gap-2.5 p-2">
+        <View className="h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] border-2 border-white/50 bg-white/80 dark:border-kd-border-strong/50 dark:bg-kd-card-muted/80">
           <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width="100%" height="100%">
             <Defs>
               <LinearGradient id={`avatar-grad-${kind}`} x1="0" y1="0" x2="1" y2="1">
@@ -193,70 +185,51 @@ function SimpleRow({
           <AvatarIcon size={20} color={avatarIconColor} strokeWidth={1.5} />
         </View>
 
-        <View style={styles.info}>
-          <View style={styles.nameRow}>
-            <Text numberOfLines={1} style={[styles.name, { color: theme.text }]}>
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-center gap-1.5">
+            <Text numberOfLines={1} className="flex-shrink text-kd-body font-semibold text-kd-text">
               {item.title}
             </Text>
             {showAiChip ? (
-              <View
-                style={[
-                  styles.aiChip,
-                  {
-                    backgroundColor: alpha(theme.blue, theme.isDark ? 0.2 : 0.1),
-                    borderColor: alpha(theme.blue, theme.isDark ? 0.25 : 0.4),
-                  },
-                ]}
-              >
-                <Text style={[styles.aiChipText, { color: theme.blue }]}>AI</Text>
+              <View className="rounded-full border border-kd-blue/40 bg-kd-blue/10 px-[5px] py-px dark:border-kd-blue/25 dark:bg-kd-blue/20">
+                <Text className="text-[8px] font-semibold text-kd-blue">AI</Text>
               </View>
             ) : null}
           </View>
-          <Text numberOfLines={1} style={[styles.meta, { color: theme.textSubtle }]}>
+          <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
             {metaLine}
           </Text>
           {detailLine ? (
-            <Text numberOfLines={1} style={[styles.detail, { color: theme.textSubtle }]}>
+            <Text numberOfLines={1} className="mt-px text-kd-micro text-kd-text-subtle">
               {detailLine}
             </Text>
           ) : null}
         </View>
 
-        <View style={styles.actions}>
+        <View className="flex-shrink-0 flex-row items-center gap-1">
           <Pressable
             accessibilityLabel={enabled ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}
             accessibilityRole="button"
             onPress={onToggleEnabled}
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: enabled
-                  ? alpha(theme.emerald, theme.isDark ? 0.18 : 0.1)
-                  : theme.isDark
-                    ? alpha(theme.cardMuted, 0.5)
-                    : alpha(theme.white, 0.5),
-              },
-            ]}
+            className={`h-7 w-7 items-center justify-center rounded-kd-lg ${
+              enabled
+                ? 'bg-kd-emerald/10 dark:bg-kd-emerald/20'
+                : 'bg-white/50 dark:bg-kd-card-muted/50'
+            }`}
           >
             <ToggleIcon size={14} color={enabled ? theme.emerald : theme.textSubtle} strokeWidth={2} />
           </Pressable>
           <Pressable
             accessibilityLabel="แก้ไข"
             accessibilityRole="button"
-            style={[
-              styles.actionButton,
-              { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.5) : alpha(theme.white, 0.5) },
-            ]}
+            className="h-7 w-7 items-center justify-center rounded-kd-lg bg-white/50 dark:bg-kd-card-muted/50"
           >
             <Pencil size={14} color={theme.textSubtle} strokeWidth={2} />
           </Pressable>
           <Pressable
             accessibilityLabel="ลบ"
             accessibilityRole="button"
-            style={[
-              styles.actionButton,
-              { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.5) : alpha(theme.white, 0.5) },
-            ]}
+            className="h-7 w-7 items-center justify-center rounded-kd-lg bg-white/50 dark:bg-kd-card-muted/50"
           >
             <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
           </Pressable>
@@ -265,88 +238,3 @@ function SimpleRow({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  actionButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  actions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexShrink: 0,
-    gap: 4,
-  },
-  aiChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  aiChipText: {
-    fontSize: 8,
-    fontWeight: '600',
-  },
-  avatar: {
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 2,
-    flexShrink: 0,
-    height: 48,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 48,
-  },
-  container: {
-    flex: 1,
-  },
-  content: {
-    gap: 12,
-    paddingBottom: 80,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  detail: {
-    fontSize: 10,
-    marginTop: 1,
-  },
-  info: {
-    flex: 1,
-    minWidth: 0,
-  },
-  list: {
-    gap: 8,
-  },
-  meta: {
-    fontSize: 10,
-    marginTop: 2,
-  },
-  name: {
-    flexShrink: 1,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  nameRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  row: {
-    borderRadius: 12,
-    borderWidth: 1,
-    elevation: 1,
-    overflow: 'hidden',
-    shadowOffset: { height: 1, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  rowContent: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    padding: 8,
-  },
-});

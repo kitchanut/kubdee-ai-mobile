@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
+import { colorScheme as nativeWindColorScheme } from 'nativewind';
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, useColorScheme, View } from 'react-native';
+import { useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/AuthContext';
@@ -26,6 +27,13 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     colorScheme === 'light' ? 'light' : 'dark'
   );
   const theme = useMemo(() => (themeMode === 'light' ? lightTheme : darkTheme), [themeMode]);
+
+  // Keep NativeWind's dark: variants and CSS vars in sync with the
+  // in-app theme toggle (single source of truth stays in themeMode).
+  useEffect(() => {
+    nativeWindColorScheme.set(themeMode);
+  }, [themeMode]);
+
   const [activeTab, setActiveTab] = useState<TabId>('pipeline');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set(['local-android']));
   const [selectedProfileId, setSelectedProfileId] = useState('');
@@ -126,10 +134,10 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.screen }]}>
+    <View className="flex-1 bg-kd-screen">
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <View style={[styles.shell, { backgroundColor: theme.panel }]}>
+      <SafeAreaView edges={['top', 'bottom']} className="flex-1">
+        <View className="flex-1 bg-kd-panel">
           {auth.isLoading ? (
             <AuthLoadingScreen theme={theme} />
           ) : !auth.user || !auth.token ? (
@@ -164,7 +172,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 onThemeModeToggle={toggleThemeMode}
               />
               <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />
-              <View style={styles.content}>{renderScreen()}</View>
+              <View className="min-h-0 flex-1">{renderScreen()}</View>
             </>
           )}
         </View>
@@ -172,19 +180,3 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    flex: 1,
-    minHeight: 0,
-  },
-  root: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  shell: {
-    flex: 1,
-  },
-});

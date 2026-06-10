@@ -1,4 +1,4 @@
-import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Moon, Sun, TriangleAlert } from 'lucide-react-native';
 
@@ -6,7 +6,6 @@ import IconButton from '@/components/ui/IconButton';
 import Text from '@/components/ui/KubdeeText';
 import { toThaiPlanError } from '@/auth/plan';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha, radii, spacing, typography } from '@/theme/tokens';
 
 const logoDark = require('../../assets/logo-dark.png');
 const logoLight = require('../../assets/logo-light.png');
@@ -50,12 +49,11 @@ export default function LoginScreen({
   onThemeModeToggle,
 }: LoginScreenProps): React.JSX.Element {
   const ThemeIcon = theme.isDark ? Moon : Sun;
-  const loginBackground = theme.isDark ? theme.white : '#111827';
   const loginForeground = theme.isDark ? '#111827' : theme.white;
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.panel }]}>
-      <View style={styles.topRow}>
+    <View className="flex-1 bg-kd-panel">
+      <View className="items-end px-4 pt-3">
         <IconButton
           icon={ThemeIcon}
           size={36}
@@ -66,124 +64,41 @@ export default function LoginScreen({
         />
       </View>
 
-      <View style={styles.center}>
-        <Image source={theme.isDark ? logoLight : logoDark} resizeMode="contain" style={styles.logo} />
+      <View className="flex-1 items-center justify-center gap-3.5 px-[26px]">
+        <Image source={theme.isDark ? logoLight : logoDark} resizeMode="contain" className="h-[86px] w-[86px]" />
 
-        <View style={styles.titleBlock}>
-          <Text style={[styles.title, { color: theme.text }]}>Kubdee AI</Text>
-          <Text style={[styles.subtitle, { color: theme.textSubtle }]}>Mobile Automation</Text>
+        <View className="gap-1">
+          <Text className="text-center text-[26px] font-extrabold text-kd-text">Kubdee AI</Text>
+          <Text className="text-center text-kd-body font-semibold text-kd-text-subtle">Mobile Automation</Text>
         </View>
 
-        <View style={styles.loginSection}>
+        <View className="mt-1.5 max-w-[320px] gap-2 self-stretch">
           <Pressable
             accessibilityRole="button"
             disabled={isLoggingIn}
             onPress={onLogin}
-            style={({ pressed }) => [
-              styles.loginPressable,
-              {
-                opacity: isLoggingIn ? 0.65 : pressed ? 0.82 : 1,
-              },
-            ]}
+            className="self-stretch active:opacity-80 disabled:opacity-65"
           >
-            <View style={[styles.loginButton, { backgroundColor: loginBackground }]}>
+            <View className="h-12 flex-row items-center justify-center gap-2.5 rounded-kd-lg bg-[#111827] px-4 dark:bg-white">
               {isLoggingIn ? <ActivityIndicator color={loginForeground} size="small" /> : <GoogleLogo />}
-              <Text style={[styles.loginText, { color: loginForeground }]}>
+              <Text className="text-kd-label font-bold text-white dark:text-[#111827]">
                 {isLoggingIn ? 'กำลังเปิด Google' : 'เข้าสู่ระบบด้วย Google'}
               </Text>
             </View>
           </Pressable>
         </View>
 
-        <Text style={[styles.planText, { color: theme.textSubtle }]}>ใช้สิทธิ์แพลน Ultra</Text>
+        <Text className="text-center text-kd-body font-semibold text-kd-text-subtle">ใช้สิทธิ์แพลน Ultra</Text>
 
         {authError ? (
-          <View style={[styles.errorBox, { backgroundColor: theme.redSoft, borderColor: alpha(theme.red, 0.35) }]}>
+          <View className="min-h-[42px] flex-row items-center gap-2 rounded-kd-lg border border-kd-red/35 bg-kd-red-soft px-3 py-2.5">
             <TriangleAlert size={15} color={theme.red} strokeWidth={2.2} />
-            <Text style={[styles.errorText, { color: theme.red }]}>{toThaiPlanError(authError)}</Text>
+            <Text className="flex-1 text-kd-body font-extrabold leading-[17px] text-kd-red">
+              {toThaiPlanError(authError)}
+            </Text>
           </View>
         ) : null}
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  center: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 14,
-    justifyContent: 'center',
-    paddingHorizontal: 26,
-  },
-  container: {
-    flex: 1,
-  },
-  errorBox: {
-    alignItems: 'center',
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    minHeight: 42,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  errorText: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '800',
-    lineHeight: 17,
-  },
-  loginButton: {
-    alignItems: 'center',
-    borderRadius: radii.lg,
-    flexDirection: 'row',
-    gap: 10,
-    height: 48,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  loginPressable: {
-    alignSelf: 'stretch',
-  },
-  loginSection: {
-    alignSelf: 'stretch',
-    gap: spacing.md,
-    marginTop: 6,
-    maxWidth: 320,
-  },
-  loginText: {
-    fontSize: typography.label,
-    fontWeight: '700',
-  },
-  logo: {
-    height: 86,
-    width: 86,
-  },
-  planText: {
-    fontSize: typography.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: typography.body,
-    fontWeight: '600',
-    letterSpacing: 0,
-    textAlign: 'center',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: 0,
-    textAlign: 'center',
-  },
-  titleBlock: {
-    gap: 4,
-  },
-  topRow: {
-    alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-});

@@ -1,3 +1,5 @@
+import './global.css';
+
 import { useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 

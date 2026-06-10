@@ -1,8 +1,7 @@
 import type { ComponentType } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
 import Text from '@/components/ui/KubdeeText';
-import { radii, typography } from '@/theme/tokens';
 
 type IconProps = {
   size?: number;
@@ -24,28 +23,14 @@ export default function StatusPill({
   icon: Icon,
 }: StatusPillProps): React.JSX.Element {
   return (
-    <View style={[styles.pill, { backgroundColor }]}>
+    <View
+      className="min-h-[16px] flex-row items-center gap-[3px] rounded-kd-sm px-[5px] py-0.5"
+      style={{ backgroundColor }}
+    >
       {Icon ? <Icon size={9} color={color} strokeWidth={2.3} /> : null}
-      <Text style={[styles.label, { color }]} numberOfLines={1}>
+      <Text className="text-kd-tiny font-bold tracking-[0px]" style={{ color }} numberOfLines={1}>
         {label}
       </Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  pill: {
-    alignItems: 'center',
-    borderRadius: radii.sm,
-    flexDirection: 'row',
-    gap: 3,
-    minHeight: 16,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  label: {
-    fontSize: typography.tiny,
-    fontWeight: '700',
-    letterSpacing: 0,
-  },
-});

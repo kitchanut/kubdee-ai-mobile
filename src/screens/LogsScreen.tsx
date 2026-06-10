@@ -1,11 +1,10 @@
 import { CircleAlert, CircleCheck, CircleX, Info } from 'lucide-react-native';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
 import { logs } from '@/data/mockData';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { radii, spacing, typography } from '@/theme/tokens';
 
 interface LogsScreenProps {
   theme: KubdeeTheme;
@@ -13,7 +12,7 @@ interface LogsScreenProps {
 
 export default function LogsScreen({ theme }: LogsScreenProps): React.JSX.Element {
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 p-2">
       <SectionHeader icon={Info} theme={theme} title="Activity" />
       {logs.map((log) => {
         const Icon =
@@ -34,10 +33,13 @@ export default function LogsScreen({ theme }: LogsScreenProps): React.JSX.Elemen
                 : theme.cyan;
 
         return (
-          <View key={log.id} style={[styles.row, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View
+            key={log.id}
+            className="flex-row items-center gap-2 rounded-kd-md border border-kd-border bg-kd-card p-2.5"
+          >
             <Icon size={15} color={color} />
-            <Text style={[styles.time, { color: theme.textSubtle }]}>{log.timestamp}</Text>
-            <Text style={[styles.message, { color: theme.text }]} numberOfLines={2}>
+            <Text className="w-[38px] text-kd-micro font-extrabold text-kd-text-subtle">{log.timestamp}</Text>
+            <Text className="flex-1 text-kd-body font-bold leading-4 text-kd-text" numberOfLines={2}>
               {log.message}
             </Text>
           </View>
@@ -46,29 +48,3 @@ export default function LogsScreen({ theme }: LogsScreenProps): React.JSX.Elemen
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  message: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-  row: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    padding: 10,
-  },
-  time: {
-    fontSize: typography.micro,
-    fontWeight: '800',
-    width: 38,
-  },
-});

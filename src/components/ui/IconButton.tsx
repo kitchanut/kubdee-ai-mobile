@@ -1,7 +1,5 @@
 import type { ComponentType } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
-
-import { radii } from '@/theme/tokens';
+import { Pressable } from 'react-native';
 
 type IconProps = {
   size?: number;
@@ -31,27 +29,12 @@ export default function IconButton({
   return (
     <Pressable
       accessibilityRole="button"
+      className="items-center justify-center rounded-kd-md active:opacity-70 disabled:opacity-45"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        {
-          width: size,
-          height: size,
-          backgroundColor,
-          opacity: disabled ? 0.45 : pressed ? 0.72 : 1,
-        },
-      ]}
+      style={{ width: size, height: size, backgroundColor }}
     >
       <Icon size={iconSize} color={color} strokeWidth={2} />
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  button: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.md,
-  },
-});

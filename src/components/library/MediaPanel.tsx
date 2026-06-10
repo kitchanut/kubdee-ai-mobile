@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import {
   ChevronDown,
   ChevronRight,
@@ -72,6 +72,18 @@ const mockItemCodes: Record<string, string> = {
 const mockDates = ['10/06 14:32', '09/06 18:05', '08/06 11:20', '07/06 20:48', '05/06 09:14', '04/06 16:40'];
 const mockSizes = ['4.2 MB', '2.8 MB', '5.1 MB', '3.4 MB', '2.1 MB', '6.3 MB'];
 
+/** Accent wash/border classes per media kind (mirrors getAccentTone soft = alpha 0.1 light / 0.16 dark). */
+const accentClasses: Record<MediaKind, { soft: string; border: string }> = {
+  images: {
+    soft: 'bg-kd-amber/10 dark:bg-kd-amber/15',
+    border: 'border-kd-amber/40',
+  },
+  videos: {
+    soft: 'bg-kd-red/10 dark:bg-kd-red/15',
+    border: 'border-kd-red/40',
+  },
+};
+
 const panelCopy: Record<
   MediaKind,
   {
@@ -136,6 +148,7 @@ export default function MediaPanel({
   const copy = panelCopy[kind];
   const accentColor = kind === 'images' ? theme.amber : theme.red;
   const accent = getAccentTone(theme, accentColor);
+  const accentClass = accentClasses[kind];
   const HeaderIcon = kind === 'images' ? ImageIcon : Video;
 
   const modeTabs: Array<{ key: MediaMode; icon: IconComponent; label: string }> = [
@@ -218,8 +231,8 @@ export default function MediaPanel({
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+    <View className="flex-1">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
         <LibraryPanelHeader
           theme={theme}
           title={copy.title}
@@ -235,15 +248,15 @@ export default function MediaPanel({
           }
         />
 
-        <View style={styles.section}>
-          <View style={styles.searchRow}>
+        <View className="gap-2">
+          <View className="flex-row items-center gap-1.5">
             <SearchBox
               theme={theme}
               value={searchQuery}
               onChange={setSearchQuery}
               placeholder="ค้นหาชื่อ/รหัสสินค้า..."
             />
-            <View style={[styles.modeTabs, { backgroundColor: theme.input, borderColor: theme.border }]}>
+            <View className="h-8 shrink-0 flex-row items-center gap-0.5 rounded-kd-md border border-kd-border bg-kd-input px-0.5">
               {modeTabs.map(({ key, icon: TabIcon, label }) => {
                 const isActive = mediaMode === key;
 
@@ -257,7 +270,9 @@ export default function MediaPanel({
                       setMediaMode(key);
                       setSelectedIds(new Set());
                     }}
-                    style={[styles.modeTab, isActive ? { backgroundColor: accent.soft } : null]}
+                    className={`h-[26px] w-[30px] items-center justify-center rounded-kd-sm ${
+                      isActive ? accentClass.soft : ''
+                    }`}
                   >
                     <TabIcon size={13} color={isActive ? accentColor : theme.textSubtle} strokeWidth={2} />
                   </Pressable>
@@ -269,13 +284,9 @@ export default function MediaPanel({
               accessibilityRole="button"
               accessibilityState={{ selected: groupByProduct }}
               onPress={() => setGroupByProduct((current) => !current)}
-              style={[
-                styles.groupToggle,
-                {
-                  backgroundColor: groupByProduct ? accent.soft : theme.input,
-                  borderColor: groupByProduct ? alpha(accentColor, 0.4) : theme.border,
-                },
-              ]}
+              className={`h-8 w-8 shrink-0 items-center justify-center rounded-kd-md border ${
+                groupByProduct ? `${accentClass.soft} ${accentClass.border}` : 'border-kd-border bg-kd-input'
+              }`}
             >
               <Grid2X2 size={13} color={groupByProduct ? accentColor : theme.textSubtle} strokeWidth={2} />
             </Pressable>
@@ -286,20 +297,20 @@ export default function MediaPanel({
               <EmptyState theme={theme} icon={HeaderIcon} title={copy.emptyTitle} copy={copy.emptyCopy} />
             ) : (
               <>
-                <View style={styles.toolsRow}>
+                <View className="flex-row items-center justify-between">
                   <Pressable
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: allSelected }}
                     onPress={toggleAll}
-                    style={styles.selectAll}
+                    className="min-h-6 flex-row items-center gap-1.5"
                   >
                     <SelectCircle theme={theme} selected={allSelected} accent={accentColor} size={15} />
-                    <Text style={[styles.selectAllText, { color: theme.textSubtle }]}>
+                    <Text className="text-kd-caption text-kd-text-subtle">
                       ทั้งหมด ({productMedia.length})
                     </Text>
                   </Pressable>
 
-                  <View style={styles.sortRow}>
+                  <View className="flex-row items-center gap-1">
                     <SortPill
                       theme={theme}
                       accent={accentColor}
@@ -329,12 +340,12 @@ export default function MediaPanel({
                     )}
                     {groupByProduct && visibleGroups.length > 1 ? (
                       <>
-                        <View style={[styles.toolsDivider, { backgroundColor: theme.border }]} />
+                        <View className="mx-[3px] h-3 w-px bg-kd-border" />
                         <Pressable
                           accessibilityLabel="ขยายทั้งหมด"
                           accessibilityRole="button"
                           onPress={() => setCollapsedGroups(new Set())}
-                          style={styles.expandButton}
+                          className="h-[22px] w-5 items-center justify-center"
                         >
                           <ChevronsDown size={13} color={theme.textSubtle} strokeWidth={2} />
                         </Pressable>
@@ -342,7 +353,7 @@ export default function MediaPanel({
                           accessibilityLabel="ย่อทั้งหมด"
                           accessibilityRole="button"
                           onPress={() => setCollapsedGroups(new Set(visibleGroups.map((group) => group.item.id)))}
-                          style={styles.expandButton}
+                          className="h-[22px] w-5 items-center justify-center"
                         >
                           <ChevronsUp size={13} color={theme.textSubtle} strokeWidth={2} />
                         </Pressable>
@@ -368,7 +379,7 @@ export default function MediaPanel({
                     />
                   ))
                 ) : kind === 'images' ? (
-                  <View style={styles.grid}>
+                  <View className="flex-row flex-wrap gap-2">
                     {productMedia.map((media) => (
                       <ImageTile
                         key={media.id}
@@ -385,16 +396,16 @@ export default function MediaPanel({
                   productMedia.map((media) => (
                     <View
                       key={media.id}
-                      style={[
-                        styles.videoCard,
-                        {
-                          backgroundColor: theme.panel,
-                          borderColor: theme.isDark ? theme.border : '#f3f4f6',
-                        },
-                      ]}
+                      className="overflow-hidden rounded-[12px] border border-gray-100 bg-kd-panel dark:border-kd-border"
+                      style={{
+                        elevation: 1,
+                        shadowOffset: { height: 1, width: 0 },
+                        shadowOpacity: 0.05,
+                        shadowRadius: 2,
+                      }}
                     >
                       <CardBackdrop theme={theme} id="videos-flat" stops={libraryCardStops.videos} />
-                      <View style={styles.videoCardContent}>
+                      <View className="px-1.5">
                         <VideoRow
                           theme={theme}
                           accentColor={accentColor}
@@ -459,13 +470,13 @@ function MediaGroupCard({
 
   return (
     <View
-      style={[
-        styles.groupCard,
-        {
-          backgroundColor: theme.panel,
-          borderColor: theme.isDark ? theme.border : '#f3f4f6',
-        },
-      ]}
+      className="overflow-hidden rounded-[12px] border border-gray-100 bg-kd-panel dark:border-kd-border"
+      style={{
+        elevation: 1,
+        shadowOffset: { height: 1, width: 0 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      }}
     >
       <CardBackdrop theme={theme} id={kind} stops={libraryCardStops[kind]} />
 
@@ -473,38 +484,25 @@ function MediaGroupCard({
         accessibilityRole="button"
         accessibilityState={{ expanded }}
         onPress={onToggleExpand}
-        style={styles.groupHeader}
+        className="flex-row items-center gap-2.5 p-2.5"
       >
-        <View
-          style={[
-            styles.groupChevron,
-            { backgroundColor: theme.isDark ? alpha(theme.cardMuted, 0.8) : alpha(theme.white, 0.8) },
-          ]}
-        >
+        <View className="h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 dark:bg-kd-card-muted/80">
           <ChevronIcon size={11} color={theme.textSubtle} strokeWidth={2.5} />
         </View>
 
-        <View
-          style={[
-            styles.groupThumb,
-            {
-              backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted,
-              borderColor: theme.border,
-            },
-          ]}
-        >
+        <View className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
           <ImageIcon size={14} color={theme.textSubtle} strokeWidth={1.5} />
         </View>
 
-        <View style={styles.groupInfo}>
-          <Text numberOfLines={1} style={[styles.groupName, { color: theme.text }]}>
+        <View className="min-w-0 flex-1">
+          <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
             {item.title}
           </Text>
-          <View style={styles.groupMetaRow}>
-            <Text numberOfLines={1} style={[styles.groupCode, { color: theme.textSubtle }]}>
+          <View className="mt-[3px] flex-row items-center justify-between gap-2">
+            <Text numberOfLines={1} className="shrink text-kd-micro text-kd-text-subtle">
               #{getItemCode(item)}
             </Text>
-            <Text style={[styles.groupCount, { color: theme.textSubtle }]}>
+            <Text className="shrink-0 text-kd-micro font-medium text-kd-text-subtle">
               {media.length} {unit}
             </Text>
           </View>
@@ -512,14 +510,9 @@ function MediaGroupCard({
       </Pressable>
 
       {expanded ? (
-        <View
-          style={[
-            styles.groupBody,
-            { backgroundColor: theme.isDark ? alpha(theme.panelMuted, 0.3) : alpha(theme.white, 0.5) },
-          ]}
-        >
+        <View className="bg-white/50 p-2 dark:bg-kd-panel-muted/30">
           {kind === 'images' ? (
-            <View style={styles.grid}>
+            <View className="flex-row flex-wrap gap-2">
               {media.map((entry) => (
                 <ImageTile
                   key={entry.id}
@@ -574,34 +567,29 @@ function ImageTile({
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onToggleSelect}
-      style={[
-        styles.imageTile,
-        {
-          backgroundColor: theme.isDark ? theme.cardMuted : theme.border,
-          borderColor: selected ? accentColor : 'transparent',
-        },
-      ]}
+      className="aspect-square w-[31.4%] overflow-hidden rounded-kd-lg border-2 bg-kd-border dark:bg-kd-card-muted"
+      style={{ borderColor: selected ? accentColor : 'transparent' }}
     >
-      <View style={styles.imageTilePlaceholder}>
+      <View className="flex-1 items-center justify-center">
         <ImageIcon size={22} color={theme.textSubtle} strokeWidth={1.5} />
       </View>
 
-      <View style={styles.imageTileCheck}>
+      <View className="absolute left-1.5 top-1.5">
         <SelectCircle theme={theme} selected={selected} accent={accentColor} size={18} light />
       </View>
 
       {showProductInfo ? (
-        <View style={styles.imageTileOverlay}>
-          <Text numberOfLines={1} style={styles.imageTileOverlayTitle}>
+        <View className="absolute bottom-0 left-0 right-0 bg-black/55 px-1.5 py-1">
+          <Text numberOfLines={1} className="text-kd-tiny font-medium text-white/90">
             {media.productName}
           </Text>
-          <Text numberOfLines={1} style={styles.imageTileOverlayCode}>
+          <Text numberOfLines={1} className="text-[8px] text-white/60">
             #{media.productCode}
           </Text>
         </View>
       ) : (
-        <View style={styles.imageTileDate}>
-          <Text style={styles.imageTileDateText}>{media.date}</Text>
+        <View className="absolute bottom-1 left-1 rounded-kd-sm bg-black/60 px-[5px] py-0.5">
+          <Text className="text-[8px] font-medium text-white/90">{media.date}</Text>
         </View>
       )}
     </Pressable>
@@ -631,19 +619,18 @@ function VideoRow({
 }): React.JSX.Element {
   return (
     <View
-      style={[
-        styles.videoRow,
-        showDivider ? { borderTopColor: theme.border, borderTopWidth: 1 } : null,
-        selected ? { backgroundColor: alpha(accentColor, theme.isDark ? 0.1 : 0.05) } : null,
-      ]}
+      className={`flex-row items-center gap-2.5 px-1 py-2 ${
+        showDivider ? 'border-t border-kd-border' : ''
+      }`}
+      style={selected ? { backgroundColor: alpha(accentColor, theme.isDark ? 0.1 : 0.05) } : undefined}
     >
-      <View style={styles.videoBadges}>
-        <View style={[styles.providerBadge, { backgroundColor: alpha(theme.blue, theme.isDark ? 0.25 : 0.12) }]}>
-          <Text style={[styles.providerBadgeText, { color: theme.blue }]}>ระบบ</Text>
+      <View className="absolute right-2 top-2 z-[1] flex-row items-center gap-[3px]">
+        <View className="rounded-kd-sm bg-kd-blue/10 px-[5px] py-0.5 dark:bg-kd-blue/25">
+          <Text className="text-[8px] font-medium text-kd-blue">ระบบ</Text>
         </View>
         {media.warnings.map((warning) => (
-          <View key={warning} style={[styles.warningBadge, { backgroundColor: alpha(theme.amber, 0.9) }]}>
-            <Text style={styles.warningBadgeText}>{warning}</Text>
+          <View key={warning} className="rounded-kd-sm bg-kd-amber/90 px-1 py-0.5">
+            <Text className="text-[8px] font-bold text-white">{warning}</Text>
           </View>
         ))}
       </View>
@@ -653,37 +640,36 @@ function VideoRow({
       </Pressable>
 
       <View
-        style={[
-          media.portrait ? styles.videoThumbPortrait : styles.videoThumbLandscape,
-          { backgroundColor: theme.isDark ? theme.cardMuted : theme.border },
-        ]}
+        className={`shrink-0 items-center justify-center overflow-hidden rounded-kd-md bg-kd-border dark:bg-kd-card-muted ${
+          media.portrait ? 'h-16 w-12' : 'h-12 w-20'
+        }`}
       >
         <Play size={16} color={theme.textSubtle} strokeWidth={1.5} />
       </View>
 
-      <View style={styles.videoInfo}>
+      <View className="min-w-0 flex-1">
         {showProductInfo ? (
           <>
-            <Text numberOfLines={1} style={[styles.videoTitle, { color: theme.text }]}>
+            <Text numberOfLines={1} className="pr-14 text-kd-body font-medium text-kd-text">
               {media.productName}
             </Text>
-            <Text numberOfLines={1} style={[styles.videoCode, { color: theme.textSubtle }]}>
+            <Text numberOfLines={1} className="mt-px text-kd-tiny text-kd-text-subtle">
               #{media.productCode}
             </Text>
           </>
         ) : (
-          <Text numberOfLines={1} style={[styles.videoTitle, { color: theme.text }]}>
+          <Text numberOfLines={1} className="pr-14 text-kd-body font-medium text-kd-text">
             {media.title}
           </Text>
         )}
 
-        <View style={styles.videoMetaRow}>
-          <Text style={[styles.videoMeta, { color: theme.textSubtle }]}>{media.date}</Text>
-          <View style={[styles.videoMetaDot, { backgroundColor: theme.borderStrong }]} />
-          <Text style={[styles.videoMeta, { color: theme.textSubtle }]}>{media.size}</Text>
+        <View className="mt-[3px] flex-row items-center gap-1.5">
+          <Text className="text-kd-micro text-kd-text-subtle">{media.date}</Text>
+          <View className="h-[3px] w-[3px] rounded-full bg-kd-border-strong" />
+          <Text className="text-kd-micro text-kd-text-subtle">{media.size}</Text>
         </View>
 
-        <View style={styles.videoActions}>
+        <View className="mt-0.5 flex-row items-center justify-end gap-0.5">
           <RowIconButton theme={theme} icon={Pencil} label="แก้ไข" />
           <RowIconButton theme={theme} icon={Play} label="เล่น" />
           <RowIconButton theme={theme} icon={Download} label="ดาวน์โหลด" />
@@ -694,291 +680,3 @@ function VideoRow({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    gap: 12,
-    paddingBottom: 80,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  expandButton: {
-    alignItems: 'center',
-    height: 22,
-    justifyContent: 'center',
-    width: 20,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  groupBody: {
-    padding: 8,
-  },
-  groupCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    elevation: 1,
-    overflow: 'hidden',
-    shadowOffset: { height: 1, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  groupChevron: {
-    alignItems: 'center',
-    borderRadius: 999,
-    flexShrink: 0,
-    height: 20,
-    justifyContent: 'center',
-    width: 20,
-  },
-  groupCode: {
-    flexShrink: 1,
-    fontSize: 10,
-  },
-  groupCount: {
-    flexShrink: 0,
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  groupHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    padding: 10,
-  },
-  groupInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  groupMetaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-    marginTop: 3,
-  },
-  groupName: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  groupThumb: {
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    flexShrink: 0,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  groupToggle: {
-    alignItems: 'center',
-    borderRadius: 6,
-    borderWidth: 1,
-    flexShrink: 0,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
-  },
-  imageTile: {
-    aspectRatio: 1,
-    borderRadius: 8,
-    borderWidth: 2,
-    overflow: 'hidden',
-    width: '31.4%',
-  },
-  imageTileCheck: {
-    left: 6,
-    position: 'absolute',
-    top: 6,
-  },
-  imageTileDate: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 4,
-    bottom: 4,
-    left: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    position: 'absolute',
-  },
-  imageTileDateText: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 8,
-    fontWeight: '500',
-  },
-  imageTileOverlay: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    bottom: 0,
-    left: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    position: 'absolute',
-    right: 0,
-  },
-  imageTileOverlayCode: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 8,
-  },
-  imageTileOverlayTitle: {
-    color: 'rgba(255, 255, 255, 0.92)',
-    fontSize: 9,
-    fontWeight: '500',
-  },
-  imageTilePlaceholder: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  modeTab: {
-    alignItems: 'center',
-    borderRadius: 4,
-    height: 26,
-    justifyContent: 'center',
-    width: 30,
-  },
-  modeTabs: {
-    alignItems: 'center',
-    borderRadius: 6,
-    borderWidth: 1,
-    flexDirection: 'row',
-    flexShrink: 0,
-    gap: 2,
-    height: 32,
-    paddingHorizontal: 2,
-  },
-  providerBadge: {
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  providerBadgeText: {
-    fontSize: 8,
-    fontWeight: '500',
-  },
-  searchRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  section: {
-    gap: 8,
-  },
-  selectAll: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    minHeight: 24,
-  },
-  selectAllText: {
-    fontSize: 11,
-  },
-  sortRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-  },
-  toolsDivider: {
-    height: 12,
-    marginHorizontal: 3,
-    width: 1,
-  },
-  toolsRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  videoActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
-    justifyContent: 'flex-end',
-    marginTop: 2,
-  },
-  videoBadges: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 3,
-    position: 'absolute',
-    right: 8,
-    top: 8,
-    zIndex: 1,
-  },
-  videoCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    elevation: 1,
-    overflow: 'hidden',
-    shadowOffset: { height: 1, width: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  videoCardContent: {
-    paddingHorizontal: 6,
-  },
-  videoCode: {
-    fontSize: 9,
-    marginTop: 1,
-  },
-  videoInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  videoMeta: {
-    fontSize: 10,
-  },
-  videoMetaDot: {
-    borderRadius: 999,
-    height: 3,
-    width: 3,
-  },
-  videoMetaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 3,
-  },
-  videoRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 4,
-    paddingVertical: 8,
-  },
-  videoThumbLandscape: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flexShrink: 0,
-    height: 48,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 80,
-  },
-  videoThumbPortrait: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flexShrink: 0,
-    height: 64,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 48,
-  },
-  videoTitle: {
-    fontSize: 12,
-    fontWeight: '500',
-    paddingRight: 56,
-  },
-  warningBadge: {
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  warningBadgeText: {
-    color: '#ffffff',
-    fontSize: 8,
-    fontWeight: '700',
-  },
-});

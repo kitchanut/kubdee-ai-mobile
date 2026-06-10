@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Image, StyleSheet, Text as NativeText, View } from 'react-native';
-import type { StyleProp, TextStyle } from 'react-native';
+import { cssInterop } from 'nativewind';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Image, Text as NativeText, View } from 'react-native';
 
 import KubdeeText from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 const logoDark = require('../../assets/logo-dark.png');
 const logoLight = require('../../assets/logo-light.png');
+
+// Animated.View is not interopped by NativeWind's preset — resolve className
+// into style (same pattern as KubdeeText). Animated values stay in style={}.
+cssInterop(Animated.View, { className: 'style' });
 
 const verifySteps = [
   'กำลังยืนยันเซสชันผู้ใช้',
@@ -21,43 +25,22 @@ interface AuthLoadingScreenProps {
 
 interface LoadingTextProps {
   children: string;
-  style: StyleProp<TextStyle>;
+  className: string;
   useSystemText: boolean;
 }
 
-function getLoadingPalette(isDark: boolean) {
-  return isDark
-    ? {
-        background: '#0a0a0a',
-        progressFill: '#fafafa',
-        progressTrack: '#1f1f1f',
-        text: '#fafafa',
-        textMuted: '#8f8f8f',
-        textSubtle: '#5c5c5c',
-      }
-    : {
-        background: '#ffffff',
-        progressFill: '#0a0a0a',
-        progressTrack: '#f0f0f0',
-        text: '#0a0a0a',
-        textMuted: '#6b6b6b',
-        textSubtle: '#a3a3a3',
-      };
-}
-
-function LoadingText({ children, style, useSystemText }: LoadingTextProps): React.JSX.Element {
+function LoadingText({ children, className, useSystemText }: LoadingTextProps): React.JSX.Element {
   if (useSystemText) {
-    return <NativeText style={style}>{children}</NativeText>;
+    return <NativeText className={className}>{children}</NativeText>;
   }
 
-  return <KubdeeText style={style}>{children}</KubdeeText>;
+  return <KubdeeText className={className}>{children}</KubdeeText>;
 }
 
 export default function AuthLoadingScreen({
   theme,
   useSystemText = false,
 }: AuthLoadingScreenProps): React.JSX.Element {
-  const palette = useMemo(() => getLoadingPalette(theme.isDark), [theme.isDark]);
   const entrance = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
   const logoPulse = useRef(new Animated.Value(1)).current;
@@ -153,24 +136,25 @@ export default function AuthLoadingScreen({
   }, [stepOpacity]);
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.background }]}>
+    <View className="flex-1 items-center justify-center bg-white pb-7 pt-12 dark:bg-[#0a0a0a]">
       <Animated.View
-        style={[
-          styles.center,
-          { opacity: entrance, transform: [{ translateY: entranceTranslateY }] },
-        ]}
+        className="flex-1 items-center justify-center gap-7 px-8"
+        style={{ opacity: entrance, transform: [{ translateY: entranceTranslateY }] }}
       >
         <Animated.View style={{ opacity: logoPulse }}>
-          <Image source={theme.isDark ? logoLight : logoDark} resizeMode="contain" style={styles.logo} />
+          <Image source={theme.isDark ? logoLight : logoDark} resizeMode="contain" className="h-[52px] w-[52px]" />
         </Animated.View>
 
-        <View style={styles.copy}>
-          <LoadingText style={[styles.title, { color: palette.text }]} useSystemText={useSystemText}>
+        <View className="max-w-[280px] items-center gap-1.5">
+          <LoadingText
+            className="text-center text-[15px] font-bold leading-[21px] tracking-[0.2px] text-[#0a0a0a] dark:text-[#fafafa]"
+            useSystemText={useSystemText}
+          >
             กำลังตรวจสอบบัญชี
           </LoadingText>
           <Animated.View style={{ opacity: stepOpacity }}>
             <LoadingText
-              style={[styles.description, { color: palette.textMuted }]}
+              className="text-center text-kd-body font-medium leading-[17px] text-[#6b6b6b] dark:text-[#8f8f8f]"
               useSystemText={useSystemText}
             >
               {verifySteps[stepIndex]}
@@ -181,84 +165,23 @@ export default function AuthLoadingScreen({
         <View
           accessibilityLabel="กำลังตรวจสอบบัญชี"
           accessibilityRole="progressbar"
-          style={[styles.progressTrack, { backgroundColor: palette.progressTrack }]}
+          className="h-0.5 w-36 overflow-hidden rounded-full bg-[#f0f0f0] dark:bg-[#1f1f1f]"
         >
           <Animated.View
-            style={[
-              styles.progressFill,
-              {
-                backgroundColor: palette.progressFill,
-                transform: [{ translateX: progressTranslateX }],
-              },
-            ]}
+            className="h-full w-12 rounded-full bg-[#0a0a0a] dark:bg-[#fafafa]"
+            style={{ transform: [{ translateX: progressTranslateX }] }}
           />
         </View>
       </Animated.View>
 
-      <Animated.View style={[styles.footer, { opacity: entrance }]}>
-        <LoadingText style={[styles.footerText, { color: palette.textSubtle }]} useSystemText={useSystemText}>
+      <Animated.View className="items-center" style={{ opacity: entrance }}>
+        <LoadingText
+          className="text-center text-kd-tiny font-bold tracking-[2.5px] text-[#a3a3a3] dark:text-[#5c5c5c]"
+          useSystemText={useSystemText}
+        >
           KUBDEE AI
         </LoadingText>
       </Animated.View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  center: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 28,
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  container: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    paddingBottom: 28,
-    paddingTop: 48,
-  },
-  copy: {
-    alignItems: 'center',
-    gap: 6,
-    maxWidth: 280,
-  },
-  description: {
-    fontSize: 12,
-    fontWeight: '500',
-    lineHeight: 17,
-    textAlign: 'center',
-  },
-  footer: {
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 2.5,
-    textAlign: 'center',
-  },
-  logo: {
-    height: 52,
-    width: 52,
-  },
-  progressFill: {
-    borderRadius: 999,
-    height: '100%',
-    width: 48,
-  },
-  progressTrack: {
-    borderRadius: 999,
-    height: 2,
-    overflow: 'hidden',
-    width: 144,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-    lineHeight: 21,
-    textAlign: 'center',
-  },
-});

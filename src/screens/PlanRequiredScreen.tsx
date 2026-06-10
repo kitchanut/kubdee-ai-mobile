@@ -1,11 +1,10 @@
-import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, View } from 'react-native';
 import { LockKeyhole, LogOut, RefreshCw } from 'lucide-react-native';
 
 import { BACKEND_URL } from '@/auth/constants';
 import { toThaiPlanError } from '@/auth/plan';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha, radii, spacing, typography } from '@/theme/tokens';
 
 interface PlanRequiredScreenProps {
   isCheckingPlan: boolean;
@@ -23,144 +22,54 @@ export default function PlanRequiredScreen({
   onRecheck,
 }: PlanRequiredScreenProps): React.JSX.Element {
   return (
-    <View style={[styles.container, { backgroundColor: theme.panel }]}>
-      <View style={styles.center}>
-        <View style={[styles.lockFrame, { backgroundColor: theme.card, borderColor: theme.border }]}>
+    <View className="flex-1 bg-kd-panel">
+      <View className="flex-1 items-center justify-center gap-[18px] px-[26px]">
+        <View className="h-[76px] w-[76px] items-center justify-center rounded-kd-xl border border-kd-border bg-kd-card">
           <LockKeyhole size={30} color={theme.textSubtle} strokeWidth={2} />
         </View>
 
-        <View style={styles.copy}>
-          <Text style={[styles.title, { color: theme.text }]}>Ultra Plan Required</Text>
-          <Text style={[styles.description, { color: theme.textSubtle }]}>{toThaiPlanError(planError)}</Text>
+        <View className="max-w-[300px] gap-2">
+          <Text className="text-center text-kd-title font-black text-kd-text">Ultra Plan Required</Text>
+          <Text className="text-center text-kd-body font-bold leading-[18px] text-kd-text-subtle">
+            {toThaiPlanError(planError)}
+          </Text>
         </View>
       </View>
 
-      <View style={styles.actions}>
+      <View className="gap-2 px-[22px] pb-[22px]">
         <Pressable
           accessibilityRole="button"
           onPress={() => Linking.openURL(BACKEND_URL)}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            {
-              backgroundColor: theme.text,
-              opacity: pressed ? 0.82 : 1,
-            },
-          ]}
+          className="h-12 items-center justify-center rounded-kd-lg bg-kd-text px-4 active:opacity-80"
         >
-          <Text style={[styles.primaryText, { color: theme.panel }]}>อัปเกรดแพลน</Text>
+          <Text className="text-kd-label font-black text-kd-panel">อัปเกรดแพลน</Text>
         </Pressable>
 
-        <View style={styles.secondaryRow}>
+        <View className="flex-row gap-2">
           <Pressable
             accessibilityRole="button"
             disabled={isCheckingPlan}
             onPress={onRecheck}
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              {
-                backgroundColor: theme.cardMuted,
-                borderColor: theme.border,
-                opacity: isCheckingPlan ? 0.58 : pressed ? 0.78 : 1,
-              },
-            ]}
+            className="h-[42px] flex-1 flex-row items-center justify-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card-muted px-2.5 active:opacity-80 disabled:opacity-60"
           >
             {isCheckingPlan ? (
               <ActivityIndicator color={theme.blue} size="small" />
             ) : (
               <RefreshCw size={15} color={theme.blue} strokeWidth={2.2} />
             )}
-            <Text style={[styles.secondaryText, { color: theme.text }]}>ตรวจสอบ</Text>
+            <Text className="text-kd-body font-black text-kd-text">ตรวจสอบ</Text>
           </Pressable>
 
           <Pressable
             accessibilityRole="button"
             onPress={onLogout}
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              {
-                backgroundColor: theme.redSoft,
-                borderColor: alpha(theme.red, 0.3),
-                opacity: pressed ? 0.78 : 1,
-              },
-            ]}
+            className="h-[42px] flex-1 flex-row items-center justify-center gap-2 rounded-kd-lg border border-kd-red/30 bg-kd-red-soft px-2.5 active:opacity-80"
           >
             <LogOut size={15} color={theme.red} strokeWidth={2.2} />
-            <Text style={[styles.secondaryText, { color: theme.red }]}>ออกจากระบบ</Text>
+            <Text className="text-kd-body font-black text-kd-red">ออกจากระบบ</Text>
           </Pressable>
         </View>
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  actions: {
-    gap: spacing.md,
-    paddingHorizontal: 22,
-    paddingBottom: 22,
-  },
-  center: {
-    alignItems: 'center',
-    flex: 1,
-    gap: 18,
-    justifyContent: 'center',
-    paddingHorizontal: 26,
-  },
-  container: {
-    flex: 1,
-  },
-  copy: {
-    gap: 8,
-    maxWidth: 300,
-  },
-  description: {
-    fontSize: typography.body,
-    fontWeight: '700',
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  lockFrame: {
-    alignItems: 'center',
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    height: 76,
-    justifyContent: 'center',
-    width: 76,
-  },
-  primaryButton: {
-    alignItems: 'center',
-    borderRadius: radii.lg,
-    height: 48,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  primaryText: {
-    fontSize: typography.label,
-    fontWeight: '900',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    height: 42,
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-  secondaryRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  secondaryText: {
-    fontSize: typography.body,
-    fontWeight: '900',
-  },
-  title: {
-    fontSize: typography.title,
-    fontWeight: '900',
-    letterSpacing: 0,
-    textAlign: 'center',
-  },
-});

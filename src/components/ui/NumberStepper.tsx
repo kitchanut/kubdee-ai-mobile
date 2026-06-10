@@ -1,9 +1,8 @@
 import { Minus, Plus } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { radii, typography } from '@/theme/tokens';
 
 interface NumberStepperProps {
   label: string;
@@ -31,24 +30,24 @@ export default function NumberStepper({
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={[styles.label, { color: theme.textSubtle }]}>{label}</Text>
-      <View style={[styles.control, { backgroundColor: theme.input, borderColor: theme.border }]}>
+    <View className="gap-[5px]">
+      <Text className="text-kd-micro font-bold text-kd-text-subtle">{label}</Text>
+      <View className="h-[34px] flex-row items-center justify-between overflow-hidden rounded-kd-md border border-kd-border bg-kd-input">
         <Pressable
           accessibilityRole="button"
+          className="h-[28px] w-[30px] items-center justify-center active:opacity-65"
           onPress={() => setValue(value - step)}
-          style={({ pressed }) => [styles.button, { opacity: pressed ? 0.65 : 1 }]}
         >
           <Minus size={12} color={theme.textSubtle} />
         </Pressable>
-        <Text style={[styles.value, { color: theme.text }]}>
+        <Text className="flex-1 text-center text-kd-body font-extrabold text-kd-text">
           {value}
           {suffix}
         </Text>
         <Pressable
           accessibilityRole="button"
+          className="h-[28px] w-[30px] items-center justify-center active:opacity-65"
           onPress={() => setValue(value + step)}
-          style={({ pressed }) => [styles.button, { opacity: pressed ? 0.65 : 1 }]}
         >
           <Plus size={12} color={theme.textSubtle} />
         </Pressable>
@@ -56,34 +55,3 @@ export default function NumberStepper({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  button: {
-    alignItems: 'center',
-    height: 28,
-    justifyContent: 'center',
-    width: 30,
-  },
-  container: {
-    gap: 5,
-  },
-  control: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    height: 34,
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-  label: {
-    fontSize: typography.micro,
-    fontWeight: '700',
-  },
-  value: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-});

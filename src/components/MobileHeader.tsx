@@ -10,7 +10,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
 import packageJson from '../../package.json';
@@ -22,11 +22,10 @@ import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import IconButton from '@/components/ui/IconButton';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha, radii, typography } from '@/theme/tokens';
+import { alpha } from '@/theme/tokens';
 
 const logoDark = require('../../assets/logo-dark.png');
 const logoLight = require('../../assets/logo-light.png');
-const headerActionIconSize = 17;
 const headerActionSize = 34;
 
 function formatShortId(value: string): string {
@@ -97,7 +96,6 @@ export default function MobileHeader({
   const maxDevices = user?.maxDevices ?? 0;
   const devicesFull = maxDevices > 0 && (user?.activeDevices ?? 0) >= maxDevices;
   const planTone = getPlanTone(theme, planKey, isPlanExpired);
-  const popoverDivider = theme.isDark ? theme.border : '#f3f4f6';
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
   const profileSelectEnabled = profiles.length > 0 && !isSyncingProfiles;
   const selectedProfileLabel = selectedProfile
@@ -150,15 +148,15 @@ export default function MobileHeader({
   };
 
   return (
-    <View style={[styles.container, { borderBottomColor: theme.border }]}>
-      <View style={styles.identity}>
+    <View className="h-[70px] flex-row items-center justify-between border-b border-kd-border px-4">
+      <View className="h-12 min-w-0 flex-1 flex-row items-center gap-2.5">
         <Image
           source={theme.isDark ? logoLight : logoDark}
           resizeMode="contain"
-          style={styles.logo}
+          className="h-9 w-9"
         />
-        <View style={styles.titleBlock}>
-          <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
+        <View className="min-w-0 flex-1 translate-y-[1px] items-start justify-center">
+          <Text className="text-kd-title font-extrabold leading-5 text-kd-text" numberOfLines={1}>
             Kubdee AI
           </Text>
           <Pressable
@@ -166,19 +164,11 @@ export default function MobileHeader({
             accessibilityRole="button"
             disabled={!profileSelectEnabled}
             onPress={openProfileSelect}
-            style={({ pressed }) => [
-              styles.profileSelectButton,
-              {
-                opacity: pressed ? 0.72 : profileSelectEnabled ? 1 : 0.72,
-              },
-            ]}
+            className="min-h-[17px] max-w-full flex-row items-center justify-center self-start overflow-hidden pr-1 active:opacity-70 disabled:opacity-70"
           >
-            <View style={styles.profileSelectContent}>
+            <View className="min-w-0 max-w-full flex-row items-center gap-1">
               <Text
-                style={[
-                  styles.profileSelectText,
-                  { color: theme.textSubtle },
-                ]}
+                className="flex-shrink text-kd-caption leading-[13px] text-kd-text-subtle"
                 numberOfLines={1}
               >
                 {selectedProfileLabel}
@@ -196,24 +186,24 @@ export default function MobileHeader({
           transparent
           visible={profileSelectVisible}
         >
-          <Pressable style={styles.popoverBackdrop} onPress={closeProfileSelect}>
+          <Pressable className="flex-1" onPress={closeProfileSelect}>
             <Pressable
               onPress={(event) => event.stopPropagation()}
-              style={[
-                styles.profileSelectPopover,
-                {
-                  backgroundColor: theme.card,
-                  borderColor: theme.border,
-                  shadowColor: theme.shadow,
-                },
-              ]}
+              className="absolute left-[108px] top-[78px] w-[268px] rounded-kd-lg border border-kd-border bg-kd-card p-[9px]"
+              style={{
+                elevation: 10,
+                shadowColor: theme.shadow,
+                shadowOffset: { width: 0, height: 12 },
+                shadowOpacity: 0.18,
+                shadowRadius: 20,
+              }}
             >
-              <Text style={[styles.profileSelectTitle, { color: theme.text }]}>
+              <Text className="text-kd-caption font-black leading-[15px] text-kd-text">
                 เลือกโปรไฟล์ทำงาน
               </Text>
               <ScrollView
                 showsVerticalScrollIndicator={false}
-                style={styles.profileSelectList}
+                className="max-h-[260px]"
               >
                 {profiles.map((profile) => {
                   const active = profile.id === selectedProfileId;
@@ -226,20 +216,15 @@ export default function MobileHeader({
                       accessibilityRole="button"
                       key={profile.id}
                       onPress={() => handleSelectProfile(profile.id)}
-                      style={({ pressed }) => [
-                        styles.profileSelectOption,
-                        {
-                          backgroundColor: active ? theme.cyanSoft : theme.cardMuted,
-                          borderColor: active ? alpha(theme.cyan, 0.38) : theme.border,
-                          opacity: pressed ? 0.76 : 1,
-                        },
-                      ]}
+                      className={`mt-[7px] min-h-[44px] flex-row items-center gap-2 rounded-kd-md border px-2 py-[7px] active:opacity-75 ${
+                        active ? 'border-kd-cyan/40 bg-kd-cyan-soft' : 'border-kd-border bg-kd-card-muted'
+                      }`}
                     >
-                      <View style={styles.profileSelectOptionBody}>
-                        <Text style={[styles.profileSelectOptionName, { color: theme.text }]} numberOfLines={1}>
+                      <View className="min-w-0 flex-1">
+                        <Text className="text-kd-body font-black leading-4 text-kd-text" numberOfLines={1}>
                           {profile.name}
                         </Text>
-                        <Text style={[styles.profileSelectOptionMeta, { color: theme.textSubtle }]} numberOfLines={1}>
+                        <Text className="mt-0.5 text-kd-tiny font-bold text-kd-text-subtle" numberOfLines={1}>
                           {group?.name || 'ไม่มีกลุ่ม'} · {getSourceLabel(profile.createdByApp || profile.originApp)} · {formatShortId(profile.id)}
                         </Text>
                       </View>
@@ -252,7 +237,7 @@ export default function MobileHeader({
         </Modal>
       ) : null}
 
-      <View style={styles.actions}>
+      <View className="flex-row items-center gap-2">
         {runningCount > 0 ? (
           <IconButton
             icon={Square}
@@ -266,19 +251,18 @@ export default function MobileHeader({
           accessibilityLabel="บัญชีผู้ใช้"
           accessibilityRole="button"
           onPress={() => setProfileMenuOpen(true)}
-          style={({ pressed }) => [
-            styles.avatarButton,
-            {
-              backgroundColor: theme.card,
-              borderColor: profileMenuOpen ? (theme.isDark ? theme.white : '#0a0a0a') : theme.borderStrong,
-              opacity: pressed ? 0.75 : 1,
-            },
-          ]}
+          className={`h-[34px] w-[34px] items-center justify-center overflow-hidden rounded-full border bg-kd-card active:opacity-75 ${
+            profileMenuOpen ? 'border-[#0a0a0a] dark:border-white' : 'border-kd-border-strong'
+          }`}
         >
-          <View style={[styles.avatarFallback, { backgroundColor: theme.cyanSoft }]}>
+          <View className="h-[34px] w-[34px] items-center justify-center overflow-hidden rounded-full bg-kd-cyan-soft">
             <UserCircle size={22} color={theme.textSubtle} strokeWidth={2.1} />
             {user?.image ? (
-              <Image resizeMode="cover" source={{ uri: user.image }} style={styles.avatarImage} />
+              <Image
+                resizeMode="cover"
+                source={{ uri: user.image }}
+                className="absolute -left-px -top-px h-[34px] w-[34px] rounded-full"
+              />
             ) : null}
           </View>
         </Pressable>
@@ -290,79 +274,74 @@ export default function MobileHeader({
         transparent
         visible={profileMenuOpen}
       >
-        <Pressable style={styles.popoverBackdrop} onPress={closeProfileMenu}>
+        <Pressable className="flex-1" onPress={closeProfileMenu}>
           <Pressable
             onPress={(event) => event.stopPropagation()}
-            style={[
-              styles.profilePopover,
-              {
-                backgroundColor: theme.panel,
-                borderColor: popoverDivider,
-                shadowColor: theme.shadow,
-              },
-            ]}
+            className="absolute right-3 top-[74px] w-[248px] rounded-[12px] border border-gray-100 bg-kd-panel p-1 dark:border-kd-border"
+            style={{
+              elevation: 10,
+              shadowColor: theme.shadow,
+              shadowOffset: { width: 0, height: 12 },
+              shadowOpacity: 0.18,
+              shadowRadius: 20,
+            }}
           >
-            <View style={styles.popoverInfo}>
-              <Text numberOfLines={1} style={[styles.popoverName, { color: theme.text }]}>
+            <View className="px-2.5 py-2">
+              <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
                 {displayName}
               </Text>
-              <Text numberOfLines={1} style={[styles.popoverEmail, { color: theme.textSubtle }]}>
+              <Text numberOfLines={1} className="mt-px text-kd-micro font-medium text-kd-text-subtle">
                 {user?.email || 'Google account'}
               </Text>
 
-              <View style={[styles.popoverMetaBlock, { borderTopColor: popoverDivider }]}>
-                <View style={styles.popoverMetaRow}>
-                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Plan</Text>
-                  <View style={[styles.planBadge, { backgroundColor: planTone.background }]}>
-                    <Text style={[styles.planBadgeText, { color: planTone.color }]}>
+              <View className="mt-2 gap-[7px] border-t border-gray-100 pt-2 dark:border-kd-border">
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">Plan</Text>
+                  <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: planTone.background }}>
+                    <Text className="text-kd-tiny font-extrabold tracking-[0.8px]" style={{ color: planTone.color }}>
                       {(user?.plan || 'FREE').toUpperCase()}
                     </Text>
                   </View>
                 </View>
 
-                <View style={styles.popoverMetaRow}>
-                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Exp</Text>
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">Exp</Text>
                   <Text
                     numberOfLines={1}
-                    style={[styles.popoverMetaValue, { color: isPlanExpired ? theme.red : theme.text }]}
+                    className={`flex-shrink text-kd-micro font-semibold ${isPlanExpired ? 'text-kd-red' : 'text-kd-text'}`}
                   >
                     {expiryLabel}
                   </Text>
                 </View>
 
-                <View style={styles.popoverMetaRow}>
-                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Devices</Text>
-                  <Text style={[styles.popoverMetaValue, { color: devicesFull ? theme.red : theme.text }]}>
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">Devices</Text>
+                  <Text className={`flex-shrink text-kd-micro font-semibold ${devicesFull ? 'text-kd-red' : 'text-kd-text'}`}>
                     {devicesLabel}
                   </Text>
                 </View>
 
-                <View style={styles.popoverMetaRow}>
-                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Credits</Text>
-                  <View style={styles.popoverCreditsValue}>
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">Credits</Text>
+                  <View className="flex-row items-center gap-1">
                     <GemIcon />
-                    <Text style={[styles.popoverMetaValue, { color: theme.text }]}>{creditsLabel}</Text>
+                    <Text className="flex-shrink text-kd-micro font-semibold text-kd-text">{creditsLabel}</Text>
                   </View>
                 </View>
 
-                <View style={styles.popoverMetaRow}>
-                  <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>Version</Text>
-                  <Text style={[styles.popoverMetaValue, { color: theme.text }]}>v{packageJson.version}</Text>
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">Version</Text>
+                  <Text className="flex-shrink text-kd-micro font-semibold text-kd-text">v{packageJson.version}</Text>
                 </View>
 
-                <View style={[styles.popoverThemeBlock, { borderTopColor: popoverDivider }]}>
-                  <View style={styles.popoverMetaRow}>
-                    <Text style={[styles.popoverMetaLabel, { color: theme.textSubtle }]}>ธีม</Text>
-                    <Text style={[styles.popoverMetaHint, { color: theme.textSubtle }]}>
+                <View className="mt-0.5 gap-1.5 border-t border-gray-100 pt-2 dark:border-kd-border">
+                  <View className="flex-row items-center justify-between gap-3">
+                    <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">ธีม</Text>
+                    <Text className="text-kd-tiny font-medium text-kd-text-subtle">
                       {theme.isDark ? 'มืด' : 'สว่าง'}
                     </Text>
                   </View>
-                  <View
-                    style={[
-                      styles.themeSegments,
-                      { backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted },
-                    ]}
-                  >
+                  <View className="flex-row gap-[3px] rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted">
                     {themeSegmentOptions.map((option) => {
                       const SegmentIcon = option.icon;
                       const isActive = (option.key === 'dark') === theme.isDark;
@@ -378,12 +357,9 @@ export default function MobileHeader({
                               handleThemeToggle();
                             }
                           }}
-                          style={[
-                            styles.themeSegment,
-                            isActive
-                              ? { backgroundColor: theme.isDark ? theme.panelMuted : theme.white }
-                              : null,
-                          ]}
+                          className={`h-7 flex-1 flex-row items-center justify-center gap-1 rounded-kd-md ${
+                            isActive ? 'bg-white dark:bg-kd-panel-muted' : ''
+                          }`}
                         >
                           <SegmentIcon
                             size={12}
@@ -391,10 +367,7 @@ export default function MobileHeader({
                             strokeWidth={2.2}
                           />
                           <Text
-                            style={[
-                              styles.themeSegmentText,
-                              { color: isActive ? theme.text : theme.textSubtle },
-                            ]}
+                            className={`text-kd-tiny font-bold ${isActive ? 'text-kd-text' : 'text-kd-text-subtle'}`}
                           >
                             {option.label}
                           </Text>
@@ -406,7 +379,7 @@ export default function MobileHeader({
               </View>
             </View>
 
-            <View style={[styles.menuDivider, { backgroundColor: popoverDivider }]} />
+            <View className="mx-1 my-0.5 h-px bg-gray-100 dark:bg-kd-border" />
 
             <PopoverMenuButton icon={Users} label="จัดการโปรไฟล์" theme={theme} onPress={handleOpenProfile} />
             <PopoverMenuButton icon={ChartNoAxesColumn} label="Logs" theme={theme} onPress={handleOpenLogs} />
@@ -499,278 +472,16 @@ function PopoverMenuButton({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.popoverMenuButton,
-        pressed
-          ? {
-              backgroundColor: danger
-                ? alpha(theme.red, theme.isDark ? 0.14 : 0.07)
-                : theme.isDark
-                  ? theme.cardMuted
-                  : theme.panelMuted,
-            }
-          : null,
-      ]}
+      className={`h-[34px] flex-row items-center justify-center gap-2 rounded-kd-lg ${
+        danger
+          ? 'active:bg-kd-red/10'
+          : 'active:bg-kd-panel-muted dark:active:bg-kd-card-muted'
+      }`}
     >
       <Icon size={14} color={color} strokeWidth={2.3} />
-      <Text style={[styles.popoverMenuLabel, { color }]}>{label}</Text>
+      <Text className={`text-kd-body font-semibold ${danger ? 'text-kd-red' : 'text-kd-text-muted'}`}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  actions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  avatarButton: {
-    alignItems: 'center',
-    borderRadius: headerActionSize / 2,
-    borderWidth: 1,
-    height: headerActionSize,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: headerActionSize,
-  },
-  avatarFallback: {
-    alignItems: 'center',
-    borderRadius: headerActionSize / 2,
-    height: headerActionSize,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: headerActionSize,
-  },
-  avatarImage: {
-    borderRadius: headerActionSize / 2,
-    height: headerActionSize,
-    left: -1,
-    position: 'absolute',
-    top: -1,
-    width: headerActionSize,
-  },
-  container: {
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    height: 70,
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-  },
-  identity: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 10,
-    height: 48,
-    minWidth: 0,
-  },
-  logo: {
-    height: 36,
-    width: 36,
-  },
-  menuDivider: {
-    height: 1,
-    marginHorizontal: 4,
-    marginVertical: 2,
-  },
-  planBadge: {
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  planBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    includeFontPadding: false,
-    letterSpacing: 0.8,
-  },
-  popoverBackdrop: {
-    flex: 1,
-  },
-  popoverCreditsValue: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-  },
-  popoverEmail: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  popoverInfo: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  popoverMenuButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    height: 34,
-    justifyContent: 'center',
-  },
-  popoverMenuLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  popoverMetaBlock: {
-    borderTopWidth: 1,
-    gap: 7,
-    marginTop: 8,
-    paddingTop: 8,
-  },
-  popoverMetaHint: {
-    fontSize: 9,
-    fontWeight: '500',
-  },
-  popoverMetaLabel: {
-    flexShrink: 0,
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  popoverMetaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-  },
-  popoverMetaValue: {
-    flexShrink: 1,
-    fontSize: 10,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  popoverName: {
-    fontSize: 12,
-    fontWeight: '600',
-    includeFontPadding: false,
-  },
-  popoverThemeBlock: {
-    borderTopWidth: 1,
-    gap: 6,
-    marginTop: 2,
-    paddingTop: 8,
-  },
-  profilePopover: {
-    borderRadius: 12,
-    borderWidth: 1,
-    elevation: 10,
-    padding: 4,
-    position: 'absolute',
-    right: 12,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    top: 74,
-    width: 248,
-  },
-  profileSelectButton: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    minHeight: 17,
-    justifyContent: 'center',
-    marginTop: 0,
-    maxWidth: '100%',
-    overflow: 'hidden',
-    paddingRight: 4,
-  },
-  profileSelectContent: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-    minWidth: 0,
-    maxWidth: '100%',
-  },
-  profileSelectList: {
-    maxHeight: 260,
-  },
-  profileSelectOption: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 7,
-    minHeight: 44,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-  },
-  profileSelectOptionBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  profileSelectOptionMeta: {
-    fontSize: typography.tiny,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  profileSelectOptionName: {
-    fontSize: typography.body,
-    fontWeight: '900',
-    includeFontPadding: false,
-    lineHeight: 16,
-  },
-  profileSelectPopover: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    elevation: 10,
-    left: 108,
-    padding: 9,
-    position: 'absolute',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    top: 78,
-    width: 268,
-  },
-  profileSelectText: {
-    flexShrink: 1,
-    fontSize: typography.caption,
-    fontWeight: '400',
-    includeFontPadding: false,
-    lineHeight: 13,
-  },
-  profileSelectTitle: {
-    fontSize: typography.caption,
-    fontWeight: '900',
-    includeFontPadding: false,
-    lineHeight: 15,
-  },
-  themeSegment: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 4,
-    height: 28,
-    justifyContent: 'center',
-  },
-  themeSegments: {
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 3,
-    padding: 2,
-  },
-  themeSegmentText: {
-    fontSize: 9,
-    fontWeight: '700',
-    includeFontPadding: false,
-  },
-  title: {
-    fontSize: typography.title,
-    fontWeight: '800',
-    includeFontPadding: false,
-    letterSpacing: 0,
-    lineHeight: 20,
-  },
-  titleBlock: {
-    alignItems: 'flex-start',
-    flex: 1,
-    justifyContent: 'center',
-    minWidth: 0,
-    transform: [{ translateY: 1 }],
-  },
-});

@@ -1,3 +1,4 @@
+import { cssInterop } from 'nativewind';
 import type { ReactNode } from 'react';
 import { Fragment } from 'react';
 import { StyleSheet, Text as NativeText } from 'react-native';
@@ -76,3 +77,8 @@ export default function KubdeeText({ children, style, ...props }: TextProps): Re
     </NativeText>
   );
 }
+
+// Resolve className into the style prop so the Thai/Latin font-weight
+// detection above keeps working with NativeWind utilities like
+// font-semibold or text-kd-body.
+cssInterop(KubdeeText, { className: 'style' });

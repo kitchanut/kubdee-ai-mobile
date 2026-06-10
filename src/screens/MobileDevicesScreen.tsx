@@ -15,7 +15,7 @@ import {
   Zap,
 } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { AppState, Pressable, ScrollView, Switch, View } from 'react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -30,7 +30,6 @@ import {
   tapScreen,
 } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { radii, spacing, typography } from '@/theme/tokens';
 import type { AccessibilityStatus } from '@/native/AccessibilityBridge';
 
 interface MobileDevicesScreenProps {
@@ -121,32 +120,32 @@ export default function MobileDevicesScreen({
   };
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1">
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: selectedDeviceIds.size > 0 ? 74 : 12 }]}
+        contentContainerClassName={`gap-2 p-2 ${selectedDeviceIds.size > 0 ? 'pb-[74px]' : 'pb-3'}`}
       >
         {!accessibilityEnabled ? (
-          <View style={[styles.notice, { backgroundColor: theme.amberSoft, borderColor: theme.amber }]}>
-            <View style={styles.noticeTitle}>
+          <View className="flex-row items-center gap-2 rounded-kd-md border border-kd-amber bg-kd-amber-soft p-[9px]">
+            <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
               <ShieldCheck size={12} color={theme.amber} strokeWidth={2.2} />
-              <Text style={[styles.noticeText, { color: theme.amber }]}>
+              <Text className="flex-1 text-kd-caption font-extrabold text-kd-amber">
                 ต้องเปิด Accessibility ก่อนเริ่ม automate
               </Text>
             </View>
             <Pressable
               accessibilityRole="button"
               onPress={openAccessibilitySetup}
-              style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+              className="active:opacity-75"
             >
-              <View style={[styles.noticeButton, { backgroundColor: theme.card, borderColor: theme.amber }]}>
-                <Text style={[styles.noticeButtonText, { color: theme.amber }]}>เปิดตั้งค่า</Text>
+              <View className="rounded-kd-md border border-kd-amber bg-kd-card px-[9px] py-1.5">
+                <Text className="text-kd-micro font-extrabold text-kd-amber">เปิดตั้งค่า</Text>
               </View>
             </Pressable>
           </View>
         ) : null}
 
-        <View style={[styles.underlineTabs, { borderBottomColor: theme.border }]}>
+        <View className="flex-row border-b border-kd-border">
           <UnderlineTab
             active={mode === 'permissions'}
             icon={KeyRound}
@@ -164,7 +163,7 @@ export default function MobileDevicesScreen({
         </View>
 
         {mode === 'permissions' ? (
-          <View style={styles.stack}>
+          <View className="gap-1.5">
             <PermissionRow
               active={accessibilityEnabled}
               description={accessibilityRunning ? 'service bind แล้ว พร้อมรับคำสั่ง gesture' : 'ควบคุมการแตะ เลื่อน และพิมพ์ใน Shopee'}
@@ -174,14 +173,7 @@ export default function MobileDevicesScreen({
                 <Pressable
                   accessibilityRole="button"
                   onPress={refreshStatus}
-                  style={({ pressed }) => [
-                    styles.refreshButton,
-                    {
-                      backgroundColor: theme.input,
-                      borderColor: theme.border,
-                      opacity: pressed ? 0.72 : 1,
-                    },
-                  ]}
+                  className="h-[30px] w-[30px] items-center justify-center rounded-kd-md border border-kd-border bg-kd-input active:opacity-70"
                 >
                   <RefreshCw size={13} color={theme.textSubtle} />
                 </Pressable>
@@ -190,23 +182,19 @@ export default function MobileDevicesScreen({
                 <Pressable
                   accessibilityRole="button"
                   onPress={openAccessibilitySetup}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+                  className="active:opacity-75"
                 >
                   <View
-                    style={[
-                      styles.settingsButton,
-                      {
-                        backgroundColor: accessibilityEnabled ? theme.input : theme.amberSoft,
-                        borderColor: accessibilityEnabled ? theme.blue : theme.amber,
-                      },
-                    ]}
+                    className={`min-h-[34px] flex-row items-center justify-center gap-1.5 rounded-kd-md border px-2.5 ${
+                      accessibilityEnabled ? 'border-kd-blue bg-kd-input' : 'border-kd-amber bg-kd-amber-soft'
+                    }`}
                   >
                     <Settings
                       size={13}
                       color={accessibilityEnabled ? theme.blue : theme.amber}
                       strokeWidth={2.3}
                     />
-                    <Text style={[styles.settingsButtonText, { color: accessibilityEnabled ? theme.blue : theme.amber }]}>
+                    <Text className={`text-kd-caption font-black ${accessibilityEnabled ? 'text-kd-blue' : 'text-kd-amber'}`}>
                       เปิดหน้า Accessibility Settings
                     </Text>
                   </View>
@@ -241,20 +229,20 @@ export default function MobileDevicesScreen({
                 />
               }
             />
-            <View style={[styles.bridgeCard, { backgroundColor: theme.cardMuted, borderColor: theme.border }]}>
-              <View style={styles.bridgeHeader}>
+            <View className="rounded-kd-md border border-kd-border bg-kd-card-muted p-2.5">
+              <View className="flex-row items-center gap-[7px]">
                 <StatusPill
                   backgroundColor={accessibilityRunning ? theme.emeraldSoft : theme.amberSoft}
                   color={accessibilityRunning ? theme.emerald : theme.amber}
                   icon={accessibilityRunning ? CheckCircle2 : ShieldCheck}
                   label={accessibilityRunning ? 'RUNNING' : 'WAITING'}
                 />
-                <Text style={[styles.bridgeTitle, { color: theme.text }]}>Native bridge test</Text>
+                <Text className="flex-1 text-kd-body font-black text-kd-text">Native bridge test</Text>
               </View>
-              <Text style={[styles.bridgeMessage, { color: theme.textSubtle }]} numberOfLines={2}>
+              <Text className="mt-1.5 text-kd-micro leading-[14px] text-kd-text-subtle" numberOfLines={2}>
                 {bridgeMessage}
               </Text>
-              <View style={styles.bridgeActions}>
+              <View className="mt-2 flex-row gap-1.5">
                 <BridgeButton
                   color={theme.orange}
                   disabled={false}
@@ -287,7 +275,7 @@ export default function MobileDevicesScreen({
             </View>
           </View>
         ) : (
-          <View style={styles.stack}>
+          <View className="gap-1.5">
             <SectionHeader
               icon={Smartphone}
               theme={theme}
@@ -303,23 +291,18 @@ export default function MobileDevicesScreen({
                   accessibilityRole="button"
                   key={device.id}
                   onPress={() => onToggleDevice(device.id)}
-                  style={({ pressed }) => [
-                    styles.deviceCard,
-                    {
-                      backgroundColor: theme.cardMuted,
-                      borderColor: selected ? theme.emerald : theme.border,
-                      opacity: pressed ? 0.78 : 1,
-                    },
-                  ]}
+                  className={`flex-row items-center gap-2 rounded-kd-md border bg-kd-card-muted p-2.5 active:opacity-80 ${
+                    selected ? 'border-kd-emerald' : 'border-kd-border'
+                  }`}
                 >
                   {selected ? (
                     <CheckCircle2 size={16} color={theme.emerald} strokeWidth={2.4} />
                   ) : (
                     <Circle size={16} color={theme.textSubtle} strokeWidth={2.2} />
                   )}
-                  <View style={styles.deviceBody}>
-                    <View style={styles.deviceNameRow}>
-                      <Text style={[styles.deviceName, { color: theme.text }]} numberOfLines={1}>
+                  <View className="min-w-0 flex-1">
+                    <View className="flex-row items-center gap-1.5">
+                      <Text className="flex-1 text-kd-body font-extrabold text-kd-text" numberOfLines={1}>
                         {device.name}
                       </Text>
                       <StatusPill
@@ -329,10 +312,10 @@ export default function MobileDevicesScreen({
                         label={ready ? device.connection.toUpperCase() : 'PERMISSION'}
                       />
                     </View>
-                    <Text style={[styles.deviceMeta, { color: theme.textSubtle }]} numberOfLines={1}>
+                    <Text className="mt-0.5 text-kd-micro text-kd-text-subtle" numberOfLines={1}>
                       {device.serial} | Android {device.androidVersion}
                     </Text>
-                    <Text style={[styles.deviceProfile, { color: theme.textMuted }]} numberOfLines={1}>
+                    <Text className="mt-[5px] text-kd-micro text-kd-text-muted" numberOfLines={1}>
                       โปรไฟล์: {device.profileName}
                     </Text>
                   </View>
@@ -343,7 +326,7 @@ export default function MobileDevicesScreen({
           </View>
         )}
 
-        <View style={styles.stack}>
+        <View className="gap-1.5">
           <SectionHeader icon={Bot} theme={theme} title="Scripts" />
           {scriptPresets.map((script) => {
             const color =
@@ -352,26 +335,26 @@ export default function MobileDevicesScreen({
                 : script.accent === 'cyan'
                   ? theme.cyan
                   : theme.emerald;
-            const backgroundColor =
+            const iconBackgroundClass =
               script.accent === 'orange'
-                ? theme.orangeSoft
+                ? 'bg-kd-orange-soft'
                 : script.accent === 'cyan'
-                  ? theme.cyanSoft
-                  : theme.emeraldSoft;
+                  ? 'bg-kd-cyan-soft'
+                  : 'bg-kd-emerald-soft';
 
             return (
               <View
                 key={script.id}
-                style={[styles.scriptCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+                className="flex-row items-center gap-2 rounded-kd-md border border-kd-border bg-kd-card p-2.5"
               >
-                <View style={[styles.scriptIcon, { backgroundColor }]}>
+                <View className={`h-[30px] w-[30px] items-center justify-center rounded-kd-md ${iconBackgroundClass}`}>
                   <Bot size={14} color={color} />
                 </View>
-                <View style={styles.scriptBody}>
-                  <Text style={[styles.scriptTitle, { color: theme.text }]} numberOfLines={1}>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-kd-body font-extrabold text-kd-text" numberOfLines={1}>
                     {script.title}
                   </Text>
-                  <Text style={[styles.scriptDescription, { color: theme.textSubtle }]} numberOfLines={2}>
+                  <Text className="mt-0.5 text-kd-micro leading-[14px] text-kd-text-subtle" numberOfLines={2}>
                     {script.description}
                   </Text>
                 </View>
@@ -383,9 +366,9 @@ export default function MobileDevicesScreen({
       </ScrollView>
 
       {selectedDeviceIds.size > 0 ? (
-        <View style={[styles.bottomBar, { backgroundColor: theme.panel, borderTopColor: theme.border }]}>
-          <Text style={[styles.bottomCount, { color: theme.textMuted }]}>{selectedDeviceIds.size} เครื่อง</Text>
-          <View style={styles.bottomSpacer} />
+        <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-2 border-t border-kd-border bg-kd-panel px-2.5 py-[9px]">
+          <Text className="text-kd-caption font-extrabold text-kd-text-muted">{selectedDeviceIds.size} เครื่อง</Text>
+          <View className="flex-1" />
           <FooterAction icon={Zap} label="เริ่มงาน" color={theme.emerald} backgroundColor={theme.emeraldSoft} />
           <FooterAction icon={StopCircle} label="หยุด" color={theme.red} backgroundColor={theme.redSoft} />
         </View>
@@ -412,10 +395,14 @@ function UnderlineTab({
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
       onPress={onPress}
-      style={[styles.underlineTab, { borderBottomColor: active ? theme.blue : 'transparent' }]}
+      className={`-mb-px flex-1 flex-row items-center justify-center gap-[5px] border-b-2 pb-[7px] ${
+        active ? 'border-b-kd-blue' : 'border-b-transparent'
+      }`}
     >
       <Icon size={12} color={active ? theme.blue : theme.textSubtle} />
-      <Text style={[styles.underlineLabel, { color: active ? theme.blue : theme.textSubtle }]}>{label}</Text>
+      <Text className={`text-kd-caption font-extrabold ${active ? 'text-kd-blue' : 'text-kd-text-subtle'}`}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -436,17 +423,17 @@ function PermissionRow({
   right?: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <View style={[styles.permissionRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <View style={styles.permissionMain}>
+    <View className="min-h-[58px] gap-2 rounded-kd-md border border-kd-border bg-kd-card p-2.5">
+      <View className="flex-row items-center gap-2">
         <StatusPill
           backgroundColor={active ? theme.emeraldSoft : theme.redSoft}
           color={active ? theme.emerald : theme.red}
           icon={active ? CheckCircle2 : Square}
           label={active ? 'ON' : 'OFF'}
         />
-        <View style={styles.permissionBody}>
-          <Text style={[styles.permissionLabel, { color: theme.text }]}>{label}</Text>
-          <Text style={[styles.permissionDescription, { color: theme.textSubtle }]} numberOfLines={2}>
+        <View className="min-w-0 flex-1">
+          <Text className="text-kd-body font-extrabold text-kd-text">{label}</Text>
+          <Text className="mt-0.5 text-kd-micro leading-[14px] text-kd-text-subtle" numberOfLines={2}>
             {description}
           </Text>
         </View>
@@ -461,7 +448,7 @@ function BridgeButton({
   color,
   disabled,
   label,
-  theme,
+  theme: _theme,
   onPress,
 }: {
   color: string;
@@ -475,16 +462,10 @@ function BridgeButton({
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.bridgeButton,
-        {
-          backgroundColor: theme.input,
-          borderColor: color,
-          opacity: disabled ? 0.42 : pressed ? 0.72 : 1,
-        },
-      ]}
+      className="min-h-[30px] flex-1 items-center justify-center rounded-kd-md border bg-kd-input px-2 active:opacity-70 disabled:opacity-40"
+      style={{ borderColor: color }}
     >
-      <Text style={[styles.bridgeButtonText, { color }]}>{label}</Text>
+      <Text className="text-kd-caption font-black" style={{ color }}>{label}</Text>
     </Pressable>
   );
 }
@@ -503,247 +484,13 @@ function FooterAction({
   return (
     <Pressable
       accessibilityRole="button"
-      style={({ pressed }) => [styles.footerAction, { backgroundColor, opacity: pressed ? 0.72 : 1 }]}
+      className="min-h-7 flex-row items-center gap-[5px] rounded-kd-md px-2.5 active:opacity-70"
+      style={{ backgroundColor }}
     >
       <Icon size={12} color={color} strokeWidth={2.2} />
-      <Text style={[styles.footerActionLabel, { color }]} numberOfLines={1}>
+      <Text className="text-kd-caption font-extrabold" style={{ color }} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  bottomBar: {
-    alignItems: 'center',
-    borderTopWidth: 1,
-    bottom: 0,
-    flexDirection: 'row',
-    gap: 8,
-    left: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    position: 'absolute',
-    right: 0,
-  },
-  bottomCount: {
-    fontSize: typography.caption,
-    fontWeight: '800',
-  },
-  bottomSpacer: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
-  bridgeActions: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 8,
-  },
-  bridgeButton: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flex: 1,
-    minHeight: 30,
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  bridgeButtonText: {
-    fontSize: typography.caption,
-    fontWeight: '900',
-  },
-  bridgeCard: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: 10,
-  },
-  bridgeHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 7,
-  },
-  bridgeMessage: {
-    fontSize: typography.micro,
-    lineHeight: 14,
-    marginTop: 6,
-  },
-  bridgeTitle: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '900',
-  },
-  deviceBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  deviceCard: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    padding: 10,
-  },
-  deviceMeta: {
-    fontSize: typography.micro,
-    marginTop: 2,
-  },
-  deviceName: {
-    flex: 1,
-    fontSize: typography.body,
-    fontWeight: '800',
-  },
-  deviceNameRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  deviceProfile: {
-    fontSize: typography.micro,
-    marginTop: 5,
-  },
-  footerAction: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    flexDirection: 'row',
-    gap: 5,
-    minHeight: 28,
-    paddingHorizontal: 10,
-  },
-  footerActionLabel: {
-    fontSize: typography.caption,
-    fontWeight: '800',
-  },
-  notice: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    padding: 9,
-  },
-  noticeButton: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  noticeButtonText: {
-    fontSize: typography.micro,
-    fontWeight: '800',
-  },
-  noticeText: {
-    flex: 1,
-    fontSize: typography.caption,
-    fontWeight: '800',
-  },
-  noticeTitle: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    minWidth: 0,
-  },
-  permissionBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  permissionDescription: {
-    fontSize: typography.micro,
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  permissionLabel: {
-    fontSize: typography.body,
-    fontWeight: '800',
-  },
-  permissionMain: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  permissionRow: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: 8,
-    minHeight: 58,
-    padding: 10,
-  },
-  refreshButton: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    height: 30,
-    justifyContent: 'center',
-    width: 30,
-  },
-  settingsButton: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'center',
-    minHeight: 34,
-    paddingHorizontal: 10,
-  },
-  settingsButtonText: {
-    fontSize: typography.caption,
-    fontWeight: '900',
-  },
-  scriptBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  scriptCard: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    padding: 10,
-  },
-  scriptDescription: {
-    fontSize: typography.micro,
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  scriptIcon: {
-    alignItems: 'center',
-    borderRadius: radii.md,
-    height: 30,
-    justifyContent: 'center',
-    width: 30,
-  },
-  scriptTitle: {
-    fontSize: typography.body,
-    fontWeight: '800',
-  },
-  scrollContent: {
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  stack: {
-    gap: spacing.sm,
-  },
-  underlineLabel: {
-    fontSize: typography.caption,
-    fontWeight: '800',
-  },
-  underlineTab: {
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 5,
-    justifyContent: 'center',
-    marginBottom: -1,
-    paddingBottom: 7,
-  },
-  underlineTabs: {
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-  },
-});

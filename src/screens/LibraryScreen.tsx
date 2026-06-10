@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import {
   Image as ImageIcon,
   Presentation,
@@ -48,17 +48,9 @@ export default function LibraryScreen({ theme }: LibraryScreenProps): React.JSX.
   const [activeTab, setActiveTab] = useState<LibraryTabId>('products');
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.panel }]}>
+    <View className="flex-1 bg-kd-panel">
       {/* Extension: grid-cols-5 bg-gray-50 border-b border-gray-200 (dark: zinc-950 / zinc-800) */}
-      <View
-        style={[
-          styles.tabBar,
-          {
-            backgroundColor: theme.isDark ? theme.panelMuted : theme.cardMuted,
-            borderBottomColor: theme.border,
-          },
-        ]}
-      >
+      <View className="w-full flex-row self-stretch border-b border-kd-border bg-kd-card-muted dark:bg-kd-panel-muted">
         {libraryTabs.map((tab) => (
           <LibraryTab
             key={tab.id}
@@ -100,58 +92,20 @@ function LibraryTab({
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
       onPress={onPress}
-      style={styles.tab}
+      className="min-w-0 flex-1 flex-row items-center justify-center gap-1 px-0.5 py-3"
     >
       <Icon size={13} color={color} strokeWidth={2} />
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.8}
         numberOfLines={1}
-        style={[
-          styles.tabLabel,
-          {
-            color,
-            fontWeight: active ? '600' : '500',
-          },
-        ]}
+        className={`min-w-0 flex-shrink text-kd-micro ${
+          active ? 'font-semibold text-kd-text' : 'font-medium text-kd-text-subtle'
+        }`}
       >
         {label}
       </Text>
-      {active ? <View style={[styles.tabIndicator, { backgroundColor: theme.text }]} /> : null}
+      {active ? <View className="absolute -bottom-px left-0 right-0 h-0.5 bg-kd-text" /> : null}
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  tab: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 4,
-    justifyContent: 'center',
-    minWidth: 0,
-    paddingHorizontal: 2,
-    paddingVertical: 12,
-  },
-  tabBar: {
-    alignSelf: 'stretch',
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    width: '100%',
-  },
-  tabIndicator: {
-    bottom: -1,
-    height: 2,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-  },
-  tabLabel: {
-    flexShrink: 1,
-    fontSize: 10,
-    minWidth: 0,
-  },
-});

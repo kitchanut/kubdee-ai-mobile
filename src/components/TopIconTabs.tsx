@@ -5,7 +5,7 @@ import {
   Smartphone,
   UserCircle,
 } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { FacebookLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -34,10 +34,6 @@ const tabs: Array<{
   { id: 'mobile', label: 'มือถือ', icon: Smartphone },
   { id: 'profile', label: 'โปรไฟล์', icon: UserCircle },
 ];
-const menuHorizontalPadding = 8;
-const activePlateSize = 38;
-const activePlateRadius = 12;
-
 interface TopIconTabsProps {
   activeTab: TabId;
   theme: KubdeeTheme;
@@ -50,8 +46,8 @@ export default function TopIconTabs({
   onTabChange,
 }: TopIconTabsProps): React.JSX.Element {
   return (
-    <View style={[styles.wrapper, { backgroundColor: theme.tabBar, borderBottomColor: theme.border }]}>
-      <View style={styles.content}>
+    <View className="w-full border-b border-kd-border bg-kd-tab-bar">
+      <View className="w-full flex-row justify-between self-stretch px-2 py-[3px]">
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
           const Icon = tab.icon;
@@ -68,24 +64,15 @@ export default function TopIconTabs({
               accessibilityState={{ selected: active }}
               key={tab.id}
               onPress={() => onTabChange(tab.id)}
-              style={({ pressed }) => [
-                styles.tab,
-                {
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}
+              className="h-[44px] min-w-0 flex-1 items-center justify-center active:opacity-70"
             >
-              <View style={styles.iconShell}>
+              <View className="h-[38px] w-[38px] items-center justify-center">
                 <View
-                  style={[
-                    styles.iconPlate,
+                  className={`h-[38px] w-[38px] items-center justify-center overflow-hidden rounded-[12px] border ${
                     active
-                      ? {
-                          backgroundColor: activeBackground,
-                          borderColor: theme.border,
-                        }
-                      : null,
-                  ]}
+                      ? 'border-kd-border bg-white dark:bg-kd-card'
+                      : 'border-transparent'
+                  }`}
                 >
                   {tab.brandIcon ? (
                     <Icon size={19} color={iconColor} cutoutColor={cutoutColor} isDark={theme.isDark} />
@@ -101,41 +88,3 @@ export default function TopIconTabs({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: menuHorizontalPadding,
-    paddingVertical: 3,
-    width: '100%',
-  },
-  iconPlate: {
-    alignItems: 'center',
-    borderRadius: activePlateRadius,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    height: activePlateSize,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: activePlateSize,
-  },
-  iconShell: {
-    alignItems: 'center',
-    height: activePlateSize,
-    justifyContent: 'center',
-    width: activePlateSize,
-  },
-  tab: {
-    alignItems: 'center',
-    flex: 1,
-    height: 44,
-    justifyContent: 'center',
-    minWidth: 0,
-  },
-  wrapper: {
-    borderBottomWidth: 1,
-    width: '100%',
-  },
-});

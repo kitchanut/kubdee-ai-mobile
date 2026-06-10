@@ -107,19 +107,22 @@ export function LibraryPanelHeader({
   actions?: ReactNode;
 }): React.JSX.Element {
   return (
-    <View style={sharedStyles.headerRow}>
-      <View style={[sharedStyles.headerIconChip, { backgroundColor: tone.soft }]}>
+    <View className="flex-row items-center justify-between gap-2">
+      <View
+        className="h-8 w-8 flex-shrink-0 items-center justify-center rounded-kd-lg"
+        style={{ backgroundColor: tone.soft }}
+      >
         <Icon size={16} color={tone.color} strokeWidth={2} />
       </View>
-      <View style={sharedStyles.headerTitleWrap}>
-        <Text numberOfLines={1} style={[sharedStyles.headerTitle, { color: theme.text }]}>
+      <View className="min-w-0 flex-1 flex-row flex-wrap items-baseline gap-x-1.5">
+        <Text numberOfLines={1} className="flex-shrink text-[13px] font-semibold text-kd-text">
           {title}
         </Text>
-        <Text style={[sharedStyles.headerCount, { color: theme.textSubtle }]}>
+        <Text className="flex-shrink-0 text-kd-caption font-medium text-kd-text-subtle">
           {count} / {total} รายการ
         </Text>
       </View>
-      {actions ? <View style={sharedStyles.headerActions}>{actions}</View> : null}
+      {actions ? <View className="flex-shrink-0 flex-row items-center gap-1.5">{actions}</View> : null}
     </View>
   );
 }
@@ -141,7 +144,7 @@ export function HeaderIconButton({
       accessibilityLabel={label}
       accessibilityRole="button"
       onPress={onPress}
-      style={sharedStyles.headerIconButton}
+      className="h-7 w-7 items-center justify-center rounded-kd-md"
     >
       <Icon size={14} color={theme.textSubtle} strokeWidth={2} />
     </Pressable>
@@ -167,18 +170,12 @@ export function DarkActionButton({
       accessibilityLabel={label}
       accessibilityRole="button"
       onPress={onPress}
-      style={[
-        small ? sharedStyles.darkButtonSmall : sharedStyles.darkButton,
-        { backgroundColor: theme.isDark ? theme.white : '#1f2937' },
-      ]}
+      className={`flex-row items-center justify-center bg-[#1f2937] dark:bg-white ${
+        small ? 'h-[26px] gap-1 rounded-kd-md px-2' : 'h-[30px] gap-1.5 rounded-kd-lg px-3'
+      }`}
     >
       {leading}
-      <Text
-        style={[
-          sharedStyles.darkButtonText,
-          { color: theme.isDark ? '#1f2937' : theme.white },
-        ]}
-      >
+      <Text className="text-kd-caption font-medium text-white dark:text-[#1f2937]">
         {label}
       </Text>
     </Pressable>
@@ -202,19 +199,14 @@ export function SearchBox({
   placeholder: string;
 }): React.JSX.Element {
   return (
-    <View
-      style={[
-        sharedStyles.searchBox,
-        { backgroundColor: theme.input, borderColor: theme.border },
-      ]}
-    >
+    <View className="h-8 flex-1 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2">
       <Search size={12} color={theme.textSubtle} strokeWidth={2} />
       <TextInput
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={theme.textSubtle}
-        style={[sharedStyles.searchInput, { color: theme.text }]}
+        className="h-8 flex-1 p-0 text-kd-caption text-kd-text"
       />
       {value.length > 0 ? (
         <Pressable accessibilityLabel="ล้างคำค้นหา" accessibilityRole="button" onPress={() => onChange('')}>
@@ -240,22 +232,16 @@ export function SelectCircle({
   /** on-image variant: white/90 background when unselected */
   light?: boolean;
 }): React.JSX.Element {
-  const unselectedBackground = light
-    ? alpha(theme.isDark ? '#000000' : '#ffffff', theme.isDark ? 0.5 : 0.9)
-    : theme.input;
-
   return (
     <View
-      style={{
-        alignItems: 'center',
-        backgroundColor: selected ? accent : unselectedBackground,
-        borderColor: selected ? accent : theme.borderStrong,
-        borderRadius: 999,
-        borderWidth: selected ? 0 : 1,
-        height: size,
-        justifyContent: 'center',
-        width: size,
-      }}
+      className={`items-center justify-center rounded-full ${
+        selected
+          ? ''
+          : light
+            ? 'border border-kd-border-strong bg-white/90 dark:bg-black/50'
+            : 'border border-kd-border-strong bg-kd-input'
+      }`}
+      style={[{ height: size, width: size }, selected ? { backgroundColor: accent } : null]}
     >
       {selected ? <Check size={size - 6} color={theme.white} strokeWidth={3.2} /> : null}
     </View>
@@ -284,18 +270,17 @@ export function SortPill({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={[
-        sharedStyles.sortPill,
-        {
-          backgroundColor: active
-            ? alpha(accent, theme.isDark ? 0.22 : 0.12)
-            : theme.isDark
-              ? theme.cardMuted
-              : theme.panelMuted,
-        },
-      ]}
+      className={`h-[22px] flex-row items-center gap-0.5 rounded-full px-2 ${
+        active ? '' : 'bg-kd-panel-muted dark:bg-kd-card-muted'
+      }`}
+      style={active ? { backgroundColor: alpha(accent, theme.isDark ? 0.22 : 0.12) } : undefined}
     >
-      <Text style={[sharedStyles.sortPillText, { color: active ? accent : theme.textSubtle }]}>{label}</Text>
+      <Text
+        className={`text-kd-micro font-medium ${active ? '' : 'text-kd-text-subtle'}`}
+        style={active ? { color: accent } : undefined}
+      >
+        {label}
+      </Text>
       {active ? <DirectionIcon size={9} color={accent} strokeWidth={3} /> : null}
     </Pressable>
   );
@@ -316,7 +301,7 @@ export function PanelSubTabs<TKey extends string>({
   onChange: (next: TKey) => void;
 }): React.JSX.Element {
   return (
-    <View style={[sharedStyles.subTabs, { borderBottomColor: theme.border }]}>
+    <View className="flex-row border-b border-kd-border">
       {tabs.map((tab) => {
         const isActive = tab.key === active;
 
@@ -326,20 +311,20 @@ export function PanelSubTabs<TKey extends string>({
             accessibilityState={{ selected: isActive }}
             key={tab.key}
             onPress={() => onChange(tab.key)}
-            style={sharedStyles.subTab}
+            className="h-9 flex-1 items-center justify-center"
           >
             <Text
-              style={[
-                sharedStyles.subTabText,
-                {
-                  color: isActive ? accent : theme.textSubtle,
-                  fontWeight: '500',
-                },
-              ]}
+              className={`text-kd-caption font-medium ${isActive ? '' : 'text-kd-text-subtle'}`}
+              style={isActive ? { color: accent } : undefined}
             >
               {tab.label}
             </Text>
-            {isActive ? <View style={[sharedStyles.subTabIndicator, { backgroundColor: accent }]} /> : null}
+            {isActive ? (
+              <View
+                className="absolute bottom-0 left-0 right-0 h-0.5"
+                style={{ backgroundColor: accent }}
+              />
+            ) : null}
           </Pressable>
         );
       })}
@@ -360,17 +345,12 @@ export function EmptyState({
   copy: string;
 }): React.JSX.Element {
   return (
-    <View style={sharedStyles.emptyState}>
-      <View
-        style={[
-          sharedStyles.emptyCircle,
-          { backgroundColor: theme.isDark ? theme.cardMuted : theme.panelMuted },
-        ]}
-      >
+    <View className="items-center gap-2 px-6 py-11">
+      <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
         <Icon size={30} color={theme.textSubtle} strokeWidth={1.5} />
       </View>
-      <Text style={[sharedStyles.emptyTitle, { color: theme.textMuted }]}>{title}</Text>
-      <Text style={[sharedStyles.emptyCopy, { color: theme.textSubtle }]}>{copy}</Text>
+      <Text className="mt-1.5 text-[13px] font-semibold text-kd-text-muted">{title}</Text>
+      <Text className="max-w-[220px] text-center text-kd-caption leading-4 text-kd-text-subtle">{copy}</Text>
     </View>
   );
 }
@@ -378,8 +358,8 @@ export function EmptyState({
 /** Small centered hint, extension: text-[11px] text-gray-500 py-8 */
 export function EmptyHint({ theme, label }: { theme: KubdeeTheme; label: string }): React.JSX.Element {
   return (
-    <View style={sharedStyles.emptyHint}>
-      <Text style={[sharedStyles.emptyHintText, { color: theme.textSubtle }]}>{label}</Text>
+    <View className="items-center py-8">
+      <Text className="text-kd-caption text-kd-text-subtle">{label}</Text>
     </View>
   );
 }
@@ -398,61 +378,54 @@ export function SelectionBar({
   showAuto?: boolean;
   onClear: () => void;
 }): React.JSX.Element {
-  const inverseBackground = theme.isDark ? theme.white : '#000000';
   const inverseText = theme.isDark ? '#000000' : theme.white;
 
   return (
-    <View pointerEvents="box-none" style={sharedStyles.selectionBarWrap}>
+    <View pointerEvents="box-none" className="absolute bottom-3 left-3 right-3">
       <View
-        style={[
-          sharedStyles.selectionBar,
-          {
-            backgroundColor: theme.panel,
-            borderColor: theme.border,
-            shadowColor: theme.shadow,
-          },
-        ]}
+        className="flex-row items-center justify-between rounded-full border border-kd-border bg-kd-panel px-2 py-1.5"
+        style={{
+          elevation: 6,
+          shadowColor: theme.shadow,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.18,
+          shadowRadius: 16,
+        }}
       >
-        <View style={sharedStyles.selectionBarLeft}>
-          <View style={[sharedStyles.selectionCount, { backgroundColor: inverseBackground }]}>
-            <Text style={[sharedStyles.selectionCountText, { color: inverseText }]}>{count}</Text>
+        <View className="flex-row items-center gap-2 pl-1.5">
+          <View className="h-5 w-5 items-center justify-center rounded-full bg-black dark:bg-white">
+            <Text className="text-kd-caption font-bold text-white dark:text-black">{count}</Text>
           </View>
-          <Text style={[sharedStyles.selectionLabel, { color: theme.text }]}>รายการที่เลือก</Text>
-          <View style={[sharedStyles.selectionDivider, { backgroundColor: theme.border }]} />
+          <Text className="text-kd-caption font-medium text-kd-text">รายการที่เลือก</Text>
+          <View className="h-3 w-px bg-kd-border" />
           <Pressable accessibilityRole="button" onPress={onClear}>
-            <Text style={[sharedStyles.selectionCancel, { color: theme.textSubtle }]}>ยกเลิก</Text>
+            <Text className="text-kd-caption text-kd-text-subtle">ยกเลิก</Text>
           </Pressable>
         </View>
 
-        <View style={sharedStyles.selectionBarRight}>
+        <View className="flex-row items-center gap-1.5">
           {showAuto ? (
             <Pressable
               accessibilityLabel="ส่งไป Auto"
               accessibilityRole="button"
-              style={[sharedStyles.selectionAuto, { backgroundColor: inverseBackground }]}
+              className="h-7 flex-row items-center gap-[5px] rounded-full bg-black px-3 dark:bg-white"
             >
               <Star size={11} color={inverseText} strokeWidth={2.5} />
-              <Text style={[sharedStyles.selectionAutoText, { color: inverseText }]}>ออโต้</Text>
+              <Text className="text-kd-micro font-bold text-white dark:text-black">ออโต้</Text>
             </Pressable>
           ) : null}
           <Pressable
             accessibilityLabel="แก้ไข"
             accessibilityRole="button"
-            style={[sharedStyles.selectionAction, { backgroundColor: accent }]}
+            className="h-7 w-7 items-center justify-center rounded-full"
+            style={{ backgroundColor: accent }}
           >
             <Pencil size={12} color={theme.white} strokeWidth={2.5} />
           </Pressable>
           <Pressable
             accessibilityLabel="ลบ"
             accessibilityRole="button"
-            style={[
-              sharedStyles.selectionAction,
-              {
-                backgroundColor: theme.panel,
-                borderColor: theme.border,
-                borderWidth: 1,
-              },
-            ]}
+            className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
           >
             <Trash2 size={12} color={theme.textSubtle} strokeWidth={2} />
           </Pressable>
@@ -485,236 +458,9 @@ export function RowIconButton({
       accessibilityLabel={label}
       accessibilityRole="button"
       onPress={onPress}
-      style={sharedStyles.rowIconButton}
+      className="h-6 w-6 items-center justify-center rounded-kd-sm"
     >
       <Icon size={12} color={iconColor} strokeWidth={2} fill={fill ? iconColor : 'none'} />
     </Pressable>
   );
 }
-
-export const sharedStyles = StyleSheet.create({
-  darkButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 6,
-    height: 30,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  darkButtonSmall: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flexDirection: 'row',
-    gap: 4,
-    height: 26,
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  darkButtonText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  emptyCircle: {
-    alignItems: 'center',
-    borderRadius: 999,
-    height: 64,
-    justifyContent: 'center',
-    width: 64,
-  },
-  emptyCopy: {
-    fontSize: 11,
-    lineHeight: 16,
-    maxWidth: 220,
-    textAlign: 'center',
-  },
-  emptyHint: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  emptyHintText: {
-    fontSize: 11,
-  },
-  emptyState: {
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 44,
-  },
-  emptyTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 6,
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexShrink: 0,
-    gap: 6,
-  },
-  headerCount: {
-    flexShrink: 0,
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  headerIconButton: {
-    alignItems: 'center',
-    borderRadius: 6,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  headerIconChip: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexShrink: 0,
-    height: 32,
-    justifyContent: 'center',
-    width: 32,
-  },
-  headerRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    flexShrink: 1,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  headerTitleWrap: {
-    alignItems: 'baseline',
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: 6,
-    minWidth: 0,
-  },
-  rowIconButton: {
-    alignItems: 'center',
-    borderRadius: 4,
-    height: 24,
-    justifyContent: 'center',
-    width: 24,
-  },
-  searchBox: {
-    alignItems: 'center',
-    borderRadius: 6,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    height: 32,
-    paddingHorizontal: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 11,
-    height: 32,
-    padding: 0,
-  },
-  selectionAction: {
-    alignItems: 'center',
-    borderRadius: 999,
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  selectionAuto: {
-    alignItems: 'center',
-    borderRadius: 999,
-    flexDirection: 'row',
-    gap: 5,
-    height: 28,
-    paddingHorizontal: 12,
-  },
-  selectionAutoText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  selectionBar: {
-    alignItems: 'center',
-    borderRadius: 999,
-    borderWidth: 1,
-    elevation: 6,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    shadowOffset: { height: 6, width: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-  },
-  selectionBarLeft: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    paddingLeft: 6,
-  },
-  selectionBarRight: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  selectionBarWrap: {
-    bottom: 12,
-    left: 12,
-    position: 'absolute',
-    right: 12,
-  },
-  selectionCancel: {
-    fontSize: 11,
-  },
-  selectionCount: {
-    alignItems: 'center',
-    borderRadius: 999,
-    height: 20,
-    justifyContent: 'center',
-    width: 20,
-  },
-  selectionCountText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  selectionDivider: {
-    height: 12,
-    width: 1,
-  },
-  selectionLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  sortPill: {
-    alignItems: 'center',
-    borderRadius: 999,
-    flexDirection: 'row',
-    gap: 2,
-    height: 22,
-    paddingHorizontal: 8,
-  },
-  sortPillText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  subTab: {
-    alignItems: 'center',
-    flex: 1,
-    height: 36,
-    justifyContent: 'center',
-  },
-  subTabIndicator: {
-    bottom: 0,
-    height: 2,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-  },
-  subTabs: {
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-  },
-  subTabText: {
-    fontSize: 11,
-  },
-});
