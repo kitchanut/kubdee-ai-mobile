@@ -171,7 +171,7 @@ export default function LibraryScreen({ theme }: LibraryScreenProps): React.JSX.
 
   return (
     <View style={[styles.container, { backgroundColor: theme.panel }]}>
-      <View style={[styles.extensionTabs, { backgroundColor: theme.tabBar, borderBottomColor: theme.border }]}>
+      <View style={[styles.extensionTabs, { backgroundColor: theme.panel, borderBottomColor: theme.border }]}>
         {libraryTabs.map((tab) => {
           const active = tab.id === activeTab;
 
@@ -339,12 +339,18 @@ function LibraryTab({
       onPress={onPress}
       style={[styles.categoryTab, { borderBottomColor: active ? theme.text : 'transparent' }]}
     >
-      <Icon size={13} color={active ? theme.text : theme.textSubtle} strokeWidth={2.2} />
+      <Icon size={12} color={active ? theme.text : theme.textSubtle} strokeWidth={2} />
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.8}
         numberOfLines={1}
-        style={[styles.categoryTabText, { color: active ? theme.text : theme.textSubtle }]}
+        style={[
+          styles.categoryTabText,
+          {
+            color: active ? theme.text : theme.textSubtle,
+            fontWeight: active ? '700' : '500',
+          },
+        ]}
       >
         {label}
       </Text>
@@ -1181,19 +1187,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     flex: 1,
     flexDirection: 'row',
-    gap: 5,
+    gap: 4,
     justifyContent: 'center',
     marginBottom: -1,
-    minHeight: 44,
+    minHeight: 38,
     minWidth: 0,
     overflow: 'hidden',
     paddingHorizontal: 1,
-    paddingVertical: 11,
+    paddingVertical: 8,
   },
   categoryTabText: {
     flexShrink: 1,
-    fontSize: typography.body,
-    fontWeight: '900',
+    fontSize: typography.micro,
     letterSpacing: 0,
     minWidth: 0,
   },
