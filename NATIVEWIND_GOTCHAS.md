@@ -76,6 +76,37 @@ npx expo start --dev-client -c
 
 ---
 
+## 📐 ข้อ 3: NativeWind แปลง rem เป็น 14 ไม่ใช่ 16 → ทุกระยะหดลง 12.5%
+
+### อาการ
+
+คลาสมาตรฐานของ Tailwind ที่อิงหน่วย rem (`h-8`, `px-4`, `gap-2`, `p-2.5`, `text-xs` ฯลฯ)
+render เล็กกว่าที่คิด **12.5% ทั้งแอป** เช่น `h-8` ที่ควรได้ 32 กลายเป็น 28
+
+ตัวอย่างที่เจอจริง: toggle สินค้า/ทั่วไป ใน MediaPanel — container `h-8` เหลือ 28
+พอดีกับปุ่มข้างใน (26 + border 2) เป๊ะ ทำให้ปุ่ม active **สูงชนขอบบน-ล่างไม่มีช่องว่าง**
+
+จุดหลอก: ค่าเพี้ยนแค่ ~12% ตามองแทบไม่ออกในหน้าทั่วไป จะเห็นชัดเฉพาะจุดที่
+ระยะพอดีกันแบบ pixel-perfect
+
+### สาเหตุ
+
+Tailwind คิด 1rem = 16px (`h-8` = 2rem = 32) แต่ **NativeWind default `inlineRem: 14`**
+ทำให้ `h-8` = 2 × 14 = 28
+
+### วิธีแก้ (แก้แล้วใน repo นี้)
+
+`metro.config.js` ต้องตั้ง `inlineRem: 16` เสมอ:
+
+```js
+module.exports = withNativeWind(config, { input: './global.css', inlineRem: 16 });
+```
+
+> หมายเหตุ: คลาสที่เป็น px ตรงๆ ไม่โดนผลกระทบ — arbitrary values (`h-[26px]`),
+> token ที่ define เป็น px ใน tailwind.config (`text-kd-body`, `rounded-kd-md`)
+
+---
+
 ## บริบทเพิ่มเติม
 
 - กติกาการเขียน/แปลง style ทั้งหมดอยู่ที่ [NATIVEWIND_MIGRATION.md](./NATIVEWIND_MIGRATION.md)

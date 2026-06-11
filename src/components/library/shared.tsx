@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronUp, Pencil, Search, Star, Trash2, X } from '
 import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
 import Text from '@/components/ui/KubdeeText';
+import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
@@ -207,6 +208,7 @@ export function SearchBox({
         placeholder={placeholder}
         placeholderTextColor={theme.textSubtle}
         className="h-8 flex-1 p-0 text-kd-caption text-kd-text"
+        style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
       />
       {value.length > 0 ? (
         <Pressable accessibilityLabel="ล้างคำค้นหา" accessibilityRole="button" onPress={() => onChange('')}>
