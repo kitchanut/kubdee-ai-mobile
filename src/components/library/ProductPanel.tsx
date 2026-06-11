@@ -442,10 +442,8 @@ function ProductCard({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      className={`overflow-hidden rounded-[12px] border ${
-        selected
-          ? 'border-kd-emerald/50 bg-kd-emerald/10 dark:bg-kd-emerald/15'
-          : 'border-gray-100 bg-kd-panel dark:border-kd-border'
+      className={`overflow-hidden rounded-[12px] border bg-kd-panel ${
+        selected ? 'border-kd-emerald' : 'border-gray-100 dark:border-kd-border'
       }`}
       style={{
         elevation: 1,
@@ -454,7 +452,7 @@ function ProductCard({
         shadowRadius: 2,
       }}
     >
-      {!selected ? <CardBackdrop theme={theme} id="products" stops={libraryCardStops.products} /> : null}
+      <CardBackdrop theme={theme} id="products" stops={libraryCardStops.products} />
 
       <View className="flex-row items-center gap-2.5 p-2">
         <View className="h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border-2 border-white bg-kd-panel-muted dark:border-kd-border-strong dark:bg-kd-card-muted">
