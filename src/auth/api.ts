@@ -77,7 +77,7 @@ interface PushSyncedProfileChangeInput {
   changes: SyncChange[];
 }
 
-async function readError(response: Response): Promise<string> {
+export async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { error?: string; message?: string };
     return body.error || body.message || response.statusText || 'Request failed';

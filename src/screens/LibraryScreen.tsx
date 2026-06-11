@@ -22,6 +22,7 @@ type IconProps = {
 };
 
 interface LibraryScreenProps {
+  selectedProfileId: string;
   theme: KubdeeTheme;
 }
 
@@ -44,7 +45,7 @@ const libraryTabs: Array<{
   { id: 'scenes', label: 'ฉาก', icon: Presentation },
 ];
 
-export default function LibraryScreen({ theme }: LibraryScreenProps): React.JSX.Element {
+export default function LibraryScreen({ selectedProfileId, theme }: LibraryScreenProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<LibraryTabId>('products');
 
   return (
@@ -63,7 +64,7 @@ export default function LibraryScreen({ theme }: LibraryScreenProps): React.JSX.
         ))}
       </View>
 
-      {activeTab === 'products' ? <ProductPanel theme={theme} /> : null}
+      {activeTab === 'products' ? <ProductPanel selectedProfileId={selectedProfileId} theme={theme} /> : null}
       {activeTab === 'images' ? <MediaPanel theme={theme} kind="images" /> : null}
       {activeTab === 'videos' ? <MediaPanel theme={theme} kind="videos" /> : null}
       {activeTab === 'characters' ? <SimpleListPanel theme={theme} kind="characters" /> : null}

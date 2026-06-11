@@ -127,7 +127,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'facebook':
         return <PlaceholderScreen theme={theme} title="Facebook" accent="blue" />;
       case 'library':
-        return <LibraryScreen theme={theme} />;
+        return <LibraryScreen selectedProfileId={selectedProfileId} theme={theme} />;
       default:
         return <MobileDevicesScreen selectedDeviceIds={selectedDeviceIds} theme={theme} onToggleDevice={toggleDevice} />;
     }

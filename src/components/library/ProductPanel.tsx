@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import {
   CloudDownload,
   Image as ImageIcon,
@@ -12,13 +12,14 @@ import {
 
 import { TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
-import { galleryItems, type GalleryItemRecord } from '@/data/mockData';
+import { useLibrary } from '@/library/LibraryContext';
+import type { AffiliateProduct } from '@/library/types';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import {
   CardBackdrop,
   DarkActionButton,
-  EmptyState,
+  EmptyHint,
   HeaderIconButton,
   LibraryPanelHeader,
   SearchBox,
@@ -30,48 +31,166 @@ import {
   libraryCardStops,
 } from './shared';
 
-const mockProductStats: Record<string, { price: string; stock: string }> = {
-  'prod-luggage': { price: '฿229.00', stock: '3,336 ชิ้น' },
-  'prod-skincare': { price: '฿295.00', stock: '9,607 ชิ้น' },
-};
-
-const mockItemCodes: Record<string, string> = {
-  'prod-luggage': 'SHP-1202',
-  'prod-skincare': 'SHP-2088',
-};
-
 type SortKey = 'name' | 'code' | 'date';
 
-function getItemCode(item: GalleryItemRecord): string {
-  return mockItemCodes[item.id] ?? item.subtitle.split('|')[0]?.trim().replace(/^#/, '') ?? item.id;
+function getProductKey(product: AffiliateProduct): string {
+  return String(product.id ?? product.localId);
 }
 
-export default function ProductPanel({ theme }: { theme: KubdeeTheme }): React.JSX.Element {
+function getItemCode(product: AffiliateProduct): string {
+  return product.externalProductId || product.localId.slice(0, 8);
+}
+
+/** Decimal string ("229.00") → "฿229.00", null → "-" */
+function formatPrice(price: string | null): string {
+  if (!price) {
+    return '-';
+  }
+
+  const numeric = Number(price);
+  if (!Number.isFinite(numeric)) {
+    return `฿${price}`;
+  }
+
+  return `฿${new Intl.NumberFormat('th-TH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric)}`;
+}
+
+/** 3336 → "3,336 ชิ้น", null → "-" */
+function formatStock(stock: number | null): string {
+  if (typeof stock !== 'number' || !Number.isFinite(stock)) {
+    return '-';
+  }
+
+  return `${new Intl.NumberFormat('th-TH').format(stock)} ชิ้น`;
+}
+
+/** App that created the product row, e.g. 'desktop' → "Desktop" */
+function getCreatedByLabel(product: AffiliateProduct): string | null {
+  const normalized = (product.createdByApp ?? product.originApp ?? '').trim().toLowerCase();
+  if (!normalized || normalized === 'unknown') {
+    return null;
+  }
+
+  const labels: Record<string, string> = {
+    desktop: 'Desktop',
+    extension: 'Extension',
+    mobile: 'Mobile',
+    web: 'Web',
+  };
+
+  return labels[normalized] ?? normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function getPlatformLabel(platform: string | null): string | null {
+  const normalized = (platform ?? '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'tiktok') {
+    return 'TikTok';
+  }
+
+  if (normalized === 'shopee') {
+    return 'Shopee';
+  }
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function toMillis(value: number | string | null | undefined): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
+function getProductTimestamp(product: AffiliateProduct): number {
+  return (
+    toMillis(product.localCreatedAt) ||
+    toMillis(product.scrapedAt) ||
+    toMillis(product.createdAt) ||
+    toMillis(product.lastSyncedAt)
+  );
+}
+
+function formatSyncTime(timestamp: number): string {
+  return new Intl.DateTimeFormat('th-TH', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp));
+}
+
+export default function ProductPanel({
+  selectedProfileId,
+  theme,
+}: {
+  selectedProfileId: string;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
   const accent = getAccentTone(theme, theme.emerald);
+  const { products: allProducts, isSyncing, lastSyncedAt, syncError, syncProducts } = useLibrary();
+
+  // Match desktop: the gallery shows only the active profile's products
+  // (getProductsByProfileId), otherwise the same item scraped into several
+  // profiles shows up as duplicates.
+  const products = useMemo(() => {
+    if (!selectedProfileId) {
+      return allProducts;
+    }
+
+    return allProducts.filter((product) => product.profileLocalId === selectedProfileId);
+  }, [allProducts, selectedProfileId]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortAscending, setSortAscending] = useState(true);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
 
-  const products = useMemo(() => galleryItems.filter((item) => item.category === 'products'), []);
+  // Drop selections that no longer exist after a re-sync.
+  useEffect(() => {
+    setSelectedIds((current) => {
+      if (current.size === 0) {
+        return current;
+      }
+
+      const valid = new Set(products.map(getProductKey));
+      const next = new Set([...current].filter((id) => valid.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [products]);
 
   const visibleProducts = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const filtered = products.filter((item) => {
+    const filtered = products.filter((product) => {
       if (!query) return true;
-      return [item.title, getItemCode(item)].join(' ').toLowerCase().includes(query);
+      return [product.name, product.externalProductId ?? '', product.caption ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
     });
     const direction = sortAscending ? 1 : -1;
     filtered.sort((first, second) => {
-      if (sortKey === 'name') return direction * first.title.localeCompare(second.title, 'th');
+      if (sortKey === 'name') return direction * first.name.localeCompare(second.name, 'th');
       if (sortKey === 'code') return direction * getItemCode(first).localeCompare(getItemCode(second), 'th');
-      return direction * first.id.localeCompare(second.id, 'th');
+      return direction * (getProductTimestamp(first) - getProductTimestamp(second));
     });
     return filtered;
   }, [products, searchQuery, sortAscending, sortKey]);
 
   const allSelected =
-    visibleProducts.length > 0 && visibleProducts.every((item) => selectedIds.has(item.id));
+    visibleProducts.length > 0 && visibleProducts.every((product) => selectedIds.has(getProductKey(product)));
 
   const toggleSelect = (id: string): void => {
     setSelectedIds((current) => {
@@ -85,7 +204,7 @@ export default function ProductPanel({ theme }: { theme: KubdeeTheme }): React.J
   const toggleAll = (): void => {
     setSelectedIds(() => {
       if (allSelected) return new Set();
-      return new Set(visibleProducts.map((item) => item.id));
+      return new Set(visibleProducts.map((product) => getProductKey(product)));
     });
   };
 
@@ -98,9 +217,39 @@ export default function ProductPanel({ theme }: { theme: KubdeeTheme }): React.J
     setSortAscending(next !== 'date');
   };
 
+  const handleSync = (): void => {
+    if (isSyncing) {
+      return;
+    }
+
+    void syncProducts();
+  };
+
+  const handlePullRefresh = (): void => {
+    if (isSyncing) {
+      return;
+    }
+
+    setIsPullRefreshing(true);
+    void syncProducts().finally(() => {
+      setIsPullRefreshing(false);
+    });
+  };
+
   return (
     <View className="flex-1">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerClassName="gap-3 px-3 pb-20 pt-3"
+        refreshControl={
+          <RefreshControl
+            refreshing={isPullRefreshing}
+            onRefresh={handlePullRefresh}
+            tintColor={theme.textSubtle}
+            colors={[theme.emerald]}
+          />
+        }
+      >
         <LibraryPanelHeader
           theme={theme}
           title="คลังสินค้า"
@@ -110,8 +259,19 @@ export default function ProductPanel({ theme }: { theme: KubdeeTheme }): React.J
           tone={accent}
           actions={
             <>
-              <HeaderIconButton theme={theme} icon={RefreshCw} label="รีเฟรช" />
-              <HeaderIconButton theme={theme} icon={CloudDownload} label="ซิงก์คลังสินค้า" />
+              <HeaderIconButton
+                theme={theme}
+                icon={RefreshCw}
+                label="รีเฟรช"
+                onPress={isSyncing ? undefined : handleSync}
+              />
+              {isSyncing ? (
+                <View className="h-7 w-7 items-center justify-center">
+                  <ActivityIndicator color={accent.color} size="small" />
+                </View>
+              ) : (
+                <HeaderIconButton theme={theme} icon={CloudDownload} label="ซิงก์คลังสินค้า" onPress={handleSync} />
+              )}
               <HeaderIconButton theme={theme} icon={Upload} label="อัพโหลดสินค้า" />
               <DarkActionButton
                 theme={theme}
@@ -122,6 +282,18 @@ export default function ProductPanel({ theme }: { theme: KubdeeTheme }): React.J
             </>
           }
         />
+
+        {lastSyncedAt ? (
+          <Text className="-mt-2 text-right text-kd-micro text-kd-text-subtle">
+            ซิงก์ล่าสุด {formatSyncTime(lastSyncedAt)}
+          </Text>
+        ) : null}
+
+        {syncError && products.length > 0 ? (
+          <View className="rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
+            <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{syncError}</Text>
+          </View>
+        ) : null}
 
         {products.length > 0 ? (
           <View className="gap-2">
@@ -176,24 +348,62 @@ export default function ProductPanel({ theme }: { theme: KubdeeTheme }): React.J
         ) : null}
 
         <View className="gap-2">
-          {visibleProducts.map((item) => (
-            <ProductCard
-              key={item.id}
-              item={item}
-              selected={selectedIds.has(item.id)}
-              theme={theme}
-              onPress={() => toggleSelect(item.id)}
-            />
-          ))}
+          {visibleProducts.map((product) => {
+            const key = getProductKey(product);
+
+            return (
+              <ProductCard
+                key={key}
+                product={product}
+                selected={selectedIds.has(key)}
+                theme={theme}
+                onPress={() => toggleSelect(key)}
+              />
+            );
+          })}
         </View>
 
-        {visibleProducts.length === 0 ? (
-          <EmptyState
-            theme={theme}
-            icon={ShoppingBag}
-            title="ยังไม่มีสินค้า"
-            copy="เพิ่มสินค้าเพื่อสร้างรูปโฆษณาและวิดีโอแบบอัตโนมัติ"
-          />
+        {products.length === 0 ? (
+          isSyncing ? (
+            <View className="items-center gap-2 px-6 py-11">
+              <ActivityIndicator color={theme.emerald} size="small" />
+              <Text className="text-kd-caption text-kd-text-subtle">กำลังซิงก์คลังสินค้า...</Text>
+            </View>
+          ) : syncError ? (
+            <View className="items-center gap-2 px-6 py-11">
+              <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-red/5 dark:bg-kd-red/10">
+                <ShoppingBag size={30} color={theme.red} strokeWidth={1.5} />
+              </View>
+              <Text className="mt-1.5 max-w-[240px] text-center text-kd-caption leading-4 text-kd-red">
+                {syncError}
+              </Text>
+              <View className="mt-1">
+                <DarkActionButton theme={theme} label="ลองใหม่" onPress={handleSync} />
+              </View>
+            </View>
+          ) : (
+            <View className="items-center gap-2 px-6 py-11">
+              <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
+                <ShoppingBag size={30} color={theme.textSubtle} strokeWidth={1.5} />
+              </View>
+              <Text className="mt-1.5 text-[13px] font-semibold text-kd-text-muted">ยังไม่มีสินค้า</Text>
+              <Text className="max-w-[220px] text-center text-kd-caption leading-4 text-kd-text-subtle">
+                ซิงก์จากแอป Desktop ได้เลย
+              </Text>
+              <View className="mt-1">
+                <DarkActionButton
+                  theme={theme}
+                  label="ซิงก์คลังสินค้า"
+                  leading={<CloudDownload size={12} color={darkButtonContentColor(theme)} strokeWidth={2} />}
+                  onPress={handleSync}
+                />
+              </View>
+            </View>
+          )
+        ) : null}
+
+        {products.length > 0 && visibleProducts.length === 0 ? (
+          <EmptyHint theme={theme} label="ไม่พบสินค้าที่ตรงกับคำค้นหา" />
         ) : null}
       </ScrollView>
 
@@ -213,21 +423,20 @@ export default function ProductPanel({ theme }: { theme: KubdeeTheme }): React.J
 /**
  * Extension ProductCatalogPanel card:
  * rounded-xl border / emerald wash background / 56px thumb / name 11px semibold /
- * #id 9px / source chip / price emerald + stock / edit + delete buttons
+ * #id 9px / platform chip + profile meta / price emerald + stock / edit + delete buttons
  */
 function ProductCard({
-  item,
+  product,
   selected,
   theme,
   onPress,
 }: {
-  item: GalleryItemRecord;
+  product: AffiliateProduct;
   selected: boolean;
   theme: KubdeeTheme;
   onPress: () => void;
 }): React.JSX.Element {
-  const stats = mockProductStats[item.id] ?? { price: '฿189.00', stock: '67 ชิ้น' };
-  const sourceLabel = item.badges.includes('Shopee') ? 'Shopee' : 'Extension';
+  const platformLabel = getPlatformLabel(product.platform);
 
   return (
     <Pressable
@@ -248,23 +457,40 @@ function ProductCard({
       {!selected ? <CardBackdrop theme={theme} id="products" stops={libraryCardStops.products} /> : null}
 
       <View className="flex-row items-center gap-2.5 p-2">
-        <View className="h-14 w-14 shrink-0 items-center justify-center rounded-[12px] border-2 border-white bg-kd-panel-muted dark:border-kd-border-strong dark:bg-kd-card-muted">
-          <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.5} />
+        <View className="h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border-2 border-white bg-kd-panel-muted dark:border-kd-border-strong dark:bg-kd-card-muted">
+          {product.imageUrl ? (
+            <Image
+              source={{ uri: product.imageUrl }}
+              resizeMode="cover"
+              accessibilityLabel={product.name}
+              className="h-full w-full"
+            />
+          ) : (
+            <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.5} />
+          )}
         </View>
 
         <View className="min-w-0 flex-1">
-          <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
-            {item.title}
-          </Text>
+          <View className="flex-row items-center gap-1.5">
+            <Text numberOfLines={1} className="min-w-0 flex-shrink text-kd-body font-semibold text-kd-text">
+              {product.name}
+            </Text>
+            {platformLabel ? (
+              <View className="shrink-0 rounded-full bg-kd-panel-muted px-1.5 py-px dark:bg-kd-card-muted">
+                <Text className="text-[8px] font-medium text-kd-text-muted">{platformLabel}</Text>
+              </View>
+            ) : null}
+          </View>
           <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
-            #{getItemCode(item)} · สร้างจาก {sourceLabel}
+            #{getItemCode(product)}
+            {getCreatedByLabel(product) ? ` · Created by ${getCreatedByLabel(product)}` : ''}
           </Text>
 
           <View className="mt-1 flex-row items-center justify-between">
             <View className="flex-row items-center gap-1">
-              <Text className="text-kd-caption font-medium text-kd-emerald">{stats.price}</Text>
+              <Text className="text-kd-caption font-medium text-kd-emerald">{formatPrice(product.price)}</Text>
               <Text className="text-kd-micro text-kd-text-subtle">·</Text>
-              <Text className="text-kd-micro text-kd-text-muted">{stats.stock}</Text>
+              <Text className="text-kd-micro text-kd-text-muted">{formatStock(product.stock)}</Text>
             </View>
 
             <View className="shrink-0 flex-row items-center gap-1">
