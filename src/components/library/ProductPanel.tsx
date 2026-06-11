@@ -1,18 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import {
-  CloudDownload,
+  Cloud,
   Image as ImageIcon,
   Pencil,
-  RefreshCw,
   ShoppingBag,
   Trash2,
   Upload,
 } from 'lucide-react-native';
 
+import { toast } from 'sonner-native';
+
 import { TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { useLibrary } from '@/library/LibraryContext';
+import type { ProductSyncResult } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
 import type { KubdeeTheme } from '@/theme/tokens';
 
@@ -41,6 +43,11 @@ function getItemCode(product: AffiliateProduct): string {
   return product.externalProductId || product.localId.slice(0, 8);
 }
 
+/** Match extension: "#1729457066223503831" → "#172...831" (only when shortening saves space) */
+function shortenItemCode(code: string): string {
+  return code.length > 9 ? `${code.slice(0, 3)}...${code.slice(-3)}` : code;
+}
+
 /** Decimal string ("229.00") → "฿229.00", null → "-" */
 function formatPrice(price: string | null): string {
   if (!price) {
@@ -67,21 +74,31 @@ function formatStock(stock: number | null): string {
   return `${new Intl.NumberFormat('th-TH').format(stock)} ชิ้น`;
 }
 
-/** App that created the product row, e.g. 'desktop' → "Desktop" */
-function getCreatedByLabel(product: AffiliateProduct): string | null {
-  const normalized = (product.createdByApp ?? product.originApp ?? '').trim().toLowerCase();
+const SOURCE_LABELS: Record<string, string> = {
+  desktop: 'Desktop',
+  extension: 'Extension',
+  mobile: 'Mobile',
+  web: 'Web',
+};
+
+function getSourceLabel(value: string | null | undefined): string | null {
+  const normalized = (value ?? '').trim().toLowerCase();
   if (!normalized || normalized === 'unknown') {
     return null;
   }
 
-  const labels: Record<string, string> = {
-    desktop: 'Desktop',
-    extension: 'Extension',
-    mobile: 'Mobile',
-    web: 'Web',
-  };
+  return SOURCE_LABELS[normalized] ?? normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
 
-  return labels[normalized] ?? normalized.charAt(0).toUpperCase() + normalized.slice(1);
+/** App that created the product row, e.g. 'desktop' → "Desktop" */
+function getCreatedByLabel(product: AffiliateProduct): string | null {
+  return getSourceLabel(product.createdByApp ?? product.originApp);
+}
+
+/** App that last updated the row — shown only when it differs from the creator */
+function getUpdatedByLabel(product: AffiliateProduct): string | null {
+  const updated = getSourceLabel(product.updatedByApp);
+  return updated && updated !== getCreatedByLabel(product) ? updated : null;
 }
 
 function getPlatformLabel(platform: string | null): string | null {
@@ -158,6 +175,19 @@ export default function ProductPanel({
   const [sortAscending, setSortAscending] = useState(true);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
 
+  const showSyncResult = useCallback((result: ProductSyncResult | null): void => {
+    if (!result) {
+      return;
+    }
+
+    if (result.success) {
+      toast.success(`ซิงก์แล้ว ${result.count} รายการ`);
+      return;
+    }
+
+    toast.error(result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ');
+  }, []);
+
   // Drop selections that no longer exist after a re-sync.
   useEffect(() => {
     setSelectedIds((current) => {
@@ -222,7 +252,7 @@ export default function ProductPanel({
       return;
     }
 
-    void syncProducts();
+    void syncProducts().then(showSyncResult);
   };
 
   const handlePullRefresh = (): void => {
@@ -231,9 +261,11 @@ export default function ProductPanel({
     }
 
     setIsPullRefreshing(true);
-    void syncProducts().finally(() => {
-      setIsPullRefreshing(false);
-    });
+    void syncProducts()
+      .then(showSyncResult)
+      .finally(() => {
+        setIsPullRefreshing(false);
+      });
   };
 
   return (
@@ -255,39 +287,29 @@ export default function ProductPanel({
           title="คลังสินค้า"
           count={visibleProducts.length}
           total={products.length}
+          suffix={lastSyncedAt ? ` · ซิงก์ล่าสุด ${formatSyncTime(lastSyncedAt)}` : ''}
           icon={ShoppingBag}
           tone={accent}
           actions={
             <>
-              <HeaderIconButton
-                theme={theme}
-                icon={RefreshCw}
-                label="รีเฟรช"
-                onPress={isSyncing ? undefined : handleSync}
-              />
               {isSyncing ? (
                 <View className="h-7 w-7 items-center justify-center">
                   <ActivityIndicator color={accent.color} size="small" />
                 </View>
               ) : (
-                <HeaderIconButton theme={theme} icon={CloudDownload} label="ซิงก์คลังสินค้า" onPress={handleSync} />
+                <HeaderIconButton theme={theme} icon={Cloud} label="ซิงก์คลังสินค้า" onPress={handleSync} />
               )}
               <HeaderIconButton theme={theme} icon={Upload} label="อัพโหลดสินค้า" />
               <DarkActionButton
                 theme={theme}
                 small
+                iconOnly
                 label="ShowCase"
-                leading={<TikTokLogo size={10} color={darkButtonContentColor(theme)} />}
+                leading={<TikTokLogo size={12} color={darkButtonContentColor(theme)} />}
               />
             </>
           }
         />
-
-        {lastSyncedAt ? (
-          <Text className="-mt-2 text-right text-kd-micro text-kd-text-subtle">
-            ซิงก์ล่าสุด {formatSyncTime(lastSyncedAt)}
-          </Text>
-        ) : null}
 
         {syncError && products.length > 0 ? (
           <View className="rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
@@ -394,7 +416,7 @@ export default function ProductPanel({
                 <DarkActionButton
                   theme={theme}
                   label="ซิงก์คลังสินค้า"
-                  leading={<CloudDownload size={12} color={darkButtonContentColor(theme)} strokeWidth={2} />}
+                  leading={<Cloud size={12} color={darkButtonContentColor(theme)} strokeWidth={2} />}
                   onPress={handleSync}
                 />
               </View>
@@ -480,8 +502,9 @@ function ProductCard({
             ) : null}
           </View>
           <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
-            #{getItemCode(product)}
+            #{shortenItemCode(getItemCode(product))}
             {getCreatedByLabel(product) ? ` · Created by ${getCreatedByLabel(product)}` : ''}
+            {getUpdatedByLabel(product) ? ` · Updated by ${getUpdatedByLabel(product)}` : ''}
           </Text>
 
           <View className="mt-1 flex-row items-center justify-between">

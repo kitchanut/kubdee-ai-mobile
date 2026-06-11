@@ -6,12 +6,19 @@ import { getStoredAuthTokens } from '@/auth/storage';
 import { fetchAffiliateProducts } from '@/library/api';
 import type { AffiliateProduct } from '@/library/types';
 
+export interface ProductSyncResult {
+  success: boolean;
+  count: number;
+  error: string | null;
+}
+
 interface LibraryContextType {
   products: AffiliateProduct[];
   isSyncing: boolean;
   lastSyncedAt: number | null;
   syncError: string | null;
-  syncProducts: () => Promise<void>;
+  /** Resolves with the sync outcome, or null when skipped (no token / already syncing). */
+  syncProducts: () => Promise<ProductSyncResult | null>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -24,9 +31,9 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
   const [syncError, setSyncError] = useState<string | null>(null);
   const isSyncingRef = useRef(false);
 
-  const syncProducts = useCallback(async (): Promise<void> => {
+  const syncProducts = useCallback(async (): Promise<ProductSyncResult | null> => {
     if (!token || isSyncingRef.current) {
-      return;
+      return null;
     }
 
     isSyncingRef.current = true;
@@ -51,10 +58,12 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
         setProducts(result.data);
         setSyncError(null);
         setLastSyncedAt(Date.now());
-        return;
+        return { count: result.data.length, error: null, success: true };
       }
 
-      setSyncError(result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ');
+      const message = result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ';
+      setSyncError(message);
+      return { count: 0, error: message, success: false };
     } finally {
       isSyncingRef.current = false;
       setIsSyncing(false);

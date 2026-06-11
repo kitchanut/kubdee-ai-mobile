@@ -98,6 +98,7 @@ export function LibraryPanelHeader({
   icon: Icon,
   tone,
   actions,
+  suffix,
 }: {
   theme: KubdeeTheme;
   title: string;
@@ -106,6 +107,8 @@ export function LibraryPanelHeader({
   icon: IconComponent;
   tone: ToneColors;
   actions?: ReactNode;
+  /** Replaces the default " รายการ" after "count / total" (e.g. " · ซิงก์ล่าสุด 10:22") */
+  suffix?: string;
 }): React.JSX.Element {
   return (
     <View className="flex-row items-center justify-between gap-2">
@@ -120,7 +123,7 @@ export function LibraryPanelHeader({
           {title}
         </Text>
         <Text className="flex-shrink-0 text-kd-caption font-medium text-kd-text-subtle">
-          {count} / {total} รายการ
+          {count} / {total}{suffix === undefined ? ' รายการ' : suffix}
         </Text>
       </View>
       {actions ? <View className="flex-shrink-0 flex-row items-center gap-1.5">{actions}</View> : null}
@@ -158,12 +161,15 @@ export function DarkActionButton({
   label,
   leading,
   small = false,
+  iconOnly = false,
   onPress,
 }: {
   theme: KubdeeTheme;
   label: string;
   leading?: ReactNode;
   small?: boolean;
+  /** Renders only the leading icon; label is kept for accessibility */
+  iconOnly?: boolean;
   onPress?: () => void;
 }): React.JSX.Element {
   return (
@@ -172,13 +178,17 @@ export function DarkActionButton({
       accessibilityRole="button"
       onPress={onPress}
       className={`flex-row items-center justify-center bg-[#1f2937] dark:bg-white ${
-        small ? 'h-[26px] gap-1 rounded-kd-md px-2' : 'h-[30px] gap-1.5 rounded-kd-lg px-3'
+        small
+          ? `h-[26px] rounded-kd-md ${iconOnly ? 'w-[26px]' : 'gap-1 px-2'}`
+          : `h-[30px] rounded-kd-lg ${iconOnly ? 'w-[30px]' : 'gap-1.5 px-3'}`
       }`}
     >
       {leading}
-      <Text className="text-kd-caption font-medium text-white dark:text-[#1f2937]">
-        {label}
-      </Text>
+      {iconOnly ? null : (
+        <Text className="text-kd-caption font-medium text-white dark:text-[#1f2937]">
+          {label}
+        </Text>
+      )}
     </Pressable>
   );
 }

@@ -1,7 +1,9 @@
 import './global.css';
 
 import { useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Toaster } from 'sonner-native';
 
 import { AuthProvider } from './src/auth/AuthContext';
 import KubdeeMobileApp from './src/components/KubdeeMobileApp';
@@ -20,12 +22,22 @@ export default function App(): React.JSX.Element {
   }
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <LibraryProvider>
-          <KubdeeMobileApp />
-        </LibraryProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <LibraryProvider>
+            <KubdeeMobileApp />
+            <Toaster
+              theme={colorScheme === 'light' ? 'light' : 'dark'}
+              richColors
+              toastOptions={{
+                titleStyle: { fontFamily: 'NotoSansThai_500Medium' },
+                descriptionStyle: { fontFamily: 'NotoSansThai_400Regular' },
+              }}
+            />
+          </LibraryProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
