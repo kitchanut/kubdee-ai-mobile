@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import {
   Cloud,
   Image as ImageIcon,
@@ -11,10 +11,10 @@ import {
 
 import { toast } from 'sonner-native';
 
-import { TikTokLogo } from '@/components/BrandLogos';
+import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { useLibrary } from '@/library/LibraryContext';
-import type { ProductSyncResult } from '@/library/LibraryContext';
+import type { ProductDeleteResult, ProductSyncResult } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
 import type { KubdeeTheme } from '@/theme/tokens';
 
@@ -34,6 +34,9 @@ import {
 } from './shared';
 
 type SortKey = 'name' | 'code' | 'date';
+
+/** Shopee brand orange — matches the ShopeeLogo default fill */
+const SHOPEE_ORANGE = '#EE4D2D';
 
 function getProductKey(product: AffiliateProduct): string {
   return String(product.id ?? product.localId);
@@ -157,7 +160,14 @@ export default function ProductPanel({
   theme: KubdeeTheme;
 }): React.JSX.Element {
   const accent = getAccentTone(theme, theme.emerald);
-  const { products: allProducts, isSyncing, lastSyncedAt, syncError, syncProducts } = useLibrary();
+  const {
+    products: allProducts,
+    isSyncing,
+    lastSyncedAt,
+    syncError,
+    syncProducts,
+    deleteProducts,
+  } = useLibrary();
 
   // Match desktop: the gallery shows only the active profile's products
   // (getProductsByProfileId), otherwise the same item scraped into several
@@ -187,6 +197,50 @@ export default function ProductPanel({
 
     toast.error(result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ');
   }, []);
+
+  const showDeleteResult = useCallback((result: ProductDeleteResult | null): void => {
+    if (!result) {
+      return;
+    }
+
+    if (!result.success) {
+      toast.error(result.error || 'ลบสินค้าไม่สำเร็จ');
+      return;
+    }
+
+    if (result.deleted < result.requested) {
+      toast.warning(`ลบแล้ว ${result.deleted} จาก ${result.requested} รายการ`);
+      return;
+    }
+
+    toast.success(`ลบแล้ว ${result.deleted} รายการ`);
+  }, []);
+
+  // Shared by the card trash button (single id) and the SelectionBar (selected ids):
+  // confirm → optimistic remove + DELETE on the server → re-fetch confirms.
+  const confirmDelete = useCallback(
+    (localIds: string[]): void => {
+      if (localIds.length === 0) {
+        return;
+      }
+
+      Alert.alert(
+        localIds.length === 1 ? 'ลบสินค้านี้?' : `ลบสินค้า ${localIds.length} รายการ?`,
+        'สินค้าจะถูกลบออกจากคลังบน Cloud และหายจากแอปอื่นหลังซิงก์',
+        [
+          { text: 'ยกเลิก', style: 'cancel' },
+          {
+            text: 'ลบ',
+            style: 'destructive',
+            onPress: () => {
+              void deleteProducts(localIds).then(showDeleteResult);
+            },
+          },
+        ]
+      );
+    },
+    [deleteProducts, showDeleteResult]
+  );
 
   // Drop selections that no longer exist after a re-sync.
   useEffect(() => {
@@ -268,6 +322,14 @@ export default function ProductPanel({
       });
   };
 
+  const handleDeleteSelected = (): void => {
+    confirmDelete(
+      products
+        .filter((product) => selectedIds.has(getProductKey(product)))
+        .map((product) => product.localId)
+    );
+  };
+
   return (
     <View className="flex-1">
       <ScrollView
@@ -306,6 +368,14 @@ export default function ProductPanel({
                 iconOnly
                 label="ShowCase"
                 leading={<TikTokLogo size={12} color={darkButtonContentColor(theme)} />}
+              />
+              <DarkActionButton
+                theme={theme}
+                small
+                iconOnly
+                label="Shopee"
+                color={SHOPEE_ORANGE}
+                leading={<ShopeeLogo size={12} color={theme.white} cutoutColor={SHOPEE_ORANGE} />}
               />
             </>
           }
@@ -380,6 +450,7 @@ export default function ProductPanel({
                 selected={selectedIds.has(key)}
                 theme={theme}
                 onPress={() => toggleSelect(key)}
+                onDelete={() => confirmDelete([product.localId])}
               />
             );
           })}
@@ -436,6 +507,7 @@ export default function ProductPanel({
           count={selectedIds.size}
           showAuto
           onClear={() => setSelectedIds(new Set())}
+          onDelete={handleDeleteSelected}
         />
       ) : null}
     </View>
@@ -452,11 +524,13 @@ function ProductCard({
   selected,
   theme,
   onPress,
+  onDelete,
 }: {
   product: AffiliateProduct;
   selected: boolean;
   theme: KubdeeTheme;
   onPress: () => void;
+  onDelete: () => void;
 }): React.JSX.Element {
   const platformLabel = getPlatformLabel(product.platform);
 
@@ -525,6 +599,7 @@ function ProductCard({
               <Pressable
                 accessibilityLabel="ลบ"
                 accessibilityRole="button"
+                onPress={onDelete}
                 className="h-[22px] w-[22px] items-center justify-center rounded-kd-md bg-white/60 dark:bg-kd-card-muted/60"
               >
                 <Trash2 size={11} color={theme.textSubtle} strokeWidth={2} />

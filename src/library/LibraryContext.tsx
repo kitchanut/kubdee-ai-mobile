@@ -3,12 +3,20 @@ import type { ReactNode } from 'react';
 
 import { useAuth } from '@/auth/AuthContext';
 import { getStoredAuthTokens } from '@/auth/storage';
-import { fetchAffiliateProducts } from '@/library/api';
+import { deleteAffiliateProducts, fetchAffiliateProducts } from '@/library/api';
 import type { AffiliateProduct } from '@/library/types';
 
 export interface ProductSyncResult {
   success: boolean;
   count: number;
+  error: string | null;
+}
+
+export interface ProductDeleteResult {
+  success: boolean;
+  /** Rows the server actually tombstoned — may be < requested (already deleted / unknown localId). */
+  deleted: number;
+  requested: number;
   error: string | null;
 }
 
@@ -19,6 +27,8 @@ interface LibraryContextType {
   syncError: string | null;
   /** Resolves with the sync outcome, or null when skipped (no token / already syncing). */
   syncProducts: () => Promise<ProductSyncResult | null>;
+  /** Resolves with the delete outcome, or null when skipped (no token / empty / already deleting). */
+  deleteProducts: (localIds: string[]) => Promise<ProductDeleteResult | null>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -30,6 +40,7 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const isSyncingRef = useRef(false);
+  const isDeletingRef = useRef(false);
 
   const syncProducts = useCallback(async (): Promise<ProductSyncResult | null> => {
     if (!token || isSyncingRef.current) {
@@ -70,6 +81,59 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     }
   }, [recheckPlan, token]);
 
+  const deleteProducts = useCallback(
+    async (localIds: string[]): Promise<ProductDeleteResult | null> => {
+      if (!token || localIds.length === 0 || isDeletingRef.current) {
+        return null;
+      }
+
+      isDeletingRef.current = true;
+
+      // Optimistic remove; snapshot kept so a failed request can roll back
+      // (re-fetching instead would leave the optimistic state behind offline).
+      const previousProducts = products;
+      const removedIds = new Set(localIds);
+      setProducts((current) => current.filter((product) => !removedIds.has(product.localId)));
+
+      try {
+        let result = await deleteAffiliateProducts(token, localIds);
+
+        if (!result.ok && result.status === 401) {
+          // Same refresh path as syncProducts; DELETE is idempotent on the
+          // server (tombstones), so resending the full id list is safe.
+          await recheckPlan();
+          const refreshedTokens = await getStoredAuthTokens();
+          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+            result = await deleteAffiliateProducts(refreshedTokens.accessToken, localIds);
+          }
+        }
+
+        if (result.ok && result.data) {
+          // Confirm against the server (also reconciles partial success where
+          // deleted < requested, e.g. rows already tombstoned by another app).
+          void syncProducts();
+          return {
+            deleted: result.data.deleted,
+            error: null,
+            requested: result.data.requested,
+            success: true,
+          };
+        }
+
+        setProducts(previousProducts);
+        return {
+          deleted: 0,
+          error: result.error || 'ลบสินค้าไม่สำเร็จ',
+          requested: localIds.length,
+          success: false,
+        };
+      } finally {
+        isDeletingRef.current = false;
+      }
+    },
+    [products, recheckPlan, syncProducts, token]
+  );
+
   // Reset library state on logout (mirrors resetAuthState in AuthContext).
   useEffect(() => {
     if (token) {
@@ -95,13 +159,14 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
 
   const value = useMemo(
     () => ({
+      deleteProducts,
       products,
       isSyncing,
       lastSyncedAt,
       syncError,
       syncProducts,
     }),
-    [isSyncing, lastSyncedAt, products, syncError, syncProducts]
+    [deleteProducts, isSyncing, lastSyncedAt, products, syncError, syncProducts]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;

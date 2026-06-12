@@ -163,6 +163,7 @@ export function DarkActionButton({
   small = false,
   iconOnly = false,
   onPress,
+  color,
 }: {
   theme: KubdeeTheme;
   label: string;
@@ -171,12 +172,15 @@ export function DarkActionButton({
   /** Renders only the leading icon; label is kept for accessibility */
   iconOnly?: boolean;
   onPress?: () => void;
+  /** Fixed background (both modes) for brand buttons, e.g. Shopee orange */
+  color?: string;
 }): React.JSX.Element {
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="button"
       onPress={onPress}
+      style={color ? { backgroundColor: color } : undefined}
       className={`flex-row items-center justify-center bg-[#1f2937] dark:bg-white ${
         small
           ? `h-[26px] rounded-kd-md ${iconOnly ? 'w-[26px]' : 'gap-1 px-2'}`
@@ -383,12 +387,14 @@ export function SelectionBar({
   count,
   showAuto = false,
   onClear,
+  onDelete,
 }: {
   theme: KubdeeTheme;
   accent: string;
   count: number;
   showAuto?: boolean;
   onClear: () => void;
+  onDelete?: () => void;
 }): React.JSX.Element {
   const inverseText = theme.isDark ? '#000000' : theme.white;
 
@@ -437,6 +443,7 @@ export function SelectionBar({
           <Pressable
             accessibilityLabel="ลบ"
             accessibilityRole="button"
+            onPress={onDelete}
             className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
           >
             <Trash2 size={12} color={theme.textSubtle} strokeWidth={2} />

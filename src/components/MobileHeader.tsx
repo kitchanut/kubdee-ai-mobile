@@ -28,29 +28,6 @@ const logoDark = require('../../assets/logo-dark.png');
 const logoLight = require('../../assets/logo-light.png');
 const headerActionSize = 34;
 
-function formatShortId(value: string): string {
-  if (value.length <= 12) {
-    return value;
-  }
-
-  return `${value.slice(0, 8)}…${value.slice(-4)}`;
-}
-
-function getSourceLabel(value?: string | null): string {
-  switch ((value || 'unknown').toLowerCase()) {
-    case 'desktop':
-      return 'Desktop';
-    case 'extension':
-      return 'Extension';
-    case 'mobile':
-      return 'Mobile';
-    case 'web':
-      return 'Web';
-    default:
-      return 'Cloud';
-  }
-}
-
 interface MobileHeaderProps {
   theme: KubdeeTheme;
   runningCount: number;
@@ -123,6 +100,11 @@ export default function MobileHeader({
     closeProfileSelect();
   };
 
+  const handleManageProfiles = (): void => {
+    closeProfileSelect();
+    onProfilePress();
+  };
+
   const handleThemeToggle = (): void => {
     onThemeModeToggle();
   };
@@ -173,7 +155,12 @@ export default function MobileHeader({
               >
                 {selectedProfileLabel}
               </Text>
-              <ChevronDown size={12} color={theme.textSubtle} strokeWidth={2.4} />
+              <ChevronDown
+                size={12}
+                color={theme.textSubtle}
+                strokeWidth={2.4}
+                style={profileSelectVisible ? { transform: [{ rotate: '180deg' }] } : undefined}
+              />
             </View>
           </Pressable>
         </View>
@@ -189,7 +176,7 @@ export default function MobileHeader({
           <Pressable className="flex-1" onPress={closeProfileSelect}>
             <Pressable
               onPress={(event) => event.stopPropagation()}
-              className="absolute left-[108px] top-[78px] w-[268px] rounded-kd-lg border border-kd-border bg-kd-card p-[9px]"
+              className="absolute left-[62px] top-[78px] w-[272px] rounded-kd-xl border border-kd-border bg-kd-card p-1.5"
               style={{
                 elevation: 10,
                 shadowColor: theme.shadow,
@@ -198,40 +185,83 @@ export default function MobileHeader({
                 shadowRadius: 20,
               }}
             >
-              <Text className="text-kd-caption font-black leading-[15px] text-kd-text">
-                เลือกโปรไฟล์ทำงาน
-              </Text>
+              {/* Extension: title + profile count + Users icon header row */}
+              <View className="flex-row items-center justify-between px-2 py-1">
+                <View>
+                  <Text className="text-kd-caption font-bold leading-[15px] text-kd-text">
+                    เลือกโปรไฟล์
+                  </Text>
+                  <Text className="text-kd-tiny font-medium text-kd-text-subtle">
+                    {isSyncingProfiles ? 'กำลังซิงก์ข้อมูล' : `${profiles.length} โปรไฟล์พร้อมใช้งาน`}
+                  </Text>
+                </View>
+                <Users size={14} color={theme.textSubtle} strokeWidth={2.4} />
+              </View>
+
+              <View className="my-1 h-px bg-kd-border" />
+
               <ScrollView
                 showsVerticalScrollIndicator={false}
-                className="max-h-[260px]"
+                className="max-h-[280px]"
               >
-                {profiles.map((profile) => {
+                {profiles.map((profile, index) => {
                   const active = profile.id === selectedProfileId;
                   const group = profile.groupId == null
                     ? null
                     : groupById.get(profile.groupId) ?? null;
+                  const initial = (profile.name || 'P').trim().charAt(0).toUpperCase();
 
                   return (
                     <Pressable
                       accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
                       key={profile.id}
                       onPress={() => handleSelectProfile(profile.id)}
-                      className={`mt-[7px] min-h-[44px] flex-row items-center gap-2 rounded-kd-md border px-2 py-[7px] active:opacity-75 ${
-                        active ? 'border-kd-cyan/40 bg-kd-cyan-soft' : 'border-kd-border bg-kd-card-muted'
+                      className={`min-h-[44px] flex-row items-center gap-2 rounded-kd-lg border px-2 py-1.5 ${
+                        index > 0 ? 'mt-1' : ''
+                      } ${
+                        active
+                          ? 'border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted'
+                          : 'border-transparent active:bg-kd-panel-muted dark:active:bg-kd-card-muted'
                       }`}
                     >
+                      <View
+                        className={`h-7 w-7 items-center justify-center rounded-full ${
+                          active ? 'bg-[#0a0a0a] dark:bg-white' : 'bg-kd-panel-muted dark:bg-kd-card-muted'
+                        }`}
+                      >
+                        <Text
+                          className={`text-kd-caption font-bold ${
+                            active ? 'text-white dark:text-[#0a0a0a]' : 'text-kd-text-muted'
+                          }`}
+                        >
+                          {initial}
+                        </Text>
+                      </View>
                       <View className="min-w-0 flex-1">
-                        <Text className="text-kd-body font-black leading-4 text-kd-text" numberOfLines={1}>
+                        <Text className="text-kd-body font-bold leading-4 text-kd-text" numberOfLines={1}>
                           {profile.name}
                         </Text>
-                        <Text className="mt-0.5 text-kd-tiny font-bold text-kd-text-subtle" numberOfLines={1}>
-                          {group?.name || 'ไม่มีกลุ่ม'} · {getSourceLabel(profile.createdByApp || profile.originApp)} · {formatShortId(profile.id)}
+                        <Text className="text-kd-tiny font-medium leading-3 text-kd-text-subtle" numberOfLines={1}>
+                          {group?.name || 'ไม่มีกลุ่ม'}
                         </Text>
                       </View>
                     </Pressable>
                   );
                 })}
               </ScrollView>
+
+              {/* Extension: full-width dark "จัดการโปรไฟล์" footer button */}
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleManageProfiles}
+                className="mt-1.5 h-8 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-[#0a0a0a] active:opacity-80 dark:bg-white"
+              >
+                <Users size={14} color={theme.isDark ? '#0a0a0a' : '#ffffff'} strokeWidth={2.5} />
+                <Text className="text-kd-caption font-bold text-white dark:text-[#0a0a0a]">
+                  จัดการโปรไฟล์
+                </Text>
+              </Pressable>
             </Pressable>
           </Pressable>
         </Modal>
