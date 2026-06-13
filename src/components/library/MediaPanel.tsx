@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Image as NativeImage, Pressable, ScrollView, View } from 'react-native';
 import {
   ChevronDown,
   ChevronRight,
@@ -19,6 +19,8 @@ import {
 } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
+import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
+import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { galleryItems, type GalleryItemRecord } from '@/data/mockData';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
@@ -53,6 +55,7 @@ interface MediaSubItem {
   size: string;
   portrait: boolean;
   warnings: string[];
+  uri?: string | null;
 }
 
 const mockMediaCounts: Record<string, number> = {
@@ -138,13 +141,83 @@ function buildSubItems(item: GalleryItemRecord): MediaSubItem[] {
   }));
 }
 
+function formatAssetDate(timestamp: number): string {
+  return new Intl.DateTimeFormat('th-TH', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: '2-digit',
+  }).format(new Date(timestamp));
+}
+
+function formatAssetSize(sizeBytes: number | null): string {
+  if (!sizeBytes || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    return '-';
+  }
+
+  const sizeMb = sizeBytes / 1024 / 1024;
+  if (sizeMb >= 1) {
+    return `${sizeMb.toFixed(1)} MB`;
+  }
+
+  return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+}
+
+function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Array<{ item: GalleryItemRecord; media: MediaSubItem[] }> {
+  const groupsByProduct = new Map<string, { item: GalleryItemRecord; media: MediaSubItem[] }>();
+  const tone = kind === 'images' ? 'amber' : 'red';
+
+  for (const asset of assets) {
+    const groupId = `generated-${kind}-${asset.productCode || asset.productId}`;
+    const existing = groupsByProduct.get(groupId);
+    const group =
+      existing ??
+      {
+        item: {
+          id: groupId,
+          category: kind,
+          title: asset.productName,
+          subtitle: 'Google Flow | Auto Pilot',
+          meta: 'สร้างจาก Auto Pilot',
+          status: 'ready',
+          tone,
+          badges: ['Flow', 'Auto'],
+        },
+        media: [],
+      };
+
+    group.media.push({
+      id: asset.id,
+      parentId: groupId,
+      title: asset.title,
+      productName: asset.productName,
+      productCode: asset.productCode,
+      date: formatAssetDate(asset.createdAt),
+      size: formatAssetSize(asset.sizeBytes),
+      portrait: true,
+      warnings: [],
+      uri: asset.fileUri,
+    });
+
+    groupsByProduct.set(groupId, group);
+  }
+
+  return Array.from(groupsByProduct.values()).map((group) => ({
+    ...group,
+    media: group.media.sort((first, second) => second.id.localeCompare(first.id)),
+  }));
+}
+
 export default function MediaPanel({
   theme,
   kind,
+  selectedProfileId,
 }: {
   theme: KubdeeTheme;
   kind: MediaKind;
+  selectedProfileId: string;
 }): React.JSX.Element {
+  const { getAssetsByKind } = useGeneratedMedia();
   const copy = panelCopy[kind];
   const accentColor = kind === 'images' ? theme.amber : theme.red;
   const accent = getAccentTone(theme, accentColor);
@@ -163,13 +236,17 @@ export default function MediaPanel({
   const [sortKey, setSortKey] = useState<'name' | 'code' | 'date'>('name');
   const [sortAscending, setSortAscending] = useState(true);
 
-  const groups = useMemo(
-    () =>
-      galleryItems
-        .filter((item) => item.category === kind)
-        .map((item) => ({ item, media: buildSubItems(item) })),
-    [kind]
-  );
+  const generatedAssets = getAssetsByKind(kind, selectedProfileId);
+  const groups = useMemo(() => {
+    const generatedGroups = toGeneratedGroups(kind, generatedAssets);
+    if (generatedGroups.length > 0) {
+      return generatedGroups;
+    }
+
+    return galleryItems
+      .filter((item) => item.category === kind)
+      .map((item) => ({ item, media: buildSubItems(item) }));
+  }, [generatedAssets, kind]);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -571,7 +648,11 @@ function ImageTile({
       style={{ borderColor: selected ? accentColor : 'transparent' }}
     >
       <View className="flex-1 items-center justify-center">
-        <ImageIcon size={22} color={theme.textSubtle} strokeWidth={1.5} />
+        {media.uri ? (
+          <NativeImage source={{ uri: media.uri }} className="h-full w-full" resizeMode="cover" />
+        ) : (
+          <ImageIcon size={22} color={theme.textSubtle} strokeWidth={1.5} />
+        )}
       </View>
 
       <View className="absolute left-1.5 top-1.5">

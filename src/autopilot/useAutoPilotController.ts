@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { DEFAULT_AUTO_PILOT_SETTINGS } from '@/autopilot/defaults';
+import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import {
   createGoogleFlowRunnerPayload,
   startGoogleFlowRunner,
@@ -47,6 +48,7 @@ export function useAutoPilotController({
   profileLocalId: string;
   sourceProducts: AffiliateProduct[];
 }) {
+  const { addGeneratedMediaAsset } = useGeneratedMedia();
   const [settings, setSettings] = useState<AutoPilotSettings>(DEFAULT_AUTO_PILOT_SETTINGS);
   const [enabledSteps, setEnabledSteps] = useState<AutoPilotStepType[]>(['image', 'video']);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
@@ -70,6 +72,15 @@ export function useAutoPilotController({
 
   const selectedImageSettings = selectedProducts[0]?.settings.image ?? products[0]?.settings.image;
   const selectedVideoSettings = selectedProducts[0]?.settings.video ?? products[0]?.settings.video;
+  const productById = useMemo(() => {
+    const map = new Map<string, AutoPilotProduct>();
+    for (const product of products) {
+      map.set(product.id, product);
+      map.set(product.productId, product);
+      map.set(product.catalogId, product);
+    }
+    return map;
+  }, [products]);
 
   const appendLog = useCallback((level: AutoPilotLogLevel, message: string): void => {
     setRunState((current) => ({
@@ -103,6 +114,21 @@ export function useAutoPilotController({
       appendLog(level, entry.message);
 
       if (entry.event === 'asset' && entry.step) {
+        const product = entry.productId ? productById.get(entry.productId) : undefined;
+        const productId = entry.productId || product?.productId || product?.id || 'unknown';
+        void addGeneratedMediaAsset({
+          kind: entry.step === 'image' ? 'images' : 'videos',
+          runId: runState.runId || 'mobile-auto',
+          profileLocalId,
+          productId,
+          productName: entry.productName || product?.name || 'สินค้า',
+          productCode: product?.productId || productId,
+          fileUri: entry.fileUri,
+          fileName: entry.fileName,
+          mimeType: entry.mimeType,
+          sizeBytes: entry.sizeBytes,
+        });
+
         setRunState((current) => ({
           ...current,
           progress: {
@@ -126,7 +152,7 @@ export function useAutoPilotController({
     return () => {
       subscription?.remove();
     };
-  }, [appendLog]);
+  }, [addGeneratedMediaAsset, appendLog, productById, profileLocalId, runState.runId]);
 
   const updateSetting = useCallback(
     <K extends keyof AutoPilotSettings>(key: K, value: AutoPilotSettings[K]): void => {

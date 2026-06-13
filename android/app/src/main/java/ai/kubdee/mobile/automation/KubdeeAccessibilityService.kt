@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentUris
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -16,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
@@ -502,10 +504,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
       return
     }
 
-    if (downloadGoogleFlowResult(step)) {
-      emitGoogleFlowAsset(product, step)
+    val downloadedAsset = downloadGoogleFlowResult(step)
+    if (downloadedAsset != null) {
+      emitGoogleFlowAsset(product, step, downloadedAsset)
     } else {
-      logGoogleFlowStep("สร้าง${stepLabel}แล้ว แต่ยังไม่พบปุ่ม Download")
+      logGoogleFlowStep("สร้าง${stepLabel}แล้ว แต่ยังหาไฟล์ download ล่าสุดไม่ได้")
+      emitGoogleFlowAsset(product, step, null)
     }
   }
 
@@ -735,20 +739,91 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return false
   }
 
-  private fun downloadGoogleFlowResult(step: String): Boolean {
+  private fun downloadGoogleFlowResult(step: String): GoogleFlowDownloadedAsset? {
     val label = if (step == "video") "วิดีโอ" else "รูปภาพ"
+    val startedAt = System.currentTimeMillis()
     logGoogleFlowStep("กำลังดาวน์โหลด${label}จาก Google Flow")
     if (!clickByAnyText(listOf("Download", "ดาวน์โหลด", "Export", "บันทึก"), exact = false)) {
-      return false
+      return null
     }
 
-    sleepGoogleFlowStep(5000L)
+    sleepGoogleFlowStep(3000L)
     dismissGoogleFlowBlockingPopups()
     logGoogleFlowStep("ส่งดาวน์โหลด${label}ให้ browser แล้ว")
-    return true
+    return waitForLatestGoogleFlowDownload(step, startedAt)
   }
 
-  private fun emitGoogleFlowAsset(product: JSONObject, step: String) {
+  private fun waitForLatestGoogleFlowDownload(step: String, sinceMs: Long): GoogleFlowDownloadedAsset? {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < 15_000L) {
+      checkGoogleFlowStopRequested()
+      val asset = findLatestDownloadedMedia(step, sinceMs)
+      if (asset != null) {
+        return asset
+      }
+      sleepGoogleFlowStep(1000L)
+    }
+    return null
+  }
+
+  private fun findLatestDownloadedMedia(step: String, sinceMs: Long): GoogleFlowDownloadedAsset? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+      return null
+    }
+
+    val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+    val projection = arrayOf(
+      MediaStore.MediaColumns._ID,
+      MediaStore.MediaColumns.DISPLAY_NAME,
+      MediaStore.MediaColumns.MIME_TYPE,
+      MediaStore.MediaColumns.SIZE,
+      MediaStore.MediaColumns.DATE_ADDED
+    )
+    val sinceSeconds = ((sinceMs / 1000L) - 20L).coerceAtLeast(0L)
+    val mimePrefix = if (step == "video") "video/%" else "image/%"
+    val extensionLike = if (step == "video") "%.mp4" else "%.png"
+    val fallbackExtensionLike = if (step == "video") "%.webm" else "%.jpg"
+    val selection =
+      "${MediaStore.MediaColumns.DATE_ADDED} >= ? AND (" +
+        "${MediaStore.MediaColumns.MIME_TYPE} LIKE ? OR " +
+        "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR " +
+        "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?)"
+    val selectionArgs = arrayOf(
+      sinceSeconds.toString(),
+      mimePrefix,
+      extensionLike,
+      fallbackExtensionLike
+    )
+    val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+
+    return try {
+      contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+        if (!cursor.moveToFirst()) {
+          return@use null
+        }
+
+        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+        val fileName = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME))
+        val mimeType = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE))
+        val sizeBytes = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE))
+        val dateAdded = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED))
+        val uri = ContentUris.withAppendedId(collection, id).toString()
+
+        GoogleFlowDownloadedAsset(
+          uri = uri,
+          fileName = fileName,
+          mimeType = mimeType,
+          sizeBytes = sizeBytes.takeIf { it > 0 },
+          createdAt = dateAdded * 1000L
+        )
+      }
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to query downloaded Google Flow asset", error)
+      null
+    }
+  }
+
+  private fun emitGoogleFlowAsset(product: JSONObject, step: String, downloadedAsset: GoogleFlowDownloadedAsset?) {
     val label = if (step == "video") "วิดีโอ" else "รูปภาพ"
     val productId = product.optString("productId", product.optString("id", ""))
     val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
@@ -760,7 +835,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
       event = "asset",
       step = step,
       productId = productId,
-      productName = productName
+      productName = productName,
+      fileUri = downloadedAsset?.uri,
+      fileName = downloadedAsset?.fileName,
+      mimeType = downloadedAsset?.mimeType,
+      sizeBytes = downloadedAsset?.sizeBytes
     )
     showAutomationOverlay(message)
   }
@@ -1768,6 +1847,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val product: ShopeeLikedProduct,
     val tapBounds: Rect,
     val safeTop: Int
+  )
+
+  private data class GoogleFlowDownloadedAsset(
+    val uri: String,
+    val fileName: String?,
+    val mimeType: String?,
+    val sizeBytes: Long?,
+    val createdAt: Long
   )
 
   private class ShopeeAutomationStoppedException : RuntimeException("Shopee automation stopped")

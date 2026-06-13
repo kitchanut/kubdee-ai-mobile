@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Toaster } from 'sonner-native';
 
 import { AuthProvider } from './src/auth/AuthContext';
+import { GeneratedMediaProvider } from './src/autopilot/generatedMediaStore';
 import KubdeeMobileApp from './src/components/KubdeeMobileApp';
 import { LibraryProvider } from './src/library/LibraryContext';
 import AuthLoadingScreen from './src/screens/AuthLoadingScreen';
@@ -26,15 +27,17 @@ export default function App(): React.JSX.Element {
       <SafeAreaProvider>
         <AuthProvider>
           <LibraryProvider>
-            <KubdeeMobileApp />
-            <Toaster
-              theme={colorScheme === 'light' ? 'light' : 'dark'}
-              richColors
-              toastOptions={{
-                titleStyle: { fontFamily: 'NotoSansThai_500Medium' },
-                descriptionStyle: { fontFamily: 'NotoSansThai_400Regular' },
-              }}
-            />
+            <GeneratedMediaProvider>
+              <KubdeeMobileApp />
+              <Toaster
+                theme={colorScheme === 'light' ? 'light' : 'dark'}
+                richColors
+                toastOptions={{
+                  titleStyle: { fontFamily: 'NotoSansThai_500Medium' },
+                  descriptionStyle: { fontFamily: 'NotoSansThai_400Regular' },
+                }}
+              />
+            </GeneratedMediaProvider>
           </LibraryProvider>
         </AuthProvider>
       </SafeAreaProvider>

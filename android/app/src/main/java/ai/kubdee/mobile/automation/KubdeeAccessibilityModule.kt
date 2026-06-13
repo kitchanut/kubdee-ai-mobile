@@ -313,7 +313,11 @@ class KubdeeAccessibilityModule(
       event: String? = null,
       step: String? = null,
       productId: String? = null,
-      productName: String? = null
+      productName: String? = null,
+      fileUri: String? = null,
+      fileName: String? = null,
+      mimeType: String? = null,
+      sizeBytes: Long? = null
     ) {
       val context = eventContext ?: return
       val payload = Arguments.createMap().apply {
@@ -333,6 +337,18 @@ class KubdeeAccessibilityModule(
         }
         if (productName != null) {
           putString("productName", productName)
+        }
+        if (fileUri != null) {
+          putString("fileUri", fileUri)
+        }
+        if (fileName != null) {
+          putString("fileName", fileName)
+        }
+        if (mimeType != null) {
+          putString("mimeType", mimeType)
+        }
+        if (sizeBytes != null) {
+          putDouble("sizeBytes", sizeBytes.toDouble())
         }
       }
       context.runOnUiQueueThread {

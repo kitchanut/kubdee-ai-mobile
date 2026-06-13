@@ -34,6 +34,10 @@ export interface NativeGoogleFlowLog {
   step?: 'image' | 'video';
   productId?: string;
   productName?: string;
+  fileUri?: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
 }
 
 type NativeAccessibilityModule = {
@@ -232,6 +236,10 @@ export function subscribeGoogleFlowLogs(
       step: entry.step === 'image' || entry.step === 'video' ? entry.step : undefined,
       productId: typeof entry.productId === 'string' ? entry.productId : undefined,
       productName: typeof entry.productName === 'string' ? entry.productName : undefined,
+      fileUri: typeof entry.fileUri === 'string' ? entry.fileUri : undefined,
+      fileName: typeof entry.fileName === 'string' ? entry.fileName : undefined,
+      mimeType: typeof entry.mimeType === 'string' ? entry.mimeType : undefined,
+      sizeBytes: typeof entry.sizeBytes === 'number' ? entry.sizeBytes : undefined,
     });
   });
 }
