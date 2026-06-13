@@ -1,4 +1,5 @@
-import { Linking, NativeModules, Platform } from 'react-native';
+import { Linking, NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import type { EmitterSubscription } from 'react-native';
 
 export interface AccessibilityStatus {
   available: boolean;
@@ -7,6 +8,22 @@ export interface AccessibilityStatus {
   packageName: string;
   serviceComponent?: string;
   targetPackage?: string;
+}
+
+export interface NativeShopeeLikedProduct {
+  name: string;
+  price?: string | null;
+  stock?: number | null;
+  productUrl?: string | null;
+  externalProductId?: string | null;
+  imageUrl?: string | null;
+  status?: string | null;
+  scrapedAt?: number | null;
+}
+
+export interface NativeShopeeImportLog {
+  message: string;
+  ts: number;
 }
 
 type NativeAccessibilityModule = {
@@ -19,11 +36,17 @@ type NativeAccessibilityModule = {
   inputText?: (text: string) => Promise<boolean>;
   pressImeEnter?: () => Promise<boolean>;
   runShopeeSearch?: (keyword: string) => Promise<boolean>;
+  importShopeeLikedProducts?: (maxItems: number) => Promise<NativeShopeeLikedProduct[]>;
+  stopShopeeAutomation?: () => Promise<boolean>;
   performBack?: () => Promise<boolean>;
+  addListener?: (eventName: string) => void;
+  removeListeners?: (count: number) => void;
 };
 
 const moduleName = 'KubdeeAccessibility';
 const nativeModule = NativeModules[moduleName] as NativeAccessibilityModule | undefined;
+const nativeEventEmitter =
+  Platform.OS === 'android' && nativeModule ? new NativeEventEmitter(nativeModule as never) : null;
 
 export async function openAccessibilitySettings(): Promise<void> {
   if (Platform.OS === 'android' && nativeModule?.openAccessibilitySettings) {
@@ -108,6 +131,46 @@ export async function runShopeeSearch(keyword: string): Promise<boolean> {
   }
 
   return false;
+}
+
+export async function importShopeeLikedProducts(maxItems = 40): Promise<NativeShopeeLikedProduct[]> {
+  if (Platform.OS === 'android' && nativeModule?.importShopeeLikedProducts) {
+    return nativeModule.importShopeeLikedProducts(maxItems);
+  }
+
+  return [];
+}
+
+export async function stopShopeeAutomation(): Promise<boolean> {
+  if (Platform.OS === 'android' && nativeModule?.stopShopeeAutomation) {
+    return nativeModule.stopShopeeAutomation();
+  }
+
+  return false;
+}
+
+export function subscribeShopeeImportLogs(
+  listener: (entry: NativeShopeeImportLog) => void
+): EmitterSubscription | null {
+  if (!nativeEventEmitter) {
+    return null;
+  }
+
+  return nativeEventEmitter.addListener('KubdeeShopeeImportLog', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    const entry = payload as Partial<NativeShopeeImportLog>;
+    if (typeof entry.message !== 'string') {
+      return;
+    }
+
+    listener({
+      message: entry.message,
+      ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+    });
+  });
 }
 
 export async function performBack(): Promise<boolean> {

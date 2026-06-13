@@ -2,8 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 
 import { useAuth } from '@/auth/AuthContext';
-import { getStoredAuthTokens } from '@/auth/storage';
-import { deleteAffiliateProducts, fetchAffiliateProducts } from '@/library/api';
+import { getOrCreateSyncDeviceId, getStoredAuthTokens } from '@/auth/storage';
+import { deleteAffiliateProducts, fetchAffiliateProducts, syncAffiliateProducts } from '@/library/api';
+import type { SyncAffiliateProductInput } from '@/library/api';
 import type { AffiliateProduct } from '@/library/types';
 
 export interface ProductSyncResult {
@@ -20,6 +21,26 @@ export interface ProductDeleteResult {
   error: string | null;
 }
 
+export interface ShopeeImportProductInput {
+  name: string;
+  price?: string | null;
+  stock?: number | null;
+  productUrl?: string | null;
+  externalProductId?: string | null;
+  imageUrl?: string | null;
+  status?: string | null;
+  scrapedAt?: number | null;
+}
+
+export interface ProductImportResult {
+  success: boolean;
+  imported: number;
+  skippedDeleted: number;
+  skippedStale: number;
+  restoredDeleted: number;
+  error: string | null;
+}
+
 interface LibraryContextType {
   products: AffiliateProduct[];
   isSyncing: boolean;
@@ -27,11 +48,92 @@ interface LibraryContextType {
   syncError: string | null;
   /** Resolves with the sync outcome, or null when skipped (no token / already syncing). */
   syncProducts: () => Promise<ProductSyncResult | null>;
+  /** Import products scraped on-device from Shopee liked items and push them to Cloud. */
+  importShopeeProducts: (
+    profileLocalId: string,
+    products: ShopeeImportProductInput[]
+  ) => Promise<ProductImportResult | null>;
   /** Resolves with the delete outcome, or null when skipped (no token / empty / already deleting). */
   deleteProducts: (localIds: string[]) => Promise<ProductDeleteResult | null>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
+
+function cleanText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function hashString(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function normalizePrice(value: string | null | undefined): string | null {
+  const cleaned = cleanText(value)?.replace(/[^\d.]/g, '');
+  if (!cleaned) {
+    return null;
+  }
+
+  const numeric = Number(cleaned);
+  return Number.isFinite(numeric) ? String(numeric) : cleaned;
+}
+
+function toShopeeSyncProducts(
+  profileLocalId: string,
+  products: ShopeeImportProductInput[],
+  deviceId: string
+): SyncAffiliateProductInput[] {
+  const now = Date.now();
+  const seen = new Set<string>();
+  const syncProducts: SyncAffiliateProductInput[] = [];
+
+  for (const product of products) {
+    const name = cleanText(product.name);
+    if (!name) {
+      continue;
+    }
+
+    const productUrl = cleanText(product.productUrl);
+    const externalProductId = cleanText(product.externalProductId);
+    const imageUrl = cleanText(product.imageUrl);
+    const price = normalizePrice(product.price);
+    const identity = externalProductId || productUrl || `${name}\u0000${price ?? ''}`;
+    const localId = `mobile-shopee-${profileLocalId}-${hashString(identity)}`;
+
+    if (seen.has(localId)) {
+      continue;
+    }
+    seen.add(localId);
+
+    syncProducts.push({
+      localId,
+      profileLocalId,
+      name,
+      externalProductId,
+      productUrl,
+      price,
+      stock: typeof product.stock === 'number' && Number.isFinite(product.stock) ? product.stock : null,
+      imageUrl,
+      platform: 'shopee',
+      status: cleanText(product.status) || 'liked',
+      scrapedAt: typeof product.scrapedAt === 'number' ? product.scrapedAt : now,
+      localCreatedAt: now,
+      localUpdatedAt: now,
+      originApp: 'mobile',
+      originDeviceId: deviceId,
+      createdByApp: 'mobile',
+      sourceDeviceId: deviceId,
+      updatedByApp: 'mobile',
+    });
+  }
+
+  return syncProducts;
+}
 
 export function LibraryProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { token, isPlanValid, recheckPlan } = useAuth();
@@ -80,6 +182,92 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       setIsSyncing(false);
     }
   }, [recheckPlan, token]);
+
+  const importShopeeProducts = useCallback(
+    async (
+      profileLocalId: string,
+      importedProducts: ShopeeImportProductInput[]
+    ): Promise<ProductImportResult | null> => {
+      const cleanProfileLocalId = profileLocalId.trim();
+      if (!token || !cleanProfileLocalId || importedProducts.length === 0 || isSyncingRef.current) {
+        return null;
+      }
+
+      isSyncingRef.current = true;
+      setIsSyncing(true);
+
+      try {
+        const deviceId = await getOrCreateSyncDeviceId();
+        const syncPayloadProducts = toShopeeSyncProducts(cleanProfileLocalId, importedProducts, deviceId);
+
+        if (syncPayloadProducts.length === 0) {
+          return {
+            error: 'ไม่พบข้อมูลสินค้าที่นำเข้าได้',
+            imported: 0,
+            restoredDeleted: 0,
+            skippedDeleted: 0,
+            skippedStale: 0,
+            success: false,
+          };
+        }
+
+        let activeToken = token;
+        let result = await syncAffiliateProducts(activeToken, {
+          deviceId,
+          products: syncPayloadProducts,
+          restoreDeleted: true,
+        });
+
+        if (!result.ok && result.status === 401) {
+          await recheckPlan();
+          const refreshedTokens = await getStoredAuthTokens();
+          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+            activeToken = refreshedTokens.accessToken;
+            result = await syncAffiliateProducts(activeToken, {
+              deviceId,
+              products: syncPayloadProducts,
+              restoreDeleted: true,
+            });
+          }
+        }
+
+        if (result.ok && result.data) {
+          const pullResult = await fetchAffiliateProducts(activeToken);
+          if (pullResult.ok && pullResult.data) {
+            setProducts(pullResult.data);
+            setSyncError(null);
+            setLastSyncedAt(Date.now());
+          } else {
+            setSyncError(pullResult.error || 'นำเข้าสำเร็จ แต่โหลดคลังล่าสุดไม่สำเร็จ');
+          }
+
+          return {
+            error: null,
+            imported: result.data.products,
+            restoredDeleted: result.data.restoredDeleted,
+            skippedDeleted: result.data.skippedDeleted,
+            skippedStale: result.data.skippedStale,
+            success: true,
+          };
+        }
+
+        const message = result.error || 'นำเข้าสินค้า Shopee ไม่สำเร็จ';
+        setSyncError(message);
+        return {
+          error: message,
+          imported: 0,
+          restoredDeleted: 0,
+          skippedDeleted: 0,
+          skippedStale: 0,
+          success: false,
+        };
+      } finally {
+        isSyncingRef.current = false;
+        setIsSyncing(false);
+      }
+    },
+    [recheckPlan, token]
+  );
 
   const deleteProducts = useCallback(
     async (localIds: string[]): Promise<ProductDeleteResult | null> => {
@@ -160,13 +348,14 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
   const value = useMemo(
     () => ({
       deleteProducts,
+      importShopeeProducts,
       products,
       isSyncing,
       lastSyncedAt,
       syncError,
       syncProducts,
     }),
-    [deleteProducts, isSyncing, lastSyncedAt, products, syncError, syncProducts]
+    [deleteProducts, importShopeeProducts, isSyncing, lastSyncedAt, products, syncError, syncProducts]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;

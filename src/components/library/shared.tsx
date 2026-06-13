@@ -164,6 +164,7 @@ export function DarkActionButton({
   iconOnly = false,
   onPress,
   color,
+  disabled = false,
 }: {
   theme: KubdeeTheme;
   label: string;
@@ -174,18 +175,20 @@ export function DarkActionButton({
   onPress?: () => void;
   /** Fixed background (both modes) for brand buttons, e.g. Shopee orange */
   color?: string;
+  disabled?: boolean;
 }): React.JSX.Element {
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="button"
+      disabled={disabled}
       onPress={onPress}
       style={color ? { backgroundColor: color } : undefined}
       className={`flex-row items-center justify-center bg-[#1f2937] dark:bg-white ${
         small
           ? `h-[26px] rounded-kd-md ${iconOnly ? 'w-[26px]' : 'gap-1 px-2'}`
           : `h-[30px] rounded-kd-lg ${iconOnly ? 'w-[30px]' : 'gap-1.5 px-3'}`
-      }`}
+      } disabled:opacity-60`}
     >
       {leading}
       {iconOnly ? null : (

@@ -5,6 +5,7 @@ import {
   Image as ImageIcon,
   Pencil,
   ShoppingBag,
+  Square,
   Trash2,
   Upload,
 } from 'lucide-react-native';
@@ -16,6 +17,14 @@ import Text from '@/components/ui/KubdeeText';
 import { useLibrary } from '@/library/LibraryContext';
 import type { ProductDeleteResult, ProductSyncResult } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
+import {
+  getAccessibilityStatus,
+  importShopeeLikedProducts as runNativeShopeeLikedImport,
+  openAccessibilitySettings,
+  stopShopeeAutomation,
+  subscribeShopeeImportLogs,
+} from '@/native/AccessibilityBridge';
+import type { NativeShopeeImportLog } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import {
@@ -166,6 +175,7 @@ export default function ProductPanel({
     lastSyncedAt,
     syncError,
     syncProducts,
+    importShopeeProducts,
     deleteProducts,
   } = useLibrary();
 
@@ -184,6 +194,23 @@ export default function ProductPanel({
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortAscending, setSortAscending] = useState(true);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const [isShopeeImporting, setIsShopeeImporting] = useState(false);
+  const [isStoppingShopee, setIsStoppingShopee] = useState(false);
+  const [shopeeLogs, setShopeeLogs] = useState<NativeShopeeImportLog[]>([]);
+
+  const appendShopeeLog = useCallback((message: string, ts = Date.now()): void => {
+    setShopeeLogs((current) => [...current, { message, ts }].slice(-80));
+  }, []);
+
+  useEffect(() => {
+    const subscription = subscribeShopeeImportLogs((entry) => {
+      setShopeeLogs((current) => [...current, entry].slice(-80));
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
 
   const showSyncResult = useCallback((result: ProductSyncResult | null): void => {
     if (!result) {
@@ -309,6 +336,82 @@ export default function ProductPanel({
     void syncProducts().then(showSyncResult);
   };
 
+  const handleShopeeImport = useCallback(async (): Promise<void> => {
+    if (!selectedProfileId) {
+      toast.error('เลือกโปรไฟล์ก่อนนำเข้า Shopee');
+      return;
+    }
+
+    if (isShopeeImporting || isSyncing) {
+      return;
+    }
+
+    setIsShopeeImporting(true);
+    setIsStoppingShopee(false);
+    setShopeeLogs([]);
+    appendShopeeLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
+
+    try {
+      const status = await getAccessibilityStatus();
+      if (!status.running) {
+        Alert.alert(
+          'เปิด Accessibility ก่อน',
+          'Kubdee AI ต้องใช้ Accessibility เพื่อเข้า Shopee และอ่านรายการสินค้าถูกใจบนเครื่องนี้',
+          [
+            { text: 'ยกเลิก', style: 'cancel' },
+            {
+              text: 'เปิดตั้งค่า',
+              onPress: () => {
+                void openAccessibilitySettings();
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      const scrapedProducts = await runNativeShopeeLikedImport(50);
+      if (scrapedProducts.length === 0) {
+        toast.warning('ไม่พบสินค้าใน Shopee ถูกใจ');
+        return;
+      }
+
+      const result = await importShopeeProducts(selectedProfileId, scrapedProducts);
+      if (!result) {
+        toast.warning('คลังสินค้ากำลังซิงก์อยู่ ลองใหม่อีกครั้ง');
+        return;
+      }
+
+      if (result.success) {
+        toast.success(`นำเข้า Shopee ${result.imported} รายการ`);
+        return;
+      }
+
+      toast.error(result.error || 'นำเข้าสินค้า Shopee ไม่สำเร็จ');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsShopeeImporting(false);
+      setIsStoppingShopee(false);
+    }
+  }, [appendShopeeLog, importShopeeProducts, isShopeeImporting, isSyncing, selectedProfileId]);
+
+  const handleStopShopeeImport = useCallback(async (): Promise<void> => {
+    if (!isShopeeImporting || isStoppingShopee) {
+      return;
+    }
+
+    setIsStoppingShopee(true);
+    appendShopeeLog('กำลังส่งคำสั่งหยุด Shopee import...');
+    const stopped = await stopShopeeAutomation();
+    if (!stopped) {
+      toast.warning('ยังหยุดไม่ได้ เพราะไม่พบ Accessibility Service ที่กำลังทำงาน');
+      setIsStoppingShopee(false);
+      return;
+    }
+    toast.success('ส่งคำสั่งหยุด Shopee import แล้ว');
+  }, [appendShopeeLog, isShopeeImporting, isStoppingShopee]);
+
   const handlePullRefresh = (): void => {
     if (isSyncing) {
       return;
@@ -375,7 +478,15 @@ export default function ProductPanel({
                 iconOnly
                 label="Shopee"
                 color={SHOPEE_ORANGE}
-                leading={<ShopeeLogo size={12} color={theme.white} cutoutColor={SHOPEE_ORANGE} />}
+                disabled={isShopeeImporting || isSyncing}
+                leading={
+                  isShopeeImporting ? (
+                    <ActivityIndicator color={theme.white} size="small" />
+                  ) : (
+                    <ShopeeLogo size={12} color={theme.white} cutoutColor={SHOPEE_ORANGE} />
+                  )
+                }
+                onPress={handleShopeeImport}
               />
             </>
           }
@@ -385,6 +496,19 @@ export default function ProductPanel({
           <View className="rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
             <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{syncError}</Text>
           </View>
+        ) : null}
+
+        {isShopeeImporting || shopeeLogs.length > 0 ? (
+          <ShopeeImportLogPanel
+            theme={theme}
+            logs={shopeeLogs}
+            isRunning={isShopeeImporting}
+            isStopping={isStoppingShopee}
+            onStop={() => {
+              void handleStopShopeeImport();
+            }}
+            onClear={() => setShopeeLogs([])}
+          />
         ) : null}
 
         {products.length > 0 ? (
@@ -510,6 +634,84 @@ export default function ProductPanel({
           onDelete={handleDeleteSelected}
         />
       ) : null}
+    </View>
+  );
+}
+
+function ShopeeImportLogPanel({
+  theme,
+  logs,
+  isRunning,
+  isStopping,
+  onStop,
+  onClear,
+}: {
+  theme: KubdeeTheme;
+  logs: NativeShopeeImportLog[];
+  isRunning: boolean;
+  isStopping: boolean;
+  onStop: () => void;
+  onClear: () => void;
+}): React.JSX.Element {
+  const visibleLogs = logs.slice(-9);
+
+  return (
+    <View className="gap-2 rounded-[14px] border border-kd-emerald/25 bg-kd-panel px-3 py-2.5 dark:border-kd-emerald/20 dark:bg-kd-card">
+      <View className="flex-row items-center justify-between gap-2">
+        <View className="min-w-0 flex-1">
+          <Text className="text-[12px] font-semibold text-kd-text">Activity Log</Text>
+          <Text className="mt-0.5 text-kd-caption text-kd-text-subtle">
+            {isRunning ? 'กำลังดึงสินค้า Shopee' : `ล่าสุด ${logs.length} รายการ`}
+          </Text>
+        </View>
+
+        <View className="flex-row items-center gap-1.5">
+          {!isRunning && logs.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClear}
+              className="h-8 justify-center rounded-full border border-gray-200 px-3 dark:border-kd-border"
+            >
+              <Text className="text-kd-caption font-semibold text-kd-text-subtle">ล้าง</Text>
+            </Pressable>
+          ) : null}
+
+          {isRunning ? (
+            <DarkActionButton
+              theme={theme}
+              small
+              label={isStopping ? 'กำลังหยุด' : 'Stop'}
+              color={theme.red}
+              disabled={isStopping}
+              leading={
+                isStopping ? (
+                  <ActivityIndicator color={theme.white} size="small" />
+                ) : (
+                  <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
+                )
+              }
+              onPress={onStop}
+            />
+          ) : null}
+        </View>
+      </View>
+
+      <View className="gap-1.5 rounded-[10px] bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
+        {visibleLogs.length > 0 ? (
+          visibleLogs.map((entry, index) => (
+            <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
+              <Text className="w-[48px] shrink-0 text-[10px] text-kd-text-muted">
+                {formatSyncTime(entry.ts)}
+              </Text>
+              <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
+                {entry.message}
+              </Text>
+            </View>
+          ))
+        ) : (
+          <Text className="text-kd-caption text-kd-text-subtle">รอข้อความจาก Shopee import...</Text>
+        )}
+      </View>
     </View>
   );
 }

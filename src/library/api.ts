@@ -15,9 +15,57 @@ interface DeleteAffiliateProductsResponse {
   error?: string;
 }
 
+export interface SyncAffiliateProductInput {
+  localId: string;
+  profileLocalId: string;
+  name: string;
+  externalProductId?: string | null;
+  productUrl?: string | null;
+  price?: string | null;
+  stock?: number | null;
+  caption?: string | null;
+  hashtags?: string | null;
+  cta?: string | null;
+  imagePath?: string | null;
+  imageR2Key?: string | null;
+  imageUrl?: string | null;
+  imageHash?: string | null;
+  imageMimeType?: string | null;
+  imageSize?: number | null;
+  imageUploadedAt?: number | null;
+  platform?: string | null;
+  status?: string | null;
+  scrapedAt?: number | null;
+  localCreatedAt?: number | null;
+  originApp?: string | null;
+  originDeviceId?: string | null;
+  createdByApp?: string | null;
+  sourceDeviceId?: string | null;
+  updatedByApp?: string | null;
+  localUpdatedAt?: number | null;
+}
+
+interface SyncAffiliateProductsResponse {
+  success?: boolean;
+  synced?: {
+    products?: number;
+  };
+  skippedDeleted?: number;
+  skippedStale?: number;
+  restoredDeleted?: number;
+  error?: string;
+}
+
 export interface DeleteAffiliateProductsResult {
   deleted: number;
   requested: number;
+}
+
+export interface SyncAffiliateProductsResult {
+  products: number;
+  skippedDeleted: number;
+  skippedStale: number;
+  restoredDeleted: number;
 }
 
 /** Server caps DELETE at 500 localIds per request. */
@@ -115,6 +163,65 @@ export async function deleteAffiliateProducts(
       ok: true,
       status,
       data: { deleted, requested },
+      error: null,
+    };
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: 'Online verification required. Please check your internet connection.',
+    };
+  }
+}
+
+export async function syncAffiliateProducts(
+  token: string,
+  payload: {
+    deviceId: string;
+    products: SyncAffiliateProductInput[];
+    restoreDeleted?: boolean;
+  }
+): Promise<AuthApiResult<SyncAffiliateProductsResult>> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/user/affiliate-products/sync`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Client-App': CLIENT_APP,
+        'X-App-Type': APP_TYPE,
+      },
+      body: JSON.stringify({
+        app: CLIENT_APP,
+        appType: APP_TYPE,
+        deviceId: payload.deviceId,
+        mode: 'upsert',
+        restoreDeleted: payload.restoreDeleted === true,
+        products: payload.products,
+      }),
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        error: await readError(response),
+      };
+    }
+
+    const data = (await response.json()) as SyncAffiliateProductsResponse;
+
+    return {
+      ok: true,
+      status: response.status,
+      data: {
+        products: data.synced?.products ?? payload.products.length,
+        skippedDeleted: data.skippedDeleted ?? 0,
+        skippedStale: data.skippedStale ?? 0,
+        restoredDeleted: data.restoredDeleted ?? 0,
+      },
       error: null,
     };
   } catch {

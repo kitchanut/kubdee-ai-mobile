@@ -137,6 +137,14 @@ function writeFileIfChanged(filePath, contents) {
   fs.writeFileSync(filePath, contents);
 }
 
+function renderTemplate(templateName, values) {
+  let source = fs.readFileSync(path.join(__dirname, 'templates', templateName), 'utf8');
+  for (const [key, value] of Object.entries(values)) {
+    source = source.split(`__${key}__`).join(value);
+  }
+  return source;
+}
+
 function patchMainApplication(filePath, packageName) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`MainApplication.kt not found at ${filePath}`);
@@ -182,6 +190,8 @@ function accessibilityServiceXml(targetPackage) {
 }
 
 function accessibilityServiceKt(packageName) {
+  return renderTemplate('KubdeeAccessibilityService.kt', { PACKAGE_NAME: packageName });
+
   return `package ${packageName}.automation
 
 import android.accessibilityservice.AccessibilityService
@@ -447,6 +457,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
 }
 
 function accessibilityModuleKt(packageName, targetPackage) {
+  return renderTemplate('KubdeeAccessibilityModule.kt', {
+    PACKAGE_NAME: packageName,
+    TARGET_PACKAGE: targetPackage,
+  });
+
   return `package ${packageName}.automation
 
 import android.content.ComponentName
