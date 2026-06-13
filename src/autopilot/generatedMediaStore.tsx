@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -43,6 +44,7 @@ interface GeneratedMediaContextType {
 }
 
 const GENERATED_MEDIA_STORE_KEY = 'kubdee_ai_mobile_generated_media_v1';
+const LEGACY_GENERATED_MEDIA_STORE_KEY = GENERATED_MEDIA_STORE_KEY;
 const MAX_GENERATED_MEDIA_ASSETS = 300;
 
 const GeneratedMediaContext = createContext<GeneratedMediaContextType | undefined>(undefined);
@@ -121,10 +123,25 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
 }
 
 async function persistAssets(assets: GeneratedMediaAsset[]): Promise<void> {
-  await SecureStore.setItemAsync(
+  await AsyncStorage.setItem(
     GENERATED_MEDIA_STORE_KEY,
     JSON.stringify(assets.slice(0, MAX_GENERATED_MEDIA_ASSETS))
   );
+}
+
+async function loadStoredAssets(): Promise<GeneratedMediaAsset[]> {
+  const stored = await AsyncStorage.getItem(GENERATED_MEDIA_STORE_KEY);
+  const assets = parseStoredAssets(stored);
+  if (assets.length > 0 || stored !== null) {
+    return assets;
+  }
+
+  const legacyStored = await SecureStore.getItemAsync(LEGACY_GENERATED_MEDIA_STORE_KEY);
+  const legacyAssets = parseStoredAssets(legacyStored);
+  if (legacyAssets.length > 0) {
+    await persistAssets(legacyAssets);
+  }
+  return legacyAssets;
 }
 
 export function GeneratedMediaProvider({ children }: { children: ReactNode }): React.JSX.Element {
@@ -132,9 +149,9 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
 
   useEffect(() => {
     let cancelled = false;
-    void SecureStore.getItemAsync(GENERATED_MEDIA_STORE_KEY).then((raw) => {
+    void loadStoredAssets().then((storedAssets) => {
       if (!cancelled) {
-        setAssets(parseStoredAssets(raw));
+        setAssets(storedAssets);
       }
     });
 
