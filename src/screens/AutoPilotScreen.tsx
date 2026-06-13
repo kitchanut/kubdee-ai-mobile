@@ -2,17 +2,21 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
 import {
   Bot,
+  ChevronRight,
   Check,
   Clock3,
   Image as ImageIcon,
   MonitorPlay,
+  Package,
   Play,
+  RefreshCw,
   Search,
   Settings2,
-  SlidersHorizontal,
+  Sparkles,
   Square,
+  Tag,
+  Trash2,
   Video,
-  Wifi,
   X,
 } from 'lucide-react-native';
 
@@ -25,12 +29,16 @@ import {
   FLOW_IMAGE_MODELS,
   FLOW_VIDEO_MODELS,
   IMAGE_ASPECT_RATIO_OPTIONS,
+  IMAGE_CHARACTER_MODE_OPTIONS,
   IMAGE_DETAIL_OPTIONS,
   IMAGE_FRAME_OPTIONS,
+  IMAGE_PRODUCT_DISPLAY_OPTIONS,
+  IMAGE_SCENE_MODE_OPTIONS,
   IMAGE_STYLE_OPTIONS,
   IMAGE_TEXT_OVERLAY_OPTIONS,
   OUTPUT_COUNT_OPTIONS,
   VIDEO_ASPECT_RATIO_OPTIONS,
+  VIDEO_CHARACTER_MODE_OPTIONS,
   VIDEO_DURATION_OPTIONS,
   VIDEO_SCENE_OPTIONS,
 } from '@/autopilot/defaults';
@@ -42,7 +50,7 @@ import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import { useLibrary } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
-import type { AutoPilotBrowserMode, AutoPilotRunState } from '@/autopilot/types';
+import type { AutoPilotBrowserMode, AutoPilotRunState, AutoPilotStepType } from '@/autopilot/types';
 
 interface AutoPilotScreenProps {
   selectedProfileId: string;
@@ -133,19 +141,34 @@ export default function AutoPilotScreen({
 
   return (
     <View className="flex-1 bg-kd-panel">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-28 pt-3">
-        <HeaderBlock theme={theme} selectedCount={controller.selectedProducts.length} totalCount={profileProducts.length} />
-
-        <RunnerBlock
-          browserMode={controller.settings.browserMode}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-32 pt-3">
+        <HeaderBlock
+          enabledStepCount={controller.enabledSteps.length}
+          runState={controller.runState}
+          selectedCount={controller.selectedProducts.length}
           theme={theme}
-          onBrowserModeChange={(value) => controller.updateSetting('browserMode', value)}
+          totalCount={profileProducts.length}
         />
 
         <ProgressBlock runState={controller.runState} theme={theme} />
 
+        <ActivityLogBlock
+          runState={controller.runState}
+          theme={theme}
+          onClear={controller.clearLogs}
+          onStop={() => {
+            void controller.stopRun();
+          }}
+        />
+
         <SectionCard theme={theme} icon={Settings2} title="ตั้งค่าพื้นฐาน">
           <View className="gap-2">
+            <RunnerBlock
+              browserMode={controller.settings.browserMode}
+              theme={theme}
+              onBrowserModeChange={(value) => controller.updateSetting('browserMode', value)}
+            />
+
             <View className="flex-row gap-2">
               <OptionGroup
                 columns={5}
@@ -164,14 +187,6 @@ export default function AutoPilotScreen({
                 onChange={(value) => controller.updateSetting('delayPreset', value as typeof controller.settings.delayPreset)}
               />
             </View>
-
-            <OptionGroup
-              label="ขั้นตอน"
-              options={AUTO_PILOT_STEPS.map((step) => ({ label: step.label, value: step.id }))}
-              theme={theme}
-              value={controller.enabledSteps}
-              onToggle={(value) => controller.toggleStep(value as typeof controller.enabledSteps[number])}
-            />
 
             <OptionGroup
               label="Model รูป"
@@ -240,6 +255,29 @@ export default function AutoPilotScreen({
           </View>
         </SectionCard>
 
+        <PipelineStepsBlock
+          enabledSteps={controller.enabledSteps}
+          theme={theme}
+          onToggle={(value) => controller.toggleStep(value)}
+        />
+
+        <ProductCatalogBlock
+          allVisibleSelected={allVisibleSelected}
+          isSyncing={isSyncing}
+          profileProducts={profileProducts}
+          searchQuery={searchQuery}
+          selectedProductIds={controller.selectedProductIds}
+          selectedProductsCount={controller.selectedProducts.length}
+          theme={theme}
+          visibleProducts={visibleProducts}
+          onSearchQueryChange={setSearchQuery}
+          onSyncProducts={() => {
+            void syncProducts();
+          }}
+          onToggleAllVisible={toggleAllVisible}
+          onToggleProduct={(productId) => controller.toggleProduct(productId)}
+        />
+
         <SectionCard theme={theme} icon={ImageIcon} title="ตั้งค่ารูปภาพ">
           <View className="gap-2">
             <OptionGroup
@@ -280,6 +318,42 @@ export default function AutoPilotScreen({
                 onChange={(value) => controller.updateSelectedImageSetting('outputCount', String(value))}
               />
             </View>
+            <View className="flex-row gap-2">
+              <OptionGroup
+                columns={3}
+                label="ตัวละคร"
+                options={IMAGE_CHARACTER_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+                theme={theme}
+                value={imageSettings.characterMode}
+                onChange={(value) => controller.updateSelectedImageSetting('characterMode', String(value))}
+              />
+              <OptionGroup
+                columns={3}
+                label="ฉากหลัก"
+                options={IMAGE_SCENE_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+                theme={theme}
+                value={imageSettings.sceneMode}
+                onChange={(value) => controller.updateSelectedImageSetting('sceneMode', String(value))}
+              />
+            </View>
+            {imageSettings.characterMode === 'description' ? (
+              <SettingInput
+                label="อธิบายตัวละคร"
+                placeholder="เช่น นางแบบวัยทำงานถือสินค้า"
+                theme={theme}
+                value={imageSettings.characterDescription}
+                onChangeText={(value) => controller.updateSelectedImageSetting('characterDescription', value)}
+              />
+            ) : null}
+            {imageSettings.sceneMode === 'description' ? (
+              <SettingInput
+                label="อธิบายฉาก"
+                placeholder="เช่น ห้องนั่งเล่นสว่าง โต๊ะไม้ โทนอบอุ่น"
+                theme={theme}
+                value={imageSettings.sceneDescription}
+                onChangeText={(value) => controller.updateSelectedImageSetting('sceneDescription', value)}
+              />
+            ) : null}
             <OptionGroup
               label="สไตล์"
               options={IMAGE_STYLE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
@@ -370,6 +444,13 @@ export default function AutoPilotScreen({
                 onChangeText={(value) => controller.updateSelectedImageSetting('textOverlayCustom', value)}
               />
             ) : null}
+            <OptionGroup
+              label="การโชว์สินค้า"
+              options={IMAGE_PRODUCT_DISPLAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={imageSettings.productDisplayMode}
+              onChange={(value) => controller.updateSelectedImageSetting('productDisplayMode', String(value))}
+            />
             <SettingInput
               label="คำสั่งรูปเพิ่มเติม"
               placeholder="เช่น ห้ามมีข้อความบนภาพ"
@@ -428,6 +509,13 @@ export default function AutoPilotScreen({
                 onChange={(value) => controller.updateSelectedVideoSetting('sceneCount', String(value))}
               />
             </View>
+            <OptionGroup
+              label="ตัวละครวิดีโอ"
+              options={VIDEO_CHARACTER_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={videoSettings.characterMode}
+              onChange={(value) => controller.updateSelectedVideoSetting('characterMode', String(value))}
+            />
             <SettingInput
               label="สไตล์วิดีโอ"
               placeholder="เช่น creator review, premium product demo"
@@ -499,6 +587,13 @@ export default function AutoPilotScreen({
               />
             ) : null}
             <SettingInput
+              label="คำต้องห้าม"
+              placeholder="เช่น ห้ามพูดชื่อแบรนด์คู่แข่ง หรือคำเคลมเกินจริง"
+              theme={theme}
+              value={videoSettings.forbiddenWords}
+              onChangeText={(value) => controller.updateSelectedVideoSetting('forbiddenWords', value)}
+            />
+            <SettingInput
               label="คำสั่งวิดีโอเพิ่มเติม"
               placeholder="เช่น ห้าม subtitle, เต็มจอ"
               theme={theme}
@@ -508,92 +603,17 @@ export default function AutoPilotScreen({
           </View>
         </SectionCard>
 
-        <SectionCard theme={theme} icon={SlidersHorizontal} title="สินค้าในคลัง">
-          <View className="gap-2">
-            <View className="flex-row items-center gap-2">
-              <View className="h-8 flex-1 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2">
-                <Search size={12} color={theme.textSubtle} strokeWidth={2} />
-                <TextInput
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder="ค้นหาสินค้า..."
-                  placeholderTextColor={theme.textSubtle}
-                  className="h-8 flex-1 p-0 text-kd-caption text-kd-text"
-                  style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
-                />
-                {searchQuery.length > 0 ? (
-                  <Pressable accessibilityLabel="ล้างคำค้นหา" accessibilityRole="button" onPress={() => setSearchQuery('')}>
-                    <X size={12} color={theme.textSubtle} strokeWidth={2.5} />
-                  </Pressable>
-                ) : null}
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  void syncProducts();
-                }}
-                className="h-8 w-8 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
-              >
-                {isSyncing ? (
-                  <ActivityIndicator color={theme.textSubtle} size="small" />
-                ) : (
-                  <Wifi size={14} color={theme.textSubtle} strokeWidth={2} />
-                )}
-              </Pressable>
-            </View>
-
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: allVisibleSelected }}
-              onPress={toggleAllVisible}
-              className="min-h-7 flex-row items-center justify-between rounded-kd-md bg-kd-panel-muted px-2 dark:bg-kd-card-muted"
-            >
-              <Text className="text-kd-caption font-semibold text-kd-text">
-                เลือกสินค้าที่เห็น
-              </Text>
-              <Text className="text-kd-caption text-kd-text-subtle">
-                {controller.selectedProducts.length} / {visibleProducts.length}
-              </Text>
-            </Pressable>
-
-            <View className="gap-2">
-              {visibleProducts.map((product) => (
-                <ProductRow
-                  key={getAutoPilotProductId(product)}
-                  product={product}
-                  selected={controller.selectedProductIds.has(getAutoPilotProductId(product))}
-                  theme={theme}
-                  onPress={() => controller.toggleProduct(getAutoPilotProductId(product))}
-                />
-              ))}
-            </View>
-
-            {profileProducts.length === 0 ? (
-              <View className="items-center gap-2 py-8">
-                <Bot size={26} color={theme.textSubtle} strokeWidth={1.8} />
-                <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มีสินค้าในโปรไฟล์นี้</Text>
-              </View>
-            ) : null}
-          </View>
-        </SectionCard>
-
-        {controller.runState.logs.length > 0 ? (
-          <SectionCard theme={theme} icon={Clock3} title="Activity Log">
-            <View className="gap-1">
-              {controller.runState.logs.slice(-16).map((log) => (
-                <View key={log.id} className="flex-row gap-2 rounded-kd-md bg-kd-panel-muted px-2 py-1.5 dark:bg-kd-card-muted">
-                  <Text className="w-[56px] text-kd-micro text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
-                  <Text className={`flex-1 text-kd-caption leading-4 ${log.level === 'error' ? 'text-kd-red' : log.level === 'success' ? 'text-kd-emerald' : 'text-kd-text-muted'}`}>
-                    {log.message}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </SectionCard>
-        ) : null}
       </ScrollView>
 
       <View className="absolute bottom-0 left-0 right-0 border-t border-kd-border bg-kd-panel px-3 pb-3 pt-2">
+        <View className="mb-2 flex-row items-center justify-between">
+          <Text className="text-kd-micro font-semibold text-kd-text-subtle">
+            {controller.selectedProducts.length} สินค้า · {controller.enabledSteps.length} ขั้นตอน · {controller.settings.browserMode === 'chrome' ? 'Chrome' : 'Browser ปริยาย'}
+          </Text>
+          <Text className="text-kd-micro font-semibold text-kd-text-subtle">
+            {controller.runState.status === 'running' ? 'กำลังทำงาน' : canStart ? 'พร้อมเริ่ม' : 'เลือกสินค้า/ขั้นตอนก่อน'}
+          </Text>
+        </View>
         <Pressable
           accessibilityRole="button"
           disabled={!canStart && controller.runState.status !== 'running'}
@@ -627,24 +647,66 @@ export default function AutoPilotScreen({
 }
 
 function HeaderBlock({
+  enabledStepCount,
+  runState,
   theme,
   selectedCount,
   totalCount,
 }: {
+  enabledStepCount: number;
+  runState: AutoPilotRunState;
   theme: KubdeeTheme;
   selectedCount: number;
   totalCount: number;
 }): React.JSX.Element {
+  const isRunning = runState.status === 'running';
+  const statusColor =
+    runState.status === 'error'
+      ? theme.red
+      : runState.status === 'completed'
+        ? theme.emerald
+        : isRunning
+          ? theme.amber
+          : theme.textSubtle;
+
   return (
-    <View className="flex-row items-center gap-3 rounded-[14px] border border-kd-border bg-kd-card px-3 py-3">
-      <View className="h-10 w-10 items-center justify-center rounded-kd-lg" style={{ backgroundColor: alpha(theme.blue, theme.isDark ? 0.18 : 0.1) }}>
-        <Bot size={20} color={theme.blue} strokeWidth={2.2} />
+    <View className="gap-3 rounded-[14px] border border-kd-border bg-kd-card px-3 py-3">
+      <View className="flex-row items-center gap-3">
+        <View className="h-10 w-10 items-center justify-center rounded-kd-lg" style={{ backgroundColor: alpha(theme.amber, theme.isDark ? 0.18 : 0.12) }}>
+          <Bot size={20} color={theme.amber} strokeWidth={2.2} />
+        </View>
+        <View className="min-w-0 flex-1">
+          <Text className="text-[15px] font-black text-kd-text">Auto Pipeline</Text>
+          <Text className="text-kd-caption text-kd-text-subtle">Google Flow standalone บนมือถือ</Text>
+        </View>
+        <View className="flex-row items-center gap-1 rounded-full border border-kd-border bg-kd-input px-2 py-1">
+          <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
+          <Text className="text-kd-micro font-black text-kd-text-muted">{getRunStatusLabel(runState.status)}</Text>
+        </View>
       </View>
-      <View className="min-w-0 flex-1">
-        <Text className="text-[15px] font-black text-kd-text">Auto Pilot</Text>
-        <Text className="text-kd-caption text-kd-text-subtle">Google Flow บนมือถือ · {selectedCount}/{totalCount} สินค้า</Text>
+
+      <View className="flex-row gap-2">
+        <HeaderMetric label="สินค้า" value={`${selectedCount}/${totalCount}`} theme={theme} />
+        <HeaderMetric label="ขั้นตอน" value={String(enabledStepCount)} theme={theme} />
+        <HeaderMetric label="Flow" value={runState.progress.currentStep === 'video' ? 'Video' : runState.progress.currentStep === 'image' ? 'Image' : 'Ready'} theme={theme} />
       </View>
-      <MonitorPlay size={18} color={theme.textSubtle} strokeWidth={2} />
+    </View>
+  );
+}
+
+function HeaderMetric({
+  label,
+  theme,
+  value,
+}: {
+  label: string;
+  theme: KubdeeTheme;
+  value: string;
+}): React.JSX.Element {
+  return (
+    <View className="min-h-10 flex-1 justify-center rounded-kd-md border border-kd-border bg-kd-input px-2">
+      <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
+      <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">{value}</Text>
     </View>
   );
 }
@@ -659,23 +721,264 @@ function RunnerBlock({
   onBrowserModeChange: (value: AutoPilotBrowserMode) => void;
 }): React.JSX.Element {
   return (
-    <SectionCard theme={theme} icon={MonitorPlay} title="Google Flow บนมือถือ">
-      <View className="gap-2">
-        <View className="rounded-kd-lg bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
-          <Text className="text-kd-caption font-semibold leading-4 text-kd-text-muted">
-            Standalone · ใช้ browser และ Accessibility บนเครื่องมือถือ
-          </Text>
+    <View className="gap-2 rounded-kd-lg bg-kd-panel-muted p-2 dark:bg-kd-card-muted">
+      <View className="flex-row items-center gap-2">
+        <MonitorPlay size={14} color={theme.textMuted} strokeWidth={2} />
+        <Text className="flex-1 text-kd-caption font-semibold text-kd-text-muted">
+          Standalone · ใช้ browser และ Accessibility บนเครื่องมือถือ
+        </Text>
+      </View>
+      <OptionGroup
+        label="Browser"
+        options={[
+          { label: 'Chrome', value: 'chrome' },
+          { label: 'Browser ปริยาย', value: 'default' },
+        ]}
+        theme={theme}
+        value={browserMode}
+        onChange={(value) => onBrowserModeChange(value as AutoPilotBrowserMode)}
+      />
+    </View>
+  );
+}
+
+function ActivityLogBlock({
+  runState,
+  theme,
+  onClear,
+  onStop,
+}: {
+  runState: AutoPilotRunState;
+  theme: KubdeeTheme;
+  onClear: () => void;
+  onStop: () => void;
+}): React.JSX.Element {
+  const isRunning = runState.status === 'running';
+  const logs = runState.logs.slice(-18);
+
+  return (
+    <View className="overflow-hidden rounded-[14px] border border-kd-border bg-kd-card">
+      <View className="flex-row items-center justify-between border-b border-kd-border px-3 py-2.5">
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <View className="h-2 w-2 rounded-full" style={{ backgroundColor: isRunning ? theme.emerald : theme.amber }} />
+          <Text className="text-[13px] font-black text-kd-text">Activity Log</Text>
         </View>
-        <OptionGroup
-          label="Browser"
-          options={[
-            { label: 'Chrome', value: 'chrome' },
-            { label: 'Browser ปริยาย', value: 'default' },
-          ]}
-          theme={theme}
-          value={browserMode}
-          onChange={(value) => onBrowserModeChange(value as AutoPilotBrowserMode)}
-        />
+        <View className="flex-row items-center gap-1">
+          {isRunning ? (
+            <Pressable
+              accessibilityLabel="หยุด Auto Pilot"
+              accessibilityRole="button"
+              onPress={onStop}
+              className="h-8 w-8 items-center justify-center rounded-kd-md"
+              style={{ backgroundColor: alpha(theme.red, theme.isDark ? 0.18 : 0.1) }}
+            >
+              <Square size={13} color={theme.red} fill={theme.red} strokeWidth={2} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            accessibilityLabel="ล้าง Activity Log"
+            accessibilityRole="button"
+            disabled={logs.length === 0}
+            onPress={onClear}
+            className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+            style={{ opacity: logs.length === 0 ? 0.45 : 1 }}
+          >
+            <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={{ maxHeight: 210 }}>
+        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 px-3 py-2.5">
+          {logs.length === 0 ? (
+            <View className="min-h-[86px] items-center justify-center gap-1.5">
+              <Clock3 size={22} color={theme.textSubtle} strokeWidth={1.8} />
+              <Text className="text-kd-caption font-semibold text-kd-text-subtle">Ready to start...</Text>
+            </View>
+          ) : (
+            logs.map((log) => (
+              <View key={log.id} className="flex-row gap-2">
+                <Text className="w-[58px] text-kd-micro text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
+                <Text className="flex-1 text-kd-caption leading-4" style={{ color: getLogTextColor(log.level, theme) }}>
+                  {log.message}
+                </Text>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+function PipelineStepsBlock({
+  enabledSteps,
+  theme,
+  onToggle,
+}: {
+  enabledSteps: AutoPilotStepType[];
+  theme: KubdeeTheme;
+  onToggle: (value: AutoPilotStepType) => void;
+}): React.JSX.Element {
+  return (
+    <SectionCard theme={theme} icon={Sparkles} title="ขั้นตอนการทำงาน">
+      <View className="flex-row items-center">
+        {AUTO_PILOT_STEPS.map((step, index) => (
+          <View key={step.id} className="flex-1 flex-row items-center">
+            <PipelineStepButton
+              active={enabledSteps.includes(step.id)}
+              label={step.id === 'image' ? 'รูปภาพ' : 'วิดีโอ'}
+              step={step.id}
+              theme={theme}
+              onPress={() => onToggle(step.id)}
+            />
+            {index < AUTO_PILOT_STEPS.length - 1 ? (
+              <View className="w-8 items-center">
+                <ChevronRight size={16} color={theme.textSubtle} strokeWidth={2.2} />
+              </View>
+            ) : null}
+          </View>
+        ))}
+      </View>
+    </SectionCard>
+  );
+}
+
+function PipelineStepButton({
+  active,
+  label,
+  step,
+  theme,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  step: AutoPilotStepType;
+  theme: KubdeeTheme;
+  onPress: () => void;
+}): React.JSX.Element {
+  const color = step === 'image' ? theme.amber : theme.red;
+  const Icon = step === 'image' ? ImageIcon : Video;
+
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: active }}
+      onPress={onPress}
+      className="min-h-[64px] flex-1 items-center justify-center gap-1.5 rounded-kd-lg border px-2"
+      style={{
+        backgroundColor: active ? alpha(color, theme.isDark ? 0.18 : 0.1) : theme.input,
+        borderColor: active ? alpha(color, 0.55) : theme.border,
+      }}
+    >
+      <View className="relative h-8 w-8 items-center justify-center rounded-kd-md" style={{ backgroundColor: active ? alpha(color, 0.16) : theme.panelMuted }}>
+        <Icon size={17} color={active ? color : theme.textSubtle} strokeWidth={2.2} />
+        {active ? (
+          <View className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full bg-kd-emerald">
+            <Check size={10} color={theme.white} strokeWidth={3} />
+          </View>
+        ) : null}
+      </View>
+      <Text className="text-kd-caption font-black" style={{ color: active ? color : theme.textMuted }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function ProductCatalogBlock({
+  allVisibleSelected,
+  isSyncing,
+  profileProducts,
+  searchQuery,
+  selectedProductIds,
+  selectedProductsCount,
+  theme,
+  visibleProducts,
+  onSearchQueryChange,
+  onSyncProducts,
+  onToggleAllVisible,
+  onToggleProduct,
+}: {
+  allVisibleSelected: boolean;
+  isSyncing: boolean;
+  profileProducts: AffiliateProduct[];
+  searchQuery: string;
+  selectedProductIds: Set<string>;
+  selectedProductsCount: number;
+  theme: KubdeeTheme;
+  visibleProducts: AffiliateProduct[];
+  onSearchQueryChange: (value: string) => void;
+  onSyncProducts: () => void;
+  onToggleAllVisible: () => void;
+  onToggleProduct: (productId: string) => void;
+}): React.JSX.Element {
+  return (
+    <SectionCard theme={theme} icon={Package} title={`ข้อมูลสินค้า (${profileProducts.length})`}>
+      <View className="gap-2">
+        <View className="flex-row items-center gap-2">
+          <View className="h-9 flex-1 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2">
+            <Search size={13} color={theme.textSubtle} strokeWidth={2} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={onSearchQueryChange}
+              placeholder="ค้นหาสินค้า..."
+              placeholderTextColor={theme.textSubtle}
+              className="h-9 flex-1 p-0 text-kd-caption text-kd-text"
+              style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable accessibilityLabel="ล้างคำค้นหา" accessibilityRole="button" onPress={() => onSearchQueryChange('')}>
+                <X size={13} color={theme.textSubtle} strokeWidth={2.5} />
+              </Pressable>
+            ) : null}
+          </View>
+          <Pressable
+            accessibilityLabel="ซิงก์สินค้า"
+            accessibilityRole="button"
+            onPress={onSyncProducts}
+            className="h-9 w-9 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
+          >
+            {isSyncing ? (
+              <ActivityIndicator color={theme.textSubtle} size="small" />
+            ) : (
+              <RefreshCw size={14} color={theme.textSubtle} strokeWidth={2} />
+            )}
+          </Pressable>
+        </View>
+
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: allVisibleSelected }}
+          onPress={onToggleAllVisible}
+          className="min-h-8 flex-row items-center justify-between rounded-kd-md bg-kd-panel-muted px-2.5 dark:bg-kd-card-muted"
+        >
+          <View className="flex-row items-center gap-2">
+            <Tag size={13} color={theme.textMuted} strokeWidth={2} />
+            <Text className="text-kd-caption font-semibold text-kd-text">เลือกสินค้าที่เห็น</Text>
+          </View>
+          <Text className="text-kd-caption font-black text-kd-text-muted">
+            {selectedProductsCount} / {visibleProducts.length}
+          </Text>
+        </Pressable>
+
+        <View className="gap-2">
+          {visibleProducts.map((product, index) => (
+            <ProductRow
+              index={index}
+              key={getAutoPilotProductId(product)}
+              product={product}
+              selected={selectedProductIds.has(getAutoPilotProductId(product))}
+              theme={theme}
+              onPress={() => onToggleProduct(getAutoPilotProductId(product))}
+            />
+          ))}
+        </View>
+
+        {profileProducts.length === 0 ? (
+          <View className="items-center gap-2 py-8">
+            <Bot size={26} color={theme.textSubtle} strokeWidth={1.8} />
+            <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มีสินค้าในโปรไฟล์นี้</Text>
+          </View>
+        ) : null}
       </View>
     </SectionCard>
   );
@@ -720,6 +1023,21 @@ function getRunStageLabel(stage: string | null): string {
       return 'ผิดพลาด';
     default:
       return 'รอเริ่มงาน';
+  }
+}
+
+function getLogTextColor(level: AutoPilotRunState['logs'][number]['level'], theme: KubdeeTheme): string {
+  switch (level) {
+    case 'error':
+      return theme.red;
+    case 'success':
+      return theme.emerald;
+    case 'warning':
+      return theme.amber;
+    case 'action':
+      return theme.blue;
+    default:
+      return theme.textMuted;
   }
 }
 
@@ -769,10 +1087,10 @@ function ProgressBlock({
         </View>
 
         <View className="flex-row gap-2">
-          <ProgressMetric label="รอบ" value={`${progress.currentRound}/${progress.totalRounds}`} />
-          <ProgressMetric label="สินค้า" value={`${progress.currentProduct}/${progress.totalProducts}`} />
-          <ProgressMetric label="รูป" value={`${progress.generatedImages}/${progress.failedImages}`} />
-          <ProgressMetric label="วิดีโอ" value={`${progress.generatedVideos}/${progress.failedVideos}`} />
+          <ProgressMetric color={theme.blue} icon={RefreshCw} label="รอบ" theme={theme} value={`${progress.currentRound}/${progress.totalRounds}`} />
+          <ProgressMetric color={theme.emerald} icon={Package} label="สินค้า" theme={theme} value={`${progress.currentProduct}/${progress.totalProducts}`} />
+          <ProgressMetric color={theme.amber} icon={ImageIcon} label="รูป" theme={theme} value={`${progress.generatedImages}/${progress.failedImages}`} />
+          <ProgressMetric color={theme.red} icon={Video} label="วิดีโอ" theme={theme} value={`${progress.generatedVideos}/${progress.failedVideos}`} />
         </View>
       </View>
     </SectionCard>
@@ -780,16 +1098,27 @@ function ProgressBlock({
 }
 
 function ProgressMetric({
+  color,
+  icon: Icon,
   label,
+  theme,
   value,
 }: {
+  color: string;
+  icon: typeof Bot;
   label: string;
+  theme: KubdeeTheme;
   value: string;
 }): React.JSX.Element {
   return (
-    <View className="min-h-12 flex-1 justify-center rounded-kd-md bg-kd-panel-muted px-2 dark:bg-kd-card-muted">
-      <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
-      <Text className="text-kd-caption font-black text-kd-text">{value}</Text>
+    <View className="min-h-[74px] flex-1 items-center justify-center gap-1 rounded-kd-md bg-kd-panel-muted px-1.5 dark:bg-kd-card-muted">
+      <View className="h-10 w-10 items-center justify-center rounded-full border px-0.5" style={{ borderColor: alpha(color, 0.55), backgroundColor: alpha(color, theme.isDark ? 0.14 : 0.08) }}>
+        <Text adjustsFontSizeToFit minimumFontScale={0.72} numberOfLines={1} className="text-kd-caption font-black" style={{ color }}>{value}</Text>
+      </View>
+      <View className="flex-row items-center gap-1">
+        <Icon size={10} color={theme.textSubtle} strokeWidth={2} />
+        <Text numberOfLines={1} className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
+      </View>
     </View>
   );
 }
@@ -897,8 +1226,8 @@ function ToggleRow({
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: theme.borderStrong, true: alpha(theme.emerald, 0.45) }}
-        thumbColor={value ? theme.emerald : theme.textSubtle}
+        trackColor={{ false: theme.borderStrong, true: alpha(theme.amber, 0.5) }}
+        thumbColor={value ? theme.amber : theme.textSubtle}
       />
     </View>
   );
@@ -937,40 +1266,60 @@ function SettingInput({
 }
 
 function ProductRow({
+  index,
   product,
   selected,
   theme,
   onPress,
 }: {
+  index: number;
   product: AffiliateProduct;
   selected: boolean;
   theme: KubdeeTheme;
   onPress: () => void;
 }): React.JSX.Element {
+  const productCode = (product.externalProductId || product.localId).slice(0, 26);
+
   return (
     <Pressable
       accessibilityRole="checkbox"
       accessibilityState={{ checked: selected }}
       onPress={onPress}
-      className={`flex-row items-center gap-2 rounded-[12px] border p-2 ${
-        selected ? 'border-kd-emerald/50 bg-kd-emerald/5 dark:bg-kd-emerald/10' : 'border-kd-border bg-kd-panel'
-      }`}
+      className="flex-row items-stretch gap-2 rounded-[12px] border p-1.5"
+      style={{
+        backgroundColor: selected ? alpha(theme.emerald, theme.isDark ? 0.12 : 0.06) : theme.panel,
+        borderColor: selected ? alpha(theme.emerald, 0.55) : theme.border,
+      }}
     >
-      <View className="h-5 w-5 items-center justify-center rounded-full border border-kd-border-strong bg-kd-input">
-        {selected ? <Check size={12} color={theme.emerald} strokeWidth={3} /> : null}
-      </View>
-      <View className="h-12 w-12 overflow-hidden rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
+      <View className="relative h-[76px] w-[76px] overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
+        <View className="absolute left-1 top-1 z-10 h-5 min-w-5 items-center justify-center rounded-full border border-kd-border bg-kd-card px-1">
+          <Text className="text-kd-micro font-black text-kd-text">{index + 1}</Text>
+        </View>
         {product.imageUrl ? (
           <Image source={{ uri: product.imageUrl }} className="h-full w-full" resizeMode="cover" />
-        ) : null}
+        ) : (
+          <View className="h-full w-full items-center justify-center">
+            <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.8} />
+          </View>
+        )}
       </View>
-      <View className="min-w-0 flex-1">
-        <Text numberOfLines={2} className="text-kd-caption font-bold leading-4 text-kd-text">
-          {product.name}
-        </Text>
-        <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
-          {(product.externalProductId || product.localId).slice(0, 24)} · {formatPrice(product.price)}
-        </Text>
+      <View className="min-w-0 flex-1 justify-between rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5">
+        <View className="min-w-0">
+          <Text numberOfLines={2} className="text-kd-caption font-bold leading-4 text-kd-text">
+            {product.name}
+          </Text>
+          <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
+            {productCode}
+          </Text>
+        </View>
+        <View className="mt-1 flex-row items-center justify-between gap-2">
+          <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">
+            {formatPrice(product.price)}
+          </Text>
+          <View className="h-5 w-5 items-center justify-center rounded-full border border-kd-border-strong bg-kd-panel">
+            {selected ? <Check size={12} color={theme.emerald} strokeWidth={3} /> : null}
+          </View>
+        </View>
       </View>
     </Pressable>
   );

@@ -15,6 +15,10 @@ export type AutoPilotLogLevel = 'info' | 'success' | 'warning' | 'error' | 'acti
 export interface AutoPilotImageSettings {
   aspectRatio: string;
   outputCount: string;
+  characterMode: string;
+  characterDescription: string;
+  sceneMode: string;
+  sceneDescription: string;
   promptMode: 'auto' | 'custom';
   customPrompt: string;
   styleMode: 'preset' | 'custom';
@@ -28,15 +32,18 @@ export interface AutoPilotImageSettings {
   frameCustom: string;
   textOverlay: string;
   textOverlayCustom: string;
+  productDisplayMode: string;
   systemPrompt: string;
 }
 
 export interface AutoPilotVideoSettings {
   aspectRatio: string;
   outputCount: string;
+  characterMode: string;
   promptMode: 'auto' | 'custom';
   customPrompt: string;
   presetStyle: string;
+  presetStyleCustom: string;
   sceneCount: string;
   cameraMotion: string;
   cameraMotionCustom: string;
@@ -48,6 +55,7 @@ export interface AutoPilotVideoSettings {
   dialogue: string;
   musicSfxMode: 'auto' | 'none' | 'custom';
   musicSfxCustom: string;
+  forbiddenWords: string;
   systemPrompt: string;
 }
 

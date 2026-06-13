@@ -22,6 +22,10 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
 export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
   aspectRatio: '9:16',
   outputCount: '1',
+  characterMode: 'auto',
+  characterDescription: '',
+  sceneMode: 'auto',
+  sceneDescription: '',
   promptMode: 'auto',
   customPrompt: '',
   styleMode: 'preset',
@@ -35,15 +39,18 @@ export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
   frameCustom: '',
   textOverlay: 'auto',
   textOverlayCustom: '',
+  productDisplayMode: 'auto',
   systemPrompt: '',
 };
 
 export const DEFAULT_AUTO_PILOT_VIDEO_SETTINGS: AutoPilotVideoSettings = {
   aspectRatio: '9:16',
   outputCount: '1',
+  characterMode: 'fromImage',
   promptMode: 'auto',
   customPrompt: '',
   presetStyle: '',
+  presetStyleCustom: '',
   sceneCount: '1',
   cameraMotion: '',
   cameraMotionCustom: '',
@@ -55,6 +62,7 @@ export const DEFAULT_AUTO_PILOT_VIDEO_SETTINGS: AutoPilotVideoSettings = {
   dialogue: '',
   musicSfxMode: 'auto',
   musicSfxCustom: '',
+  forbiddenWords: '',
   systemPrompt: '',
 };
 
@@ -91,6 +99,18 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = ['9:16', '16:9', '1:1', '3:4', '4:3'] 
 export const VIDEO_ASPECT_RATIO_OPTIONS = ['9:16', '16:9'] as const;
 export const OUTPUT_COUNT_OPTIONS = ['1', '2', '3', '4'] as const;
 
+export const IMAGE_CHARACTER_MODE_OPTIONS = [
+  { value: 'auto', label: 'ออโต้' },
+  { value: 'description', label: 'อธิบาย' },
+  { value: 'none', label: 'ไม่มี' },
+] as const;
+
+export const IMAGE_SCENE_MODE_OPTIONS = [
+  { value: 'auto', label: 'ออโต้' },
+  { value: 'description', label: 'อธิบาย' },
+  { value: 'none', label: 'ไม่มี' },
+] as const;
+
 export const IMAGE_STYLE_OPTIONS = [
   { value: 'auto', label: 'ออโต้' },
   { value: 'ถือสินค้ารีวิว', label: 'ถือสินค้า' },
@@ -126,6 +146,19 @@ export const IMAGE_TEXT_OVERLAY_OPTIONS = [
   { value: 'price', label: 'ราคา' },
   { value: 'promo', label: 'โปรโมชัน' },
   { value: 'custom', label: 'กำหนดเอง' },
+] as const;
+
+export const IMAGE_PRODUCT_DISPLAY_OPTIONS = [
+  { value: 'auto', label: 'ออโต้' },
+  { value: 'wear', label: 'สวม/ใช้' },
+  { value: 'hold', label: 'ถือสินค้า' },
+  { value: 'use', label: 'ใช้งาน' },
+  { value: 'display', label: 'วางโชว์' },
+] as const;
+
+export const VIDEO_CHARACTER_MODE_OPTIONS = [
+  { value: 'fromImage', label: 'ตามรูป' },
+  { value: 'none', label: 'ไม่มี' },
 ] as const;
 
 export const VIDEO_SCENE_OPTIONS = ['1', '2', '3'] as const;

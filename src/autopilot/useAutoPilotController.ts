@@ -233,6 +233,13 @@ export function useAutoPilotController({
     setSelectedProductIds(new Set());
   }, []);
 
+  const clearLogs = useCallback((): void => {
+    setRunState((current) => ({
+      ...current,
+      logs: [],
+    }));
+  }, []);
+
   const updateSelectedImageSetting = useCallback(
     <K extends keyof AutoPilotImageSettings>(key: K, value: AutoPilotImageSettings[K]): void => {
       const targets = selectedProducts.length > 0 ? selectedProducts : products;
@@ -341,6 +348,7 @@ export function useAutoPilotController({
 
   return {
     appendLog,
+    clearLogs,
     clearProducts,
     enabledSteps,
     products,

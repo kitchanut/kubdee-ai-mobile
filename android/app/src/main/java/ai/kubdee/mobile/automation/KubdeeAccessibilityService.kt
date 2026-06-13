@@ -130,7 +130,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val root = rootInActiveWindow ?: return false
     val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
     val target = when {
-      focused?.isEditable == true -> focused
+      focused?.isEditable == true && !isBlockedEditableNode(focused) -> focused
       else -> findEditableNode(root)
     } ?: return false
 
@@ -480,8 +480,23 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val start = System.currentTimeMillis()
     while (System.currentTimeMillis() - start < timeoutMs) {
       checkGoogleFlowStopRequested()
+      if (handleChromeFirstRunIfNeeded()) {
+        sleepGoogleFlowStep(1200)
+      }
+      dismissGoogleFlowBlockingPopups()
       if (
-        containsAnyText(listOf("Flow", "New project", "โปรเจ็กต์ใหม่", "Create", "Generate"), contains = true) ||
+        containsAnyText(
+          listOf(
+            "New project",
+            "โปรเจ็กต์ใหม่",
+            "Create with Google Flow",
+            "Create with Flow",
+            "Prompt",
+            "Describe",
+            "Generate"
+          ),
+          contains = true
+        ) ||
         findEditableNode(rootInActiveWindow) != null
       ) {
         return true
@@ -540,10 +555,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     val prompt = buildGoogleFlowProductPrompt(product, payload, step, referenceAsset)
     logGoogleFlowStep("เตรียม prompt: ${productName.take(34)}")
-    if (!focusGoogleFlowPromptEditor()) {
-      throw IllegalStateException("ไม่พบช่อง prompt ของ Google Flow")
-    }
-    if (!inputText(prompt)) {
+    if (!inputGoogleFlowPrompt(prompt)) {
       throw IllegalStateException("กรอก prompt ใน Google Flow ไม่สำเร็จ")
     }
     logGoogleFlowStep("กรอก prompt สำหรับ${stepLabel}แล้ว")
@@ -615,7 +627,65 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     val screen = screenBounds(root)
-    return tapBlocking(screen.centerX().toFloat(), (screen.bottom - screen.height() * 0.18f).toFloat())
+    val tapped = tapBlocking(screen.centerX().toFloat(), (screen.bottom - screen.height() * 0.18f).toFloat())
+    if (tapped) {
+      sleepGoogleFlowStep(500)
+    }
+    return tapped
+  }
+
+  private fun inputGoogleFlowPrompt(prompt: String): Boolean {
+    if (!focusGoogleFlowPromptEditor()) {
+      logGoogleFlowStep("ไม่พบช่อง prompt ของ Google Flow")
+      return false
+    }
+
+    if (inputText(prompt)) {
+      logGoogleFlowStep("ป้อน prompt ผ่าน accessibility text สำเร็จ")
+      return true
+    }
+
+    logGoogleFlowStep("accessibility text ใช้ไม่ได้ จะลองวาง prompt ผ่าน clipboard")
+    return pasteTextIntoFocusedField(prompt)
+  }
+
+  private fun pasteTextIntoFocusedField(text: String): Boolean {
+    return try {
+      val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+      clipboard.setPrimaryClip(ClipData.newPlainText("kubdee-google-flow-prompt", text))
+      sleepGoogleFlowStep(250)
+
+      val root = rootInActiveWindow ?: return false
+      val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+      val target = when {
+        focused?.isEditable == true && !isBlockedEditableNode(focused) -> focused
+        else -> findEditableNode(root)
+      }
+
+      if (target == null) {
+        return pasteTextByContextMenu()
+      }
+
+      target.performAction(AccessibilityNodeInfo.ACTION_PASTE) || inputText(text) || pasteTextByContextMenu()
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to paste Google Flow prompt", error)
+      false
+    }
+  }
+
+  private fun pasteTextByContextMenu(): Boolean {
+    val screen = screenBounds(rootInActiveWindow)
+    val x = screen.centerX().toFloat()
+    val y = (screen.bottom - screen.height() * 0.18f).toFloat()
+    if (!longPressBlocking(x, y)) {
+      return false
+    }
+    sleepGoogleFlowStep(550)
+    val clickedPaste = clickByAnyText(listOf("Paste", "วาง"), exact = false)
+    if (clickedPaste) {
+      sleepGoogleFlowStep(400)
+    }
+    return clickedPaste
   }
 
   private fun buildGoogleFlowProductPrompt(
@@ -646,6 +716,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     } else {
       promptSettingValue(videoSettings, "outputCount", "1")
     }
+    val imageCharacterInstruction = imageCharacterInstruction(imageSettings)
+    val imageSceneInstruction = imageSceneInstruction(imageSettings)
+    val productDisplayInstruction = productDisplayInstruction(imageSettings)
+    val videoCharacterInstruction = videoCharacterInstruction(videoSettings)
+    val videoForbiddenWords = videoSettings?.optString("forbiddenWords", "").orEmpty().trim()
 
     if (step == "image" && imagePromptMode == "custom") {
       val customPrompt = imageSettings?.optString("customPrompt", "").orEmpty().trim()
@@ -657,6 +732,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
           if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
           "สัดส่วนภาพ: $imageAspectRatio",
           "จำนวนรูปที่ต้องการ: $imageOutputCount",
+          imageCharacterInstruction,
+          imageSceneInstruction,
+          productDisplayInstruction,
           imageSettings?.optString("systemPrompt", "").orEmpty(),
           hashtags
         ).filter { it.isNotBlank() }.joinToString("; ")
@@ -679,6 +757,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
           "ความยาวประมาณ ${duration} วินาที",
           "จำนวนวิดีโอที่ต้องการ: $videoOutputCount",
           "จำนวนฉาก: $videoSceneCount",
+          videoCharacterInstruction,
+          if (videoForbiddenWords.isNotBlank()) "คำต้องห้าม: $videoForbiddenWords" else "",
           videoSettings?.optString("systemPrompt", "").orEmpty(),
           hashtags
         ).filter { it.isNotBlank() }.joinToString("; ")
@@ -732,12 +812,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
         "สไตล์: $videoStyle",
         "จำนวนวิดีโอที่ต้องการ: $videoOutputCount",
         "จำนวนฉาก: $videoSceneCount",
+        videoCharacterInstruction,
         "กล้อง: $cameraMotion",
         if (voiceCharacter.isNotBlank()) "เสียงตัวละคร: $voiceCharacter" else "",
         if (scriptStyle.isNotBlank()) "สไตล์สคริปต์: $scriptStyle" else "",
         if (musicSfx.isNotBlank()) "เพลง/SFX: $musicSfx" else "",
         "บทพูด/ข้อความประกอบ: $dialogue",
         if (cta.isNotBlank()) "CTA: $cta" else "",
+        if (videoForbiddenWords.isNotBlank()) "คำต้องห้าม: $videoForbiddenWords" else "",
         videoSettings?.optString("systemPrompt", "").orEmpty(),
         "ข้อห้าม: ห้ามมี subtitle ห้ามมีข้อความมั่ว ห้ามมีขอบดำ วิดีโอต้องเต็มจอ",
         hashtags
@@ -779,6 +861,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
         "ให้สินค้าชัดเจนเหมือนภาพอ้างอิง ใช้แสงสวย โทนขายของออนไลน์",
         "สไตล์: $imageStyle",
         "จำนวนรูปที่ต้องการ: $imageOutputCount",
+        imageCharacterInstruction,
+        imageSceneInstruction,
+        productDisplayInstruction,
         "ฉาก: $background",
         "แสง: $lighting",
         if (frame.isNotBlank()) "เฟรมภาพ: $frame" else "",
@@ -809,6 +894,43 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun promptSettingValue(settings: JSONObject?, key: String, fallback: String): String =
     settings?.optString(key, fallback).orEmpty().trim().ifBlank { fallback }
+
+  private fun imageCharacterInstruction(settings: JSONObject?): String {
+    val mode = promptSettingValue(settings, "characterMode", "auto")
+    val description = settings?.optString("characterDescription", "").orEmpty().trim()
+    return when {
+      mode == "none" -> "ตัวละคร: ไม่มีคนในภาพ ให้โฟกัสสินค้าเท่านั้น"
+      mode == "description" && description.isNotBlank() -> "ตัวละคร: $description"
+      mode == "description" -> "ตัวละคร: มีคนรีวิวสินค้าแบบธรรมชาติ"
+      else -> "ตัวละคร: ออโต้ เลือกคน/มือ/องค์ประกอบให้เหมาะกับสินค้า"
+    }
+  }
+
+  private fun imageSceneInstruction(settings: JSONObject?): String {
+    val mode = promptSettingValue(settings, "sceneMode", "auto")
+    val description = settings?.optString("sceneDescription", "").orEmpty().trim()
+    return when {
+      mode == "none" -> "ฉากหลัก: ไม่มีฉากซับซ้อน ใช้พื้นหลังสะอาด"
+      mode == "description" && description.isNotBlank() -> "ฉากหลัก: $description"
+      mode == "description" -> "ฉากหลัก: ฉากใช้งานจริงที่เหมาะกับสินค้า"
+      else -> "ฉากหลัก: ออโต้ เลือกฉากที่ช่วยขายสินค้า"
+    }
+  }
+
+  private fun productDisplayInstruction(settings: JSONObject?): String =
+    when (promptSettingValue(settings, "productDisplayMode", "auto")) {
+      "wear" -> "การโชว์สินค้า: ให้ตัวละครสวม ใส่ หรือใช้สินค้าตามประเภทรายการ"
+      "hold" -> "การโชว์สินค้า: ให้ถือสินค้าเด่นชัดในมือ"
+      "use" -> "การโชว์สินค้า: แสดงการใช้งานจริงของสินค้า"
+      "display" -> "การโชว์สินค้า: วางสินค้าเด่นบนฉากแบบ product display"
+      else -> "การโชว์สินค้า: ออโต้ เลือกวิธีนำเสนอที่ขายดีที่สุด"
+    }
+
+  private fun videoCharacterInstruction(settings: JSONObject?): String =
+    when (promptSettingValue(settings, "characterMode", "fromImage")) {
+      "none" -> "ตัวละครวิดีโอ: ไม่มีคนในวิดีโอ โฟกัสสินค้าและ movement"
+      else -> "ตัวละครวิดีโอ: ใช้ตัวละคร/มือ/สินค้าให้ต่อเนื่องจากรูปอ้างอิง"
+    }
 
   private fun googleFlowProductKey(product: JSONObject): String =
     product.optString("productId").ifBlank {
@@ -899,15 +1021,65 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun ensureGoogleFlowWorkspaceReady() {
-    dismissGoogleFlowBlockingPopups()
-    if (containsAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), contains = true)) {
-      clickByAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), exact = false)
-      sleepGoogleFlowStep(1800)
+    repeat(4) {
+      var advanced = false
+      if (handleChromeFirstRunIfNeeded()) {
+        advanced = true
+        sleepGoogleFlowStep(1400)
+      }
+      dismissGoogleFlowBlockingPopups()
+      if (clickGoogleFlowLandingCtaIfNeeded()) {
+        logGoogleFlowStep("กดเข้า Google Flow studio จากหน้า landing")
+        advanced = true
+        sleepGoogleFlowStep(2500)
+      }
+      if (containsAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), contains = true)) {
+        clickByAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), exact = false)
+        advanced = true
+        sleepGoogleFlowStep(1800)
+      }
+      if (containsAnyText(listOf("Try Flow", "Start", "เริ่ม"), contains = true)) {
+        clickByAnyText(listOf("Try Flow", "Start", "เริ่ม"), exact = false)
+        advanced = true
+        sleepGoogleFlowStep(1800)
+      }
+      if (!advanced) {
+        return
+      }
     }
-    if (containsAnyText(listOf("Try Flow", "Start", "เริ่ม"), contains = true)) {
-      clickByAnyText(listOf("Try Flow", "Start", "เริ่ม"), exact = false)
-      sleepGoogleFlowStep(1800)
+  }
+
+  private fun handleChromeFirstRunIfNeeded(): Boolean {
+    if (!containsAnyText(listOf("Chrome ในแบบของคุณ", "ปรับเปลี่ยน Chrome", "Make Chrome yours"), contains = true)) {
+      return false
     }
+    return clickByAnyText(
+      listOf(
+        "ดำเนินการต่อในชื่อ",
+        "Continue as",
+        "อยู่ในโหมดออกจากระบบ",
+        "Use without an account",
+        "Accept",
+        "ยอมรับ"
+      ),
+      exact = false
+    )
+  }
+
+  private fun clickGoogleFlowLandingCtaIfNeeded(): Boolean {
+    if (!containsAnyText(listOf("Your AI creative studio", "Create with Google Flow", "Google Flow"), contains = true)) {
+      return false
+    }
+    return clickByAnyText(
+      listOf(
+        "Create with Google Flow",
+        "Create with Flow",
+        "Start creating",
+        "Try Flow",
+        "เริ่มสร้างด้วย Google Flow"
+      ),
+      exact = false
+    )
   }
 
   private fun selectGoogleFlowStepMode(step: String): Boolean {
@@ -951,12 +1123,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun submitGoogleFlowGenerate(): Boolean {
     dismissGoogleFlowBlockingPopups()
+    dismissSoftKeyboardIfOpen()
+    dismissGoogleFlowBlockingPopups()
     if (clickByAnyText(listOf("Generate", "สร้าง", "Create", "Submit"), exact = false)) {
       return true
     }
 
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
+    val keyboardVisible = containsAnyText(listOf("Switch IME", "Clear Text"), contains = true)
     val actionNodes = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
     collectClickableNodes(root, actionNodes)
     val candidate = actionNodes
@@ -967,10 +1142,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
           bounds.width() in 32..(screen.width() * 0.72f).toInt() &&
           bounds.height() in 32..180 &&
           (
-            text.contains("Generate", ignoreCase = true) ||
+              text.contains("Generate", ignoreCase = true) ||
               text.contains("Create", ignoreCase = true) ||
               text.contains("สร้าง", ignoreCase = true) ||
-              text.isBlank()
+              (!keyboardVisible && text.isBlank())
           )
       }
       .sortedWith(compareByDescending<Pair<Rect, AccessibilityNodeInfo>> { it.first.bottom }.thenByDescending { it.first.right })
@@ -982,6 +1157,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     return false
+  }
+
+  private fun dismissSoftKeyboardIfOpen(): Boolean {
+    if (!containsAnyText(listOf("Switch IME", "Clear Text"), contains = true)) {
+      return false
+    }
+    val dismissed = performBack()
+    if (dismissed) {
+      sleepGoogleFlowStep(850)
+    }
+    return dismissed
   }
 
   private fun waitForGoogleFlowGeneration(step: String, timeoutMs: Long): Boolean {
@@ -1126,6 +1312,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
     var completed = false
     val latch = CountDownLatch(1)
     tap(x, y) { success ->
+      completed = success
+      latch.countDown()
+    }
+
+    return latch.await(timeoutMs, TimeUnit.MILLISECONDS) && completed
+  }
+
+  private fun longPressBlocking(x: Float, y: Float, timeoutMs: Long = 3200): Boolean {
+    var completed = false
+    val latch = CountDownLatch(1)
+    dispatchLineGesture(x, y, x, y, 700L) { success ->
       completed = success
       latch.countDown()
     }
@@ -1283,7 +1480,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun findEditableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
     if (node == null) return null
-    if (node.isEditable) return node
+    if (node.isEditable && !isBlockedEditableNode(node)) return node
 
     for (index in 0 until node.childCount) {
       val found = findEditableNode(node.getChild(index))
@@ -1291,6 +1488,29 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     return null
+  }
+
+  private fun isBlockedEditableNode(node: AccessibilityNodeInfo): Boolean {
+    val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
+    if (
+      resourceId.contains("com.android.chrome:id/url_bar") ||
+      resourceId.contains("com.android.chrome:id/search_box_text") ||
+      resourceId.contains("omnibox")
+    ) {
+      return true
+    }
+
+    val text = cleanNodeText(readNodeText(node))
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val screen = screenBounds(rootInActiveWindow)
+    return node.packageName?.toString() == TARGET_PACKAGE_CHROME &&
+      bounds.top <= screen.top + (screen.height() * 0.24f).toInt() &&
+      (
+        text.startsWith("http://", ignoreCase = true) ||
+          text.startsWith("https://", ignoreCase = true) ||
+          resourceId.contains("location")
+      )
   }
 
   private fun goToShopeeMeTab(): Boolean {
@@ -2072,6 +2292,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
         "Got it",
         "Accept",
         "ยอมรับ",
+        "While using the app",
+        "ขณะใช้แอป",
+        "Only this time",
+        "เฉพาะครั้งนี้",
         "ข้าม",
         "Skip",
         "Not now",
