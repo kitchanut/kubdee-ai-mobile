@@ -38,6 +38,7 @@ export interface NativeGoogleFlowLog {
   fileName?: string;
   mimeType?: string;
   sizeBytes?: number;
+  createdAt?: number;
 }
 
 type NativeAccessibilityModule = {
@@ -240,6 +241,7 @@ export function subscribeGoogleFlowLogs(
       fileName: typeof entry.fileName === 'string' ? entry.fileName : undefined,
       mimeType: typeof entry.mimeType === 'string' ? entry.mimeType : undefined,
       sizeBytes: typeof entry.sizeBytes === 'number' ? entry.sizeBytes : undefined,
+      createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : undefined,
     });
   });
 }

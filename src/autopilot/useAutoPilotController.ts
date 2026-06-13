@@ -127,6 +127,7 @@ export function useAutoPilotController({
           fileName: entry.fileName,
           mimeType: entry.mimeType,
           sizeBytes: entry.sizeBytes,
+          createdAt: entry.createdAt,
         });
 
         setRunState((current) => ({

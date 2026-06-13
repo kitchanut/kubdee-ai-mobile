@@ -317,7 +317,8 @@ class KubdeeAccessibilityModule(
       fileUri: String? = null,
       fileName: String? = null,
       mimeType: String? = null,
-      sizeBytes: Long? = null
+      sizeBytes: Long? = null,
+      createdAt: Long? = null
     ) {
       val context = eventContext ?: return
       val payload = Arguments.createMap().apply {
@@ -349,6 +350,9 @@ class KubdeeAccessibilityModule(
         }
         if (sizeBytes != null) {
           putDouble("sizeBytes", sizeBytes.toDouble())
+        }
+        if (createdAt != null) {
+          putDouble("createdAt", createdAt.toDouble())
         }
       }
       context.runOnUiQueueThread {

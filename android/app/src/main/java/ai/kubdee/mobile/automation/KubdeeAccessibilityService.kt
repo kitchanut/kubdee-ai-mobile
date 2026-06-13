@@ -206,6 +206,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
           logGoogleFlowStep("ยังยืนยันหน้า Google Flow ไม่ได้ แต่จะลองทำงานต่อ")
         }
 
+        val generatedImageByProductId = mutableMapOf<String, GoogleFlowDownloadedAsset>()
+
         for (round in 1..totalRounds) {
           checkGoogleFlowStopRequested()
           logGoogleFlowStep("เริ่มรอบ $round/$totalRounds")
@@ -213,18 +215,24 @@ class KubdeeAccessibilityService : AccessibilityService() {
           for (productIndex in 0 until productCount) {
             checkGoogleFlowStopRequested()
             val product = products?.optJSONObject(productIndex) ?: continue
+            val productKey = googleFlowProductKey(product)
             val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
             logGoogleFlowStep("สินค้า ${productIndex + 1}/$productCount: ${productName.take(38)}")
 
             for (step in enabledSteps) {
-              runGoogleFlowProductStep(
+              val generatedAsset = runGoogleFlowProductStep(
                 payload = payload,
                 product = product,
                 step = step,
                 round = round,
                 productIndex = productIndex + 1,
-                productTotal = productCount
+                productTotal = productCount,
+                referenceAsset = if (step == "video") generatedImageByProductId[productKey] else null
               )
+              if (step == "image" && generatedAsset != null) {
+                generatedImageByProductId[productKey] = generatedAsset
+                logGoogleFlowStep("เก็บรูปอ้างอิงสำหรับวิดีโอแล้ว: ${generatedAsset.fileName ?: generatedAsset.uri}")
+              }
             }
 
             val delayMs = googleFlowDelayMs(settings)
@@ -456,8 +464,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
     step: String,
     round: Int,
     productIndex: Int,
-    productTotal: Int
-  ) {
+    productTotal: Int,
+    referenceAsset: GoogleFlowDownloadedAsset?
+  ): GoogleFlowDownloadedAsset? {
     val stepLabel = if (step == "video") "วิดีโอ" else "รูปภาพ"
     val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
 
@@ -477,7 +486,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
       logGoogleFlowStep("เลือก model สำหรับ$stepLabel แล้ว")
     }
 
-    val prompt = buildGoogleFlowProductPrompt(product, payload, step)
+    if (step == "video" && referenceAsset != null) {
+      val attached = attachGoogleFlowReferenceAsset(referenceAsset)
+      if (attached) {
+        logGoogleFlowStep("แนบรูปจากขั้นสร้างรูปให้วิดีโอแล้ว")
+      } else {
+        logGoogleFlowStep("ยังแนบรูปให้วิดีโอไม่ได้ จะใส่ไฟล์อ้างอิงใน prompt แทน")
+      }
+    }
+
+    val prompt = buildGoogleFlowProductPrompt(product, payload, step, referenceAsset)
     logGoogleFlowStep("เตรียม prompt: ${productName.take(34)}")
     if (!focusGoogleFlowPromptEditor()) {
       throw IllegalStateException("ไม่พบช่อง prompt ของ Google Flow")
@@ -501,16 +519,18 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val generated = waitForGoogleFlowGeneration(step, googleFlowGenerationTimeoutMs(payload, step))
     if (!generated) {
       logGoogleFlowStep("ข้ามการดาวน์โหลด${stepLabel} เพราะยังไม่พบผลลัพธ์ที่พร้อม")
-      return
+      return null
     }
 
     val downloadedAsset = downloadGoogleFlowResult(step)
     if (downloadedAsset != null) {
       emitGoogleFlowAsset(product, step, downloadedAsset)
+      return downloadedAsset
     } else {
       logGoogleFlowStep("สร้าง${stepLabel}แล้ว แต่ยังหาไฟล์ download ล่าสุดไม่ได้")
       emitGoogleFlowAsset(product, step, null)
     }
+    return null
   }
 
   private fun focusGoogleFlowPromptEditor(): Boolean {
@@ -529,7 +549,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return tapBlocking(screen.centerX().toFloat(), (screen.bottom - screen.height() * 0.18f).toFloat())
   }
 
-  private fun buildGoogleFlowProductPrompt(product: JSONObject, payload: JSONObject, step: String): String {
+  private fun buildGoogleFlowProductPrompt(
+    product: JSONObject,
+    payload: JSONObject,
+    step: String,
+    referenceAsset: GoogleFlowDownloadedAsset?
+  ): String {
     val name = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
     val caption = product.optString("caption", "")
     val hashtags = product.optString("hashtags", "")
@@ -563,6 +588,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
       listOf(
         "สร้างวิดีโอโฆษณาสินค้าภาษาไทยแนวตั้ง 9:16 ความยาวประมาณ ${duration} วินาที",
         "สินค้า: $name",
+        if (referenceAsset != null) {
+          "ใช้รูปอ้างอิงจากขั้นสร้างรูปก่อนหน้าเป็นภาพหลัก: ${referenceAsset.fileName ?: referenceAsset.uri}"
+        } else {
+          ""
+        },
         if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
         if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
         "ให้ใช้ภาพสินค้าอ้างอิงเท่านั้น สินค้าต้องเหมือนจริงและไม่เปลี่ยนรูปทรง",
@@ -591,6 +621,65 @@ class KubdeeAccessibilityService : AccessibilityService() {
         hashtags
       ).filter { it.isNotBlank() }.joinToString("; ")
     }
+  }
+
+  private fun googleFlowProductKey(product: JSONObject): String =
+    product.optString("productId").ifBlank {
+      product.optString("id").ifBlank {
+        product.optString("catalogId").ifBlank {
+          product.optString("name", "สินค้า")
+        }
+      }
+    }
+
+  private fun attachGoogleFlowReferenceAsset(asset: GoogleFlowDownloadedAsset?): Boolean {
+    if (asset == null) return false
+    val fileName = asset.fileName?.trim().orEmpty()
+    if (fileName.isBlank()) return false
+
+    dismissGoogleFlowBlockingPopups()
+    val openedPicker = clickByAnyText(
+      listOf(
+        "Add image",
+        "Reference image",
+        "Image to video",
+        "Upload",
+        "Choose file",
+        "อัปโหลด",
+        "เพิ่มรูป",
+        "เลือกรูป",
+        "เลือกไฟล์"
+      ),
+      exact = false
+    )
+    if (!openedPicker) {
+      return false
+    }
+
+    sleepGoogleFlowStep(1200L)
+    dismissGoogleFlowBlockingPopups()
+
+    val stem = fileName.substringBeforeLast('.', fileName)
+    var selectedFile = clickByAnyText(listOf(fileName, stem), exact = false)
+    if (!selectedFile && clickByAnyText(listOf("Downloads", "ดาวน์โหลด", "Recent", "ล่าสุด"), exact = false)) {
+      sleepGoogleFlowStep(800L)
+      selectedFile = clickByAnyText(listOf(fileName, stem), exact = false)
+    }
+    if (!selectedFile && scrollFirstScrollableForward()) {
+      sleepGoogleFlowStep(700L)
+      selectedFile = clickByAnyText(listOf(fileName, stem), exact = false)
+    }
+
+    if (!selectedFile) {
+      performBack()
+      sleepGoogleFlowStep(500L)
+      return false
+    }
+
+    sleepGoogleFlowStep(900L)
+    clickByAnyText(listOf("Done", "Select", "Open", "Add", "เสร็จ", "เลือก", "เปิด", "เพิ่ม"), exact = false)
+    sleepGoogleFlowStep(1400L)
+    return true
   }
 
   private fun googleFlowEnabledSteps(payload: JSONObject): List<String> {
@@ -839,7 +928,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       fileUri = downloadedAsset?.uri,
       fileName = downloadedAsset?.fileName,
       mimeType = downloadedAsset?.mimeType,
-      sizeBytes = downloadedAsset?.sizeBytes
+      sizeBytes = downloadedAsset?.sizeBytes,
+      createdAt = downloadedAsset?.createdAt
     )
     showAutomationOverlay(message)
   }
