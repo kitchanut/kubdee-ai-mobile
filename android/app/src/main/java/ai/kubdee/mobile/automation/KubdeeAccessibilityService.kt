@@ -192,6 +192,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
         logGoogleFlowStep("เริ่ม Auto Pilot Google Flow ($productCount สินค้า)")
         KubdeeAccessibilityModule.emitGoogleFlowLog("Google Flow runner เริ่มทำงาน", "running")
+        emitGoogleFlowProgress(
+          message = "เตรียม Auto Pilot Google Flow",
+          stage = "started",
+          round = 0,
+          totalRounds = totalRounds,
+          productIndex = 0,
+          productTotal = productCount
+        )
         checkGoogleFlowStopRequested()
         logGoogleFlowStep("เปิด Google Flow ด้วย browser บนมือถือ")
         if (!launchUrl(GOOGLE_FLOW_URL, preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null)) {
@@ -210,14 +218,29 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
         for (round in 1..totalRounds) {
           checkGoogleFlowStopRequested()
-          logGoogleFlowStep("เริ่มรอบ $round/$totalRounds")
+          emitGoogleFlowProgress(
+            message = "เริ่มรอบ $round/$totalRounds",
+            stage = "round_started",
+            round = round,
+            totalRounds = totalRounds,
+            productIndex = 0,
+            productTotal = productCount
+          )
 
           for (productIndex in 0 until productCount) {
             checkGoogleFlowStopRequested()
             val product = products?.optJSONObject(productIndex) ?: continue
             val productKey = googleFlowProductKey(product)
             val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
-            logGoogleFlowStep("สินค้า ${productIndex + 1}/$productCount: ${productName.take(38)}")
+            emitGoogleFlowProgress(
+              message = "สินค้า ${productIndex + 1}/$productCount: ${productName.take(38)}",
+              product = product,
+              stage = "product_started",
+              round = round,
+              totalRounds = totalRounds,
+              productIndex = productIndex + 1,
+              productTotal = productCount
+            )
 
             for (step in enabledSteps) {
               val generatedAsset = runGoogleFlowProductStep(
@@ -225,6 +248,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
                 product = product,
                 step = step,
                 round = round,
+                totalRounds = totalRounds,
                 productIndex = productIndex + 1,
                 productTotal = productCount,
                 referenceAsset = if (step == "video") generatedImageByProductId[productKey] else null
@@ -463,6 +487,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     product: JSONObject,
     step: String,
     round: Int,
+    totalRounds: Int,
     productIndex: Int,
     productTotal: Int,
     referenceAsset: GoogleFlowDownloadedAsset?
@@ -470,7 +495,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val stepLabel = if (step == "video") "วิดีโอ" else "รูปภาพ"
     val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
 
-    logGoogleFlowStep("รอบ $round · เริ่มสร้าง$stepLabel $productIndex/$productTotal")
+    emitGoogleFlowProgress(
+      message = "รอบ $round · เริ่มสร้าง$stepLabel $productIndex/$productTotal",
+      product = product,
+      step = step,
+      stage = "step_started",
+      round = round,
+      totalRounds = totalRounds,
+      productIndex = productIndex,
+      productTotal = productTotal
+    )
     checkGoogleFlowStopRequested()
     dismissGoogleFlowBlockingPopups()
     ensureGoogleFlowWorkspaceReady()
@@ -515,10 +549,28 @@ class KubdeeAccessibilityService : AccessibilityService() {
     if (!submitGoogleFlowGenerate()) {
       throw IllegalStateException("กด Generate ใน Google Flow ไม่สำเร็จ")
     }
-    logGoogleFlowStep("กด Generate สำหรับ${stepLabel}แล้ว")
+    emitGoogleFlowProgress(
+      message = "กด Generate สำหรับ${stepLabel}แล้ว",
+      product = product,
+      step = step,
+      stage = "submitted",
+      round = round,
+      totalRounds = totalRounds,
+      productIndex = productIndex,
+      productTotal = productTotal
+    )
     val generated = waitForGoogleFlowGeneration(step, googleFlowGenerationTimeoutMs(payload, step))
     if (!generated) {
-      logGoogleFlowStep("ข้ามการดาวน์โหลด${stepLabel} เพราะยังไม่พบผลลัพธ์ที่พร้อม")
+      emitGoogleFlowProgress(
+        message = "ข้ามการดาวน์โหลด${stepLabel} เพราะยังไม่พบผลลัพธ์ที่พร้อม",
+        product = product,
+        step = step,
+        stage = "failed",
+        round = round,
+        totalRounds = totalRounds,
+        productIndex = productIndex,
+        productTotal = productTotal
+      )
       return null
     }
 
@@ -527,8 +579,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
       emitGoogleFlowAsset(product, step, downloadedAsset)
       return downloadedAsset
     } else {
-      logGoogleFlowStep("สร้าง${stepLabel}แล้ว แต่ยังหาไฟล์ download ล่าสุดไม่ได้")
-      emitGoogleFlowAsset(product, step, null)
+      emitGoogleFlowProgress(
+        message = "สร้าง${stepLabel}แล้ว แต่ยังหาไฟล์ download ล่าสุดไม่ได้",
+        product = product,
+        step = step,
+        stage = "download_missing",
+        round = round,
+        totalRounds = totalRounds,
+        productIndex = productIndex,
+        productTotal = productTotal
+      )
     }
     return null
   }
@@ -967,6 +1027,35 @@ class KubdeeAccessibilityService : AccessibilityService() {
     Log.d(TAG, "Shopee runner: $message")
     addAutomationLogLine(message)
     KubdeeAccessibilityModule.emitShopeeImportLog(message)
+    showAutomationOverlay(message)
+  }
+
+  private fun emitGoogleFlowProgress(
+    message: String,
+    product: JSONObject? = null,
+    step: String? = null,
+    stage: String,
+    round: Int,
+    totalRounds: Int,
+    productIndex: Int,
+    productTotal: Int
+  ) {
+    val productId = product?.let { it.optString("productId", it.optString("id", "")) }
+    val productName = product?.optString("name", "สินค้า")?.ifBlank { "สินค้า" }
+    Log.d(TAG, "Google Flow runner: $message")
+    addAutomationLogLine(message)
+    KubdeeAccessibilityModule.emitGoogleFlowLog(
+      message = message,
+      event = "progress",
+      step = step,
+      stage = stage,
+      productId = productId,
+      productName = productName,
+      currentRound = round,
+      totalRounds = totalRounds,
+      currentProduct = productIndex,
+      totalProducts = productTotal
+    )
     showAutomationOverlay(message)
   }
 

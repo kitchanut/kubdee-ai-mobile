@@ -30,10 +30,15 @@ export interface NativeGoogleFlowLog {
   message: string;
   ts: number;
   status?: 'running' | 'completed' | 'stopped' | 'error';
-  event?: 'asset';
+  event?: 'asset' | 'progress';
   step?: 'image' | 'video';
+  stage?: string;
   productId?: string;
   productName?: string;
+  currentRound?: number;
+  totalRounds?: number;
+  currentProduct?: number;
+  totalProducts?: number;
   fileUri?: string;
   fileName?: string;
   mimeType?: string;
@@ -233,10 +238,15 @@ export function subscribeGoogleFlowLogs(
         entry.status === 'error'
           ? entry.status
           : undefined,
-      event: entry.event === 'asset' ? entry.event : undefined,
+      event: entry.event === 'asset' || entry.event === 'progress' ? entry.event : undefined,
       step: entry.step === 'image' || entry.step === 'video' ? entry.step : undefined,
+      stage: typeof entry.stage === 'string' ? entry.stage : undefined,
       productId: typeof entry.productId === 'string' ? entry.productId : undefined,
       productName: typeof entry.productName === 'string' ? entry.productName : undefined,
+      currentRound: typeof entry.currentRound === 'number' ? entry.currentRound : undefined,
+      totalRounds: typeof entry.totalRounds === 'number' ? entry.totalRounds : undefined,
+      currentProduct: typeof entry.currentProduct === 'number' ? entry.currentProduct : undefined,
+      totalProducts: typeof entry.totalProducts === 'number' ? entry.totalProducts : undefined,
       fileUri: typeof entry.fileUri === 'string' ? entry.fileUri : undefined,
       fileName: typeof entry.fileName === 'string' ? entry.fileName : undefined,
       mimeType: typeof entry.mimeType === 'string' ? entry.mimeType : undefined,

@@ -88,6 +88,9 @@ export interface AutoPilotRunProgress {
   totalRounds: number;
   currentProduct: number;
   totalProducts: number;
+  currentStep: AutoPilotStepType | null;
+  currentStage: string | null;
+  currentProductName: string | null;
   generatedImages: number;
   generatedVideos: number;
   failedImages: number;

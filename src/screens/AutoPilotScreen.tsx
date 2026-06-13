@@ -40,7 +40,7 @@ import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import { useLibrary } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
-import type { AutoPilotBrowserMode } from '@/autopilot/types';
+import type { AutoPilotBrowserMode, AutoPilotRunState } from '@/autopilot/types';
 
 interface AutoPilotScreenProps {
   selectedProfileId: string;
@@ -139,6 +139,8 @@ export default function AutoPilotScreen({
           theme={theme}
           onBrowserModeChange={(value) => controller.updateSetting('browserMode', value)}
         />
+
+        <ProgressBlock runState={controller.runState} theme={theme} />
 
         <SectionCard theme={theme} icon={Settings2} title="ตั้งค่าพื้นฐาน">
           <View className="gap-2">
@@ -437,7 +439,7 @@ export default function AutoPilotScreen({
         {controller.runState.logs.length > 0 ? (
           <SectionCard theme={theme} icon={Clock3} title="Activity Log">
             <View className="gap-1">
-              {controller.runState.logs.slice(-8).map((log) => (
+              {controller.runState.logs.slice(-16).map((log) => (
                 <View key={log.id} className="flex-row gap-2 rounded-kd-md bg-kd-panel-muted px-2 py-1.5 dark:bg-kd-card-muted">
                   <Text className="w-[56px] text-kd-micro text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
                   <Text className={`flex-1 text-kd-caption leading-4 ${log.level === 'error' ? 'text-kd-red' : log.level === 'success' ? 'text-kd-emerald' : 'text-kd-text-muted'}`}>
@@ -535,6 +537,119 @@ function RunnerBlock({
         />
       </View>
     </SectionCard>
+  );
+}
+
+function getRunStatusLabel(status: AutoPilotRunState['status']): string {
+  switch (status) {
+    case 'running':
+      return 'กำลังทำงาน';
+    case 'completed':
+      return 'เสร็จแล้ว';
+    case 'stopped':
+      return 'หยุดแล้ว';
+    case 'error':
+      return 'ผิดพลาด';
+    default:
+      return 'พร้อมเริ่ม';
+  }
+}
+
+function getRunStageLabel(stage: string | null): string {
+  switch (stage) {
+    case 'started':
+      return 'เตรียมเปิด Flow';
+    case 'round_started':
+      return 'เริ่มรอบใหม่';
+    case 'product_started':
+      return 'เลือกสินค้า';
+    case 'step_started':
+      return 'เริ่มสร้างงาน';
+    case 'submitted':
+      return 'ส่งคำสั่งสร้างแล้ว';
+    case 'failed':
+      return 'สร้างไม่สำเร็จ';
+    case 'download_missing':
+      return 'ยังไม่พบไฟล์ดาวน์โหลด';
+    case 'completed':
+      return 'เสร็จแล้ว';
+    case 'stopped':
+      return 'หยุดแล้ว';
+    case 'error':
+      return 'ผิดพลาด';
+    default:
+      return 'รอเริ่มงาน';
+  }
+}
+
+function ProgressBlock({
+  runState,
+  theme,
+}: {
+  runState: AutoPilotRunState;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  const progress = runState.progress;
+  const totalWork = Math.max(1, progress.totalRounds * Math.max(1, progress.totalProducts));
+  const currentWork = Math.min(
+    totalWork,
+    Math.max(0, (Math.max(0, progress.currentRound - 1) * Math.max(1, progress.totalProducts)) + progress.currentProduct)
+  );
+  const progressRatio = runState.status === 'completed' ? 1 : currentWork / totalWork;
+  const currentStepLabel =
+    progress.currentStep === 'image'
+      ? 'รูปภาพ'
+      : progress.currentStep === 'video'
+        ? 'วิดีโอ'
+        : 'ยังไม่เลือกขั้นตอน';
+
+  return (
+    <SectionCard theme={theme} icon={Clock3} title="สถานะการทำงาน">
+      <View className="gap-2">
+        <View className="flex-row items-center justify-between">
+          <View className="min-w-0 flex-1">
+            <Text className="text-kd-caption font-black text-kd-text">
+              {getRunStatusLabel(runState.status)} · {getRunStageLabel(progress.currentStage)}
+            </Text>
+            <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+              {progress.currentProductName || 'ยังไม่มีสินค้าที่กำลังทำ'} · {currentStepLabel}
+            </Text>
+          </View>
+          <Text className="text-kd-caption font-black text-kd-text">
+            {Math.round(progressRatio * 100)}%
+          </Text>
+        </View>
+
+        <View className="h-2 overflow-hidden rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
+          <View
+            className="h-full rounded-full bg-kd-emerald"
+            style={{ width: `${Math.max(0, Math.min(1, progressRatio)) * 100}%` }}
+          />
+        </View>
+
+        <View className="flex-row gap-2">
+          <ProgressMetric label="รอบ" value={`${progress.currentRound}/${progress.totalRounds}`} />
+          <ProgressMetric label="สินค้า" value={`${progress.currentProduct}/${progress.totalProducts}`} />
+          <ProgressMetric label="รูป" value={`${progress.generatedImages}/${progress.failedImages}`} />
+          <ProgressMetric label="วิดีโอ" value={`${progress.generatedVideos}/${progress.failedVideos}`} />
+        </View>
+      </View>
+    </SectionCard>
+  );
+}
+
+function ProgressMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}): React.JSX.Element {
+  return (
+    <View className="min-h-12 flex-1 justify-center rounded-kd-md bg-kd-panel-muted px-2 dark:bg-kd-card-muted">
+      <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
+      <Text className="text-kd-caption font-black text-kd-text">{value}</Text>
+    </View>
   );
 }
 

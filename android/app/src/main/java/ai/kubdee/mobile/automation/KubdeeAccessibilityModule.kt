@@ -312,8 +312,13 @@ class KubdeeAccessibilityModule(
       status: String? = null,
       event: String? = null,
       step: String? = null,
+      stage: String? = null,
       productId: String? = null,
       productName: String? = null,
+      currentRound: Int? = null,
+      totalRounds: Int? = null,
+      currentProduct: Int? = null,
+      totalProducts: Int? = null,
       fileUri: String? = null,
       fileName: String? = null,
       mimeType: String? = null,
@@ -333,11 +338,26 @@ class KubdeeAccessibilityModule(
         if (step != null) {
           putString("step", step)
         }
+        if (stage != null) {
+          putString("stage", stage)
+        }
         if (productId != null) {
           putString("productId", productId)
         }
         if (productName != null) {
           putString("productName", productName)
+        }
+        if (currentRound != null) {
+          putInt("currentRound", currentRound)
+        }
+        if (totalRounds != null) {
+          putInt("totalRounds", totalRounds)
+        }
+        if (currentProduct != null) {
+          putInt("currentProduct", currentProduct)
+        }
+        if (totalProducts != null) {
+          putInt("totalProducts", totalProducts)
         }
         if (fileUri != null) {
           putString("fileUri", fileUri)

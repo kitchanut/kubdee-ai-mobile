@@ -29,6 +29,9 @@ const initialRunState: AutoPilotRunState = {
     totalRounds: 1,
     currentProduct: 0,
     totalProducts: 0,
+    currentStep: null,
+    currentStage: null,
+    currentProductName: null,
     generatedImages: 0,
     generatedVideos: 0,
     failedImages: 0,
@@ -113,7 +116,32 @@ export function useAutoPilotController({
               : 'info';
       appendLog(level, entry.message);
 
-      if (entry.event === 'asset' && entry.step) {
+      if (entry.event === 'progress') {
+        const failedStage = entry.stage === 'failed' || entry.stage === 'download_missing';
+        setRunState((current) => ({
+          ...current,
+          progress: {
+            ...current.progress,
+            currentRound: entry.currentRound ?? current.progress.currentRound,
+            totalRounds: entry.totalRounds ?? current.progress.totalRounds,
+            currentProduct: entry.currentProduct ?? current.progress.currentProduct,
+            totalProducts: entry.totalProducts ?? current.progress.totalProducts,
+            currentStep: entry.step ?? current.progress.currentStep,
+            currentStage: entry.stage ?? current.progress.currentStage,
+            currentProductName: entry.productName ?? current.progress.currentProductName,
+            failedImages:
+              failedStage && entry.step === 'image'
+                ? current.progress.failedImages + 1
+                : current.progress.failedImages,
+            failedVideos:
+              failedStage && entry.step === 'video'
+                ? current.progress.failedVideos + 1
+                : current.progress.failedVideos,
+          },
+        }));
+      }
+
+      if (entry.event === 'asset' && entry.step && (entry.fileUri || entry.fileName)) {
         const product = entry.productId ? productById.get(entry.productId) : undefined;
         const productId = entry.productId || product?.productId || product?.id || 'unknown';
         void addGeneratedMediaAsset({
@@ -140,12 +168,18 @@ export function useAutoPilotController({
               entry.step === 'video' ? current.progress.generatedVideos + 1 : current.progress.generatedVideos,
           },
         }));
+      } else if (entry.event === 'asset' && entry.step) {
+        appendLog('warning', `ยังไม่บันทึก${entry.step === 'image' ? 'รูปภาพ' : 'วิดีโอ'}เข้าคลัง เพราะยังไม่มีไฟล์ดาวน์โหลดจริง`);
       }
 
       if (terminalStatus) {
         setRunState((current) => ({
           ...current,
           status: terminalStatus,
+          progress: {
+            ...current.progress,
+            currentStage: terminalStatus,
+          },
         }));
       }
     });
