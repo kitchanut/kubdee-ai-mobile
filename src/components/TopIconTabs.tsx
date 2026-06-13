@@ -1,8 +1,8 @@
 import type { ComponentType } from 'react';
 import {
-  Bot,
   FolderOpen,
   Smartphone,
+  Star,
   UserCircle,
 } from 'lucide-react-native';
 import { Pressable, View } from 'react-native';
@@ -25,7 +25,7 @@ const tabs: Array<{
   icon: ComponentType<TabIconProps>;
   brandIcon?: boolean;
 }> = [
-  { id: 'pipeline', label: 'Auto Pipeline', icon: Bot },
+  { id: 'pipeline', label: 'Auto Pipeline', icon: Star },
   { id: 'library', label: 'คลัง', icon: FolderOpen },
   { id: 'tiktok', label: 'TikTok', icon: TikTokLogo, brandIcon: true },
   { id: 'shopee', label: 'Shopee', icon: ShopeeLogo, brandIcon: true },

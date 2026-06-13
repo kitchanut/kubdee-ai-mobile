@@ -1,19 +1,27 @@
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bot,
+  ChevronDown,
   ChevronRight,
   Check,
   Clock3,
+  Copy,
+  FolderOpen,
   Image as ImageIcon,
   MonitorPlay,
   Package,
   Play,
   RefreshCw,
+  RotateCcw,
+  Save,
   Search,
   Settings2,
+  SlidersHorizontal,
   Sparkles,
   Square,
+  Star,
   Tag,
   Trash2,
   Video,
@@ -24,8 +32,6 @@ import {
   AUTO_PILOT_DELAY_OPTIONS,
   AUTO_PILOT_ROUND_OPTIONS,
   AUTO_PILOT_STEPS,
-  DEFAULT_AUTO_PILOT_IMAGE_SETTINGS,
-  DEFAULT_AUTO_PILOT_VIDEO_SETTINGS,
   FLOW_IMAGE_MODELS,
   FLOW_VIDEO_MODELS,
   IMAGE_ASPECT_RATIO_OPTIONS,
@@ -43,6 +49,16 @@ import {
   VIDEO_SCENE_OPTIONS,
 } from '@/autopilot/defaults';
 import { getAutoPilotProductId } from '@/autopilot/productAdapter';
+import {
+  getAutoPilotProductPresets,
+  saveAutoPilotProductPreset,
+  type AutoPilotProductPreset,
+} from '@/autopilot/productPresetStore';
+import {
+  getAutoPilotSettingsPresets,
+  saveAutoPilotSettingsPreset,
+  type AutoPilotSettingsPreset,
+} from '@/autopilot/settingsPresetStore';
 import { useAutoPilotController } from '@/autopilot/useAutoPilotController';
 import Text from '@/components/ui/KubdeeText';
 import { kubdeeFontFamilies } from '@/theme/fonts';
@@ -50,7 +66,15 @@ import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import { useLibrary } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
-import type { AutoPilotBrowserMode, AutoPilotRunState, AutoPilotStepType } from '@/autopilot/types';
+import type {
+  AutoPilotBrowserMode,
+  AutoPilotImageSettings,
+  AutoPilotProduct,
+  AutoPilotProductSettings,
+  AutoPilotRunState,
+  AutoPilotStepType,
+  AutoPilotVideoSettings,
+} from '@/autopilot/types';
 
 interface AutoPilotScreenProps {
   selectedProfileId: string;
@@ -58,6 +82,32 @@ interface AutoPilotScreenProps {
 }
 
 type OptionValue = string | number | boolean;
+type ProductSettingsTab = 'image' | 'video';
+
+const IMAGE_SECTION_KEYS = {
+  basic: ['promptMode', 'customPrompt', 'aspectRatio', 'outputCount'],
+  character: ['characterMode', 'characterDescription', 'sceneMode', 'sceneDescription'],
+  style: ['styleMode', 'presetStyle', 'presetStyleCustom'],
+  scene: [
+    'background',
+    'backgroundCustom',
+    'lighting',
+    'lightingCustom',
+    'frame',
+    'frameCustom',
+    'textOverlay',
+    'textOverlayCustom',
+    'productDisplayMode',
+    'systemPrompt',
+  ],
+} satisfies Record<string, Array<keyof AutoPilotImageSettings>>;
+
+const VIDEO_SECTION_KEYS = {
+  basic: ['promptMode', 'customPrompt', 'aspectRatio', 'outputCount', 'sceneCount'],
+  style: ['characterMode', 'presetStyle', 'presetStyleCustom', 'cameraMotion', 'voiceCharacter', 'scriptStyle'],
+  dialogue: ['dialogueMode', 'dialogue', 'musicSfxMode', 'musicSfxCustom'],
+  additional: ['forbiddenWords', 'systemPrompt'],
+} satisfies Record<string, Array<keyof AutoPilotVideoSettings>>;
 
 function formatPrice(price: string | null): string {
   if (!price) {
@@ -87,8 +137,21 @@ export default function AutoPilotScreen({
   selectedProfileId,
   theme,
 }: AutoPilotScreenProps): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const { products: allProducts, isSyncing, syncProducts } = useLibrary();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [productSelectSheetOpen, setProductSelectSheetOpen] = useState(false);
+  const [productSettingsTab, setProductSettingsTab] = useState<ProductSettingsTab>('image');
+  const [productPresetSheetOpen, setProductPresetSheetOpen] = useState(false);
+  const [productPresetMode, setProductPresetMode] = useState<'save' | 'load'>('load');
+  const [productPresetName, setProductPresetName] = useState('');
+  const [productPresetMessage, setProductPresetMessage] = useState<string | null>(null);
+  const [productPresets, setProductPresets] = useState<AutoPilotProductPreset[]>([]);
+  const [settingsPresetSheetOpen, setSettingsPresetSheetOpen] = useState(false);
+  const [settingsPresetMode, setSettingsPresetMode] = useState<'save' | 'load'>('load');
+  const [settingsPresetName, setSettingsPresetName] = useState('');
+  const [settingsPresetMessage, setSettingsPresetMessage] = useState<string | null>(null);
+  const [settingsPresets, setSettingsPresets] = useState<AutoPilotSettingsPreset[]>([]);
 
   const profileProducts = useMemo(() => {
     if (!selectedProfileId) {
@@ -103,45 +166,135 @@ export default function AutoPilotScreen({
     sourceProducts: profileProducts,
   });
 
-  const visibleProducts = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) {
-      return profileProducts;
-    }
-
-    return profileProducts.filter((product) =>
-      [
-        product.name,
-        product.externalProductId,
-        product.localId,
-        product.productUrl,
-      ].filter(Boolean).join(' ').toLowerCase().includes(query)
-    );
-  }, [profileProducts, searchQuery]);
-
-  const allVisibleSelected =
-    visibleProducts.length > 0 &&
-    visibleProducts.every((product) => controller.selectedProductIds.has(getAutoPilotProductId(product)));
-  const imageSettings = controller.selectedImageSettings ?? DEFAULT_AUTO_PILOT_IMAGE_SETTINGS;
-  const videoSettings = controller.selectedVideoSettings ?? DEFAULT_AUTO_PILOT_VIDEO_SETTINGS;
+  const editingProduct = editingProductId
+    ? controller.products.find((product) => product.id === editingProductId)
+    : null;
   const canStart =
     controller.runState.status !== 'running' &&
     selectedProfileId.length > 0 &&
     controller.selectedProducts.length > 0 &&
     controller.enabledSteps.length > 0;
 
-  const toggleAllVisible = (): void => {
-    if (allVisibleSelected) {
-      controller.clearProducts();
+  const openProductSettings = (productId: string): void => {
+    setEditingProductId(productId);
+    setProductSettingsTab(controller.enabledSteps.includes('image') ? 'image' : 'video');
+  };
+
+  const refreshProductPresets = useCallback(async (): Promise<void> => {
+    if (!selectedProfileId) {
+      setProductPresets([]);
       return;
     }
 
-    controller.selectAllVisibleProducts(visibleProducts);
+    const presets = await getAutoPilotProductPresets(selectedProfileId);
+    setProductPresets(presets);
+  }, [selectedProfileId]);
+
+  useEffect(() => {
+    if (!productPresetSheetOpen) {
+      return;
+    }
+
+    void refreshProductPresets();
+  }, [productPresetSheetOpen, refreshProductPresets]);
+
+  const openProductPresetSheet = (): void => {
+    setProductPresetMode(controller.selectedProducts.length > 0 ? 'save' : 'load');
+    setProductPresetMessage(null);
+    setProductPresetSheetOpen(true);
+  };
+
+  const saveSelectedProductPreset = useCallback(async (): Promise<void> => {
+    const name = productPresetName.trim();
+    if (!selectedProfileId || !name || controller.selectedProducts.length === 0) {
+      return;
+    }
+
+    const settingsByProductId = controller.selectedProducts.reduce<Record<string, AutoPilotProductSettings>>(
+      (next, product) => ({
+        ...next,
+        [product.id]: {
+          image: { ...product.settings.image },
+          video: { ...product.settings.video },
+        },
+      }),
+      {}
+    );
+
+    await saveAutoPilotProductPreset({
+      name,
+      profileLocalId: selectedProfileId,
+      productIds: controller.selectedProducts.map((product) => product.id),
+      settingsByProductId,
+    });
+    setProductPresetName('');
+    setProductPresetMode('load');
+    setProductPresetMessage('บันทึก preset แล้ว');
+    await refreshProductPresets();
+  }, [controller.selectedProducts, productPresetName, refreshProductPresets, selectedProfileId]);
+
+  const loadSelectedProductPreset = (preset: AutoPilotProductPreset): void => {
+    controller.loadProductPreset(preset.productIds, preset.settingsByProductId);
+    setProductPresetMessage('โหลด preset แล้ว');
+    setProductPresetSheetOpen(false);
+  };
+
+  const refreshSettingsPresets = useCallback(async (): Promise<void> => {
+    const presets = await getAutoPilotSettingsPresets();
+    setSettingsPresets(presets);
+  }, []);
+
+  useEffect(() => {
+    if (!settingsPresetSheetOpen) {
+      return;
+    }
+
+    void refreshSettingsPresets();
+  }, [refreshSettingsPresets, settingsPresetSheetOpen]);
+
+  const openSettingsPresetSheet = (mode: 'save' | 'load'): void => {
+    setSettingsPresetMode(mode);
+    setSettingsPresetMessage(null);
+    setSettingsPresetSheetOpen(true);
+  };
+
+  const saveCurrentSettingsPreset = useCallback(async (): Promise<void> => {
+    const name = settingsPresetName.trim();
+    if (!editingProduct || !name) {
+      return;
+    }
+
+    await saveAutoPilotSettingsPreset({
+      name,
+      imageSettings: editingProduct.settings.image,
+      videoSettings: editingProduct.settings.video,
+    });
+    setSettingsPresetName('');
+    setSettingsPresetMode('load');
+    setSettingsPresetMessage('บันทึก preset ตั้งค่าแล้ว');
+    await refreshSettingsPresets();
+  }, [editingProduct, refreshSettingsPresets, settingsPresetName]);
+
+  const loadSettingsPreset = (preset: AutoPilotSettingsPreset): void => {
+    if (!editingProduct) {
+      return;
+    }
+
+    controller.replaceProductSettings(editingProduct.id, {
+      image: preset.imageSettings,
+      video: preset.videoSettings,
+    });
+    setSettingsPresetMessage('โหลด preset ตั้งค่าแล้ว');
+    setSettingsPresetSheetOpen(false);
   };
 
   return (
     <View className="flex-1 bg-kd-panel">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-32 pt-3">
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerClassName="gap-3 px-3 pt-3"
+        contentContainerStyle={{ paddingBottom: 184 + Math.max(insets.bottom, 12) }}
+      >
         <HeaderBlock
           enabledStepCount={controller.enabledSteps.length}
           runState={controller.runState}
@@ -170,17 +323,15 @@ export default function AutoPilotScreen({
             />
 
             <View className="flex-row gap-2">
-              <OptionGroup
-                columns={5}
-                label="รอบ"
+              <SelectField
+                label="จำนวนรอบ"
                 options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({ label: String(round), value: round }))}
                 theme={theme}
                 value={controller.settings.totalRounds}
                 onChange={(value) => controller.updateSetting('totalRounds', Number(value))}
               />
-              <OptionGroup
-                columns={3}
-                label="หน่วง"
+              <SelectField
+                label="หน่วงเวลา"
                 options={AUTO_PILOT_DELAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
                 theme={theme}
                 value={controller.settings.delayPreset}
@@ -188,7 +339,7 @@ export default function AutoPilotScreen({
               />
             </View>
 
-            <OptionGroup
+            <SelectField
               label="Model รูป"
               options={FLOW_IMAGE_MODELS.map((model) => ({ label: model.label, value: model.value }))}
               theme={theme}
@@ -196,7 +347,7 @@ export default function AutoPilotScreen({
               onChange={(value) => controller.updateSetting('flowImageModel', String(value))}
             />
 
-            <OptionGroup
+            <SelectField
               label="Model วิดีโอ"
               options={FLOW_VIDEO_MODELS.map((model) => ({ label: model.label, value: model.value }))}
               theme={theme}
@@ -212,7 +363,7 @@ export default function AutoPilotScreen({
               }}
             />
 
-            <OptionGroup
+            <SelectField
               label="ความยาวคลิป"
               options={VIDEO_DURATION_OPTIONS
                 .filter((duration) => controller.settings.flowVideoModel === 'omni_flash' || duration !== 10)
@@ -262,348 +413,95 @@ export default function AutoPilotScreen({
         />
 
         <ProductCatalogBlock
-          allVisibleSelected={allVisibleSelected}
           isSyncing={isSyncing}
           profileProducts={profileProducts}
-          searchQuery={searchQuery}
-          selectedProductIds={controller.selectedProductIds}
-          selectedProductsCount={controller.selectedProducts.length}
+          selectedProducts={controller.selectedProducts}
           theme={theme}
-          visibleProducts={visibleProducts}
-          onSearchQueryChange={setSearchQuery}
+          onOpenSettings={openProductSettings}
+          onOpenPreset={openProductPresetSheet}
+          onOpenProductSelect={() => setProductSelectSheetOpen(true)}
+          onRemoveProduct={(productId) => controller.toggleProduct(productId)}
           onSyncProducts={() => {
             void syncProducts();
           }}
-          onToggleAllVisible={toggleAllVisible}
-          onToggleProduct={(productId) => controller.toggleProduct(productId)}
         />
 
-        <SectionCard theme={theme} icon={ImageIcon} title="ตั้งค่ารูปภาพ">
-          <View className="gap-2">
-            <OptionGroup
-              label="Prompt รูป"
-              options={[
-                { label: 'ออโต้', value: 'auto' },
-                { label: 'กำหนดเอง', value: 'custom' },
-              ]}
-              theme={theme}
-              value={imageSettings.promptMode}
-              onChange={(value) => controller.updateSelectedImageSetting('promptMode', value as typeof imageSettings.promptMode)}
-            />
-            {imageSettings.promptMode === 'custom' ? (
-              <SettingInput
-                multiline
-                label="Prompt รูปกำหนดเอง"
-                placeholder="ใส่ prompt รูปภาพทั้งหมดที่ต้องการส่งให้ Google Flow"
-                theme={theme}
-                value={imageSettings.customPrompt}
-                onChangeText={(value) => controller.updateSelectedImageSetting('customPrompt', value)}
-              />
-            ) : null}
-            <View className="flex-row gap-2">
-              <OptionGroup
-                columns={5}
-                label="สัดส่วน"
-                options={IMAGE_ASPECT_RATIO_OPTIONS.map((ratio) => ({ label: ratio, value: ratio }))}
-                theme={theme}
-                value={imageSettings.aspectRatio}
-                onChange={(value) => controller.updateSelectedImageSetting('aspectRatio', String(value))}
-              />
-              <OptionGroup
-                columns={4}
-                label="จำนวน"
-                options={OUTPUT_COUNT_OPTIONS.map((count) => ({ label: count, value: count }))}
-                theme={theme}
-                value={imageSettings.outputCount}
-                onChange={(value) => controller.updateSelectedImageSetting('outputCount', String(value))}
-              />
-            </View>
-            <View className="flex-row gap-2">
-              <OptionGroup
-                columns={3}
-                label="ตัวละคร"
-                options={IMAGE_CHARACTER_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-                theme={theme}
-                value={imageSettings.characterMode}
-                onChange={(value) => controller.updateSelectedImageSetting('characterMode', String(value))}
-              />
-              <OptionGroup
-                columns={3}
-                label="ฉากหลัก"
-                options={IMAGE_SCENE_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-                theme={theme}
-                value={imageSettings.sceneMode}
-                onChange={(value) => controller.updateSelectedImageSetting('sceneMode', String(value))}
-              />
-            </View>
-            {imageSettings.characterMode === 'description' ? (
-              <SettingInput
-                label="อธิบายตัวละคร"
-                placeholder="เช่น นางแบบวัยทำงานถือสินค้า"
-                theme={theme}
-                value={imageSettings.characterDescription}
-                onChangeText={(value) => controller.updateSelectedImageSetting('characterDescription', value)}
-              />
-            ) : null}
-            {imageSettings.sceneMode === 'description' ? (
-              <SettingInput
-                label="อธิบายฉาก"
-                placeholder="เช่น ห้องนั่งเล่นสว่าง โต๊ะไม้ โทนอบอุ่น"
-                theme={theme}
-                value={imageSettings.sceneDescription}
-                onChangeText={(value) => controller.updateSelectedImageSetting('sceneDescription', value)}
-              />
-            ) : null}
-            <OptionGroup
-              label="สไตล์"
-              options={IMAGE_STYLE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-              theme={theme}
-              value={imageSettings.presetStyle}
-              onChange={(value) => controller.updateSelectedImageSetting('presetStyle', String(value))}
-            />
-            {imageSettings.presetStyle === 'custom' ? (
-              <SettingInput
-                label="สไตล์กำหนดเอง"
-                placeholder="เช่น cozy creator, premium studio"
-                theme={theme}
-                value={imageSettings.presetStyleCustom}
-                onChangeText={(value) => controller.updateSelectedImageSetting('presetStyleCustom', value)}
-              />
-            ) : null}
-            <View className="flex-row gap-2">
-              <OptionGroup
-                columns={5}
-                label="ฉาก"
-                options={IMAGE_DETAIL_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-                theme={theme}
-                value={imageSettings.background}
-                onChange={(value) => controller.updateSelectedImageSetting('background', String(value))}
-              />
-              <OptionGroup
-                columns={5}
-                label="แสง"
-                options={IMAGE_DETAIL_OPTIONS
-                  .filter((option) => option.value !== 'marketplace')
-                  .map((option) => ({ label: option.label, value: option.value }))}
-                theme={theme}
-                value={imageSettings.lighting}
-                onChange={(value) => controller.updateSelectedImageSetting('lighting', String(value))}
-              />
-            </View>
-            <View className="flex-row gap-2">
-              <OptionGroup
-                columns={3}
-                label="เฟรม"
-                options={IMAGE_FRAME_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-                theme={theme}
-                value={imageSettings.frame}
-                onChange={(value) => controller.updateSelectedImageSetting('frame', String(value))}
-              />
-              <OptionGroup
-                columns={3}
-                label="ข้อความ"
-                options={IMAGE_TEXT_OVERLAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-                theme={theme}
-                value={imageSettings.textOverlay}
-                onChange={(value) => controller.updateSelectedImageSetting('textOverlay', String(value))}
-              />
-            </View>
-            {imageSettings.background === 'custom' ? (
-              <SettingInput
-                label="ฉากกำหนดเอง"
-                placeholder="เช่น ห้องนั่งเล่นแสงเช้า, โต๊ะขายของ"
-                theme={theme}
-                value={imageSettings.backgroundCustom}
-                onChangeText={(value) => controller.updateSelectedImageSetting('backgroundCustom', value)}
-              />
-            ) : null}
-            {imageSettings.lighting === 'custom' ? (
-              <SettingInput
-                label="แสงกำหนดเอง"
-                placeholder="เช่น soft window light, cinematic warm light"
-                theme={theme}
-                value={imageSettings.lightingCustom}
-                onChangeText={(value) => controller.updateSelectedImageSetting('lightingCustom', value)}
-              />
-            ) : null}
-            {imageSettings.frame === 'custom' ? (
-              <SettingInput
-                label="เฟรมกำหนดเอง"
-                placeholder="เช่น hero close-up with product in hand"
-                theme={theme}
-                value={imageSettings.frameCustom}
-                onChangeText={(value) => controller.updateSelectedImageSetting('frameCustom', value)}
-              />
-            ) : null}
-            {imageSettings.textOverlay === 'custom' ? (
-              <SettingInput
-                label="ข้อความกำหนดเอง"
-                placeholder="เช่น ไม่มีข้อความ หรือ ใส่หัวข้อโปรโมชันสั้น ๆ"
-                theme={theme}
-                value={imageSettings.textOverlayCustom}
-                onChangeText={(value) => controller.updateSelectedImageSetting('textOverlayCustom', value)}
-              />
-            ) : null}
-            <OptionGroup
-              label="การโชว์สินค้า"
-              options={IMAGE_PRODUCT_DISPLAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-              theme={theme}
-              value={imageSettings.productDisplayMode}
-              onChange={(value) => controller.updateSelectedImageSetting('productDisplayMode', String(value))}
-            />
-            <SettingInput
-              label="คำสั่งรูปเพิ่มเติม"
-              placeholder="เช่น ห้ามมีข้อความบนภาพ"
-              theme={theme}
-              value={imageSettings.systemPrompt}
-              onChangeText={(value) => controller.updateSelectedImageSetting('systemPrompt', value)}
-            />
-          </View>
-        </SectionCard>
-
-        <SectionCard theme={theme} icon={Video} title="ตั้งค่าวิดีโอ">
-          <View className="gap-2">
-            <OptionGroup
-              label="Prompt วิดีโอ"
-              options={[
-                { label: 'ออโต้', value: 'auto' },
-                { label: 'กำหนดเอง', value: 'custom' },
-              ]}
-              theme={theme}
-              value={videoSettings.promptMode}
-              onChange={(value) => controller.updateSelectedVideoSetting('promptMode', value as typeof videoSettings.promptMode)}
-            />
-            {videoSettings.promptMode === 'custom' ? (
-              <SettingInput
-                multiline
-                label="Prompt วิดีโอกำหนดเอง"
-                placeholder="ใส่ prompt วิดีโอทั้งหมดที่ต้องการส่งให้ Google Flow"
-                theme={theme}
-                value={videoSettings.customPrompt}
-                onChangeText={(value) => controller.updateSelectedVideoSetting('customPrompt', value)}
-              />
-            ) : null}
-            <View className="flex-row gap-2">
-              <OptionGroup
-                columns={2}
-                label="สัดส่วน"
-                options={VIDEO_ASPECT_RATIO_OPTIONS.map((ratio) => ({ label: ratio, value: ratio }))}
-                theme={theme}
-                value={videoSettings.aspectRatio}
-                onChange={(value) => controller.updateSelectedVideoSetting('aspectRatio', String(value))}
-              />
-              <OptionGroup
-                columns={4}
-                label="จำนวน"
-                options={OUTPUT_COUNT_OPTIONS.map((count) => ({ label: count, value: count }))}
-                theme={theme}
-                value={videoSettings.outputCount}
-                onChange={(value) => controller.updateSelectedVideoSetting('outputCount', String(value))}
-              />
-              <OptionGroup
-                columns={3}
-                label="ฉาก"
-                options={VIDEO_SCENE_OPTIONS.map((count) => ({ label: count, value: count }))}
-                theme={theme}
-                value={videoSettings.sceneCount}
-                onChange={(value) => controller.updateSelectedVideoSetting('sceneCount', String(value))}
-              />
-            </View>
-            <OptionGroup
-              label="ตัวละครวิดีโอ"
-              options={VIDEO_CHARACTER_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-              theme={theme}
-              value={videoSettings.characterMode}
-              onChange={(value) => controller.updateSelectedVideoSetting('characterMode', String(value))}
-            />
-            <SettingInput
-              label="สไตล์วิดีโอ"
-              placeholder="เช่น creator review, premium product demo"
-              theme={theme}
-              value={videoSettings.presetStyle}
-              onChangeText={(value) => controller.updateSelectedVideoSetting('presetStyle', value)}
-            />
-            <OptionGroup
-              label="บทพูด"
-              options={[
-                { label: 'ออโต้', value: 'auto' },
-                { label: 'ไม่มี', value: 'none' },
-                { label: 'กำหนดเอง', value: 'custom' },
-              ]}
-              theme={theme}
-              value={videoSettings.dialogueMode}
-              onChange={(value) => controller.updateSelectedVideoSetting('dialogueMode', value as typeof videoSettings.dialogueMode)}
-            />
-            {videoSettings.dialogueMode === 'custom' ? (
-              <SettingInput
-                label="บทพูดกำหนดเอง"
-                placeholder="ใส่บทพูดภาษาไทยสำหรับ Flow"
-                theme={theme}
-                value={videoSettings.dialogue}
-                onChangeText={(value) => controller.updateSelectedVideoSetting('dialogue', value)}
-              />
-            ) : null}
-            <View className="flex-row gap-2">
-              <SettingInput
-                label="กล้อง"
-                placeholder="เช่น close-up, dolly in"
-                theme={theme}
-                value={videoSettings.cameraMotion}
-                onChangeText={(value) => controller.updateSelectedVideoSetting('cameraMotion', value)}
-              />
-              <SettingInput
-                label="เสียงตัวละคร"
-                placeholder="เช่น ผู้หญิงวัยทำงาน, ผู้ชายจริงใจ"
-                theme={theme}
-                value={videoSettings.voiceCharacter}
-                onChangeText={(value) => controller.updateSelectedVideoSetting('voiceCharacter', value)}
-              />
-            </View>
-            <SettingInput
-              label="สไตล์สคริปต์"
-              placeholder="เช่น รีวิวสั้นตรงประเด็น, soft sell, story telling"
-              theme={theme}
-              value={videoSettings.scriptStyle}
-              onChangeText={(value) => controller.updateSelectedVideoSetting('scriptStyle', value)}
-            />
-            <OptionGroup
-              label="เพลง/SFX"
-              options={[
-                { label: 'ออโต้', value: 'auto' },
-                { label: 'ไม่มี', value: 'none' },
-                { label: 'กำหนดเอง', value: 'custom' },
-              ]}
-              theme={theme}
-              value={videoSettings.musicSfxMode}
-              onChange={(value) => controller.updateSelectedVideoSetting('musicSfxMode', value as typeof videoSettings.musicSfxMode)}
-            />
-            {videoSettings.musicSfxMode === 'custom' ? (
-              <SettingInput
-                label="เพลง/SFX กำหนดเอง"
-                placeholder="เช่น upbeat, soft pop, light whoosh"
-                theme={theme}
-                value={videoSettings.musicSfxCustom}
-                onChangeText={(value) => controller.updateSelectedVideoSetting('musicSfxCustom', value)}
-              />
-            ) : null}
-            <SettingInput
-              label="คำต้องห้าม"
-              placeholder="เช่น ห้ามพูดชื่อแบรนด์คู่แข่ง หรือคำเคลมเกินจริง"
-              theme={theme}
-              value={videoSettings.forbiddenWords}
-              onChangeText={(value) => controller.updateSelectedVideoSetting('forbiddenWords', value)}
-            />
-            <SettingInput
-              label="คำสั่งวิดีโอเพิ่มเติม"
-              placeholder="เช่น ห้าม subtitle, เต็มจอ"
-              theme={theme}
-              value={videoSettings.systemPrompt}
-              onChangeText={(value) => controller.updateSelectedVideoSetting('systemPrompt', value)}
-            />
-          </View>
-        </SectionCard>
-
       </ScrollView>
+
+      {productSelectSheetOpen ? (
+        <ProductSelectSheet
+          bottomInset={insets.bottom}
+          topInset={insets.top}
+          products={profileProducts}
+          selectedProductIds={controller.selectedProductIds}
+          theme={theme}
+          onClose={() => setProductSelectSheetOpen(false)}
+          onConfirm={(productIds) => {
+            controller.setSelectedProductsFromCatalog(productIds);
+            setProductSelectSheetOpen(false);
+          }}
+        />
+      ) : null}
+
+      {editingProduct ? (
+        <ProductSettingsModal
+          bottomInset={insets.bottom}
+          enabledSteps={controller.enabledSteps}
+          product={editingProduct}
+          selectedProductCount={controller.selectedProducts.length}
+          tab={productSettingsTab}
+          theme={theme}
+          onApplyAll={() => controller.applyProductSettingsToAll(editingProduct.id)}
+          onApplyImageSection={(keys) => controller.applyProductImageSectionToAll(editingProduct.id, keys)}
+          onApplyVideoSection={(keys) => controller.applyProductVideoSectionToAll(editingProduct.id, keys)}
+          onClose={() => setEditingProductId(null)}
+          onImageChange={(key, value) => controller.updateProductImageSetting(editingProduct.id, key, value)}
+          onOpenSettingsPreset={openSettingsPresetSheet}
+          onReset={() => controller.resetProductSettings(editingProduct.id)}
+          onTabChange={setProductSettingsTab}
+          onVideoChange={(key, value) => controller.updateProductVideoSetting(editingProduct.id, key, value)}
+        />
+      ) : null}
+
+      {settingsPresetSheetOpen && editingProduct ? (
+        <SettingsPresetSheet
+          bottomInset={insets.bottom}
+          mode={settingsPresetMode}
+          name={settingsPresetName}
+          presets={settingsPresets}
+          saveDisabled={settingsPresetName.trim().length === 0}
+          message={settingsPresetMessage}
+          product={editingProduct}
+          theme={theme}
+          onClose={() => setSettingsPresetSheetOpen(false)}
+          onLoad={loadSettingsPreset}
+          onModeChange={setSettingsPresetMode}
+          onNameChange={setSettingsPresetName}
+          onSave={() => {
+            void saveCurrentSettingsPreset();
+          }}
+        />
+      ) : null}
+
+      {productPresetSheetOpen ? (
+        <ProductPresetSheet
+          bottomInset={insets.bottom}
+          mode={productPresetMode}
+          name={productPresetName}
+          presets={productPresets}
+          saveDisabled={!selectedProfileId || productPresetName.trim().length === 0 || controller.selectedProducts.length === 0}
+          selectedCount={controller.selectedProducts.length}
+          message={productPresetMessage}
+          theme={theme}
+          onClose={() => setProductPresetSheetOpen(false)}
+          onLoad={loadSelectedProductPreset}
+          onModeChange={setProductPresetMode}
+          onNameChange={setProductPresetName}
+          onSave={() => {
+            void saveSelectedProductPreset();
+          }}
+        />
+      ) : null}
 
       <View className="absolute bottom-0 left-0 right-0 border-t border-kd-border bg-kd-panel px-3 pb-3 pt-2">
         <View className="mb-2 flex-row items-center justify-between">
@@ -673,7 +571,7 @@ function HeaderBlock({
     <View className="gap-3 rounded-[14px] border border-kd-border bg-kd-card px-3 py-3">
       <View className="flex-row items-center gap-3">
         <View className="h-10 w-10 items-center justify-center rounded-kd-lg" style={{ backgroundColor: alpha(theme.amber, theme.isDark ? 0.18 : 0.12) }}>
-          <Bot size={20} color={theme.amber} strokeWidth={2.2} />
+          <Star size={20} color={theme.amber} strokeWidth={2.2} />
         </View>
         <View className="min-w-0 flex-1">
           <Text className="text-[15px] font-black text-kd-text">Auto Pipeline</Text>
@@ -728,7 +626,7 @@ function RunnerBlock({
           Standalone · ใช้ browser และ Accessibility บนเครื่องมือถือ
         </Text>
       </View>
-      <OptionGroup
+      <SelectField
         label="Browser"
         options={[
           { label: 'Chrome', value: 'chrome' },
@@ -885,102 +783,1362 @@ function PipelineStepButton({
 }
 
 function ProductCatalogBlock({
-  allVisibleSelected,
   isSyncing,
   profileProducts,
-  searchQuery,
-  selectedProductIds,
-  selectedProductsCount,
+  selectedProducts,
   theme,
-  visibleProducts,
-  onSearchQueryChange,
+  onOpenSettings,
+  onOpenPreset,
+  onOpenProductSelect,
+  onRemoveProduct,
   onSyncProducts,
-  onToggleAllVisible,
-  onToggleProduct,
 }: {
-  allVisibleSelected: boolean;
   isSyncing: boolean;
   profileProducts: AffiliateProduct[];
-  searchQuery: string;
-  selectedProductIds: Set<string>;
-  selectedProductsCount: number;
+  selectedProducts: AutoPilotProduct[];
   theme: KubdeeTheme;
-  visibleProducts: AffiliateProduct[];
-  onSearchQueryChange: (value: string) => void;
+  onOpenSettings: (productId: string) => void;
+  onOpenPreset: () => void;
+  onOpenProductSelect: () => void;
+  onRemoveProduct: (productId: string) => void;
   onSyncProducts: () => void;
-  onToggleAllVisible: () => void;
-  onToggleProduct: (productId: string) => void;
 }): React.JSX.Element {
   return (
-    <SectionCard theme={theme} icon={Package} title={`ข้อมูลสินค้า (${profileProducts.length})`}>
-      <View className="gap-2">
-        <View className="flex-row items-center gap-2">
-          <View className="h-9 flex-1 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2">
-            <Search size={13} color={theme.textSubtle} strokeWidth={2} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={onSearchQueryChange}
-              placeholder="ค้นหาสินค้า..."
-              placeholderTextColor={theme.textSubtle}
-              className="h-9 flex-1 p-0 text-kd-caption text-kd-text"
-              style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
-            />
-            {searchQuery.length > 0 ? (
-              <Pressable accessibilityLabel="ล้างคำค้นหา" accessibilityRole="button" onPress={() => onSearchQueryChange('')}>
-                <X size={13} color={theme.textSubtle} strokeWidth={2.5} />
-              </Pressable>
-            ) : null}
+    <SectionCard theme={theme} icon={Package} title={`ข้อมูลสินค้า (${selectedProducts.length})`}>
+      <View className="gap-3">
+        <View className="flex-row items-center justify-between gap-2">
+          <View className="min-w-0 flex-1">
+            <Text className="text-kd-caption font-semibold text-kd-text">สินค้าใน Auto Pipeline</Text>
+            <Text className="text-kd-micro text-kd-text-subtle">เริ่มต้นว่าง ต้องกดจากคลังเพื่อเลือกสินค้าที่จะสร้างจริง</Text>
           </View>
+          <View className="flex-row items-center gap-1.5">
+            <Pressable
+              accessibilityLabel="เปิด Product Preset"
+              accessibilityRole="button"
+              onPress={onOpenPreset}
+              className="h-8 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-input px-2"
+            >
+              <FolderOpen size={12} color={theme.textMuted} strokeWidth={2.1} />
+              <Text className="text-kd-micro font-black text-kd-text-muted">Preset</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="เลือกสินค้าจากคลัง"
+              accessibilityRole="button"
+              onPress={onOpenProductSelect}
+              className="h-8 flex-row items-center justify-center gap-1 rounded-kd-md bg-kd-emerald px-2"
+            >
+              <Package size={12} color={theme.white} strokeWidth={2.1} />
+              <Text className="text-kd-micro font-black text-white">จากคลัง</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View className="flex-row items-center gap-2 rounded-kd-md bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
+          <Tag size={13} color={theme.textMuted} strokeWidth={2} />
+          <Text className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text">
+            เลือกแล้ว {selectedProducts.length} รายการ
+          </Text>
           <Pressable
-            accessibilityLabel="ซิงก์สินค้า"
+            accessibilityLabel="ซิงก์คลังสินค้า"
             accessibilityRole="button"
             onPress={onSyncProducts}
-            className="h-9 w-9 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
+            className="h-7 w-7 items-center justify-center rounded-kd-md bg-kd-input"
           >
             {isSyncing ? (
               <ActivityIndicator color={theme.textSubtle} size="small" />
             ) : (
-              <RefreshCw size={14} color={theme.textSubtle} strokeWidth={2} />
+              <RefreshCw size={13} color={theme.textSubtle} strokeWidth={2} />
             )}
           </Pressable>
         </View>
 
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: allVisibleSelected }}
-          onPress={onToggleAllVisible}
-          className="min-h-8 flex-row items-center justify-between rounded-kd-md bg-kd-panel-muted px-2.5 dark:bg-kd-card-muted"
-        >
-          <View className="flex-row items-center gap-2">
-            <Tag size={13} color={theme.textMuted} strokeWidth={2} />
-            <Text className="text-kd-caption font-semibold text-kd-text">เลือกสินค้าที่เห็น</Text>
+        {selectedProducts.length === 0 ? (
+          <View className="items-center gap-3 rounded-kd-lg border border-dashed border-kd-border bg-kd-input px-3 py-8">
+            <View className="h-11 w-11 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+              <Package size={22} color={theme.textSubtle} strokeWidth={1.8} />
+            </View>
+            <View className="items-center gap-1">
+              <Text className="text-kd-caption font-black text-kd-text">ยังไม่มีสินค้าใน Auto Pipeline</Text>
+              <Text className="text-center text-kd-micro text-kd-text-subtle">
+                กดปุ่มจากคลัง แล้วเลือกเฉพาะสินค้าที่จะสร้างจริง
+              </Text>
+            </View>
+            <Pressable
+              accessibilityLabel="เลือกสินค้าจากคลัง"
+              accessibilityRole="button"
+              onPress={onOpenProductSelect}
+              className="h-9 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-emerald px-3"
+            >
+              <Package size={14} color={theme.white} strokeWidth={2.1} />
+              <Text className="text-kd-caption font-black text-white">เลือกจากคลังสินค้า</Text>
+            </Pressable>
           </View>
-          <Text className="text-kd-caption font-black text-kd-text-muted">
-            {selectedProductsCount} / {visibleProducts.length}
-          </Text>
-        </Pressable>
-
-        <View className="gap-2">
-          {visibleProducts.map((product, index) => (
-            <ProductRow
-              index={index}
-              key={getAutoPilotProductId(product)}
-              product={product}
-              selected={selectedProductIds.has(getAutoPilotProductId(product))}
-              theme={theme}
-              onPress={() => onToggleProduct(getAutoPilotProductId(product))}
-            />
-          ))}
-        </View>
+        ) : (
+          <View className="gap-2">
+            {selectedProducts.map((product, index) => (
+              <ProductRow
+                index={index}
+                key={product.id}
+                product={product}
+                theme={theme}
+                onOpenSettings={() => onOpenSettings(product.id)}
+                onRemove={() => onRemoveProduct(product.id)}
+              />
+            ))}
+          </View>
+        )}
 
         {profileProducts.length === 0 ? (
-          <View className="items-center gap-2 py-8">
-            <Bot size={26} color={theme.textSubtle} strokeWidth={1.8} />
+          <View className="items-center gap-2 rounded-kd-lg bg-kd-panel-muted py-5 dark:bg-kd-card-muted">
+            <Bot size={24} color={theme.textSubtle} strokeWidth={1.8} />
             <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มีสินค้าในโปรไฟล์นี้</Text>
           </View>
         ) : null}
       </View>
     </SectionCard>
+  );
+}
+
+function ProductSelectSheet({
+  bottomInset,
+  topInset,
+  products,
+  selectedProductIds,
+  theme,
+  onClose,
+  onConfirm,
+}: {
+  bottomInset: number;
+  topInset: number;
+  products: AffiliateProduct[];
+  selectedProductIds: Set<string>;
+  theme: KubdeeTheme;
+  onClose: () => void;
+  onConfirm: (productIds: string[]) => void;
+}): React.JSX.Element {
+  const [query, setQuery] = useState('');
+  const [draftSelectedIds, setDraftSelectedIds] = useState<Set<string>>(
+    () => new Set(Array.from(selectedProductIds))
+  );
+
+  const filteredProducts = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return products;
+    }
+
+    return products.filter((product) =>
+      [
+        product.name,
+        product.externalProductId,
+        product.localId,
+        product.description,
+        product.productUrl,
+      ].filter(Boolean).join(' ').toLowerCase().includes(normalizedQuery)
+    );
+  }, [products, query]);
+
+  const allFilteredSelected =
+    filteredProducts.length > 0 &&
+    filteredProducts.every((product) => draftSelectedIds.has(getAutoPilotProductId(product)));
+
+  const toggleProduct = (productId: string): void => {
+    setDraftSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) {
+        next.delete(productId);
+      } else {
+        next.add(productId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllFiltered = (): void => {
+    setDraftSelectedIds((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) {
+        for (const product of filteredProducts) {
+          next.delete(getAutoPilotProductId(product));
+        }
+        return next;
+      }
+      for (const product of filteredProducts) {
+        next.add(getAutoPilotProductId(product));
+      }
+      return next;
+    });
+  };
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View
+        className="flex-1 bg-black/60 px-2 pb-2"
+        style={{ paddingTop: Math.max(topInset + 10, 40) }}
+      >
+        <View className="min-h-0 flex-1 overflow-hidden rounded-[18px] border border-kd-border bg-kd-panel">
+          <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
+            <View className="flex-row items-center justify-between pb-2">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-emerald-soft dark:bg-kd-card-muted">
+                  <Package size={15} color={theme.emerald} strokeWidth={2.1} />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[14px] font-black text-kd-text">เลือกจากคลังสินค้า</Text>
+                  <Text className="text-kd-micro text-kd-text-subtle">{products.length} รายการในโปรไฟล์นี้</Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิดเลือกสินค้าจากคลัง"
+                accessibilityRole="button"
+                onPress={onClose}
+                className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+              >
+                <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+              </Pressable>
+            </View>
+
+            <View className="pb-3">
+              <View className="h-9 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2">
+                <Search size={13} color={theme.textSubtle} strokeWidth={2} />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="ค้นหาสินค้า..."
+                  placeholderTextColor={theme.textSubtle}
+                  className="h-9 flex-1 p-0 text-kd-caption text-kd-text"
+                  style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
+                />
+                {query.length > 0 ? (
+                  <Pressable accessibilityLabel="ล้างคำค้นหา" accessibilityRole="button" onPress={() => setQuery('')}>
+                    <X size={13} color={theme.textSubtle} strokeWidth={2.5} />
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+          </View>
+
+          {filteredProducts.length > 0 ? (
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: allFilteredSelected }}
+              onPress={toggleAllFiltered}
+              className="min-h-10 flex-row items-center justify-between border-b border-kd-border px-3"
+            >
+              <View className="flex-row items-center gap-2">
+                <View
+                  className="h-4 w-4 items-center justify-center rounded-full border"
+                  style={{
+                    backgroundColor: allFilteredSelected ? theme.emerald : theme.input,
+                    borderColor: allFilteredSelected ? theme.emerald : theme.borderStrong,
+                  }}
+                >
+                  {allFilteredSelected ? <Check size={10} color={theme.white} strokeWidth={3} /> : null}
+                </View>
+                <Text className="text-kd-micro font-semibold text-kd-text-subtle">
+                  เลือกทั้งหมด ({filteredProducts.length})
+                </Text>
+              </View>
+              <Text className="text-kd-micro font-black text-kd-emerald">
+                เลือกแล้ว {draftSelectedIds.size} รายการ
+              </Text>
+            </Pressable>
+          ) : null}
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 p-2 pb-24">
+            {filteredProducts.length === 0 ? (
+              <View className="items-center gap-2 py-12">
+                <Package size={28} color={theme.textSubtle} strokeWidth={1.7} />
+                <Text className="text-kd-caption text-kd-text-subtle">
+                  {query.trim() ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีสินค้าในโปรไฟล์นี้'}
+                </Text>
+              </View>
+            ) : (
+              filteredProducts.map((product) => (
+                <CatalogSelectRow
+                  key={getAutoPilotProductId(product)}
+                  product={product}
+                  selected={draftSelectedIds.has(getAutoPilotProductId(product))}
+                  theme={theme}
+                  onPress={() => toggleProduct(getAutoPilotProductId(product))}
+                />
+              ))
+            )}
+          </ScrollView>
+
+          <View
+            className="absolute bottom-0 left-0 right-0 flex-row items-center justify-end gap-2 border-t border-kd-border bg-kd-panel px-3 pt-2"
+            style={{ paddingBottom: Math.max(bottomInset, 12) }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClose}
+              className="h-10 justify-center rounded-kd-md px-3"
+            >
+              <Text className="text-kd-caption font-black text-kd-text-muted">ยกเลิก</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={draftSelectedIds.size === 0}
+              onPress={() => onConfirm(Array.from(draftSelectedIds))}
+              className={`h-10 flex-row items-center justify-center gap-1.5 rounded-kd-md px-4 ${
+                draftSelectedIds.size === 0 ? 'bg-kd-border' : 'bg-kd-emerald'
+              }`}
+            >
+              <Check size={14} color={theme.white} strokeWidth={2.4} />
+              <Text className="text-kd-caption font-black text-white">
+                เลือก {draftSelectedIds.size > 0 ? `${draftSelectedIds.size} รายการ` : ''}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function CatalogSelectRow({
+  product,
+  selected,
+  theme,
+  onPress,
+}: {
+  product: AffiliateProduct;
+  selected: boolean;
+  theme: KubdeeTheme;
+  onPress: () => void;
+}): React.JSX.Element {
+  const productId = product.externalProductId || product.localId;
+
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selected }}
+      onPress={onPress}
+      className="flex-row items-center gap-2 rounded-kd-lg border p-2"
+      style={{
+        backgroundColor: selected ? alpha(theme.emerald, theme.isDark ? 0.14 : 0.08) : theme.panel,
+        borderColor: selected ? alpha(theme.emerald, 0.55) : theme.border,
+      }}
+    >
+      <View
+        className="h-5 w-5 items-center justify-center rounded-full border-2"
+        style={{
+          backgroundColor: selected ? theme.emerald : 'transparent',
+          borderColor: selected ? theme.emerald : theme.borderStrong,
+        }}
+      >
+        {selected ? <Check size={12} color={theme.white} strokeWidth={3} /> : null}
+      </View>
+      <View className="h-12 w-12 overflow-hidden rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
+        {product.imageUrl ? (
+          <Image source={{ uri: product.imageUrl }} className="h-full w-full" resizeMode="cover" />
+        ) : (
+          <View className="h-full w-full items-center justify-center">
+            <ImageIcon size={16} color={theme.textSubtle} strokeWidth={1.8} />
+          </View>
+        )}
+      </View>
+      <View className="min-w-0 flex-1">
+        <Text numberOfLines={1} className="text-kd-caption font-bold text-kd-text">
+          {product.name || 'ไม่มีชื่อ'}
+        </Text>
+        <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">#{productId}</Text>
+        <Text numberOfLines={1} className="text-kd-micro font-semibold text-kd-emerald">
+          {formatPrice(product.price)}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function ProductPresetSheet({
+  bottomInset,
+  message,
+  mode,
+  name,
+  presets,
+  saveDisabled,
+  selectedCount,
+  theme,
+  onClose,
+  onLoad,
+  onModeChange,
+  onNameChange,
+  onSave,
+}: {
+  bottomInset: number;
+  message: string | null;
+  mode: 'save' | 'load';
+  name: string;
+  presets: AutoPilotProductPreset[];
+  saveDisabled: boolean;
+  selectedCount: number;
+  theme: KubdeeTheme;
+  onClose: () => void;
+  onLoad: (preset: AutoPilotProductPreset) => void;
+  onModeChange: (mode: 'save' | 'load') => void;
+  onNameChange: (value: string) => void;
+  onSave: () => void;
+}): React.JSX.Element {
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View className="flex-1 justify-end bg-black/60">
+        <View
+          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          style={{ maxHeight: '72%' }}
+        >
+          <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
+            <View className="flex-row items-center justify-between pb-2">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+                  <FolderOpen size={15} color={theme.textMuted} strokeWidth={2.1} />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[14px] font-black text-kd-text">Product Preset</Text>
+                  <Text className="text-kd-micro text-kd-text-subtle">บันทึก/โหลดชุดสินค้าที่เลือกจากคลัง</Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด Product Preset"
+                accessibilityRole="button"
+                onPress={onClose}
+                className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+              >
+                <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+              </Pressable>
+            </View>
+
+            <View className="flex-row">
+              <ProductSettingsTabButton
+                active={mode === 'save'}
+                color={theme.emerald}
+                icon={Save}
+                label="บันทึก"
+                theme={theme}
+                onPress={() => onModeChange('save')}
+              />
+              <ProductSettingsTabButton
+                active={mode === 'load'}
+                color={theme.emerald}
+                icon={FolderOpen}
+                label="โหลด"
+                theme={theme}
+                onPress={() => onModeChange('load')}
+              />
+            </View>
+          </View>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerClassName="gap-3 px-3 py-3"
+            contentContainerStyle={{ paddingBottom: Math.max(bottomInset, 20) }}
+          >
+            {message ? (
+              <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
+                <Text className="text-kd-caption font-semibold text-kd-text">{message}</Text>
+              </View>
+            ) : null}
+
+            {mode === 'save' ? (
+              <View className="gap-3">
+                <View className="rounded-kd-lg border border-kd-border bg-kd-card px-3 py-3">
+                  <Text className="text-kd-caption font-black text-kd-text">บันทึกชุดสินค้าที่เลือก</Text>
+                  <Text className="mt-0.5 text-kd-micro text-kd-text-subtle">
+                    รวมสินค้า {selectedCount} รายการ พร้อม settings รูปภาพ/วิดีโอของแต่ละสินค้า
+                  </Text>
+                  <View className="mt-3 gap-1.5">
+                    <Text className="text-kd-micro font-semibold text-kd-text-subtle">ชื่อ preset</Text>
+                    <TextInput
+                      value={name}
+                      onChangeText={onNameChange}
+                      placeholder="เช่น ชุดรีวิวสินค้า 9:16"
+                      placeholderTextColor={theme.textSubtle}
+                      className="min-h-10 rounded-kd-md border border-kd-border bg-kd-input px-2 text-kd-caption text-kd-text"
+                      style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
+                    />
+                  </View>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saveDisabled}
+                  onPress={onSave}
+                  className={`h-11 flex-row items-center justify-center gap-2 rounded-kd-lg ${
+                    saveDisabled ? 'bg-kd-border' : 'bg-kd-text'
+                  }`}
+                >
+                  <Save size={15} color={theme.isDark && !saveDisabled ? '#000000' : theme.white} strokeWidth={2.2} />
+                  <Text className={`text-kd-body font-black ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
+                    บันทึก preset
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View className="gap-2">
+                {presets.length === 0 ? (
+                  <View className="items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card py-8">
+                    <FolderOpen size={24} color={theme.textSubtle} strokeWidth={1.8} />
+                    <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มี Product Preset</Text>
+                  </View>
+                ) : (
+                  presets.map((preset) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={preset.id}
+                      onPress={() => onLoad(preset)}
+                      className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
+                    >
+                      <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
+                        <Text className="text-kd-caption font-black text-kd-text">{preset.productIds.length}</Text>
+                      </View>
+                      <View className="min-w-0 flex-1">
+                        <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">{preset.name}</Text>
+                        <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                          {preset.productIds.length} สินค้า · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
+                        </Text>
+                      </View>
+                      <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
+                    </Pressable>
+                  ))
+                )}
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SettingsPresetSheet({
+  bottomInset,
+  message,
+  mode,
+  name,
+  presets,
+  product,
+  saveDisabled,
+  theme,
+  onClose,
+  onLoad,
+  onModeChange,
+  onNameChange,
+  onSave,
+}: {
+  bottomInset: number;
+  message: string | null;
+  mode: 'save' | 'load';
+  name: string;
+  presets: AutoPilotSettingsPreset[];
+  product: AutoPilotProduct;
+  saveDisabled: boolean;
+  theme: KubdeeTheme;
+  onClose: () => void;
+  onLoad: (preset: AutoPilotSettingsPreset) => void;
+  onModeChange: (mode: 'save' | 'load') => void;
+  onNameChange: (value: string) => void;
+  onSave: () => void;
+}): React.JSX.Element {
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View className="flex-1 justify-end bg-black/60">
+        <View
+          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          style={{ maxHeight: '72%' }}
+        >
+          <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
+            <View className="flex-row items-center justify-between pb-2">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+                  <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[14px] font-black text-kd-text">Preset ตั้งค่า</Text>
+                  <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                    รูปภาพ+วิดีโอของ {product.name || product.productId || 'สินค้า'}
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด Preset ตั้งค่า"
+                accessibilityRole="button"
+                onPress={onClose}
+                className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+              >
+                <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+              </Pressable>
+            </View>
+
+            <View className="flex-row">
+              <ProductSettingsTabButton
+                active={mode === 'save'}
+                color={theme.emerald}
+                icon={Save}
+                label="บันทึก"
+                theme={theme}
+                onPress={() => onModeChange('save')}
+              />
+              <ProductSettingsTabButton
+                active={mode === 'load'}
+                color={theme.emerald}
+                icon={FolderOpen}
+                label="โหลด"
+                theme={theme}
+                onPress={() => onModeChange('load')}
+              />
+            </View>
+          </View>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerClassName="gap-3 px-3 py-3"
+            contentContainerStyle={{ paddingBottom: Math.max(bottomInset, 20) }}
+          >
+            {message ? (
+              <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
+                <Text className="text-kd-caption font-semibold text-kd-text">{message}</Text>
+              </View>
+            ) : null}
+
+            {mode === 'save' ? (
+              <View className="gap-3">
+                <View className="rounded-kd-lg border border-kd-border bg-kd-card px-3 py-3">
+                  <Text className="text-kd-caption font-black text-kd-text">บันทึก preset ตั้งค่า</Text>
+                  <Text className="mt-0.5 text-kd-micro text-kd-text-subtle">
+                    เก็บค่ารูปภาพและวิดีโอของสินค้านี้ไว้ใช้ซ้ำกับสินค้าอื่น
+                  </Text>
+                  <View className="mt-3 gap-1.5">
+                    <Text className="text-kd-micro font-semibold text-kd-text-subtle">ชื่อ preset</Text>
+                    <TextInput
+                      value={name}
+                      onChangeText={onNameChange}
+                      placeholder="เช่น รีวิวสั้น 9:16 โทนพรีเมียม"
+                      placeholderTextColor={theme.textSubtle}
+                      className="min-h-10 rounded-kd-md border border-kd-border bg-kd-input px-2 text-kd-caption text-kd-text"
+                      style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
+                    />
+                  </View>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saveDisabled}
+                  onPress={onSave}
+                  className={`h-11 flex-row items-center justify-center gap-2 rounded-kd-lg ${
+                    saveDisabled ? 'bg-kd-border' : 'bg-kd-text'
+                  }`}
+                >
+                  <Save size={15} color={theme.isDark && !saveDisabled ? '#000000' : theme.white} strokeWidth={2.2} />
+                  <Text className={`text-kd-body font-black ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
+                    บันทึก preset ตั้งค่า
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View className="gap-2">
+                {presets.length === 0 ? (
+                  <View className="items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card py-8">
+                    <FolderOpen size={24} color={theme.textSubtle} strokeWidth={1.8} />
+                    <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มี Preset ตั้งค่า</Text>
+                  </View>
+                ) : (
+                  presets.map((preset) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={preset.id}
+                      onPress={() => onLoad(preset)}
+                      className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
+                    >
+                      <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
+                        <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
+                      </View>
+                      <View className="min-w-0 flex-1">
+                        <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">{preset.name}</Text>
+                        <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                          รูปภาพ+วิดีโอ · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
+                        </Text>
+                      </View>
+                      <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
+                    </Pressable>
+                  ))
+                )}
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ProductSettingsModal({
+  bottomInset,
+  enabledSteps,
+  product,
+  selectedProductCount,
+  tab,
+  theme,
+  onApplyAll,
+  onApplyImageSection,
+  onApplyVideoSection,
+  onClose,
+  onImageChange,
+  onOpenSettingsPreset,
+  onReset,
+  onTabChange,
+  onVideoChange,
+}: {
+  bottomInset: number;
+  enabledSteps: AutoPilotStepType[];
+  product: AutoPilotProduct;
+  selectedProductCount: number;
+  tab: ProductSettingsTab;
+  theme: KubdeeTheme;
+  onApplyAll: () => void;
+  onApplyImageSection: (keys: Array<keyof AutoPilotImageSettings>) => void;
+  onApplyVideoSection: (keys: Array<keyof AutoPilotVideoSettings>) => void;
+  onClose: () => void;
+  onImageChange: <K extends keyof AutoPilotImageSettings>(key: K, value: AutoPilotImageSettings[K]) => void;
+  onOpenSettingsPreset: (mode: 'save' | 'load') => void;
+  onReset: () => void;
+  onTabChange: (tab: ProductSettingsTab) => void;
+  onVideoChange: <K extends keyof AutoPilotVideoSettings>(key: K, value: AutoPilotVideoSettings[K]) => void;
+}): React.JSX.Element {
+  const showImageTab = enabledSteps.includes('image');
+  const showVideoTab = enabledSteps.includes('video');
+  const activeTab = showImageTab && tab === 'image' ? 'image' : showVideoTab ? 'video' : 'image';
+  const canApplyAll = selectedProductCount > 1;
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View className="flex-1 justify-end bg-black/60">
+        <View
+          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          style={{ maxHeight: '94%', minHeight: '78%' }}
+        >
+          <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
+            <View className="flex-row items-center gap-2 pb-2">
+              <View className="h-11 w-11 overflow-hidden rounded-kd-lg border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
+                {product.preview ? (
+                  <Image source={{ uri: product.preview }} className="h-full w-full" resizeMode="cover" />
+                ) : (
+                  <View className="h-full w-full items-center justify-center">
+                    <Package size={18} color={theme.textSubtle} strokeWidth={1.8} />
+                  </View>
+                )}
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text numberOfLines={1} className="text-[14px] font-black text-kd-text">
+                  ตั้งค่า: {product.name || product.productId || 'สินค้า'}
+                </Text>
+                <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                  #{product.productId || product.catalogId} · จากคลังสินค้า
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิดตั้งค่าสินค้า"
+                accessibilityRole="button"
+                onPress={onClose}
+                className="h-9 w-9 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+              >
+                <X size={16} color={theme.textMuted} strokeWidth={2.3} />
+              </Pressable>
+            </View>
+
+            {showImageTab && showVideoTab ? (
+              <View className="flex-row">
+                <ProductSettingsTabButton
+                  active={activeTab === 'image'}
+                  color={theme.amber}
+                  icon={ImageIcon}
+                  label="รูปภาพ"
+                  theme={theme}
+                  onPress={() => onTabChange('image')}
+                />
+                <ProductSettingsTabButton
+                  active={activeTab === 'video'}
+                  color={theme.red}
+                  icon={Video}
+                  label="วิดีโอ"
+                  theme={theme}
+                  onPress={() => onTabChange('video')}
+                />
+              </View>
+            ) : null}
+          </View>
+
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerClassName="gap-4 px-3 py-3"
+            contentContainerStyle={{ paddingBottom: 92 + Math.max(bottomInset, 12) }}
+          >
+            {activeTab === 'image' && showImageTab ? (
+              <ImageProductSettingsForm
+                settings={product.settings.image}
+                theme={theme}
+                onApplySection={onApplyImageSection}
+                onChange={onImageChange}
+              />
+            ) : null}
+            {activeTab === 'video' && showVideoTab ? (
+              <VideoProductSettingsForm
+                settings={product.settings.video}
+                theme={theme}
+                onApplySection={onApplyVideoSection}
+                onChange={onVideoChange}
+              />
+            ) : null}
+          </ScrollView>
+
+          <View
+            className="absolute bottom-0 left-0 right-0 flex-row items-center gap-2 border-t border-kd-border bg-kd-panel px-3 pt-2"
+            style={{ paddingBottom: Math.max(bottomInset, 12) }}
+          >
+            <Pressable
+              accessibilityLabel="รีเซ็ตตั้งค่าสินค้า"
+              accessibilityRole="button"
+              onPress={onReset}
+              className="h-10 w-10 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
+            >
+              <RotateCcw size={15} color={theme.textMuted} strokeWidth={2.2} />
+            </Pressable>
+            <Pressable
+              accessibilityLabel="บันทึก Preset ตั้งค่า"
+              accessibilityRole="button"
+              onPress={() => onOpenSettingsPreset('save')}
+              className="h-10 w-10 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
+            >
+              <Save size={15} color={theme.textMuted} strokeWidth={2.2} />
+            </Pressable>
+            <Pressable
+              accessibilityLabel="โหลด Preset ตั้งค่า"
+              accessibilityRole="button"
+              onPress={() => onOpenSettingsPreset('load')}
+              className="h-10 w-10 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
+            >
+              <FolderOpen size={15} color={theme.textMuted} strokeWidth={2.2} />
+            </Pressable>
+            <Pressable
+              accessibilityLabel="นำค่านี้ไปใช้กับสินค้าที่เลือกทั้งหมด"
+              accessibilityRole="button"
+              disabled={!canApplyAll}
+              onPress={onApplyAll}
+              className={`h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-md border ${
+                canApplyAll
+                  ? 'border-kd-border bg-kd-input'
+                  : 'border-kd-border bg-kd-panel-muted opacity-45 dark:bg-kd-card-muted'
+              }`}
+            >
+              <Copy size={14} color={theme.textMuted} strokeWidth={2.2} />
+              <Text className="text-kd-caption font-black text-kd-text-muted">นำไปใช้ทั้งหมด</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClose}
+              className="h-10 flex-1 items-center justify-center rounded-kd-md bg-kd-text"
+            >
+              <Text className="text-kd-caption font-black text-white dark:text-black">เสร็จสิ้น</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ProductSettingsTabButton({
+  active,
+  color,
+  icon: Icon,
+  label,
+  theme,
+  onPress,
+}: {
+  active: boolean;
+  color: string;
+  icon: typeof Bot;
+  label: string;
+  theme: KubdeeTheme;
+  onPress: () => void;
+}): React.JSX.Element {
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      className="min-h-10 flex-1 flex-row items-center justify-center gap-1.5 border-b-2"
+      style={{ borderBottomColor: active ? color : 'transparent' }}
+    >
+      <Icon size={13} color={active ? color : theme.textSubtle} strokeWidth={2.2} />
+      <Text className="text-kd-caption font-black" style={{ color: active ? color : theme.textSubtle }}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function SettingsSection({
+  children,
+  color,
+  icon: Icon,
+  theme,
+  title,
+  onApplyAll,
+}: {
+  children: React.ReactNode;
+  color: string;
+  icon: typeof Bot;
+  theme: KubdeeTheme;
+  title: string;
+  onApplyAll: () => void;
+}): React.JSX.Element {
+  return (
+    <View className="gap-2.5">
+      <View className="flex-row items-center justify-between">
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <Icon size={14} color={color} strokeWidth={2.1} />
+          <Text className="text-kd-caption font-black text-kd-text">{title}</Text>
+        </View>
+        <Pressable accessibilityRole="button" onPress={onApplyAll} className="px-1.5 py-1">
+          <Text className="text-kd-micro font-semibold text-kd-text-subtle">นำไปใช้ทั้งหมด</Text>
+        </Pressable>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function ImageProductSettingsForm({
+  settings,
+  theme,
+  onApplySection,
+  onChange,
+}: {
+  settings: AutoPilotImageSettings;
+  theme: KubdeeTheme;
+  onApplySection: (keys: Array<keyof AutoPilotImageSettings>) => void;
+  onChange: <K extends keyof AutoPilotImageSettings>(key: K, value: AutoPilotImageSettings[K]) => void;
+}): React.JSX.Element {
+  return (
+    <View className="gap-5">
+      <SettingsSection
+        color={theme.amber}
+        icon={SlidersHorizontal}
+        theme={theme}
+        title="ตั้งค่าพื้นฐาน"
+        onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.basic)}
+      >
+        <View className="gap-2">
+          <OptionGroup
+            label="Prompt รูป"
+            options={[
+              { label: 'ออโต้', value: 'auto' },
+              { label: 'กำหนดเอง', value: 'custom' },
+            ]}
+            theme={theme}
+            value={settings.promptMode}
+            onChange={(value) => onChange('promptMode', value as AutoPilotImageSettings['promptMode'])}
+          />
+          {settings.promptMode === 'custom' ? (
+            <SettingInput
+              multiline
+              label="Prompt รูปกำหนดเอง"
+              placeholder="ใส่ prompt รูปภาพสำหรับสินค้านี้"
+              theme={theme}
+              value={settings.customPrompt}
+              onChangeText={(value) => onChange('customPrompt', value)}
+            />
+          ) : null}
+          <View className="flex-row gap-2">
+            <OptionGroup
+              columns={5}
+              label="สัดส่วน"
+              options={IMAGE_ASPECT_RATIO_OPTIONS.map((ratio) => ({ label: ratio, value: ratio }))}
+              theme={theme}
+              value={settings.aspectRatio}
+              onChange={(value) => onChange('aspectRatio', String(value))}
+            />
+            <OptionGroup
+              columns={4}
+              label="จำนวน"
+              options={OUTPUT_COUNT_OPTIONS.map((count) => ({ label: count, value: count }))}
+              theme={theme}
+              value={settings.outputCount}
+              onChange={(value) => onChange('outputCount', String(value))}
+            />
+          </View>
+        </View>
+      </SettingsSection>
+
+      <SettingsSection
+        color={theme.amber}
+        icon={Bot}
+        theme={theme}
+        title="ตัวละครและฉาก"
+        onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.character)}
+      >
+        <View className="gap-2">
+          <View className="flex-row gap-2">
+            <OptionGroup
+              columns={3}
+              label="ตัวละคร"
+              options={IMAGE_CHARACTER_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={settings.characterMode}
+              onChange={(value) => onChange('characterMode', String(value))}
+            />
+            <OptionGroup
+              columns={3}
+              label="ฉากหลัก"
+              options={IMAGE_SCENE_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={settings.sceneMode}
+              onChange={(value) => onChange('sceneMode', String(value))}
+            />
+          </View>
+          {settings.characterMode === 'description' ? (
+            <SettingInput
+              label="อธิบายตัวละคร"
+              placeholder="เช่น นางแบบวัยทำงานถือสินค้า"
+              theme={theme}
+              value={settings.characterDescription}
+              onChangeText={(value) => onChange('characterDescription', value)}
+            />
+          ) : null}
+          {settings.sceneMode === 'description' ? (
+            <SettingInput
+              label="อธิบายฉาก"
+              placeholder="เช่น ห้องนั่งเล่นสว่าง โต๊ะไม้ โทนอบอุ่น"
+              theme={theme}
+              value={settings.sceneDescription}
+              onChangeText={(value) => onChange('sceneDescription', value)}
+            />
+          ) : null}
+        </View>
+      </SettingsSection>
+
+      <SettingsSection
+        color={theme.amber}
+        icon={Star}
+        theme={theme}
+        title="Preset สไตล์"
+        onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.style)}
+      >
+        <View className="gap-2">
+          <OptionGroup
+            label="สไตล์"
+            options={IMAGE_STYLE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+            theme={theme}
+            value={settings.presetStyle}
+            onChange={(value) => onChange('presetStyle', String(value))}
+          />
+          {settings.presetStyle === 'custom' ? (
+            <SettingInput
+              label="สไตล์กำหนดเอง"
+              placeholder="เช่น cozy creator, premium studio"
+              theme={theme}
+              value={settings.presetStyleCustom}
+              onChangeText={(value) => onChange('presetStyleCustom', value)}
+            />
+          ) : null}
+        </View>
+      </SettingsSection>
+
+      <SettingsSection
+        color={theme.amber}
+        icon={ImageIcon}
+        theme={theme}
+        title="รายละเอียดภาพ"
+        onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.scene)}
+      >
+        <View className="gap-2">
+          <View className="flex-row gap-2">
+            <OptionGroup
+              columns={5}
+              label="ฉาก"
+              options={IMAGE_DETAIL_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={settings.background}
+              onChange={(value) => onChange('background', String(value))}
+            />
+            <OptionGroup
+              columns={5}
+              label="แสง"
+              options={IMAGE_DETAIL_OPTIONS
+                .filter((option) => option.value !== 'marketplace')
+                .map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={settings.lighting}
+              onChange={(value) => onChange('lighting', String(value))}
+            />
+          </View>
+          <View className="flex-row gap-2">
+            <OptionGroup
+              columns={3}
+              label="เฟรม"
+              options={IMAGE_FRAME_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={settings.frame}
+              onChange={(value) => onChange('frame', String(value))}
+            />
+            <OptionGroup
+              columns={3}
+              label="ข้อความ"
+              options={IMAGE_TEXT_OVERLAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+              theme={theme}
+              value={settings.textOverlay}
+              onChange={(value) => onChange('textOverlay', String(value))}
+            />
+          </View>
+          {settings.background === 'custom' ? (
+            <SettingInput
+              label="ฉากกำหนดเอง"
+              placeholder="เช่น ห้องนั่งเล่นแสงเช้า, โต๊ะขายของ"
+              theme={theme}
+              value={settings.backgroundCustom}
+              onChangeText={(value) => onChange('backgroundCustom', value)}
+            />
+          ) : null}
+          {settings.lighting === 'custom' ? (
+            <SettingInput
+              label="แสงกำหนดเอง"
+              placeholder="เช่น soft window light, cinematic warm light"
+              theme={theme}
+              value={settings.lightingCustom}
+              onChangeText={(value) => onChange('lightingCustom', value)}
+            />
+          ) : null}
+          {settings.frame === 'custom' ? (
+            <SettingInput
+              label="เฟรมกำหนดเอง"
+              placeholder="เช่น hero close-up with product in hand"
+              theme={theme}
+              value={settings.frameCustom}
+              onChangeText={(value) => onChange('frameCustom', value)}
+            />
+          ) : null}
+          {settings.textOverlay === 'custom' ? (
+            <SettingInput
+              label="ข้อความกำหนดเอง"
+              placeholder="เช่น ไม่มีข้อความ หรือ ใส่หัวข้อโปรโมชันสั้น ๆ"
+              theme={theme}
+              value={settings.textOverlayCustom}
+              onChangeText={(value) => onChange('textOverlayCustom', value)}
+            />
+          ) : null}
+          <OptionGroup
+            label="การโชว์สินค้า"
+            options={IMAGE_PRODUCT_DISPLAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+            theme={theme}
+            value={settings.productDisplayMode}
+            onChange={(value) => onChange('productDisplayMode', String(value))}
+          />
+          <SettingInput
+            label="คำสั่งรูปเพิ่มเติม"
+            placeholder="เช่น ห้ามมีข้อความบนภาพ"
+            theme={theme}
+            value={settings.systemPrompt}
+            onChangeText={(value) => onChange('systemPrompt', value)}
+          />
+        </View>
+      </SettingsSection>
+    </View>
+  );
+}
+
+function VideoProductSettingsForm({
+  settings,
+  theme,
+  onApplySection,
+  onChange,
+}: {
+  settings: AutoPilotVideoSettings;
+  theme: KubdeeTheme;
+  onApplySection: (keys: Array<keyof AutoPilotVideoSettings>) => void;
+  onChange: <K extends keyof AutoPilotVideoSettings>(key: K, value: AutoPilotVideoSettings[K]) => void;
+}): React.JSX.Element {
+  return (
+    <View className="gap-5">
+      <SettingsSection
+        color={theme.red}
+        icon={SlidersHorizontal}
+        theme={theme}
+        title="ตั้งค่าพื้นฐาน"
+        onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.basic)}
+      >
+        <View className="gap-2">
+          <OptionGroup
+            label="Prompt วิดีโอ"
+            options={[
+              { label: 'ออโต้', value: 'auto' },
+              { label: 'กำหนดเอง', value: 'custom' },
+            ]}
+            theme={theme}
+            value={settings.promptMode}
+            onChange={(value) => onChange('promptMode', value as AutoPilotVideoSettings['promptMode'])}
+          />
+          {settings.promptMode === 'custom' ? (
+            <SettingInput
+              multiline
+              label="Prompt วิดีโอกำหนดเอง"
+              placeholder="ใส่ prompt วิดีโอสำหรับสินค้านี้"
+              theme={theme}
+              value={settings.customPrompt}
+              onChangeText={(value) => onChange('customPrompt', value)}
+            />
+          ) : null}
+          <View className="flex-row gap-2">
+            <OptionGroup
+              columns={2}
+              label="สัดส่วน"
+              options={VIDEO_ASPECT_RATIO_OPTIONS.map((ratio) => ({ label: ratio, value: ratio }))}
+              theme={theme}
+              value={settings.aspectRatio}
+              onChange={(value) => onChange('aspectRatio', String(value))}
+            />
+            <OptionGroup
+              columns={4}
+              label="จำนวน"
+              options={OUTPUT_COUNT_OPTIONS.map((count) => ({ label: count, value: count }))}
+              theme={theme}
+              value={settings.outputCount}
+              onChange={(value) => onChange('outputCount', String(value))}
+            />
+            <OptionGroup
+              columns={3}
+              label="ฉาก"
+              options={VIDEO_SCENE_OPTIONS.map((count) => ({ label: count, value: count }))}
+              theme={theme}
+              value={settings.sceneCount}
+              onChange={(value) => onChange('sceneCount', String(value))}
+            />
+          </View>
+        </View>
+      </SettingsSection>
+
+      <SettingsSection
+        color={theme.red}
+        icon={Star}
+        theme={theme}
+        title="Preset วิดีโอ"
+        onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.style)}
+      >
+        <View className="gap-2">
+          <OptionGroup
+            label="ตัวละครวิดีโอ"
+            options={VIDEO_CHARACTER_MODE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+            theme={theme}
+            value={settings.characterMode}
+            onChange={(value) => onChange('characterMode', String(value))}
+          />
+          <SettingInput
+            label="สไตล์วิดีโอ"
+            placeholder="เช่น creator review, premium product demo"
+            theme={theme}
+            value={settings.presetStyle}
+            onChangeText={(value) => onChange('presetStyle', value)}
+          />
+          <View className="flex-row gap-2">
+            <SettingInput
+              label="กล้อง"
+              placeholder="เช่น close-up, dolly in"
+              theme={theme}
+              value={settings.cameraMotion}
+              onChangeText={(value) => onChange('cameraMotion', value)}
+            />
+            <SettingInput
+              label="เสียงตัวละคร"
+              placeholder="เช่น ผู้หญิงวัยทำงาน"
+              theme={theme}
+              value={settings.voiceCharacter}
+              onChangeText={(value) => onChange('voiceCharacter', value)}
+            />
+          </View>
+          <SettingInput
+            label="สไตล์สคริปต์"
+            placeholder="เช่น รีวิวสั้นตรงประเด็น, soft sell"
+            theme={theme}
+            value={settings.scriptStyle}
+            onChangeText={(value) => onChange('scriptStyle', value)}
+          />
+        </View>
+      </SettingsSection>
+
+      <SettingsSection
+        color={theme.red}
+        icon={Video}
+        theme={theme}
+        title="บทพูดและเสียง"
+        onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.dialogue)}
+      >
+        <View className="gap-2">
+          <OptionGroup
+            label="บทพูด"
+            options={[
+              { label: 'ออโต้', value: 'auto' },
+              { label: 'ไม่มี', value: 'none' },
+              { label: 'กำหนดเอง', value: 'custom' },
+            ]}
+            theme={theme}
+            value={settings.dialogueMode}
+            onChange={(value) => onChange('dialogueMode', value as AutoPilotVideoSettings['dialogueMode'])}
+          />
+          {settings.dialogueMode === 'custom' ? (
+            <SettingInput
+              label="บทพูดกำหนดเอง"
+              placeholder="ใส่บทพูดภาษาไทยสำหรับ Flow"
+              theme={theme}
+              value={settings.dialogue}
+              onChangeText={(value) => onChange('dialogue', value)}
+            />
+          ) : null}
+          <OptionGroup
+            label="เพลง/SFX"
+            options={[
+              { label: 'ออโต้', value: 'auto' },
+              { label: 'ไม่มี', value: 'none' },
+              { label: 'กำหนดเอง', value: 'custom' },
+            ]}
+            theme={theme}
+            value={settings.musicSfxMode}
+            onChange={(value) => onChange('musicSfxMode', value as AutoPilotVideoSettings['musicSfxMode'])}
+          />
+          {settings.musicSfxMode === 'custom' ? (
+            <SettingInput
+              label="เพลง/SFX กำหนดเอง"
+              placeholder="เช่น upbeat, soft pop, light whoosh"
+              theme={theme}
+              value={settings.musicSfxCustom}
+              onChangeText={(value) => onChange('musicSfxCustom', value)}
+            />
+          ) : null}
+        </View>
+      </SettingsSection>
+
+      <SettingsSection
+        color={theme.red}
+        icon={Settings2}
+        theme={theme}
+        title="คำสั่งเพิ่มเติม"
+        onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.additional)}
+      >
+        <View className="gap-2">
+          <SettingInput
+            label="คำต้องห้าม"
+            placeholder="เช่น ห้ามพูดชื่อแบรนด์คู่แข่ง หรือคำเคลมเกินจริง"
+            theme={theme}
+            value={settings.forbiddenWords}
+            onChangeText={(value) => onChange('forbiddenWords', value)}
+          />
+          <SettingInput
+            label="คำสั่งวิดีโอเพิ่มเติม"
+            placeholder="เช่น ห้าม subtitle, เต็มจอ"
+            theme={theme}
+            value={settings.systemPrompt}
+            onChangeText={(value) => onChange('systemPrompt', value)}
+          />
+        </View>
+      </SettingsSection>
+    </View>
   );
 }
 
@@ -1147,6 +2305,97 @@ function SectionCard({
   );
 }
 
+function SelectField({
+  label,
+  options,
+  theme,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: Array<{ label: string; value: OptionValue }>;
+  theme: KubdeeTheme;
+  value: OptionValue;
+  onChange: (value: OptionValue) => void;
+}): React.JSX.Element {
+  const insets = useSafeAreaInsets();
+  const [open, setOpen] = useState(false);
+  const selectedOption = options.find((option) => String(option.value) === String(value)) ?? options[0];
+
+  return (
+    <View className="min-w-0 flex-1 gap-1">
+      <Text className="text-kd-micro font-semibold uppercase text-kd-text-subtle">{label}</Text>
+      <Pressable
+        accessibilityLabel={label}
+        accessibilityRole="button"
+        onPress={() => setOpen(true)}
+        className="h-10 flex-row items-center justify-between gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-2.5"
+      >
+        <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text">
+          {selectedOption?.label ?? '-'}
+        </Text>
+        <ChevronDown size={14} color={theme.textSubtle} strokeWidth={2.2} />
+      </Pressable>
+
+      {open ? (
+        <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible>
+          <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setOpen(false)}>
+            <View
+              className="rounded-t-[18px] border border-kd-border bg-kd-panel px-3 pt-3"
+              style={{ paddingBottom: Math.max(insets.bottom + 12, 92) }}
+            >
+              <View className="mb-2 flex-row items-center justify-between">
+                <Text className="text-[14px] font-black text-kd-text">{label}</Text>
+                <Pressable
+                  accessibilityLabel={`ปิด ${label}`}
+                  accessibilityRole="button"
+                  onPress={() => setOpen(false)}
+                  className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+                >
+                  <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+                </Pressable>
+              </View>
+              <View className="gap-1.5">
+                {options.map((option) => {
+                  const active = String(option.value) === String(value);
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={String(option.value)}
+                      onPress={() => {
+                        onChange(option.value);
+                        setOpen(false);
+                      }}
+                      className="min-h-10 flex-row items-center gap-2 rounded-kd-md border px-2.5"
+                      style={{
+                        backgroundColor: active ? alpha(theme.emerald, theme.isDark ? 0.16 : 0.08) : theme.input,
+                        borderColor: active ? alpha(theme.emerald, 0.55) : theme.border,
+                      }}
+                    >
+                      <View
+                        className="h-4 w-4 items-center justify-center rounded-full border"
+                        style={{
+                          backgroundColor: active ? theme.emerald : 'transparent',
+                          borderColor: active ? theme.emerald : theme.borderStrong,
+                        }}
+                      >
+                        {active ? <Check size={10} color={theme.white} strokeWidth={3} /> : null}
+                      </View>
+                      <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text">
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </Pressable>
+        </Modal>
+      ) : null}
+    </View>
+  );
+}
+
 function OptionGroup({
   compact = false,
   columns,
@@ -1268,41 +2517,63 @@ function SettingInput({
 function ProductRow({
   index,
   product,
-  selected,
   theme,
-  onPress,
+  onOpenSettings,
+  onRemove,
 }: {
   index: number;
-  product: AffiliateProduct;
-  selected: boolean;
+  product: AutoPilotProduct;
   theme: KubdeeTheme;
-  onPress: () => void;
+  onOpenSettings: () => void;
+  onRemove: () => void;
 }): React.JSX.Element {
-  const productCode = (product.externalProductId || product.localId).slice(0, 26);
+  const productCode = (product.productId || product.catalogId || product.id).slice(0, 26);
 
   return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected }}
-      onPress={onPress}
+    <View
       className="flex-row items-stretch gap-2 rounded-[12px] border p-1.5"
       style={{
-        backgroundColor: selected ? alpha(theme.emerald, theme.isDark ? 0.12 : 0.06) : theme.panel,
-        borderColor: selected ? alpha(theme.emerald, 0.55) : theme.border,
+        backgroundColor: alpha(theme.emerald, theme.isDark ? 0.12 : 0.06),
+        borderColor: alpha(theme.emerald, 0.55),
       }}
     >
-      <View className="relative h-[76px] w-[76px] overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
-        <View className="absolute left-1 top-1 z-10 h-5 min-w-5 items-center justify-center rounded-full border border-kd-border bg-kd-card px-1">
-          <Text className="text-kd-micro font-black text-kd-text">{index + 1}</Text>
-        </View>
-        {product.imageUrl ? (
-          <Image source={{ uri: product.imageUrl }} className="h-full w-full" resizeMode="cover" />
-        ) : (
-          <View className="h-full w-full items-center justify-center">
-            <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.8} />
+      <Pressable
+        accessibilityLabel="ตั้งค่ารายสินค้า"
+        accessibilityRole="button"
+        onPress={onOpenSettings}
+        className="gap-1"
+        style={{ width: 82 }}
+      >
+        <View
+          className="relative overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted"
+          style={{ height: 74, width: 82 }}
+        >
+          <View className="absolute left-1 top-1 z-10 h-5 min-w-5 items-center justify-center rounded-full border border-kd-border bg-kd-card px-1">
+            <Text className="text-kd-micro font-black text-kd-text">{index + 1}</Text>
           </View>
-        )}
-      </View>
+          {product.preview ? (
+            <Image source={{ uri: product.preview }} className="h-full w-full" resizeMode="cover" />
+          ) : (
+            <View className="h-full w-full items-center justify-center">
+              <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.8} />
+            </View>
+          )}
+        </View>
+        <View
+          className="flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-amber bg-kd-amber px-1"
+          style={{ height: 28 }}
+        >
+          <Settings2 size={9} color={theme.text} strokeWidth={2.4} />
+          <Text
+            adjustsFontSizeToFit
+            minimumFontScale={0.72}
+            numberOfLines={1}
+            className="text-[9px] font-black text-kd-text"
+          >
+            ตั้งค่า
+          </Text>
+        </View>
+      </Pressable>
       <View className="min-w-0 flex-1 justify-between rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5">
         <View className="min-w-0">
           <Text numberOfLines={2} className="text-kd-caption font-bold leading-4 text-kd-text">
@@ -1314,13 +2585,19 @@ function ProductRow({
         </View>
         <View className="mt-1 flex-row items-center justify-between gap-2">
           <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">
-            {formatPrice(product.price)}
+            {formatPrice(product.source.price)}
           </Text>
-          <View className="h-5 w-5 items-center justify-center rounded-full border border-kd-border-strong bg-kd-panel">
-            {selected ? <Check size={12} color={theme.emerald} strokeWidth={3} /> : null}
-          </View>
+          <Pressable
+            accessibilityLabel="เอาสินค้าออกจาก Auto Pipeline"
+            accessibilityRole="button"
+            onPress={onRemove}
+            className="h-7 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-panel px-2"
+          >
+            <X size={11} color={theme.textSubtle} strokeWidth={2.4} />
+            <Text className="text-kd-micro font-black text-kd-text-subtle">เอาออก</Text>
+          </Pressable>
         </View>
       </View>
-    </Pressable>
+    </View>
   );
 }

@@ -229,6 +229,37 @@ export function useAutoPilotController({
     setSelectedProductIds(new Set(visibleProducts.map(getAutoPilotProductId)));
   }, []);
 
+  const setSelectedProductsFromCatalog = useCallback(
+    (productIds: string[]): void => {
+      const availableProductIds = new Set(products.map((product) => product.id));
+      setSelectedProductIds(new Set(productIds.filter((productId) => availableProductIds.has(productId))));
+    },
+    [products]
+  );
+
+  const loadProductPreset = useCallback(
+    (productIds: string[], settingsByProductId: Record<string, AutoPilotProductSettings>): void => {
+      const availableProductIds = new Set(products.map((product) => product.id));
+      const nextSelectedProductIds = productIds.filter((productId) => availableProductIds.has(productId));
+
+      setSelectedProductIds(new Set(nextSelectedProductIds));
+      setProductSettingsById((current) => {
+        const next = { ...current };
+        for (const productId of nextSelectedProductIds) {
+          const settings = settingsByProductId[productId];
+          if (settings) {
+            next[productId] = {
+              image: { ...settings.image },
+              video: { ...settings.video },
+            };
+          }
+        }
+        return next;
+      });
+    },
+    [products]
+  );
+
   const clearProducts = useCallback((): void => {
     setSelectedProductIds(new Set());
   }, []);
@@ -279,6 +310,154 @@ export function useAutoPilotController({
     },
     [products, selectedProducts]
   );
+
+  const updateProductImageSetting = useCallback(
+    <K extends keyof AutoPilotImageSettings>(productId: string, key: K, value: AutoPilotImageSettings[K]): void => {
+      const product = products.find((item) => item.id === productId);
+      if (!product) {
+        return;
+      }
+
+      setProductSettingsById((current) => ({
+        ...current,
+        [product.id]: {
+          ...product.settings,
+          image: {
+            ...product.settings.image,
+            [key]: value,
+          },
+        },
+      }));
+    },
+    [products]
+  );
+
+  const updateProductVideoSetting = useCallback(
+    <K extends keyof AutoPilotVideoSettings>(productId: string, key: K, value: AutoPilotVideoSettings[K]): void => {
+      const product = products.find((item) => item.id === productId);
+      if (!product) {
+        return;
+      }
+
+      setProductSettingsById((current) => ({
+        ...current,
+        [product.id]: {
+          ...product.settings,
+          video: {
+            ...product.settings.video,
+            [key]: value,
+          },
+        },
+      }));
+    },
+    [products]
+  );
+
+  const replaceProductSettings = useCallback(
+    (productId: string, nextSettings: AutoPilotProductSettings): void => {
+      const product = products.find((item) => item.id === productId);
+      if (!product) {
+        return;
+      }
+
+      setProductSettingsById((current) => ({
+        ...current,
+        [product.id]: {
+          image: { ...nextSettings.image },
+          video: { ...nextSettings.video },
+        },
+      }));
+    },
+    [products]
+  );
+
+  const applyProductSettingsToAll = useCallback(
+    (sourceProductId: string): void => {
+      const sourceProduct = products.find((product) => product.id === sourceProductId);
+      if (!sourceProduct) {
+        return;
+      }
+
+      const targets = selectedProducts.length > 0 ? selectedProducts : products;
+      setProductSettingsById((current) => {
+        const next = { ...current };
+        for (const product of targets) {
+          next[product.id] = {
+            image: { ...sourceProduct.settings.image },
+            video: { ...sourceProduct.settings.video },
+          };
+        }
+        return next;
+      });
+    },
+    [products, selectedProducts]
+  );
+
+  const applyProductImageSectionToAll = useCallback(
+    (sourceProductId: string, keys: Array<keyof AutoPilotImageSettings>): void => {
+      const sourceProduct = products.find((product) => product.id === sourceProductId);
+      if (!sourceProduct) {
+        return;
+      }
+
+      const targets = selectedProducts.length > 0 ? selectedProducts : products;
+      setProductSettingsById((current) => {
+        const next = { ...current };
+        const imageUpdates = keys.reduce<Partial<AutoPilotImageSettings>>((updates, key) => ({
+          ...updates,
+          [key]: sourceProduct.settings.image[key],
+        }), {});
+        for (const product of targets) {
+          next[product.id] = {
+            ...product.settings,
+            image: {
+              ...product.settings.image,
+              ...imageUpdates,
+            },
+          };
+        }
+        return next;
+      });
+    },
+    [products, selectedProducts]
+  );
+
+  const applyProductVideoSectionToAll = useCallback(
+    (sourceProductId: string, keys: Array<keyof AutoPilotVideoSettings>): void => {
+      const sourceProduct = products.find((product) => product.id === sourceProductId);
+      if (!sourceProduct) {
+        return;
+      }
+
+      const targets = selectedProducts.length > 0 ? selectedProducts : products;
+      setProductSettingsById((current) => {
+        const next = { ...current };
+        const videoUpdates = keys.reduce<Partial<AutoPilotVideoSettings>>((updates, key) => ({
+          ...updates,
+          [key]: sourceProduct.settings.video[key],
+        }), {});
+        for (const product of targets) {
+          next[product.id] = {
+            ...product.settings,
+            video: {
+              ...product.settings.video,
+              ...videoUpdates,
+            },
+          };
+        }
+        return next;
+      });
+    },
+    [products, selectedProducts]
+  );
+
+  const resetProductSettings = useCallback((productId: string): void => {
+    setProductSettingsById((current) => {
+      const next = { ...current };
+      delete next[productId];
+      return next;
+    });
+  }, []);
 
   const startRun = useCallback(async (): Promise<void> => {
     if (!profileLocalId) {
@@ -357,12 +536,21 @@ export function useAutoPilotController({
     selectedProducts,
     selectedImageSettings,
     selectedVideoSettings,
+    loadProductPreset,
     selectAllVisibleProducts,
+    setSelectedProductsFromCatalog,
     settings,
     startRun,
     stopRun,
     toggleProduct,
     toggleStep,
+    applyProductImageSectionToAll,
+    applyProductSettingsToAll,
+    applyProductVideoSectionToAll,
+    resetProductSettings,
+    replaceProductSettings,
+    updateProductImageSetting,
+    updateProductVideoSetting,
     updateSelectedImageSetting,
     updateSelectedVideoSetting,
     updateSetting,
