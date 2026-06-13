@@ -19,6 +19,7 @@ export interface AutoPilotImageSettings {
   customPrompt: string;
   styleMode: 'preset' | 'custom';
   presetStyle: string;
+  presetStyleCustom: string;
   background: string;
   backgroundCustom: string;
   lighting: string;

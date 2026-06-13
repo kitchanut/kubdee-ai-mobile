@@ -635,7 +635,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     if (step == "video" && videoPromptMode == "custom") {
       val customPrompt = videoSettings?.optString("customPrompt", "").orEmpty().trim()
-      if (customPrompt.isNotBlank()) return customPrompt
+      if (customPrompt.isNotBlank()) {
+        return listOf(
+          customPrompt,
+          if (referenceAsset != null) {
+            "ใช้รูปอ้างอิงจากขั้นสร้างรูปก่อนหน้าเป็นภาพหลัก: ${referenceAsset.fileName ?: referenceAsset.uri}"
+          } else {
+            ""
+          }
+        ).filter { it.isNotBlank() }.joinToString("; ")
+      }
     }
 
     return if (step == "video") {
@@ -644,6 +653,32 @@ class KubdeeAccessibilityService : AccessibilityService() {
         "none" -> "ไม่มีบทพูด ให้เป็นวิดีโอเงียบหรือมีเสียงบรรยากาศเท่านั้น"
         "custom" -> videoSettings?.optString("dialogue", "").orEmpty()
         else -> caption.ifBlank { "พูดแนะนำจุดเด่นสินค้าแบบกระชับ เป็นภาษาไทย ฟังเป็นธรรมชาติ" }
+      }
+      val videoStyle = promptSetting(
+        settings = videoSettings,
+        key = "presetStyle",
+        fallback = "รีวิวสินค้าแบบจริงใจ น่าเชื่อถือ เหมาะกับ social commerce"
+      )
+      val cameraMotion = promptSetting(
+        settings = videoSettings,
+        key = "cameraMotion",
+        customKey = "cameraMotionCustom",
+        fallback = "natural handheld, slow push in, product close-up"
+      )
+      val voiceCharacter = promptSetting(
+        settings = videoSettings,
+        key = "voiceCharacter",
+        customKey = "voiceCharacterCustom"
+      )
+      val scriptStyle = promptSetting(
+        settings = videoSettings,
+        key = "scriptStyle",
+        customKey = "scriptStyleCustom"
+      )
+      val musicSfx = when (videoSettings?.optString("musicSfxMode", "auto") ?: "auto") {
+        "none" -> "ไม่มีเพลงหรือเอฟเฟกต์เสียง"
+        "custom" -> videoSettings?.optString("musicSfxCustom", "").orEmpty().trim()
+        else -> "เพลงและเอฟเฟกต์เสียงเหมาะกับโฆษณาสินค้าแบบ social commerce"
       }
       listOf(
         "สร้างวิดีโอโฆษณาสินค้าภาษาไทยแนวตั้ง 9:16 ความยาวประมาณ ${duration} วินาที",
@@ -656,9 +691,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
         if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
         "ให้ใช้ภาพสินค้าอ้างอิงเท่านั้น สินค้าต้องเหมือนจริงและไม่เปลี่ยนรูปทรง",
-        "สไตล์: ${videoSettings?.optString("presetStyle", "").orEmpty().ifBlank { "รีวิวสินค้าแบบจริงใจ น่าเชื่อถือ เหมาะกับ social commerce" }}",
+        "สไตล์: $videoStyle",
         "จำนวนฉาก: ${videoSettings?.optString("sceneCount", "1") ?: "1"}",
-        "กล้อง: ${videoSettings?.optString("cameraMotion", "").orEmpty().ifBlank { "natural handheld, slow push in, product close-up" }}",
+        "กล้อง: $cameraMotion",
+        if (voiceCharacter.isNotBlank()) "เสียงตัวละคร: $voiceCharacter" else "",
+        if (scriptStyle.isNotBlank()) "สไตล์สคริปต์: $scriptStyle" else "",
+        if (musicSfx.isNotBlank()) "เพลง/SFX: $musicSfx" else "",
         "บทพูด/ข้อความประกอบ: $dialogue",
         if (cta.isNotBlank()) "CTA: $cta" else "",
         videoSettings?.optString("systemPrompt", "").orEmpty(),
@@ -666,20 +704,66 @@ class KubdeeAccessibilityService : AccessibilityService() {
         hashtags
       ).filter { it.isNotBlank() }.joinToString("; ")
     } else {
+      val imageStyle = promptSetting(
+        settings = imageSettings,
+        key = "presetStyle",
+        customKey = "presetStyleCustom",
+        fallback = "auto"
+      )
+      val background = promptSetting(
+        settings = imageSettings,
+        key = "background",
+        customKey = "backgroundCustom",
+        fallback = "auto"
+      )
+      val lighting = promptSetting(
+        settings = imageSettings,
+        key = "lighting",
+        customKey = "lightingCustom",
+        fallback = "auto"
+      )
+      val frame = promptSetting(
+        settings = imageSettings,
+        key = "frame",
+        customKey = "frameCustom"
+      )
+      val textOverlay = promptSetting(
+        settings = imageSettings,
+        key = "textOverlay",
+        customKey = "textOverlayCustom"
+      )
       listOf(
         "สร้างรูปโฆษณาสินค้าแนวตั้ง 9:16",
         "สินค้า: $name",
         if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
         if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
         "ให้สินค้าชัดเจนเหมือนภาพอ้างอิง ใช้แสงสวย โทนขายของออนไลน์",
-        "สไตล์: ${imageSettings?.optString("presetStyle", "auto") ?: "auto"}",
-        "ฉาก: ${imageSettings?.optString("background", "auto") ?: "auto"}",
-        "แสง: ${imageSettings?.optString("lighting", "auto") ?: "auto"}",
+        "สไตล์: $imageStyle",
+        "ฉาก: $background",
+        "แสง: $lighting",
+        if (frame.isNotBlank()) "เฟรมภาพ: $frame" else "",
+        if (textOverlay.isNotBlank()) "ข้อความบนภาพ: $textOverlay" else "",
         imageSettings?.optString("systemPrompt", "").orEmpty(),
         "ฉากสะอาด น่าเชื่อถือ เหมาะกับ marketplace",
         "ห้ามบิดเบือนสินค้า ห้ามมีข้อความมั่วบนภาพ",
         hashtags
       ).filter { it.isNotBlank() }.joinToString("; ")
+    }
+  }
+
+  private fun promptSetting(
+    settings: JSONObject?,
+    key: String,
+    customKey: String? = null,
+    fallback: String = ""
+  ): String {
+    val value = settings?.optString(key, "").orEmpty().trim()
+    val customValue = customKey?.let { settings?.optString(it, "").orEmpty().trim() }.orEmpty()
+    return when {
+      value == "custom" && customValue.isNotBlank() -> customValue
+      value.isNotBlank() && value != "auto" && value != "custom" -> value
+      customValue.isNotBlank() -> customValue
+      else -> fallback
     }
   }
 

@@ -240,6 +240,26 @@ export default function AutoPilotScreen({
 
         <SectionCard theme={theme} icon={ImageIcon} title="ตั้งค่ารูปภาพ">
           <View className="gap-2">
+            <OptionGroup
+              label="Prompt รูป"
+              options={[
+                { label: 'ออโต้', value: 'auto' },
+                { label: 'กำหนดเอง', value: 'custom' },
+              ]}
+              theme={theme}
+              value={imageSettings.promptMode}
+              onChange={(value) => controller.updateSelectedImageSetting('promptMode', value as typeof imageSettings.promptMode)}
+            />
+            {imageSettings.promptMode === 'custom' ? (
+              <SettingInput
+                multiline
+                label="Prompt รูปกำหนดเอง"
+                placeholder="ใส่ prompt รูปภาพทั้งหมดที่ต้องการส่งให้ Google Flow"
+                theme={theme}
+                value={imageSettings.customPrompt}
+                onChangeText={(value) => controller.updateSelectedImageSetting('customPrompt', value)}
+              />
+            ) : null}
             <View className="flex-row gap-2">
               <OptionGroup
                 columns={5}
@@ -265,6 +285,15 @@ export default function AutoPilotScreen({
               value={imageSettings.presetStyle}
               onChange={(value) => controller.updateSelectedImageSetting('presetStyle', String(value))}
             />
+            {imageSettings.presetStyle === 'custom' ? (
+              <SettingInput
+                label="สไตล์กำหนดเอง"
+                placeholder="เช่น cozy creator, premium studio"
+                theme={theme}
+                value={imageSettings.presetStyleCustom}
+                onChangeText={(value) => controller.updateSelectedImageSetting('presetStyleCustom', value)}
+              />
+            ) : null}
             <View className="flex-row gap-2">
               <OptionGroup
                 columns={5}
@@ -283,6 +312,24 @@ export default function AutoPilotScreen({
                 onChange={(value) => controller.updateSelectedImageSetting('lighting', String(value))}
               />
             </View>
+            {imageSettings.background === 'custom' ? (
+              <SettingInput
+                label="ฉากกำหนดเอง"
+                placeholder="เช่น ห้องนั่งเล่นแสงเช้า, โต๊ะขายของ"
+                theme={theme}
+                value={imageSettings.backgroundCustom}
+                onChangeText={(value) => controller.updateSelectedImageSetting('backgroundCustom', value)}
+              />
+            ) : null}
+            {imageSettings.lighting === 'custom' ? (
+              <SettingInput
+                label="แสงกำหนดเอง"
+                placeholder="เช่น soft window light, cinematic warm light"
+                theme={theme}
+                value={imageSettings.lightingCustom}
+                onChangeText={(value) => controller.updateSelectedImageSetting('lightingCustom', value)}
+              />
+            ) : null}
             <SettingInput
               label="คำสั่งรูปเพิ่มเติม"
               placeholder="เช่น ห้ามมีข้อความบนภาพ"
@@ -295,6 +342,26 @@ export default function AutoPilotScreen({
 
         <SectionCard theme={theme} icon={Video} title="ตั้งค่าวิดีโอ">
           <View className="gap-2">
+            <OptionGroup
+              label="Prompt วิดีโอ"
+              options={[
+                { label: 'ออโต้', value: 'auto' },
+                { label: 'กำหนดเอง', value: 'custom' },
+              ]}
+              theme={theme}
+              value={videoSettings.promptMode}
+              onChange={(value) => controller.updateSelectedVideoSetting('promptMode', value as typeof videoSettings.promptMode)}
+            />
+            {videoSettings.promptMode === 'custom' ? (
+              <SettingInput
+                multiline
+                label="Prompt วิดีโอกำหนดเอง"
+                placeholder="ใส่ prompt วิดีโอทั้งหมดที่ต้องการส่งให้ Google Flow"
+                theme={theme}
+                value={videoSettings.customPrompt}
+                onChangeText={(value) => controller.updateSelectedVideoSetting('customPrompt', value)}
+              />
+            ) : null}
             <View className="flex-row gap-2">
               <OptionGroup
                 columns={2}
@@ -321,6 +388,13 @@ export default function AutoPilotScreen({
                 onChange={(value) => controller.updateSelectedVideoSetting('sceneCount', String(value))}
               />
             </View>
+            <SettingInput
+              label="สไตล์วิดีโอ"
+              placeholder="เช่น creator review, premium product demo"
+              theme={theme}
+              value={videoSettings.presetStyle}
+              onChangeText={(value) => controller.updateSelectedVideoSetting('presetStyle', value)}
+            />
             <OptionGroup
               label="บทพูด"
               options={[
@@ -350,13 +424,40 @@ export default function AutoPilotScreen({
                 onChangeText={(value) => controller.updateSelectedVideoSetting('cameraMotion', value)}
               />
               <SettingInput
-                label="เสียง/เพลง"
-                placeholder="เช่น upbeat, soft"
+                label="เสียงตัวละคร"
+                placeholder="เช่น ผู้หญิงวัยทำงาน, ผู้ชายจริงใจ"
+                theme={theme}
+                value={videoSettings.voiceCharacter}
+                onChangeText={(value) => controller.updateSelectedVideoSetting('voiceCharacter', value)}
+              />
+            </View>
+            <SettingInput
+              label="สไตล์สคริปต์"
+              placeholder="เช่น รีวิวสั้นตรงประเด็น, soft sell, story telling"
+              theme={theme}
+              value={videoSettings.scriptStyle}
+              onChangeText={(value) => controller.updateSelectedVideoSetting('scriptStyle', value)}
+            />
+            <OptionGroup
+              label="เพลง/SFX"
+              options={[
+                { label: 'ออโต้', value: 'auto' },
+                { label: 'ไม่มี', value: 'none' },
+                { label: 'กำหนดเอง', value: 'custom' },
+              ]}
+              theme={theme}
+              value={videoSettings.musicSfxMode}
+              onChange={(value) => controller.updateSelectedVideoSetting('musicSfxMode', value as typeof videoSettings.musicSfxMode)}
+            />
+            {videoSettings.musicSfxMode === 'custom' ? (
+              <SettingInput
+                label="เพลง/SFX กำหนดเอง"
+                placeholder="เช่น upbeat, soft pop, light whoosh"
                 theme={theme}
                 value={videoSettings.musicSfxCustom}
                 onChangeText={(value) => controller.updateSelectedVideoSetting('musicSfxCustom', value)}
               />
-            </View>
+            ) : null}
             <SettingInput
               label="คำสั่งวิดีโอเพิ่มเติม"
               placeholder="เช่น ห้าม subtitle, เต็มจอ"
@@ -765,12 +866,14 @@ function ToggleRow({
 
 function SettingInput({
   label,
+  multiline = false,
   placeholder,
   theme,
   value,
   onChangeText,
 }: {
   label: string;
+  multiline?: boolean;
   placeholder: string;
   theme: KubdeeTheme;
   value: string;
@@ -780,11 +883,13 @@ function SettingInput({
     <View className="min-w-0 flex-1 gap-1.5">
       <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
       <TextInput
+        multiline={multiline}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={theme.textSubtle}
-        className="min-h-9 rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5 text-kd-caption text-kd-text"
+        textAlignVertical={multiline ? 'top' : 'center'}
+        className={`${multiline ? 'min-h-[82px]' : 'min-h-9'} rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5 text-kd-caption text-kd-text`}
         style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
       />
     </View>

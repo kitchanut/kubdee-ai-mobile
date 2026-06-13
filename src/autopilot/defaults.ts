@@ -26,6 +26,7 @@ export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
   customPrompt: '',
   styleMode: 'preset',
   presetStyle: 'auto',
+  presetStyleCustom: '',
   background: 'auto',
   backgroundCustom: '',
   lighting: 'auto',
@@ -97,6 +98,7 @@ export const IMAGE_STYLE_OPTIONS = [
   { value: 'หรูหรา พรีเมียม', label: 'พรีเมียม' },
   { value: 'มินิมอล', label: 'มินิมอล' },
   { value: 'สนุกสดใส', label: 'สนุกสดใส' },
+  { value: 'custom', label: 'กำหนดเอง' },
 ] as const;
 
 export const IMAGE_DETAIL_OPTIONS = [
@@ -105,6 +107,7 @@ export const IMAGE_DETAIL_OPTIONS = [
   { value: 'home', label: 'บ้าน' },
   { value: 'outdoor', label: 'กลางแจ้ง' },
   { value: 'marketplace', label: 'ขายของ' },
+  { value: 'custom', label: 'กำหนดเอง' },
 ] as const;
 
 export const VIDEO_SCENE_OPTIONS = ['1', '2', '3'] as const;
