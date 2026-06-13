@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/AuthContext';
 import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
 import PlaceholderScreen from '@/screens/PlaceholderScreen';
+import AutoPilotScreen from '@/screens/AutoPilotScreen';
 import AuthLoadingScreen from '@/screens/AuthLoadingScreen';
 import LibraryScreen from '@/screens/LibraryScreen';
 import LoginScreen from '@/screens/LoginScreen';
@@ -92,14 +93,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
       case 'pipeline':
-        return (
-          <PlaceholderScreen
-            accent="blue"
-            statusLabel="Coming soon"
-            theme={theme}
-            title="Auto Pipeline"
-          />
-        );
+        return <AutoPilotScreen selectedProfileId={selectedProfileId} theme={theme} />;
       case 'mobile':
         return (
           <MobileDevicesScreen

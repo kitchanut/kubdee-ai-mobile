@@ -26,6 +26,16 @@ export interface NativeShopeeImportLog {
   ts: number;
 }
 
+export interface NativeGoogleFlowLog {
+  message: string;
+  ts: number;
+  status?: 'running' | 'completed' | 'stopped' | 'error';
+  event?: 'asset';
+  step?: 'image' | 'video';
+  productId?: string;
+  productName?: string;
+}
+
 type NativeAccessibilityModule = {
   openAccessibilitySettings?: () => Promise<boolean> | boolean;
   getStatus?: () => Promise<AccessibilityStatus>;
@@ -38,6 +48,8 @@ type NativeAccessibilityModule = {
   runShopeeSearch?: (keyword: string) => Promise<boolean>;
   importShopeeLikedProducts?: (maxItems: number) => Promise<NativeShopeeLikedProduct[]>;
   stopShopeeAutomation?: () => Promise<boolean>;
+  startGoogleFlowAutoPilot?: (payloadJson: string) => Promise<boolean>;
+  stopGoogleFlowAutoPilot?: () => Promise<boolean>;
   performBack?: () => Promise<boolean>;
   addListener?: (eventName: string) => void;
   removeListeners?: (count: number) => void;
@@ -149,6 +161,22 @@ export async function stopShopeeAutomation(): Promise<boolean> {
   return false;
 }
 
+export async function startGoogleFlowAutoPilot(payload: unknown): Promise<boolean> {
+  if (Platform.OS === 'android' && nativeModule?.startGoogleFlowAutoPilot) {
+    return nativeModule.startGoogleFlowAutoPilot(JSON.stringify(payload));
+  }
+
+  return false;
+}
+
+export async function stopGoogleFlowAutoPilot(): Promise<boolean> {
+  if (Platform.OS === 'android' && nativeModule?.stopGoogleFlowAutoPilot) {
+    return nativeModule.stopGoogleFlowAutoPilot();
+  }
+
+  return false;
+}
+
 export function subscribeShopeeImportLogs(
   listener: (entry: NativeShopeeImportLog) => void
 ): EmitterSubscription | null {
@@ -169,6 +197,41 @@ export function subscribeShopeeImportLogs(
     listener({
       message: entry.message,
       ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+    });
+  });
+}
+
+export function subscribeGoogleFlowLogs(
+  listener: (entry: NativeGoogleFlowLog) => void
+): EmitterSubscription | null {
+  if (!nativeEventEmitter) {
+    return null;
+  }
+
+  return nativeEventEmitter.addListener('KubdeeGoogleFlowLog', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    const entry = payload as Partial<NativeGoogleFlowLog>;
+    if (typeof entry.message !== 'string') {
+      return;
+    }
+
+    listener({
+      message: entry.message,
+      ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+      status:
+        entry.status === 'running' ||
+        entry.status === 'completed' ||
+        entry.status === 'stopped' ||
+        entry.status === 'error'
+          ? entry.status
+          : undefined,
+      event: entry.event === 'asset' ? entry.event : undefined,
+      step: entry.step === 'image' || entry.step === 'video' ? entry.step : undefined,
+      productId: typeof entry.productId === 'string' ? entry.productId : undefined,
+      productName: typeof entry.productName === 'string' ? entry.productName : undefined,
     });
   });
 }
