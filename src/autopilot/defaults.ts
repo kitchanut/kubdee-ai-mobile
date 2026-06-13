@@ -110,4 +110,22 @@ export const IMAGE_DETAIL_OPTIONS = [
   { value: 'custom', label: 'กำหนดเอง' },
 ] as const;
 
+export const IMAGE_FRAME_OPTIONS = [
+  { value: 'auto', label: 'ออโต้' },
+  { value: 'close-up', label: 'โคลสอัพ' },
+  { value: 'half-body', label: 'ครึ่งตัว' },
+  { value: 'full-body', label: 'เต็มตัว' },
+  { value: 'product-focus', label: 'สินค้าเด่น' },
+  { value: 'custom', label: 'กำหนดเอง' },
+] as const;
+
+export const IMAGE_TEXT_OVERLAY_OPTIONS = [
+  { value: 'auto', label: 'ออโต้' },
+  { value: 'none', label: 'ไม่มี' },
+  { value: 'headline', label: 'หัวข้อ' },
+  { value: 'price', label: 'ราคา' },
+  { value: 'promo', label: 'โปรโมชัน' },
+  { value: 'custom', label: 'กำหนดเอง' },
+] as const;
+
 export const VIDEO_SCENE_OPTIONS = ['1', '2', '3'] as const;

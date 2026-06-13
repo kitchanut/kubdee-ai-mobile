@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DEFAULT_AUTO_PILOT_SETTINGS } from '@/autopilot/defaults';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
@@ -57,6 +57,7 @@ export function useAutoPilotController({
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [productSettingsById, setProductSettingsById] = useState<Record<string, AutoPilotProductSettings>>({});
   const [runState, setRunState] = useState<AutoPilotRunState>(initialRunState);
+  const runIdRef = useRef<string | null>(null);
 
   const products = useMemo(
     () =>
@@ -101,7 +102,17 @@ export function useAutoPilotController({
   }, []);
 
   useEffect(() => {
+    runIdRef.current = runState.runId;
+  }, [runState.runId]);
+
+  useEffect(() => {
     const subscription = subscribeGoogleFlowLogs((entry) => {
+      const incomingRunId = entry.runId?.trim();
+      const activeRunId = runIdRef.current;
+      if (incomingRunId && activeRunId && incomingRunId !== activeRunId) {
+        return;
+      }
+
       const terminalStatus =
         entry.status === 'completed' || entry.status === 'stopped' || entry.status === 'error'
           ? entry.status
@@ -146,7 +157,7 @@ export function useAutoPilotController({
         const productId = entry.productId || product?.productId || product?.id || 'unknown';
         void addGeneratedMediaAsset({
           kind: entry.step === 'image' ? 'images' : 'videos',
-          runId: runState.runId || 'mobile-auto',
+          runId: incomingRunId || activeRunId || 'mobile-auto',
           profileLocalId,
           productId,
           productName: entry.productName || product?.name || 'สินค้า',
@@ -187,7 +198,7 @@ export function useAutoPilotController({
     return () => {
       subscription?.remove();
     };
-  }, [addGeneratedMediaAsset, appendLog, productById, profileLocalId, runState.runId]);
+  }, [addGeneratedMediaAsset, appendLog, productById, profileLocalId]);
 
   const updateSetting = useCallback(
     <K extends keyof AutoPilotSettings>(key: K, value: AutoPilotSettings[K]): void => {
@@ -279,6 +290,7 @@ export function useAutoPilotController({
     }
 
     const runId = createRunId();
+    runIdRef.current = runId;
     const payload = createGoogleFlowRunnerPayload({
       enabledSteps,
       products: selectedProducts,

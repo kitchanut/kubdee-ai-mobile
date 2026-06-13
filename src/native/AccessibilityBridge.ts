@@ -29,6 +29,7 @@ export interface NativeShopeeImportLog {
 export interface NativeGoogleFlowLog {
   message: string;
   ts: number;
+  runId?: string;
   status?: 'running' | 'completed' | 'stopped' | 'error';
   event?: 'asset' | 'progress';
   step?: 'image' | 'video';
@@ -231,6 +232,7 @@ export function subscribeGoogleFlowLogs(
     listener({
       message: entry.message,
       ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+      runId: typeof entry.runId === 'string' ? entry.runId : undefined,
       status:
         entry.status === 'running' ||
         entry.status === 'completed' ||

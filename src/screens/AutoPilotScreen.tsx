@@ -26,7 +26,9 @@ import {
   FLOW_VIDEO_MODELS,
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_DETAIL_OPTIONS,
+  IMAGE_FRAME_OPTIONS,
   IMAGE_STYLE_OPTIONS,
+  IMAGE_TEXT_OVERLAY_OPTIONS,
   OUTPUT_COUNT_OPTIONS,
   VIDEO_ASPECT_RATIO_OPTIONS,
   VIDEO_DURATION_OPTIONS,
@@ -306,10 +308,30 @@ export default function AutoPilotScreen({
               <OptionGroup
                 columns={5}
                 label="แสง"
-                options={IMAGE_DETAIL_OPTIONS.slice(0, 4).map((option) => ({ label: option.label, value: option.value }))}
+                options={IMAGE_DETAIL_OPTIONS
+                  .filter((option) => option.value !== 'marketplace')
+                  .map((option) => ({ label: option.label, value: option.value }))}
                 theme={theme}
                 value={imageSettings.lighting}
                 onChange={(value) => controller.updateSelectedImageSetting('lighting', String(value))}
+              />
+            </View>
+            <View className="flex-row gap-2">
+              <OptionGroup
+                columns={3}
+                label="เฟรม"
+                options={IMAGE_FRAME_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+                theme={theme}
+                value={imageSettings.frame}
+                onChange={(value) => controller.updateSelectedImageSetting('frame', String(value))}
+              />
+              <OptionGroup
+                columns={3}
+                label="ข้อความ"
+                options={IMAGE_TEXT_OVERLAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+                theme={theme}
+                value={imageSettings.textOverlay}
+                onChange={(value) => controller.updateSelectedImageSetting('textOverlay', String(value))}
               />
             </View>
             {imageSettings.background === 'custom' ? (
@@ -328,6 +350,24 @@ export default function AutoPilotScreen({
                 theme={theme}
                 value={imageSettings.lightingCustom}
                 onChangeText={(value) => controller.updateSelectedImageSetting('lightingCustom', value)}
+              />
+            ) : null}
+            {imageSettings.frame === 'custom' ? (
+              <SettingInput
+                label="เฟรมกำหนดเอง"
+                placeholder="เช่น hero close-up with product in hand"
+                theme={theme}
+                value={imageSettings.frameCustom}
+                onChangeText={(value) => controller.updateSelectedImageSetting('frameCustom', value)}
+              />
+            ) : null}
+            {imageSettings.textOverlay === 'custom' ? (
+              <SettingInput
+                label="ข้อความกำหนดเอง"
+                placeholder="เช่น ไม่มีข้อความ หรือ ใส่หัวข้อโปรโมชันสั้น ๆ"
+                theme={theme}
+                value={imageSettings.textOverlayCustom}
+                onChangeText={(value) => controller.updateSelectedImageSetting('textOverlayCustom', value)}
               />
             ) : null}
             <SettingInput

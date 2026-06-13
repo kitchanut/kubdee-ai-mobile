@@ -323,12 +323,16 @@ class KubdeeAccessibilityModule(
       fileName: String? = null,
       mimeType: String? = null,
       sizeBytes: Long? = null,
-      createdAt: Long? = null
+      createdAt: Long? = null,
+      runId: String? = null
     ) {
       val context = eventContext ?: return
       val payload = Arguments.createMap().apply {
         putString("message", message)
         putDouble("ts", System.currentTimeMillis().toDouble())
+        if (runId != null) {
+          putString("runId", runId)
+        }
         if (status != null) {
           putString("status", status)
         }

@@ -53,6 +53,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
   @Volatile
   private var googleFlowStopRequested = false
 
+  @Volatile
+  private var currentGoogleFlowRunId: String? = null
+
   companion object {
     private const val TAG = "KubdeeAccessibility"
     private const val GOOGLE_FLOW_URL = "https://labs.google/fx/en/tools/flow"
@@ -176,6 +179,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         resetAutomationLog()
         val payload = JSONObject(payloadJson)
         val runId = payload.optString("runId", "mobile-auto")
+        currentGoogleFlowRunId = runId
         val products = payload.optJSONArray("products")
         val productCount = products?.length() ?: 0
         val settings = payload.optJSONObject("settings")
@@ -191,7 +195,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
         }
 
         logGoogleFlowStep("เริ่ม Auto Pilot Google Flow ($productCount สินค้า)")
-        KubdeeAccessibilityModule.emitGoogleFlowLog("Google Flow runner เริ่มทำงาน", "running")
+        KubdeeAccessibilityModule.emitGoogleFlowLog(
+          message = "Google Flow runner เริ่มทำงาน",
+          status = "running",
+          runId = currentGoogleFlowRunId
+        )
         emitGoogleFlowProgress(
           message = "เตรียม Auto Pilot Google Flow",
           stage = "started",
@@ -274,6 +282,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         logGoogleFlowStatus("Google Flow error: ${error.message ?: "unknown"}", "error")
       } finally {
         hideAutomationOverlay(2500L)
+        currentGoogleFlowRunId = null
       }
     }.also { thread ->
       thread.name = "KubdeeGoogleFlowAutoPilot"
@@ -628,21 +637,50 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val videoSettings = productSettings?.optJSONObject("video")
     val imagePromptMode = imageSettings?.optString("promptMode", "auto") ?: "auto"
     val videoPromptMode = videoSettings?.optString("promptMode", "auto") ?: "auto"
+    val imageAspectRatio = promptSettingValue(imageSettings, "aspectRatio", "9:16")
+    val imageOutputCount = promptSettingValue(imageSettings, "outputCount", "1")
+    val videoAspectRatio = promptSettingValue(videoSettings, "aspectRatio", "9:16")
+    val videoSceneCount = promptSettingValue(videoSettings, "sceneCount", "1")
+    val videoOutputCount = if ((videoSceneCount.toIntOrNull() ?: 1) > 1) {
+      "1"
+    } else {
+      promptSettingValue(videoSettings, "outputCount", "1")
+    }
 
     if (step == "image" && imagePromptMode == "custom") {
       val customPrompt = imageSettings?.optString("customPrompt", "").orEmpty().trim()
-      if (customPrompt.isNotBlank()) return customPrompt
+      if (customPrompt.isNotBlank()) {
+        return listOf(
+          customPrompt,
+          "สินค้า: $name",
+          if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
+          if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
+          "สัดส่วนภาพ: $imageAspectRatio",
+          "จำนวนรูปที่ต้องการ: $imageOutputCount",
+          imageSettings?.optString("systemPrompt", "").orEmpty(),
+          hashtags
+        ).filter { it.isNotBlank() }.joinToString("; ")
+      }
     }
     if (step == "video" && videoPromptMode == "custom") {
       val customPrompt = videoSettings?.optString("customPrompt", "").orEmpty().trim()
       if (customPrompt.isNotBlank()) {
         return listOf(
           customPrompt,
+          "สินค้า: $name",
           if (referenceAsset != null) {
             "ใช้รูปอ้างอิงจากขั้นสร้างรูปก่อนหน้าเป็นภาพหลัก: ${referenceAsset.fileName ?: referenceAsset.uri}"
           } else {
             ""
-          }
+          },
+          if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
+          if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
+          "สัดส่วนวิดีโอ: $videoAspectRatio",
+          "ความยาวประมาณ ${duration} วินาที",
+          "จำนวนวิดีโอที่ต้องการ: $videoOutputCount",
+          "จำนวนฉาก: $videoSceneCount",
+          videoSettings?.optString("systemPrompt", "").orEmpty(),
+          hashtags
         ).filter { it.isNotBlank() }.joinToString("; ")
       }
     }
@@ -681,7 +719,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         else -> "เพลงและเอฟเฟกต์เสียงเหมาะกับโฆษณาสินค้าแบบ social commerce"
       }
       listOf(
-        "สร้างวิดีโอโฆษณาสินค้าภาษาไทยแนวตั้ง 9:16 ความยาวประมาณ ${duration} วินาที",
+        "สร้างวิดีโอโฆษณาสินค้าภาษาไทย สัดส่วน $videoAspectRatio ความยาวประมาณ ${duration} วินาที",
         "สินค้า: $name",
         if (referenceAsset != null) {
           "ใช้รูปอ้างอิงจากขั้นสร้างรูปก่อนหน้าเป็นภาพหลัก: ${referenceAsset.fileName ?: referenceAsset.uri}"
@@ -692,7 +730,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
         "ให้ใช้ภาพสินค้าอ้างอิงเท่านั้น สินค้าต้องเหมือนจริงและไม่เปลี่ยนรูปทรง",
         "สไตล์: $videoStyle",
-        "จำนวนฉาก: ${videoSettings?.optString("sceneCount", "1") ?: "1"}",
+        "จำนวนวิดีโอที่ต้องการ: $videoOutputCount",
+        "จำนวนฉาก: $videoSceneCount",
         "กล้อง: $cameraMotion",
         if (voiceCharacter.isNotBlank()) "เสียงตัวละคร: $voiceCharacter" else "",
         if (scriptStyle.isNotBlank()) "สไตล์สคริปต์: $scriptStyle" else "",
@@ -733,12 +772,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
         customKey = "textOverlayCustom"
       )
       listOf(
-        "สร้างรูปโฆษณาสินค้าแนวตั้ง 9:16",
+        "สร้างรูปโฆษณาสินค้า สัดส่วน $imageAspectRatio",
         "สินค้า: $name",
         if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
         if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
         "ให้สินค้าชัดเจนเหมือนภาพอ้างอิง ใช้แสงสวย โทนขายของออนไลน์",
         "สไตล์: $imageStyle",
+        "จำนวนรูปที่ต้องการ: $imageOutputCount",
         "ฉาก: $background",
         "แสง: $lighting",
         if (frame.isNotBlank()) "เฟรมภาพ: $frame" else "",
@@ -766,6 +806,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
       else -> fallback
     }
   }
+
+  private fun promptSettingValue(settings: JSONObject?, key: String, fallback: String): String =
+    settings?.optString(key, fallback).orEmpty().trim().ifBlank { fallback }
 
   private fun googleFlowProductKey(product: JSONObject): String =
     product.optString("productId").ifBlank {
@@ -1073,7 +1116,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       fileName = downloadedAsset?.fileName,
       mimeType = downloadedAsset?.mimeType,
       sizeBytes = downloadedAsset?.sizeBytes,
-      createdAt = downloadedAsset?.createdAt
+      createdAt = downloadedAsset?.createdAt,
+      runId = currentGoogleFlowRunId
     )
     showAutomationOverlay(message)
   }
@@ -1138,7 +1182,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       currentRound = round,
       totalRounds = totalRounds,
       currentProduct = productIndex,
-      totalProducts = productTotal
+      totalProducts = productTotal,
+      runId = currentGoogleFlowRunId
     )
     showAutomationOverlay(message)
   }
@@ -1146,14 +1191,21 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun logGoogleFlowStep(message: String) {
     Log.d(TAG, "Google Flow runner: $message")
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitGoogleFlowLog(message)
+    KubdeeAccessibilityModule.emitGoogleFlowLog(
+      message = message,
+      runId = currentGoogleFlowRunId
+    )
     showAutomationOverlay(message)
   }
 
   private fun logGoogleFlowStatus(message: String, status: String) {
     Log.d(TAG, "Google Flow runner: $message ($status)")
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitGoogleFlowLog(message, status)
+    KubdeeAccessibilityModule.emitGoogleFlowLog(
+      message = message,
+      status = status,
+      runId = currentGoogleFlowRunId
+    )
     showAutomationOverlay(message)
   }
 
