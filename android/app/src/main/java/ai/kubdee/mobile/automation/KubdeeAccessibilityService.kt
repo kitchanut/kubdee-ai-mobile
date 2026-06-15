@@ -143,6 +143,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
       else -> findEditableNode(root)
     } ?: return false
 
+    return setNodeText(target, text)
+  }
+
+  private fun setNodeText(target: AccessibilityNodeInfo, text: String): Boolean {
     val args = Bundle().apply {
       putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
     }
@@ -219,7 +223,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         )
         checkGoogleFlowStopRequested()
         logGoogleFlowStep("เปิด Google Flow ด้วย browser บนมือถือ")
-        if (!launchUrl(GOOGLE_FLOW_URL, preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null)) {
+        if (!openGoogleFlowInBrowser(browserMode)) {
           throw IllegalStateException("เปิด Google Flow ไม่สำเร็จ")
         }
 
@@ -483,18 +487,27 @@ class KubdeeAccessibilityService : AccessibilityService() {
     if (preferredPackage == TARGET_PACKAGE_CHROME) {
       intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
         setClassName(TARGET_PACKAGE_CHROME, "com.google.android.apps.chrome.Main")
+        addCategory(Intent.CATEGORY_BROWSABLE)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        putExtra("com.android.browser.application_id", packageName)
       })
     }
     intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
+      addCategory(Intent.CATEGORY_BROWSABLE)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      putExtra("com.android.browser.application_id", packageName)
       if (!preferredPackage.isNullOrBlank() && packageManager.getLaunchIntentForPackage(preferredPackage) != null) {
         setPackage(preferredPackage)
       }
     })
     if (!preferredPackage.isNullOrBlank()) {
       intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        putExtra("com.android.browser.application_id", packageName)
       })
     }
 
@@ -509,23 +522,116 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return false
   }
 
-  private fun waitForGoogleFlowReady(timeoutMs: Long): Boolean {
+  private fun openGoogleFlowInBrowser(browserMode: String): Boolean {
+    val preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null
+    if (!launchUrl(GOOGLE_FLOW_URL, preferredPackage = preferredPackage)) {
+      return false
+    }
+
+    if (!waitForChromeActiveWindow(8_000L)) {
+      return false
+    }
+
+    sleepGoogleFlowStep(1200L)
+    val address = currentChromeAddressText()
+    if (isGoogleFlowAddress(address)) {
+      return true
+    }
+
+    if (address.isNotBlank()) {
+      logGoogleFlowStep("Chrome ยังอยู่หน้าอื่น (${address.take(32)}) จะใส่ URL Flow โดยตรง")
+    }
+    return navigateChromeAddressBarTo(GOOGLE_FLOW_URL)
+  }
+
+  private fun waitForChromeActiveWindow(timeoutMs: Long): Boolean {
     val start = System.currentTimeMillis()
     while (System.currentTimeMillis() - start < timeoutMs) {
       checkGoogleFlowStopRequested()
+      if (isChromeActiveWindow()) return true
+      sleepGoogleFlowStep(350L)
+    }
+    return false
+  }
+
+  private fun isChromeActiveWindow(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    return containsNodeFromPackage(root, TARGET_PACKAGE_CHROME)
+  }
+
+  private fun currentChromeAddressText(): String {
+    val node = findChromeUrlBarNode() ?: return ""
+    return cleanNodeText(readNodeText(node))
+  }
+
+  private fun isGoogleFlowAddress(value: String): Boolean {
+    val normalized = value.lowercase(Locale.ROOT)
+    return normalized.contains("labs.google") &&
+      (normalized.contains("flow") || normalized == "labs.google" || normalized.startsWith("labs.google/"))
+  }
+
+  private fun navigateChromeAddressBarTo(url: String): Boolean {
+    if (!waitForChromeActiveWindow(4_000L)) return false
+
+    val urlBar = findChromeUrlBarNode()
+    if (urlBar != null) {
+      clickNode(urlBar) || urlBar.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+    } else {
+      val screen = screenBounds(rootInActiveWindow)
+      tapBlocking(screen.centerX().toFloat(), (screen.top + screen.height() * 0.08f).toFloat())
+    }
+
+    sleepGoogleFlowStep(450L)
+    val target = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+      ?: findChromeUrlBarNode()
+      ?: return false
+
+    if (!setNodeText(target, url)) {
+      return false
+    }
+
+    sleepGoogleFlowStep(250L)
+    if (!pressImeEnter()) {
+      tapBlocking((resources.displayMetrics.widthPixels - dp(55)).toFloat(), (resources.displayMetrics.heightPixels - dp(55)).toFloat())
+    }
+
+    sleepGoogleFlowStep(2600L)
+    return isGoogleFlowAddress(currentChromeAddressText()) ||
+      containsChromeText(listOf("Your AI creative studio", "Create with Google Flow", "Google Flow"), contains = true)
+  }
+
+  private fun waitForGoogleFlowReady(timeoutMs: Long): Boolean {
+    val start = System.currentTimeMillis()
+    var lastNavigateAt = 0L
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkGoogleFlowStopRequested()
+      if (!isChromeActiveWindow()) {
+        sleepGoogleFlowStep(500)
+        continue
+      }
       if (handleChromeFirstRunIfNeeded()) {
         sleepGoogleFlowStep(1200)
       }
       dismissGoogleFlowBlockingPopups()
+      val address = currentChromeAddressText()
+      if (address.isNotBlank() && !isGoogleFlowAddress(address)) {
+        val now = System.currentTimeMillis()
+        if (now - lastNavigateAt > 5_000L) {
+          logGoogleFlowStep("Chrome ไม่ได้อยู่หน้า Flow (${address.take(32)}) จะเปิด Flow ใหม่")
+          navigateChromeAddressBarTo(GOOGLE_FLOW_URL)
+          lastNavigateAt = now
+        }
+        sleepGoogleFlowStep(900)
+        continue
+      }
       if (isChromeGoogleFlowErrorPage()) {
         logGoogleFlowStep("Chrome แสดง error page จะลองโหลด Google Flow ใหม่")
         reloadGoogleFlowPage()
         sleepGoogleFlowStep(3500)
       }
       if (
-        containsAnyText(
+        containsChromeText(
           listOf(
-            "Google Flow",
             "Your AI creative studio",
             "New project",
             "โปรเจ็กต์ใหม่",
@@ -537,7 +643,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
           ),
           contains = true
         ) ||
-        findEditableNode(rootInActiveWindow) != null
+        (
+          isGoogleFlowAddress(currentChromeAddressText()) &&
+            findEditableNode(rootInActiveWindow, allowedPackageName = TARGET_PACKAGE_CHROME) != null
+        )
       ) {
         return true
       }
@@ -561,14 +670,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun reloadGoogleFlowPage(): Boolean {
     dismissGoogleFlowBlockingPopups()
-    if (clickByAnyText(listOf("โหลดใหม่", "Reload", "Try again", "ลองอีกครั้ง"), exact = false)) {
+    if (clickChromeByAnyText(listOf("โหลดใหม่", "Reload", "Try again", "ลองอีกครั้ง"), exact = false)) {
       return true
     }
     return launchUrl(GOOGLE_FLOW_URL, preferredPackage = TARGET_PACKAGE_CHROME)
   }
 
   private fun isChromeGoogleFlowErrorPage(): Boolean =
-    containsAnyText(
+    containsChromeText(
       listOf(
         "แย่จัง",
         "ไม่สามารถเปิดหน้านี้",
@@ -697,14 +806,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun focusGoogleFlowPromptEditor(): Boolean {
     val root = rootInActiveWindow ?: return false
-    val editable = findEditableNode(root)
+    val editable = findEditableNode(root, allowedPackageName = TARGET_PACKAGE_CHROME)
     if (editable != null) {
       return clickNode(editable) || editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
     }
 
-    if (clickByAnyText(listOf("Prompt", "Describe", "Enter a prompt", "อธิบาย"), exact = false)) {
+    if (clickChromeByAnyText(listOf("Prompt", "Describe", "Enter a prompt", "อธิบาย"), exact = false)) {
       sleepGoogleFlowStep(500)
-      return findEditableNode(rootInActiveWindow) != null
+      return findEditableNode(rootInActiveWindow, allowedPackageName = TARGET_PACKAGE_CHROME) != null
     }
 
     val screen = screenBounds(root)
@@ -716,6 +825,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun inputGoogleFlowPrompt(prompt: String): Boolean {
+    if (!isChromeActiveWindow() || !isGoogleFlowAddress(currentChromeAddressText())) {
+      logGoogleFlowStep("ยังไม่ได้อยู่หน้า Google Flow จริง จะไม่ป้อน prompt")
+      return false
+    }
+
     if (!focusGoogleFlowPromptEditor()) {
       logGoogleFlowStep("ไม่พบช่อง prompt ของ Google Flow")
       return false
@@ -739,8 +853,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val root = rootInActiveWindow ?: return false
       val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
       val target = when {
-        focused?.isEditable == true && !isBlockedEditableNode(focused) -> focused
-        else -> findEditableNode(root)
+        focused?.isEditable == true &&
+          focused.packageName?.toString() == TARGET_PACKAGE_CHROME &&
+          !isBlockedEditableNode(focused) -> focused
+        else -> findEditableNode(root, allowedPackageName = TARGET_PACKAGE_CHROME)
       }
 
       if (target == null) {
@@ -1233,7 +1349,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     if (fileName.isBlank()) return false
 
     dismissGoogleFlowBlockingPopups()
-    val openedPicker = clickByAnyText(
+    val openedPicker = clickChromeByAnyText(
       listOf(
         "Add image",
         "Reference image",
@@ -1319,13 +1435,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
         advanced = true
         sleepGoogleFlowStep(2500)
       }
-      if (containsAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), contains = true)) {
-        clickByAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), exact = false)
+      if (containsChromeText(listOf("New project", "โปรเจ็กต์ใหม่"), contains = true)) {
+        clickChromeByAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), exact = false)
         advanced = true
         sleepGoogleFlowStep(1800)
       }
-      if (containsAnyText(listOf("Try Flow", "Start", "เริ่ม"), contains = true)) {
-        clickByAnyText(listOf("Try Flow", "Start", "เริ่ม"), exact = false)
+      if (containsChromeText(listOf("Try Flow", "Start", "เริ่ม"), contains = true)) {
+        clickChromeByAnyText(listOf("Try Flow", "Start", "เริ่ม"), exact = false)
         advanced = true
         sleepGoogleFlowStep(1800)
       }
@@ -1336,10 +1452,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun handleChromeFirstRunIfNeeded(): Boolean {
-    if (!containsAnyText(listOf("Chrome ในแบบของคุณ", "ปรับเปลี่ยน Chrome", "Make Chrome yours"), contains = true)) {
+    if (!containsChromeText(listOf("Chrome ในแบบของคุณ", "ปรับเปลี่ยน Chrome", "Make Chrome yours"), contains = true)) {
       return false
     }
-    return clickByAnyText(
+    return clickChromeByAnyText(
       listOf(
         "ดำเนินการต่อในชื่อ",
         "Continue as",
@@ -1353,10 +1469,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun clickGoogleFlowLandingCtaIfNeeded(): Boolean {
-    if (!containsAnyText(listOf("Your AI creative studio", "Create with Google Flow", "Google Flow"), contains = true)) {
+    if (!containsChromeText(listOf("Your AI creative studio", "Create with Google Flow", "Google Flow"), contains = true)) {
       return false
     }
-    return clickByAnyText(
+    return clickChromeByAnyText(
       listOf(
         "Create with Google Flow",
         "Create with Flow",
@@ -1374,7 +1490,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     } else {
       listOf("Image", "รูปภาพ", "Generate image", "สร้างรูป")
     }
-    return clickByAnyText(labels, exact = false)
+    return clickChromeByAnyText(labels, exact = false)
   }
 
   private fun selectGoogleFlowModel(payload: JSONObject, step: String): Boolean {
@@ -1386,10 +1502,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     val modelLabels = googleFlowModelLabels(modelValue)
     if (modelLabels.isEmpty()) return false
-    if (clickByAnyText(modelLabels, exact = false)) return true
-    if (clickByAnyText(listOf("Model", "โมเดล"), exact = false)) {
+    if (clickChromeByAnyText(modelLabels, exact = false)) return true
+    if (clickChromeByAnyText(listOf("Model", "โมเดล"), exact = false)) {
       sleepGoogleFlowStep(700)
-      return clickByAnyText(modelLabels, exact = false)
+      return clickChromeByAnyText(modelLabels, exact = false)
     }
     return false
   }
@@ -1411,7 +1527,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     dismissGoogleFlowBlockingPopups()
     dismissSoftKeyboardIfOpen()
     dismissGoogleFlowBlockingPopups()
-    if (clickByAnyText(listOf("Generate", "สร้าง", "Create", "Submit"), exact = false)) {
+    if (clickChromeByAnyText(listOf("Generate", "สร้าง", "Create", "Submit"), exact = false)) {
       return true
     }
 
@@ -1423,7 +1539,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val candidate = actionNodes
       .filter { (bounds, node) ->
         val text = readNodeText(node)
-        bounds.centerY() > screen.top + (screen.height() * 0.55f).toInt() &&
+        node.packageName?.toString() == TARGET_PACKAGE_CHROME &&
+          bounds.centerY() > screen.top + (screen.height() * 0.55f).toInt() &&
           bounds.centerY() < screen.bottom - (screen.height() * 0.06f).toInt() &&
           bounds.width() in 32..(screen.width() * 0.72f).toInt() &&
           bounds.height() in 32..180 &&
@@ -1464,10 +1581,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
       checkGoogleFlowStopRequested()
       dismissGoogleFlowBlockingPopups()
       if (
-        containsAnyText(listOf("Download", "ดาวน์โหลด", "Done", "เสร็จ", "Export"), contains = true) ||
-        containsAnyText(listOf("Failed", "ล้มเหลว", "try a different prompt"), contains = true)
+        containsChromeText(listOf("Download", "ดาวน์โหลด", "Done", "เสร็จ", "Export"), contains = true) ||
+        containsChromeText(listOf("Failed", "ล้มเหลว", "try a different prompt"), contains = true)
       ) {
-        if (containsAnyText(listOf("Failed", "ล้มเหลว", "try a different prompt"), contains = true)) {
+        if (containsChromeText(listOf("Failed", "ล้มเหลว", "try a different prompt"), contains = true)) {
           logGoogleFlowStep("Flow แจ้งล้มเหลวสำหรับ${label}")
           return false
         } else {
@@ -1491,7 +1608,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val label = if (step == "video") "วิดีโอ" else "รูปภาพ"
     val startedAt = System.currentTimeMillis()
     logGoogleFlowStep("กำลังดาวน์โหลด${label}จาก Google Flow")
-    if (!clickByAnyText(listOf("Download", "ดาวน์โหลด", "Export", "บันทึก"), exact = false)) {
+    if (!clickChromeByAnyText(listOf("Download", "ดาวน์โหลด", "Export", "บันทึก"), exact = false)) {
       return null
     }
 
@@ -1764,12 +1881,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return null
   }
 
-  private fun findEditableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+  private fun findEditableNode(
+    node: AccessibilityNodeInfo?,
+    allowedPackageName: String? = null
+  ): AccessibilityNodeInfo? {
     if (node == null) return null
-    if (node.isEditable && !isBlockedEditableNode(node)) return node
+    if (node.isEditable && !isBlockedEditableNode(node) && isAllowedPackageNode(node, allowedPackageName)) return node
 
     for (index in 0 until node.childCount) {
-      val found = findEditableNode(node.getChild(index))
+      val found = findEditableNode(node.getChild(index), allowedPackageName)
       if (found != null) return found
     }
 
@@ -2468,6 +2588,18 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return clickNode(node)
   }
 
+  private fun clickChromeByAnyText(texts: List<String>, exact: Boolean): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val node = findMatchingNode(
+      node = root,
+      needles = texts,
+      exact = exact,
+      includeResourceId = false,
+      allowedPackageName = TARGET_PACKAGE_CHROME
+    ) ?: return false
+    return clickNode(node)
+  }
+
   private fun clickByResourceHint(hints: List<String>): Boolean {
     val root = rootInActiveWindow ?: return false
     val node = findMatchingNode(root, hints, exact = false, includeResourceId = true) ?: return false
@@ -2479,17 +2611,29 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return findMatchingNode(root, texts, exact = !contains, includeResourceId = false) != null
   }
 
+  private fun containsChromeText(texts: List<String>, contains: Boolean): Boolean {
+    val root = rootInActiveWindow ?: return false
+    return findMatchingNode(
+      node = root,
+      needles = texts,
+      exact = !contains,
+      includeResourceId = false,
+      allowedPackageName = TARGET_PACKAGE_CHROME
+    ) != null
+  }
+
   private fun findMatchingNode(
     node: AccessibilityNodeInfo?,
     needles: List<String>,
     exact: Boolean,
-    includeResourceId: Boolean
+    includeResourceId: Boolean,
+    allowedPackageName: String? = null
   ): AccessibilityNodeInfo? {
     if (node == null) return null
-    if (nodeMatches(node, needles, exact, includeResourceId)) return node
+    if (nodeMatches(node, needles, exact, includeResourceId, allowedPackageName)) return node
 
     for (index in 0 until node.childCount) {
-      val found = findMatchingNode(node.getChild(index), needles, exact, includeResourceId)
+      val found = findMatchingNode(node.getChild(index), needles, exact, includeResourceId, allowedPackageName)
       if (found != null) return found
     }
 
@@ -2500,8 +2644,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     node: AccessibilityNodeInfo,
     needles: List<String>,
     exact: Boolean,
-    includeResourceId: Boolean
+    includeResourceId: Boolean,
+    allowedPackageName: String? = null
   ): Boolean {
+    if (!isAllowedPackageNode(node, allowedPackageName)) return false
+
     val values = mutableListOf<String>()
     node.text?.toString()?.let(values::add)
     node.contentDescription?.toString()?.let(values::add)
@@ -2515,6 +2662,48 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (exact) normalized.equals(needle, ignoreCase = true)
         else normalized.contains(needle, ignoreCase = true)
       }
+    }
+  }
+
+  private fun isAllowedPackageNode(node: AccessibilityNodeInfo, allowedPackageName: String?): Boolean =
+    allowedPackageName == null || node.packageName?.toString() == allowedPackageName
+
+  private fun containsNodeFromPackage(node: AccessibilityNodeInfo?, packageName: String): Boolean {
+    if (node == null) return false
+    if (node.packageName?.toString() == packageName) return true
+    for (index in 0 until node.childCount) {
+      if (containsNodeFromPackage(node.getChild(index), packageName)) return true
+    }
+    return false
+  }
+
+  private fun findNode(
+    node: AccessibilityNodeInfo?,
+    predicate: (AccessibilityNodeInfo) -> Boolean
+  ): AccessibilityNodeInfo? {
+    if (node == null) return null
+    if (predicate(node)) return node
+    for (index in 0 until node.childCount) {
+      val found = findNode(node.getChild(index), predicate)
+      if (found != null) return found
+    }
+    return null
+  }
+
+  private fun findChromeUrlBarNode(): AccessibilityNodeInfo? {
+    val root = rootInActiveWindow ?: return null
+    val direct = findNode(root) { node ->
+      if (node.packageName?.toString() != TARGET_PACKAGE_CHROME) return@findNode false
+      val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
+      resourceId.contains("url_bar") ||
+        resourceId.contains("search_box_text")
+    }
+    if (direct != null) return direct
+
+    return findNode(root) { node ->
+      if (node.packageName?.toString() != TARGET_PACKAGE_CHROME) return@findNode false
+      val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
+      resourceId.contains("location_bar") && readNodeText(node).isNotBlank()
     }
   }
 
