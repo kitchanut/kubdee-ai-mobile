@@ -67,7 +67,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   companion object {
     private const val TAG = "KubdeeAccessibility"
-    private const val GOOGLE_FLOW_URL = "https://labs.google/fx/en/tools/flow"
+    private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
     private const val TARGET_PACKAGE_CHROME = "com.android.chrome"
     private val SHOPEE_LIKED_TEXTS = listOf("สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "Liked", "My Likes", "My liked items")
     private val SHOPEE_RECOMMENDATION_TEXTS = listOf(
@@ -517,6 +517,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun launchPackage(packageName: String): Boolean {
     val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    launchIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
     launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
     launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
     startActivity(launchIntent)
@@ -531,14 +532,18 @@ class KubdeeAccessibilityService : AccessibilityService() {
         setClassName(TARGET_PACKAGE_CHROME, "com.google.android.apps.chrome.Main")
         addCategory(Intent.CATEGORY_BROWSABLE)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         putExtra("com.android.browser.application_id", packageName)
       })
     }
     intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
       addCategory(Intent.CATEGORY_BROWSABLE)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
       addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
       putExtra("com.android.browser.application_id", packageName)
       if (!preferredPackage.isNullOrBlank() && packageManager.getLaunchIntentForPackage(preferredPackage) != null) {
         setPackage(preferredPackage)
@@ -548,7 +553,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
       intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
         addCategory(Intent.CATEGORY_BROWSABLE)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         putExtra("com.android.browser.application_id", packageName)
       })
     }
@@ -588,9 +595,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun waitForChromeActiveWindow(timeoutMs: Long): Boolean {
     val start = System.currentTimeMillis()
+    var lastLaunchAt = 0L
     while (System.currentTimeMillis() - start < timeoutMs) {
       checkGoogleFlowStopRequested()
       if (isChromeActiveWindow()) return true
+      val now = System.currentTimeMillis()
+      if (now - start > 1_200L && now - lastLaunchAt > 2_200L) {
+        bringGoogleFlowChromeToFront(logReason = false)
+        lastLaunchAt = now
+      }
       sleepGoogleFlowStep(350L)
     }
     return false
@@ -599,6 +612,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun isChromeActiveWindow(): Boolean {
     val root = rootInActiveWindow ?: return false
     return containsNodeFromPackage(root, TARGET_PACKAGE_CHROME)
+  }
+
+  private fun activeWindowPackageName(): String =
+    rootInActiveWindow?.packageName?.toString().orEmpty()
+
+  private fun bringGoogleFlowChromeToFront(logReason: Boolean = true): Boolean {
+    if (logReason) {
+      val activePackage = activeWindowPackageName().ifBlank { "unknown" }
+      logGoogleFlowStep("Chrome ไม่ได้อยู่ foreground ($activePackage) จะดึง Google Flow กลับมา")
+    }
+    return launchUrl(GOOGLE_FLOW_URL, preferredPackage = TARGET_PACKAGE_CHROME)
   }
 
   private fun currentChromeAddressText(): String {
@@ -624,8 +648,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     sleepGoogleFlowStep(450L)
-    val target = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-      ?: findChromeUrlBarNode()
+    val target = findChromeUrlBarNode()
+      ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
       ?: return false
 
     if (!setNodeText(target, url)) {
@@ -645,17 +669,63 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun waitForGoogleFlowReady(timeoutMs: Long): Boolean {
     val start = System.currentTimeMillis()
     var lastNavigateAt = 0L
+    var lastForegroundRecoveryAt = 0L
+    var lastLandingFallbackTapAt = 0L
     while (System.currentTimeMillis() - start < timeoutMs) {
       checkGoogleFlowStopRequested()
       if (!isChromeActiveWindow()) {
-        sleepGoogleFlowStep(500)
+        val now = System.currentTimeMillis()
+        if (now - lastForegroundRecoveryAt > 3_000L) {
+          bringGoogleFlowChromeToFront()
+          lastForegroundRecoveryAt = now
+        }
+        sleepGoogleFlowStep(900)
         continue
       }
       if (handleChromeFirstRunIfNeeded()) {
         sleepGoogleFlowStep(1200)
       }
       dismissGoogleFlowBlockingPopups()
+      val landingVisible = isGoogleFlowLandingPage()
+      if (landingVisible) {
+        if (clickGoogleFlowLandingCtaIfNeeded()) {
+          logGoogleFlowStep("กดปุ่ม Create with Google Flow จากหน้า landing")
+          sleepGoogleFlowStep(3_200)
+          continue
+        }
+        return true
+      }
       val address = currentChromeAddressText()
+      val elapsed = System.currentTimeMillis() - start
+      val now = System.currentTimeMillis()
+      if ((landingVisible || isGoogleFlowAddress(address)) && elapsed > 12_000L && now - lastLandingFallbackTapAt > 7_500L) {
+        if (tapGoogleFlowLandingCtaFallback()) {
+          logGoogleFlowStep("แตะตำแหน่งปุ่ม Create with Google Flow แบบ fallback")
+          lastLandingFallbackTapAt = now
+          sleepGoogleFlowStep(3_000)
+          continue
+        }
+      }
+      if (address.isBlank()) {
+        val now = System.currentTimeMillis()
+        if (now - lastNavigateAt > 6_000L) {
+          logGoogleFlowStep("ยังอ่าน URL ใน Chrome ไม่ได้ จะเปิด Google Flow ซ้ำ")
+          bringGoogleFlowChromeToFront(logReason = false)
+          lastNavigateAt = now
+          sleepGoogleFlowStep(1200)
+          continue
+        }
+      }
+      if (address.isBlank() && containsChromeText(listOf("ค้นหา Google หรือพิมพ์ URL", "Search or type URL", "Search or type web address"), contains = true)) {
+        val now = System.currentTimeMillis()
+        if (now - lastNavigateAt > 4_000L) {
+          logGoogleFlowStep("Chrome อยู่หน้าแท็บว่าง จะใส่ URL Google Flow โดยตรง")
+          navigateChromeAddressBarTo(GOOGLE_FLOW_URL)
+          lastNavigateAt = now
+        }
+        sleepGoogleFlowStep(900)
+        continue
+      }
       if (address.isNotBlank() && !isGoogleFlowAddress(address)) {
         val now = System.currentTimeMillis()
         if (now - lastNavigateAt > 5_000L) {
@@ -698,7 +768,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun ensureGoogleFlowReadyAfterLaunch(browserMode: String): Boolean {
-    if (waitForGoogleFlowReady(22_000L)) {
+    if (waitForGoogleFlowReady(45_000L)) {
       return true
     }
 
@@ -707,7 +777,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       launchUrl(GOOGLE_FLOW_URL, preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null)
     }
     sleepGoogleFlowStep(4000L)
-    return waitForGoogleFlowReady(28_000L)
+    return waitForGoogleFlowReady(55_000L)
   }
 
   private fun reloadGoogleFlowPage(): Boolean {
@@ -1511,7 +1581,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun clickGoogleFlowLandingCtaIfNeeded(): Boolean {
-    if (!containsChromeText(listOf("Your AI creative studio", "Create with Google Flow", "Google Flow"), contains = true)) {
+    if (!isGoogleFlowLandingPage()) {
       return false
     }
     return clickChromeByAnyText(
@@ -1523,6 +1593,26 @@ class KubdeeAccessibilityService : AccessibilityService() {
         "เริ่มสร้างด้วย Google Flow"
       ),
       exact = false
+    )
+  }
+
+  private fun isGoogleFlowLandingPage(): Boolean =
+    containsChromeText(
+      listOf(
+        "Your AI creative studio",
+        "Create with Google Flow",
+        "Create with Flow",
+        "Start creating"
+      ),
+      contains = true
+    )
+
+  private fun tapGoogleFlowLandingCtaFallback(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    return tapBlocking(
+      screen.centerX().toFloat(),
+      (screen.top + screen.height() * 0.78f).toFloat()
     )
   }
 
@@ -2626,13 +2716,21 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun clickByAnyText(texts: List<String>, exact: Boolean): Boolean {
     val root = rootInActiveWindow ?: return false
-    val node = findMatchingNode(root, texts, exact = exact, includeResourceId = false) ?: return false
+    val node = findVisibleMatchingNode(root, texts, exact = exact, includeResourceId = false)
+      ?: findMatchingNode(root, texts, exact = exact, includeResourceId = false)
+      ?: return false
     return clickNode(node)
   }
 
   private fun clickChromeByAnyText(texts: List<String>, exact: Boolean): Boolean {
     val root = rootInActiveWindow ?: return false
-    val node = findMatchingNode(
+    val node = findVisibleMatchingNode(
+      node = root,
+      needles = texts,
+      exact = exact,
+      includeResourceId = false,
+      allowedPackageName = TARGET_PACKAGE_CHROME
+    ) ?: findMatchingNode(
       node = root,
       needles = texts,
       exact = exact,
@@ -2680,6 +2778,37 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     return null
+  }
+
+  private fun findVisibleMatchingNode(
+    node: AccessibilityNodeInfo?,
+    needles: List<String>,
+    exact: Boolean,
+    includeResourceId: Boolean,
+    allowedPackageName: String? = null
+  ): AccessibilityNodeInfo? {
+    if (node == null) return null
+    if (
+      nodeMatches(node, needles, exact, includeResourceId, allowedPackageName) &&
+      isNodeVisibleOnScreen(node)
+    ) {
+      return node
+    }
+
+    for (index in 0 until node.childCount) {
+      val found = findVisibleMatchingNode(node.getChild(index), needles, exact, includeResourceId, allowedPackageName)
+      if (found != null) return found
+    }
+
+    return null
+  }
+
+  private fun isNodeVisibleOnScreen(node: AccessibilityNodeInfo): Boolean {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    if (bounds.width() <= 0 || bounds.height() <= 0) return false
+    val screen = screenBounds(rootInActiveWindow)
+    return Rect.intersects(screen, bounds)
   }
 
   private fun nodeMatches(
@@ -2736,6 +2865,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val root = rootInActiveWindow ?: return null
     val direct = findNode(root) { node ->
       if (node.packageName?.toString() != TARGET_PACKAGE_CHROME) return@findNode false
+      if (!isChromeToolbarAddressCandidate(node)) return@findNode false
       val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
       resourceId.contains("url_bar") ||
         resourceId.contains("search_box_text")
@@ -2744,9 +2874,19 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     return findNode(root) { node ->
       if (node.packageName?.toString() != TARGET_PACKAGE_CHROME) return@findNode false
+      if (!isChromeToolbarAddressCandidate(node)) return@findNode false
       val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
       resourceId.contains("location_bar") && readNodeText(node).isNotBlank()
     }
+  }
+
+  private fun isChromeToolbarAddressCandidate(node: AccessibilityNodeInfo): Boolean {
+    val screen = screenBounds(rootInActiveWindow)
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    if (bounds.width() <= screen.width() * 0.2f || bounds.height() <= 0) return false
+    if (bounds.top < screen.top || bounds.left < screen.left) return false
+    return bounds.centerY() <= screen.top + screen.height() * 0.16f
   }
 
   private fun clickNode(node: AccessibilityNodeInfo): Boolean {
