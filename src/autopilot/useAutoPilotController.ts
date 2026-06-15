@@ -21,6 +21,8 @@ import type {
 import type { AffiliateProduct } from '@/library/types';
 import { subscribeGoogleFlowLogs } from '@/native/AccessibilityBridge';
 
+type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
+
 const initialRunState: AutoPilotRunState = {
   runId: null,
   status: 'idle',
@@ -44,6 +46,45 @@ function createRunId(): string {
   return `mobile-auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function createManualSourceProduct(profileLocalId: string, localId: string): AffiliateProduct {
+  const now = Date.now();
+
+  return {
+    id: localId,
+    userId: '',
+    localId,
+    profileLocalId: profileLocalId || null,
+    name: '',
+    description: null,
+    externalProductId: '',
+    productUrl: '',
+    price: null,
+    stock: null,
+    caption: null,
+    hashtags: null,
+    cta: null,
+    imagePath: null,
+    imageR2Key: null,
+    imageUrl: null,
+    imageHash: null,
+    imageMimeType: null,
+    imageSize: null,
+    imageUploadedAt: null,
+    platform: 'manual',
+    status: 'draft',
+    scrapedAt: null,
+    localCreatedAt: now,
+    originApp: 'kubdee-ai-mobile',
+    createdByApp: 'kubdee-ai-mobile',
+    updatedByApp: 'kubdee-ai-mobile',
+    lastSyncedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    profileName: null,
+    groupLocalId: null,
+  };
+}
+
 export function useAutoPilotController({
   profileLocalId,
   sourceProducts,
@@ -54,19 +95,28 @@ export function useAutoPilotController({
   const { addGeneratedMediaAsset } = useGeneratedMedia();
   const [settings, setSettings] = useState<AutoPilotSettings>(DEFAULT_AUTO_PILOT_SETTINGS);
   const [enabledSteps, setEnabledSteps] = useState<AutoPilotStepType[]>(['image', 'video']);
+  const [manualProducts, setManualProducts] = useState<AffiliateProduct[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [productFieldsById, setProductFieldsById] = useState<
+    Record<string, Partial<Pick<AutoPilotProduct, AutoPilotProductEditableField>>>
+  >({});
   const [productSettingsById, setProductSettingsById] = useState<Record<string, AutoPilotProductSettings>>({});
   const [runState, setRunState] = useState<AutoPilotRunState>(initialRunState);
   const runIdRef = useRef<string | null>(null);
 
   const products = useMemo(
     () =>
-      sourceProducts.map((sourceProduct) => {
+      [...sourceProducts, ...manualProducts].map((sourceProduct) => {
         const product = toAutoPilotProduct(sourceProduct);
+        const fieldOverride = productFieldsById[product.id];
         const override = productSettingsById[product.id];
-        return override ? { ...product, settings: override } : product;
+        return {
+          ...product,
+          ...fieldOverride,
+          settings: override ? { image: { ...override.image }, video: { ...override.video } } : product.settings,
+        };
       }),
-    [productSettingsById, sourceProducts]
+    [manualProducts, productFieldsById, productSettingsById, sourceProducts]
   );
 
   const selectedProducts = useMemo(
@@ -225,6 +275,41 @@ export function useAutoPilotController({
     });
   }, []);
 
+  const addManualProduct = useCallback((): void => {
+    const localId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const product = createManualSourceProduct(profileLocalId, localId);
+
+    setManualProducts((current) => [...current, product]);
+    setProductFieldsById((current) => ({
+      ...current,
+      [localId]: {
+        cta: '',
+        hashtags: '',
+        name: '',
+        productId: '',
+        productUrl: '',
+      },
+    }));
+    setSelectedProductIds((current) => {
+      const next = new Set(current);
+      next.add(localId);
+      return next;
+    });
+  }, [profileLocalId]);
+
+  const updateProductField = useCallback(
+    (productId: string, field: AutoPilotProductEditableField, value: string): void => {
+      setProductFieldsById((current) => ({
+        ...current,
+        [productId]: {
+          ...current[productId],
+          [field]: value,
+        },
+      }));
+    },
+    []
+  );
+
   const selectAllVisibleProducts = useCallback((visibleProducts: AffiliateProduct[]): void => {
     setSelectedProductIds(new Set(visibleProducts.map(getAutoPilotProductId)));
   }, []);
@@ -261,7 +346,17 @@ export function useAutoPilotController({
   );
 
   const clearProducts = useCallback((): void => {
+    setManualProducts([]);
     setSelectedProductIds(new Set());
+    setProductFieldsById((current) => {
+      const next = { ...current };
+      for (const productId of Object.keys(next)) {
+        if (productId.startsWith('manual-')) {
+          delete next[productId];
+        }
+      }
+      return next;
+    });
   }, []);
 
   const clearLogs = useCallback((): void => {
@@ -527,6 +622,7 @@ export function useAutoPilotController({
 
   return {
     appendLog,
+    addManualProduct,
     clearLogs,
     clearProducts,
     enabledSteps,
@@ -544,6 +640,7 @@ export function useAutoPilotController({
     stopRun,
     toggleProduct,
     toggleStep,
+    updateProductField,
     applyProductImageSectionToAll,
     applyProductSettingsToAll,
     applyProductVideoSectionToAll,

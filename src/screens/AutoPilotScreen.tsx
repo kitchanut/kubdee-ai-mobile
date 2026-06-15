@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -11,7 +11,9 @@ import {
   Copy,
   FolderOpen,
   Image as ImageIcon,
+  Link2,
   Package,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -93,6 +95,7 @@ interface AutoPilotScreenProps {
 
 type OptionValue = string | number | boolean;
 type ProductSettingsTab = 'image' | 'video';
+type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
 
 const IMAGE_SECTION_KEYS = {
   basic: ['promptMode', 'customPrompt', 'aspectRatio', 'outputCount'],
@@ -184,6 +187,8 @@ export default function AutoPilotScreen({
     selectedProfileId.length > 0 &&
     controller.selectedProducts.length > 0 &&
     controller.enabledSteps.length > 0;
+  const startButtonBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 8;
+  const startButtonScrollPadding = 50 + 12 + startButtonBottomPadding + 34;
 
   const openProductSettings = (productId: string): void => {
     setEditingProductId(productId);
@@ -303,7 +308,7 @@ export default function AutoPilotScreen({
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerClassName="px-4 pt-4"
-        contentContainerStyle={{ paddingBottom: 92 + Math.max(insets.bottom, 12) }}
+        contentContainerStyle={{ paddingBottom: startButtonScrollPadding }}
       >
         <View className="gap-4">
           <ExtensionBasicSettingsBlock
@@ -340,6 +345,8 @@ export default function AutoPilotScreen({
             profileProducts={profileProducts}
             selectedProducts={controller.selectedProducts}
             theme={theme}
+            onAddManualProduct={controller.addManualProduct}
+            onClearProducts={controller.clearProducts}
             onOpenSettings={openProductSettings}
             onOpenPreset={openProductPresetSheet}
             onOpenProductSelect={() => setProductSelectSheetOpen(true)}
@@ -347,6 +354,7 @@ export default function AutoPilotScreen({
             onSyncProducts={() => {
               void syncProducts();
             }}
+            onUpdateProductField={controller.updateProductField}
           />
 
           {controller.runState.status === 'running' || controller.runState.logs.length > 0 ? (
@@ -439,7 +447,7 @@ export default function AutoPilotScreen({
 
       <View
         className="absolute bottom-0 left-0 right-0 bg-kd-panel px-4 pt-3"
-        style={{ paddingBottom: Math.max(insets.bottom + 10, 18) }}
+        style={{ paddingBottom: startButtonBottomPadding }}
       >
         <Button
           accessibilityRole="button"
@@ -940,62 +948,76 @@ function ProductCatalogBlock({
   profileProducts,
   selectedProducts,
   theme,
+  onAddManualProduct,
+  onClearProducts,
   onOpenSettings,
   onOpenPreset,
   onOpenProductSelect,
   onRemoveProduct,
   onSyncProducts,
+  onUpdateProductField,
 }: {
   isSyncing: boolean;
   profileProducts: AffiliateProduct[];
   selectedProducts: AutoPilotProduct[];
   theme: KubdeeTheme;
+  onAddManualProduct: () => void;
+  onClearProducts: () => void;
   onOpenSettings: (productId: string) => void;
   onOpenPreset: () => void;
   onOpenProductSelect: () => void;
   onRemoveProduct: (productId: string) => void;
   onSyncProducts: () => void;
+  onUpdateProductField: (productId: string, field: AutoPilotProductEditableField, value: string) => void;
 }): React.JSX.Element {
   return (
     <View className="gap-3">
       <View className="flex-row items-center gap-1.5">
-        <Tag size={16} color={theme.textMuted} strokeWidth={2} />
+        <ImageIcon size={16} color={theme.textMuted} strokeWidth={2} />
         <Text numberOfLines={1} className="text-[13px] font-semibold text-kd-text">
-          ข้อมูลสินค้า
+          ข้อมูลสินค้า ({selectedProducts.length})
         </Text>
-        <View className="h-5 min-w-5 items-center justify-center rounded-full bg-kd-panel-muted px-1.5 dark:bg-kd-card-muted">
-          <Text className="text-kd-micro font-semibold text-kd-text-subtle">{selectedProducts.length}</Text>
-        </View>
         <View className="flex-1" />
         <Button
           accessibilityLabel="เปิด Product Preset"
           accessibilityRole="button"
           variant="ghost"
           onPress={onOpenPreset}
-          className="h-7 flex-row items-center justify-center gap-0.5 rounded-kd-md px-1.5"
+          className="h-8 flex-row items-center justify-center gap-1 rounded-kd-md px-2"
         >
           <Text className="text-kd-caption font-medium text-kd-text-subtle">Preset</Text>
-          <Text className="text-kd-micro font-medium text-kd-text-subtle">⌄</Text>
+          <ChevronDown size={12} color={theme.textSubtle} strokeWidth={2.2} />
         </Button>
-        <Button
-          accessibilityLabel="เพิ่มสินค้าเอง"
-          accessibilityRole="button"
-          disabled
-          variant="ghost"
-          className="h-7 flex-row items-center justify-center gap-0.5 rounded-kd-md px-1.5 opacity-55"
-        >
-          <Text className="text-kd-caption font-medium text-kd-text-subtle">+ เพิ่มเอง</Text>
-        </Button>
+        <View className="h-5 w-px bg-kd-border" />
         <Button
           accessibilityLabel="เลือกสินค้าจากคลัง"
           accessibilityRole="button"
           variant="ghost"
           onPress={onOpenProductSelect}
-          className="h-[30px] flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-emerald px-2.5"
+          className="h-8 w-8 items-center justify-center rounded-kd-md"
         >
-          <Package size={13} color={theme.white} strokeWidth={2.2} />
-          <Text className="text-kd-caption font-medium text-white">จากคลัง</Text>
+          <FolderOpen size={16} color={theme.textSubtle} strokeWidth={2.1} />
         </Button>
+        <Button
+          accessibilityLabel="เพิ่มสินค้าเอง"
+          accessibilityRole="button"
+          variant="ghost"
+          onPress={onAddManualProduct}
+          className="h-8 w-8 items-center justify-center rounded-kd-md"
+        >
+          <Plus size={17} color={theme.textSubtle} strokeWidth={2.1} />
+        </Button>
+        {selectedProducts.length > 0 ? (
+          <Button
+            accessibilityLabel="ล้างสินค้าที่เลือก"
+            accessibilityRole="button"
+            variant="ghost"
+            onPress={onClearProducts}
+            className="h-8 w-8 items-center justify-center rounded-kd-md"
+          >
+            <Trash2 size={16} color={theme.textSubtle} strokeWidth={2.1} />
+          </Button>
+        ) : null}
       </View>
 
       {selectedProducts.length > 0 ? (
@@ -1008,14 +1030,33 @@ function ProductCatalogBlock({
               theme={theme}
               onOpenSettings={() => onOpenSettings(product.id)}
               onRemove={() => onRemoveProduct(product.id)}
+              onUpdate={(field, value) => onUpdateProductField(product.id, field, value)}
             />
           ))}
         </View>
-      ) : profileProducts.length === 0 ? (
-        <View className="rounded-kd-lg bg-kd-panel-muted px-3 py-3 dark:bg-kd-card-muted">
-          <Text className="text-kd-caption font-semibold text-kd-text-subtle">ยังไม่มีสินค้าในโปรไฟล์นี้</Text>
+      ) : (
+        <View className="min-h-[210px] items-center justify-center gap-3">
+          <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
+            <ImageIcon size={25} color={theme.textSubtle} strokeWidth={1.8} />
+          </View>
+          <Text className="text-kd-caption font-medium text-kd-text-subtle">
+            {profileProducts.length === 0 ? 'ยังไม่มีสินค้าในโปรไฟล์นี้' : 'เพิ่มสินค้าจากคลังหรือเพิ่มเอง'}
+          </Text>
+          {profileProducts.length === 0 ? (
+            <Button
+              accessibilityLabel="ซิงก์คลังสินค้า"
+              accessibilityRole="button"
+              disabled={isSyncing}
+              variant="ghost"
+              onPress={onSyncProducts}
+              className="h-8 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-input px-2"
+            >
+              <RefreshCw size={13} color={theme.textSubtle} strokeWidth={2.1} />
+              <Text className="text-kd-caption font-medium text-kd-text-subtle">{isSyncing ? 'กำลังซิงก์...' : 'ซิงก์คลังสินค้า'}</Text>
+            </Button>
+          ) : null}
         </View>
-      ) : null}
+      )}
     </View>
   );
 }
@@ -2750,84 +2791,160 @@ function ProductRow({
   theme,
   onOpenSettings,
   onRemove,
+  onUpdate,
 }: {
   index: number;
   product: AutoPilotProduct;
   theme: KubdeeTheme;
   onOpenSettings: () => void;
   onRemove: () => void;
+  onUpdate: (field: AutoPilotProductEditableField, value: string) => void;
 }): React.JSX.Element {
-  const productCode = (product.productId || product.catalogId || product.id).slice(0, 26);
+  const isManualProduct = product.platform === 'manual' || product.id.startsWith('manual-');
 
   return (
-    <View
-      className="flex-row items-stretch gap-2 rounded-[12px] border p-1.5"
-      style={{
-        backgroundColor: alpha(theme.emerald, theme.isDark ? 0.12 : 0.06),
-        borderColor: alpha(theme.emerald, 0.55),
-      }}
-    >
+    <View className="flex-row gap-2 rounded-kd-lg border border-kd-border bg-kd-card p-2">
       <Pressable
         accessibilityLabel="ตั้งค่ารายสินค้า"
         accessibilityRole="button"
         onPress={onOpenSettings}
-        className="gap-1"
-        style={{ width: 82 }}
+        className="relative overflow-hidden rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted"
+        style={{ height: 126, width: 86 }}
       >
-        <View
-          className="relative overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted"
-          style={{ height: 74, width: 82 }}
-        >
-          <View className="absolute left-1 top-1 z-10 h-5 min-w-5 items-center justify-center rounded-full border border-kd-border bg-kd-card px-1">
-            <Text className="text-kd-micro font-medium text-kd-text">{index + 1}</Text>
+        <View className="absolute left-0 top-0 z-10 h-7 min-w-7 items-center justify-center rounded-br-kd-md bg-black/55 px-1">
+          <Text className="text-[11px] font-bold text-white">{index + 1}</Text>
+        </View>
+        {product.preview ? (
+          <Image source={{ uri: product.preview }} className="h-full w-full" resizeMode="cover" />
+        ) : (
+          <View className="h-full w-full items-center justify-center">
+            <ImageIcon size={22} color={theme.textSubtle} strokeWidth={1.8} />
           </View>
-          {product.preview ? (
-            <Image source={{ uri: product.preview }} className="h-full w-full" resizeMode="cover" />
-          ) : (
-            <View className="h-full w-full items-center justify-center">
-              <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.8} />
-            </View>
-          )}
-        </View>
-        <View
-          className="flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-amber bg-kd-amber px-1"
-          style={{ height: 28 }}
-        >
-          <Settings2 size={9} color={theme.text} strokeWidth={2.4} />
-          <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.72}
-            numberOfLines={1}
-            className="text-[9px] font-medium text-kd-text"
-          >
-            ตั้งค่า
-          </Text>
-        </View>
+        )}
       </Pressable>
-      <View className="min-w-0 flex-1 justify-between rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5">
-        <View className="min-w-0">
-          <Text numberOfLines={2} className="text-kd-caption font-bold leading-4 text-kd-text">
-            {product.name}
-          </Text>
-          <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
-            {productCode}
-          </Text>
-        </View>
-        <View className="mt-1 flex-row items-center justify-between gap-2">
-          <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">
-            {formatPrice(product.source.price)}
-          </Text>
+
+      <View className="min-w-0 flex-1 gap-0.5">
+        <View className="min-w-0 flex-row items-center gap-1">
+          <Text className="text-[10px] font-medium text-kd-text-subtle">#</Text>
+          {isManualProduct ? (
+            <Input
+              value={product.productId}
+              onChangeText={(value) => onUpdate('productId', value)}
+              placeholder="รหัสสินค้า"
+              placeholderTextColor={theme.textSubtle}
+              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+              style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
+            />
+          ) : (
+            <Text
+              numberOfLines={1}
+              className="min-w-0 flex-1 text-kd-text-subtle"
+              style={{ fontSize: 10, lineHeight: 13 }}
+            >
+              {product.productId || product.catalogId}
+            </Text>
+          )}
+          <Button
+            accessibilityLabel="ตั้งค่ารายสินค้า"
+            accessibilityRole="button"
+            variant="ghost"
+            onPress={onOpenSettings}
+            className="h-6 flex-row items-center justify-center gap-0.5 rounded-kd-sm px-1"
+          >
+            <Settings2 size={10} color={theme.textSubtle} strokeWidth={2.2} />
+            <Text className="text-[10px] font-medium text-kd-text-subtle">ตั้งค่า</Text>
+          </Button>
           <Button
             accessibilityLabel="เอาสินค้าออกจาก Auto Pipeline"
             accessibilityRole="button"
             variant="ghost"
+            size="icon"
             onPress={onRemove}
-            className="h-7 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-panel px-2"
+            className="h-6 w-6 items-center justify-center rounded-kd-sm"
           >
-            <X size={11} color={theme.textSubtle} strokeWidth={2.4} />
-            <Text className="text-kd-micro font-medium text-kd-text-subtle">เอาออก</Text>
+            <X size={12} color={theme.textSubtle} strokeWidth={2.2} />
           </Button>
         </View>
+
+        <View className="min-w-0 flex-row items-center gap-1">
+          <Link2 size={10} color={theme.textSubtle} strokeWidth={2} />
+          {isManualProduct ? (
+            <Input
+              value={product.productUrl}
+              onChangeText={(value) => onUpdate('productUrl', value)}
+              placeholder="ลิงก์สินค้า"
+              placeholderTextColor={theme.textSubtle}
+              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+              style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
+            />
+          ) : (
+            <Text
+              numberOfLines={1}
+              className="min-w-0 flex-1 text-kd-text-subtle"
+              style={{ color: product.productUrl ? theme.textSubtle : alpha(theme.textSubtle, 0.55), fontSize: 10, lineHeight: 14 }}
+            >
+              {product.productUrl || 'ลิงก์สินค้า'}
+            </Text>
+          )}
+        </View>
+
+        {isManualProduct ? (
+          <Textarea
+            value={product.name}
+            onChangeText={(value) => onUpdate('name', value)}
+            placeholder="ชื่อสินค้า"
+            placeholderTextColor={theme.textSubtle}
+            numberOfLines={2}
+            className="h-[42px] min-h-[42px] rounded-none border-0 bg-transparent px-0 py-0 text-kd-text shadow-none"
+            style={{ fontFamily: kubdeeFontFamilies.thai.medium, fontSize: 11, lineHeight: 14, paddingVertical: 0 }}
+          />
+        ) : (
+          <Text
+            numberOfLines={2}
+            className="min-h-[32px] text-kd-text"
+            style={{ fontFamily: kubdeeFontFamilies.thai.medium, fontSize: 11, lineHeight: 14 }}
+          >
+            {product.name || 'ชื่อสินค้า'}
+          </Text>
+        )}
+
+        {isManualProduct ? (
+          <Input
+            value={product.hashtags}
+            onChangeText={(value) => onUpdate('hashtags', value)}
+            placeholder="#แฮชแท็ก"
+            placeholderTextColor={theme.textSubtle}
+            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+            style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
+          />
+        ) : (
+          <Text
+            numberOfLines={1}
+            className="text-kd-text-subtle"
+            style={{ color: product.hashtags ? theme.textSubtle : alpha(theme.textSubtle, 0.55), fontSize: 10, lineHeight: 14 }}
+          >
+            {product.hashtags || '#แฮชแท็ก'}
+          </Text>
+        )}
+
+        {isManualProduct ? (
+          <Input
+            value={product.cta}
+            onChangeText={(value) => onUpdate('cta', value)}
+            placeholder="CTA (Call to Action)"
+            placeholderTextColor={theme.textSubtle}
+            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+            style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
+          />
+        ) : (
+          <Text
+            numberOfLines={1}
+            className="text-kd-text-subtle"
+            style={{ color: product.cta ? theme.textSubtle : alpha(theme.textSubtle, 0.55), fontSize: 10, lineHeight: 14 }}
+          >
+            {product.cta || 'CTA (Call to Action)'}
+          </Text>
+        )}
       </View>
     </View>
   );
