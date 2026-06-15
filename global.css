@@ -31,6 +31,26 @@
     --kd-cyan-soft: #ecfeff;
     --kd-amber-soft: #fffbeb;
     --kd-red-soft: #fef2f2;
+
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 222 47% 11%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 160 84% 95%;
+    --accent-foreground: 164 86% 20%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 160 84% 39%;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -60,6 +80,26 @@
       --kd-cyan-soft: rgba(34, 211, 238, 0.14);
       --kd-amber-soft: rgba(251, 191, 36, 0.14);
       --kd-red-soft: rgba(248, 113, 113, 0.14);
+
+      --background: 217 33% 17%;
+      --foreground: 210 40% 98%;
+      --card: 216 28% 22%;
+      --card-foreground: 210 40% 98%;
+      --popover: 216 28% 22%;
+      --popover-foreground: 210 40% 98%;
+      --primary: 210 40% 98%;
+      --primary-foreground: 222 47% 11%;
+      --secondary: 215 25% 27%;
+      --secondary-foreground: 210 40% 98%;
+      --muted: 215 25% 27%;
+      --muted-foreground: 217 13% 72%;
+      --accent: 164 72% 18%;
+      --accent-foreground: 156 72% 88%;
+      --destructive: 0 63% 46%;
+      --destructive-foreground: 0 0% 100%;
+      --border: 215 25% 27%;
+      --input: 215 25% 27%;
+      --ring: 156 72% 67%;
     }
   }
 }

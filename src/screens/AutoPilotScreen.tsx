@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bot,
-  ChevronDown,
   ChevronRight,
   Check,
   Clock3,
@@ -12,7 +11,6 @@ import {
   Image as ImageIcon,
   MonitorPlay,
   Package,
-  Play,
   RefreshCw,
   RotateCcw,
   Save,
@@ -61,6 +59,26 @@ import {
 } from '@/autopilot/settingsPresetStore';
 import { useAutoPilotController } from '@/autopilot/useAutoPilotController';
 import Text from '@/components/ui/KubdeeText';
+import { FacebookLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
@@ -72,6 +90,7 @@ import type {
   AutoPilotProduct,
   AutoPilotProductSettings,
   AutoPilotRunState,
+  AutoPilotSettings,
   AutoPilotStepType,
   AutoPilotVideoSettings,
 } from '@/autopilot/types';
@@ -292,140 +311,63 @@ export default function AutoPilotScreen({
     <View className="flex-1 bg-kd-panel">
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerClassName="gap-3 px-3 pt-3"
-        contentContainerStyle={{ paddingBottom: 184 + Math.max(insets.bottom, 12) }}
+        contentContainerClassName="px-4 pt-4"
+        contentContainerStyle={{ paddingBottom: 112 + Math.max(insets.bottom, 12) }}
       >
-        <HeaderBlock
-          enabledStepCount={controller.enabledSteps.length}
-          runState={controller.runState}
-          selectedCount={controller.selectedProducts.length}
-          theme={theme}
-          totalCount={profileProducts.length}
-        />
+        <View className="gap-5">
+          <ExtensionBasicSettingsBlock
+            settings={controller.settings}
+            theme={theme}
+            onDelayChange={(value) => controller.updateSetting('delayPreset', value as typeof controller.settings.delayPreset)}
+            onDurationChange={(value) => controller.updateSetting('flowVideoDuration', value)}
+            onHashtagCountChange={(value) => controller.updateSetting('aiHashtagCount', value)}
+            onImageModelChange={(value) => controller.updateSetting('flowImageModel', String(value))}
+            onRoundChange={(value) => controller.updateSetting('totalRounds', Number(value))}
+            onToggleCaption={(value) => controller.updateSetting('aiGenerateCaption', value)}
+            onToggleCta={(value) => controller.updateSetting('aiGenerateCta', value)}
+            onToggleRewrite={(value) => controller.updateSetting('aiRewritePromptOnAudioFailure', value)}
+            onVideoModelChange={(value) => {
+              const nextModel = String(value);
+              controller.updateSetting('flowVideoModel', nextModel);
+              if (nextModel === 'omni_flash') {
+                controller.updateSetting('flowVideoDuration', 10);
+              } else if (controller.settings.flowVideoDuration === 10) {
+                controller.updateSetting('flowVideoDuration', 8);
+              }
+            }}
+          />
 
-        <ProgressBlock runState={controller.runState} theme={theme} />
+          <PipelineStepsBlock
+            enabledSteps={controller.enabledSteps}
+            theme={theme}
+            onToggle={(value) => controller.toggleStep(value)}
+          />
 
-        <ActivityLogBlock
-          runState={controller.runState}
-          theme={theme}
-          onClear={controller.clearLogs}
-          onStop={() => {
-            void controller.stopRun();
-          }}
-        />
+          <ProductCatalogBlock
+            isSyncing={isSyncing}
+            profileProducts={profileProducts}
+            selectedProducts={controller.selectedProducts}
+            theme={theme}
+            onOpenSettings={openProductSettings}
+            onOpenPreset={openProductPresetSheet}
+            onOpenProductSelect={() => setProductSelectSheetOpen(true)}
+            onRemoveProduct={(productId) => controller.toggleProduct(productId)}
+            onSyncProducts={() => {
+              void syncProducts();
+            }}
+          />
 
-        <SectionCard theme={theme} icon={Settings2} title="ตั้งค่าพื้นฐาน">
-          <View className="gap-2">
-            <RunnerBlock
-              browserMode={controller.settings.browserMode}
+          {controller.runState.status === 'running' || controller.runState.logs.length > 0 ? (
+            <ActivityLogBlock
+              runState={controller.runState}
               theme={theme}
-              onBrowserModeChange={(value) => controller.updateSetting('browserMode', value)}
-            />
-
-            <View className="flex-row gap-2">
-              <SelectField
-                label="จำนวนรอบ"
-                options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({ label: String(round), value: round }))}
-                theme={theme}
-                value={controller.settings.totalRounds}
-                onChange={(value) => controller.updateSetting('totalRounds', Number(value))}
-              />
-              <SelectField
-                label="หน่วงเวลา"
-                options={AUTO_PILOT_DELAY_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
-                theme={theme}
-                value={controller.settings.delayPreset}
-                onChange={(value) => controller.updateSetting('delayPreset', value as typeof controller.settings.delayPreset)}
-              />
-            </View>
-
-            <SelectField
-              label="Model รูป"
-              options={FLOW_IMAGE_MODELS.map((model) => ({ label: model.label, value: model.value }))}
-              theme={theme}
-              value={controller.settings.flowImageModel}
-              onChange={(value) => controller.updateSetting('flowImageModel', String(value))}
-            />
-
-            <SelectField
-              label="Model วิดีโอ"
-              options={FLOW_VIDEO_MODELS.map((model) => ({ label: model.label, value: model.value }))}
-              theme={theme}
-              value={controller.settings.flowVideoModel}
-              onChange={(value) => {
-                const nextModel = String(value);
-                controller.updateSetting('flowVideoModel', nextModel);
-                if (nextModel === 'omni_flash') {
-                  controller.updateSetting('flowVideoDuration', 10);
-                } else if (controller.settings.flowVideoDuration === 10) {
-                  controller.updateSetting('flowVideoDuration', 8);
-                }
+              onClear={controller.clearLogs}
+              onStop={() => {
+                void controller.stopRun();
               }}
             />
-
-            <SelectField
-              label="ความยาวคลิป"
-              options={VIDEO_DURATION_OPTIONS
-                .filter((duration) => controller.settings.flowVideoModel === 'omni_flash' || duration !== 10)
-                .map((duration) => ({ label: `${duration}s`, value: duration }))}
-              theme={theme}
-              value={controller.settings.flowVideoDuration}
-              onChange={(value) => controller.updateSetting('flowVideoDuration', Number(value))}
-            />
-
-            <View className="gap-1 rounded-kd-lg bg-kd-panel-muted p-2 dark:bg-kd-card-muted">
-              <ToggleRow
-                label="AI Caption/Hashtags"
-                theme={theme}
-                value={controller.settings.aiGenerateCaption}
-                onValueChange={(value) => controller.updateSetting('aiGenerateCaption', value)}
-              />
-              {controller.settings.aiGenerateCaption ? (
-                <OptionGroup
-                  compact
-                  label="จำนวน hashtag"
-                  options={[1, 2, 3, 4, 5].map((count) => ({ label: String(count), value: count }))}
-                  theme={theme}
-                  value={controller.settings.aiHashtagCount}
-                  onChange={(value) => controller.updateSetting('aiHashtagCount', Number(value))}
-                />
-              ) : null}
-              <ToggleRow
-                label="AI CTA"
-                theme={theme}
-                value={controller.settings.aiGenerateCta}
-                onValueChange={(value) => controller.updateSetting('aiGenerateCta', value)}
-              />
-              <ToggleRow
-                label="AI rewrite prompt เมื่อเสียงล้มเหลว"
-                theme={theme}
-                value={controller.settings.aiRewritePromptOnAudioFailure}
-                onValueChange={(value) => controller.updateSetting('aiRewritePromptOnAudioFailure', value)}
-              />
-            </View>
-          </View>
-        </SectionCard>
-
-        <PipelineStepsBlock
-          enabledSteps={controller.enabledSteps}
-          theme={theme}
-          onToggle={(value) => controller.toggleStep(value)}
-        />
-
-        <ProductCatalogBlock
-          isSyncing={isSyncing}
-          profileProducts={profileProducts}
-          selectedProducts={controller.selectedProducts}
-          theme={theme}
-          onOpenSettings={openProductSettings}
-          onOpenPreset={openProductPresetSheet}
-          onOpenProductSelect={() => setProductSelectSheetOpen(true)}
-          onRemoveProduct={(productId) => controller.toggleProduct(productId)}
-          onSyncProducts={() => {
-            void syncProducts();
-          }}
-        />
-
+          ) : null}
+        </View>
       </ScrollView>
 
       {productSelectSheetOpen ? (
@@ -503,16 +445,11 @@ export default function AutoPilotScreen({
         />
       ) : null}
 
-      <View className="absolute bottom-0 left-0 right-0 border-t border-kd-border bg-kd-panel px-3 pb-3 pt-2">
-        <View className="mb-2 flex-row items-center justify-between">
-          <Text className="text-kd-micro font-semibold text-kd-text-subtle">
-            {controller.selectedProducts.length} สินค้า · {controller.enabledSteps.length} ขั้นตอน · {controller.settings.browserMode === 'chrome' ? 'Chrome' : 'Browser ปริยาย'}
-          </Text>
-          <Text className="text-kd-micro font-semibold text-kd-text-subtle">
-            {controller.runState.status === 'running' ? 'กำลังทำงาน' : canStart ? 'พร้อมเริ่ม' : 'เลือกสินค้า/ขั้นตอนก่อน'}
-          </Text>
-        </View>
-        <Pressable
+      <View
+        className="absolute bottom-0 left-0 right-0 bg-kd-panel px-4 pt-3"
+        style={{ paddingBottom: Math.max(insets.bottom + 10, 18) }}
+      >
+        <Button
           accessibilityRole="button"
           disabled={!canStart && controller.runState.status !== 'running'}
           onPress={() => {
@@ -522,7 +459,7 @@ export default function AutoPilotScreen({
             }
             void controller.startRun();
           }}
-          className={`h-11 flex-row items-center justify-center gap-2 rounded-kd-lg ${
+          className={`h-[72px] flex-row items-center justify-center gap-2 rounded-[18px] ${
             controller.runState.status === 'running'
               ? 'bg-kd-red'
               : canStart
@@ -533,13 +470,288 @@ export default function AutoPilotScreen({
           {controller.runState.status === 'running' ? (
             <Square size={15} color={theme.white} fill={theme.white} strokeWidth={2} />
           ) : (
-            <Play size={15} color={theme.isDark ? '#000000' : theme.white} fill={theme.isDark ? '#000000' : theme.white} strokeWidth={2} />
+            <Sparkles size={18} color={canStart ? (theme.isDark ? '#000000' : theme.white) : theme.textSubtle} strokeWidth={2.2} />
           )}
-          <Text className={`text-kd-body font-black ${controller.runState.status === 'running' ? 'text-white' : theme.isDark && canStart ? 'text-black' : 'text-white'}`}>
-            {controller.runState.status === 'running' ? 'หยุด Auto Pilot' : 'เริ่มสร้างด้วย Google Flow'}
+          <Text className={`text-kd-label font-black ${controller.runState.status === 'running' ? 'text-white' : canStart ? (theme.isDark ? 'text-black' : 'text-white') : 'text-kd-text-subtle'}`}>
+            {controller.runState.status === 'running' ? 'หยุด Auto Pilot' : 'เริ่มสร้าง'}
           </Text>
-        </Pressable>
+        </Button>
       </View>
+    </View>
+  );
+}
+
+function ExtensionBasicSettingsBlock({
+  settings,
+  theme,
+  onDelayChange,
+  onDurationChange,
+  onHashtagCountChange,
+  onImageModelChange,
+  onRoundChange,
+  onToggleCaption,
+  onToggleCta,
+  onToggleRewrite,
+  onVideoModelChange,
+}: {
+  settings: AutoPilotSettings;
+  theme: KubdeeTheme;
+  onDelayChange: (value: OptionValue) => void;
+  onDurationChange: (value: number) => void;
+  onHashtagCountChange: (value: number) => void;
+  onImageModelChange: (value: OptionValue) => void;
+  onRoundChange: (value: OptionValue) => void;
+  onToggleCaption: (value: boolean) => void;
+  onToggleCta: (value: boolean) => void;
+  onToggleRewrite: (value: boolean) => void;
+  onVideoModelChange: (value: OptionValue) => void;
+}): React.JSX.Element {
+  const durationOptions = VIDEO_DURATION_OPTIONS.filter(
+    (duration) => settings.flowVideoModel === 'omni_flash' || duration !== 10
+  );
+
+  return (
+    <View className="gap-4">
+      <ExtensionSectionTitle icon={Star} title="ตั้งค่าพื้นฐาน" theme={theme} />
+
+      <View className="gap-3">
+        <View className="flex-row gap-3">
+          <SelectField
+            label="จำนวนรอบ"
+            options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({ label: String(round), value: round }))}
+            theme={theme}
+            value={settings.totalRounds}
+            onChange={onRoundChange}
+          />
+          <SelectField
+            label="หน่วงเวลา"
+            options={AUTO_PILOT_DELAY_OPTIONS.map((option) => ({
+              label:
+                option.value === 'normal'
+                  ? 'ปกติ (2-4 วิ)'
+                  : option.value === 'fast'
+                    ? 'เร็ว (1-2 วิ)'
+                    : 'ช้า (4-7 วิ)',
+              value: option.value,
+            }))}
+            theme={theme}
+            value={settings.delayPreset}
+            onChange={onDelayChange}
+          />
+        </View>
+
+        <View className="flex-row gap-3">
+          <SelectField
+            label="Model รูป"
+            options={FLOW_IMAGE_MODELS.map((model) => ({ label: model.label, value: model.value }))}
+            theme={theme}
+            value={settings.flowImageModel}
+            onChange={onImageModelChange}
+          />
+          <SelectField
+            label="Model วิดีโอ"
+            options={FLOW_VIDEO_MODELS.map((model) => ({ label: model.label, value: model.value }))}
+            theme={theme}
+            value={settings.flowVideoModel}
+            onChange={onVideoModelChange}
+          />
+        </View>
+      </View>
+
+      <DurationSegment
+        options={durationOptions}
+        theme={theme}
+        value={settings.flowVideoDuration}
+        onChange={onDurationChange}
+      />
+
+      <View className="gap-3">
+        <ExtensionToggleRow
+          icon={Star}
+          label="AI คิด Caption/Hashtags"
+          rightSlot={settings.aiGenerateCaption ? (
+            <HashtagCountSelector
+              enabled={settings.aiGenerateCaption}
+              theme={theme}
+              value={settings.aiHashtagCount}
+              onChange={onHashtagCountChange}
+            />
+          ) : null}
+          theme={theme}
+          value={settings.aiGenerateCaption}
+          onValueChange={onToggleCaption}
+        />
+        <ExtensionToggleRow
+          icon={Copy}
+          label="AI คิด CTA"
+          theme={theme}
+          value={settings.aiGenerateCta}
+          onValueChange={onToggleCta}
+        />
+        <ExtensionToggleRow
+          icon={Sparkles}
+          label="AI rewrite prompt เมื่อเสียงล้มเหลว"
+          theme={theme}
+          value={settings.aiRewritePromptOnAudioFailure}
+          onValueChange={onToggleRewrite}
+        />
+      </View>
+    </View>
+  );
+}
+
+function ExtensionSectionTitle({
+  icon: Icon,
+  theme,
+  title,
+}: {
+  icon: typeof Star;
+  theme: KubdeeTheme;
+  title: string;
+}): React.JSX.Element {
+  return (
+    <View className="flex-row items-center gap-3">
+      <Icon size={20} color={theme.textMuted} strokeWidth={2.2} />
+      <Text className="text-[17px] font-black text-kd-text">{title}</Text>
+    </View>
+  );
+}
+
+function DurationSegment({
+  options,
+  theme,
+  value,
+  onChange,
+}: {
+  options: readonly number[];
+  theme: KubdeeTheme;
+  value: number;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  return (
+    <View className="flex-row items-center justify-between gap-3">
+      <View className="min-w-0 flex-1 flex-row items-center gap-3">
+        <Clock3 size={20} color={theme.textMuted} strokeWidth={2.1} />
+        <Text className="text-[15px] font-black text-kd-text-muted">ความยาวคลิป</Text>
+      </View>
+      <ToggleGroup
+        type="single"
+        value={String(value)}
+        onValueChange={(nextValue) => {
+          if (!nextValue) {
+            return;
+          }
+          onChange(Number(nextValue));
+        }}
+        className="flex-row rounded-kd-lg bg-kd-panel-muted p-1 dark:bg-kd-card-muted"
+      >
+        {options.map((duration) => {
+          const active = duration === value;
+          return (
+            <ToggleGroupItem
+              accessibilityRole="button"
+              key={duration}
+              value={String(duration)}
+              className={`h-8 min-w-11 items-center justify-center rounded-kd-md px-2 ${
+                active ? 'bg-white dark:bg-kd-input' : ''
+              }`}
+              style={active ? { shadowColor: theme.shadow, shadowOpacity: 0.08, shadowRadius: 6 } : undefined}
+            >
+              <Text className={`text-kd-label font-black ${active ? 'text-kd-amber' : 'text-kd-text-subtle'}`}>
+                {duration}s
+              </Text>
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
+    </View>
+  );
+}
+
+function HashtagCountSelector({
+  enabled,
+  theme,
+  value,
+  onChange,
+}: {
+  enabled: boolean;
+  theme: KubdeeTheme;
+  value: number;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  return (
+    <View className="flex-row items-center gap-2">
+      <Text className="text-kd-caption font-black text-kd-text-subtle">#</Text>
+      <ToggleGroup
+        type="single"
+        value={String(value)}
+        onValueChange={(nextValue) => {
+          if (!nextValue) {
+            return;
+          }
+          onChange(Number(nextValue));
+        }}
+        disabled={!enabled}
+        className="flex-row gap-1 bg-transparent"
+      >
+        {[1, 2, 3, 4, 5].map((count, index) => {
+          const active = enabled && count === value;
+          return (
+            <ToggleGroupItem
+              accessibilityRole="button"
+              disabled={!enabled}
+              isFirst={index === 0}
+              isLast={index === 4}
+              key={count}
+              value={String(count)}
+              className={`h-7 w-7 items-center justify-center rounded-kd-md p-0 ${
+                active ? 'bg-kd-amber' : 'bg-transparent'
+              }`}
+              style={{ opacity: enabled ? 1 : 0.45 }}
+            >
+              <Text className={`text-kd-caption font-black ${active ? 'text-white' : 'text-kd-text-subtle'}`}>
+                {count}
+              </Text>
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
+    </View>
+  );
+}
+
+function ExtensionToggleRow({
+  icon: Icon,
+  label,
+  rightSlot,
+  theme,
+  value,
+  onValueChange,
+}: {
+  icon: typeof Star;
+  label: string;
+  rightSlot?: React.ReactNode;
+  theme: KubdeeTheme;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <View className="min-h-9 flex-row items-center gap-3">
+      <Icon size={20} color={theme.textMuted} strokeWidth={2.1} />
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.78}
+        numberOfLines={1}
+        className="min-w-0 flex-1 text-[15px] font-black text-kd-text-muted"
+      >
+        {label}
+      </Text>
+      {rightSlot}
+      <Switch
+        checked={value}
+        onCheckedChange={onValueChange}
+        className={value ? 'bg-kd-amber' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
+      />
     </View>
   );
 }
@@ -663,26 +875,30 @@ function ActivityLogBlock({
         </View>
         <View className="flex-row items-center gap-1">
           {isRunning ? (
-            <Pressable
+            <Button
               accessibilityLabel="หยุด Auto Pilot"
               accessibilityRole="button"
+              variant="ghost"
+              size="icon"
               onPress={onStop}
               className="h-8 w-8 items-center justify-center rounded-kd-md"
               style={{ backgroundColor: alpha(theme.red, theme.isDark ? 0.18 : 0.1) }}
             >
               <Square size={13} color={theme.red} fill={theme.red} strokeWidth={2} />
-            </Pressable>
+            </Button>
           ) : null}
-          <Pressable
+          <Button
             accessibilityLabel="ล้าง Activity Log"
             accessibilityRole="button"
             disabled={logs.length === 0}
+            variant="ghost"
+            size="icon"
             onPress={onClear}
             className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
             style={{ opacity: logs.length === 0 ? 0.45 : 1 }}
           >
             <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
-          </Pressable>
+          </Button>
         </View>
       </View>
 
@@ -719,11 +935,111 @@ function PipelineStepsBlock({
   onToggle: (value: AutoPilotStepType) => void;
 }): React.JSX.Element {
   return (
+    <View className="gap-4">
+      <ExtensionSectionTitle icon={Sparkles} title="ขั้นตอนการทำงาน" theme={theme} />
+      <View className="flex-row items-center justify-between">
+        {AUTO_PILOT_STEPS.map((step, index) => (
+          <View key={step.id} className="flex-row items-center">
+            <PipelineStepButton
+              active={enabledSteps.includes(step.id)}
+              label={step.id === 'image' ? 'รูปภาพ' : 'วิดีโอ'}
+              step={step.id}
+              theme={theme}
+              onPress={() => onToggle(step.id)}
+            />
+            <View className="w-10 items-center">
+              <ChevronRight size={18} color={theme.textSubtle} strokeWidth={2.1} />
+            </View>
+          </View>
+        ))}
+        <DisabledPipelineIcon icon="tiktok" theme={theme} />
+        <View className="w-10 items-center">
+          <ChevronRight size={18} color={theme.textSubtle} strokeWidth={2.1} />
+        </View>
+        <DisabledPipelineIcon icon="youtube" theme={theme} />
+        <View className="w-10 items-center">
+          <ChevronRight size={18} color={theme.textSubtle} strokeWidth={2.1} />
+        </View>
+        <DisabledPipelineIcon icon="facebook" theme={theme} />
+      </View>
+    </View>
+  );
+}
+
+function DisabledPipelineIcon({
+  icon,
+  theme,
+}: {
+  icon: 'facebook' | 'tiktok' | 'youtube';
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  const Icon = icon === 'tiktok' ? TikTokLogo : icon === 'youtube' ? YouTubeLogo : FacebookLogo;
+
+  return (
+    <View className="h-[62px] w-[62px] items-center justify-center rounded-[14px] border border-kd-border bg-kd-input opacity-45">
+      <Icon size={24} color={theme.textSubtle} cutoutColor={theme.input} isDark={theme.isDark} />
+    </View>
+  );
+}
+
+function PipelineStepButton({
+  active,
+  label,
+  step,
+  theme,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  step: AutoPilotStepType;
+  theme: KubdeeTheme;
+  onPress: () => void;
+}): React.JSX.Element {
+  const color = step === 'image' ? theme.amber : theme.red;
+  const Icon = step === 'image' ? ImageIcon : Video;
+
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: active }}
+      onPress={onPress}
+      className="relative h-[62px] w-[62px] items-center justify-center rounded-[14px] border"
+      style={{
+        backgroundColor: active ? alpha(color, theme.isDark ? 0.18 : 0.1) : theme.input,
+        borderColor: active ? alpha(color, 0.85) : theme.border,
+      }}
+    >
+      <View
+        className="h-11 w-11 items-center justify-center rounded-kd-lg"
+        style={{ backgroundColor: active ? alpha(color, theme.isDark ? 0.2 : 0.12) : theme.panelMuted }}
+      >
+        <Icon size={24} color={active ? color : theme.textSubtle} strokeWidth={2.1} />
+      </View>
+      {active ? (
+        <View className="absolute right-1 top-1 h-5 w-5 items-center justify-center rounded-full bg-kd-emerald">
+          <Check size={12} color={theme.white} strokeWidth={3} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function LegacyPipelineStepsBlock({
+  enabledSteps,
+  theme,
+  onToggle,
+}: {
+  enabledSteps: AutoPilotStepType[];
+  theme: KubdeeTheme;
+  onToggle: (value: AutoPilotStepType) => void;
+}): React.JSX.Element {
+  return (
     <SectionCard theme={theme} icon={Sparkles} title="ขั้นตอนการทำงาน">
       <View className="flex-row items-center">
         {AUTO_PILOT_STEPS.map((step, index) => (
           <View key={step.id} className="flex-1 flex-row items-center">
-            <PipelineStepButton
+            <LegacyPipelineStepButton
               active={enabledSteps.includes(step.id)}
               label={step.id === 'image' ? 'รูปภาพ' : 'วิดีโอ'}
               step={step.id}
@@ -742,7 +1058,7 @@ function PipelineStepsBlock({
   );
 }
 
-function PipelineStepButton({
+function LegacyPipelineStepButton({
   active,
   label,
   step,
@@ -804,98 +1120,66 @@ function ProductCatalogBlock({
   onSyncProducts: () => void;
 }): React.JSX.Element {
   return (
-    <SectionCard theme={theme} icon={Package} title={`ข้อมูลสินค้า (${selectedProducts.length})`}>
-      <View className="gap-3">
-        <View className="flex-row items-center justify-between gap-2">
-          <View className="min-w-0 flex-1">
-            <Text className="text-kd-caption font-semibold text-kd-text">สินค้าใน Auto Pipeline</Text>
-            <Text className="text-kd-micro text-kd-text-subtle">เริ่มต้นว่าง ต้องกดจากคลังเพื่อเลือกสินค้าที่จะสร้างจริง</Text>
-          </View>
-          <View className="flex-row items-center gap-1.5">
-            <Pressable
-              accessibilityLabel="เปิด Product Preset"
-              accessibilityRole="button"
-              onPress={onOpenPreset}
-              className="h-8 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-input px-2"
-            >
-              <FolderOpen size={12} color={theme.textMuted} strokeWidth={2.1} />
-              <Text className="text-kd-micro font-black text-kd-text-muted">Preset</Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="เลือกสินค้าจากคลัง"
-              accessibilityRole="button"
-              onPress={onOpenProductSelect}
-              className="h-8 flex-row items-center justify-center gap-1 rounded-kd-md bg-kd-emerald px-2"
-            >
-              <Package size={12} color={theme.white} strokeWidth={2.1} />
-              <Text className="text-kd-micro font-black text-white">จากคลัง</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View className="flex-row items-center gap-2 rounded-kd-md bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
-          <Tag size={13} color={theme.textMuted} strokeWidth={2} />
-          <Text className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text">
-            เลือกแล้ว {selectedProducts.length} รายการ
-          </Text>
-          <Pressable
-            accessibilityLabel="ซิงก์คลังสินค้า"
-            accessibilityRole="button"
-            onPress={onSyncProducts}
-            className="h-7 w-7 items-center justify-center rounded-kd-md bg-kd-input"
-          >
-            {isSyncing ? (
-              <ActivityIndicator color={theme.textSubtle} size="small" />
-            ) : (
-              <RefreshCw size={13} color={theme.textSubtle} strokeWidth={2} />
-            )}
-          </Pressable>
-        </View>
-
-        {selectedProducts.length === 0 ? (
-          <View className="items-center gap-3 rounded-kd-lg border border-dashed border-kd-border bg-kd-input px-3 py-8">
-            <View className="h-11 w-11 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
-              <Package size={22} color={theme.textSubtle} strokeWidth={1.8} />
-            </View>
-            <View className="items-center gap-1">
-              <Text className="text-kd-caption font-black text-kd-text">ยังไม่มีสินค้าใน Auto Pipeline</Text>
-              <Text className="text-center text-kd-micro text-kd-text-subtle">
-                กดปุ่มจากคลัง แล้วเลือกเฉพาะสินค้าที่จะสร้างจริง
-              </Text>
-            </View>
-            <Pressable
-              accessibilityLabel="เลือกสินค้าจากคลัง"
-              accessibilityRole="button"
-              onPress={onOpenProductSelect}
-              className="h-9 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-emerald px-3"
-            >
-              <Package size={14} color={theme.white} strokeWidth={2.1} />
-              <Text className="text-kd-caption font-black text-white">เลือกจากคลังสินค้า</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View className="gap-2">
-            {selectedProducts.map((product, index) => (
-              <ProductRow
-                index={index}
-                key={product.id}
-                product={product}
-                theme={theme}
-                onOpenSettings={() => onOpenSettings(product.id)}
-                onRemove={() => onRemoveProduct(product.id)}
-              />
-            ))}
-          </View>
-        )}
-
-        {profileProducts.length === 0 ? (
-          <View className="items-center gap-2 rounded-kd-lg bg-kd-panel-muted py-5 dark:bg-kd-card-muted">
-            <Bot size={24} color={theme.textSubtle} strokeWidth={1.8} />
-            <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มีสินค้าในโปรไฟล์นี้</Text>
-          </View>
-        ) : null}
+    <View className="gap-3">
+      <View className="flex-row items-center gap-2">
+        <Tag size={22} color={theme.textMuted} strokeWidth={2.1} />
+        <Text numberOfLines={1} className="min-w-0 flex-1 text-[15px] font-black text-kd-text-muted">
+          ข้อมูลสินค้า
+        </Text>
+        <Badge variant="outline" className="h-7 border-kd-border bg-kd-input px-2">
+          <Text className="text-kd-label font-black text-kd-text-muted">{selectedProducts.length}</Text>
+        </Badge>
+        <Button
+          accessibilityLabel="เปิด Product Preset"
+          accessibilityRole="button"
+          variant="ghost"
+          onPress={onOpenPreset}
+          className="h-9 flex-row items-center justify-center gap-1 rounded-kd-md px-2"
+        >
+          <Text className="text-kd-label font-black text-kd-text-subtle">Preset</Text>
+          <Text className="text-kd-caption font-black text-kd-text-subtle">⌄</Text>
+        </Button>
+        <Button
+          accessibilityLabel="เพิ่มสินค้าเอง"
+          accessibilityRole="button"
+          disabled
+          variant="ghost"
+          className="h-9 flex-row items-center justify-center gap-1 rounded-kd-md px-1.5 opacity-55"
+        >
+          <Text className="text-kd-label font-black text-kd-text-subtle">+</Text>
+          <Text className="text-kd-label font-black text-kd-text-subtle">เพิ่มเอง</Text>
+        </Button>
+        <Button
+          accessibilityLabel="เลือกสินค้าจากคลัง"
+          accessibilityRole="button"
+          variant="ghost"
+          onPress={onOpenProductSelect}
+          className="h-10 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-emerald px-3"
+        >
+          <Package size={15} color={theme.white} strokeWidth={2.1} />
+          <Text className="text-kd-label font-black text-white">จากคลัง</Text>
+        </Button>
       </View>
-    </SectionCard>
+
+      {selectedProducts.length > 0 ? (
+        <View className="gap-2">
+          {selectedProducts.map((product, index) => (
+            <ProductRow
+              index={index}
+              key={product.id}
+              product={product}
+              theme={theme}
+              onOpenSettings={() => onOpenSettings(product.id)}
+              onRemove={() => onRemoveProduct(product.id)}
+            />
+          ))}
+        </View>
+      ) : profileProducts.length === 0 ? (
+        <View className="rounded-kd-lg bg-kd-panel-muted px-3 py-3 dark:bg-kd-card-muted">
+          <Text className="text-kd-caption font-semibold text-kd-text-subtle">ยังไม่มีสินค้าในโปรไฟล์นี้</Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -988,25 +1272,27 @@ function ProductSelectSheet({
                   <Text className="text-kd-micro text-kd-text-subtle">{products.length} รายการในโปรไฟล์นี้</Text>
                 </View>
               </View>
-              <Pressable
+              <Button
                 accessibilityLabel="ปิดเลือกสินค้าจากคลัง"
                 accessibilityRole="button"
+                variant="ghost"
+                size="icon"
                 onPress={onClose}
                 className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
               >
                 <X size={15} color={theme.textMuted} strokeWidth={2.3} />
-              </Pressable>
+              </Button>
             </View>
 
             <View className="pb-3">
               <View className="h-9 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2">
                 <Search size={13} color={theme.textSubtle} strokeWidth={2} />
-                <TextInput
+                <Input
                   value={query}
                   onChangeText={setQuery}
                   placeholder="ค้นหาสินค้า..."
                   placeholderTextColor={theme.textSubtle}
-                  className="h-9 flex-1 p-0 text-kd-caption text-kd-text"
+                  className="h-9 flex-1 rounded-none border-0 bg-transparent p-0 text-kd-caption text-kd-text shadow-none"
                   style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
                 />
                 {query.length > 0 ? (
@@ -1018,6 +1304,8 @@ function ProductSelectSheet({
             </View>
           </View>
 
+          <Separator className="bg-kd-border" />
+
           {filteredProducts.length > 0 ? (
             <Pressable
               accessibilityRole="checkbox"
@@ -1026,22 +1314,22 @@ function ProductSelectSheet({
               className="min-h-10 flex-row items-center justify-between border-b border-kd-border px-3"
             >
               <View className="flex-row items-center gap-2">
-                <View
-                  className="h-4 w-4 items-center justify-center rounded-full border"
-                  style={{
-                    backgroundColor: allFilteredSelected ? theme.emerald : theme.input,
-                    borderColor: allFilteredSelected ? theme.emerald : theme.borderStrong,
-                  }}
-                >
-                  {allFilteredSelected ? <Check size={10} color={theme.white} strokeWidth={3} /> : null}
+                <View pointerEvents="none">
+                  <Checkbox
+                    checked={allFilteredSelected}
+                    onCheckedChange={toggleAllFiltered}
+                    checkedClassName="border-kd-emerald"
+                    indicatorClassName="bg-kd-emerald"
+                    className="h-5 w-5 rounded-[6px] border-2 border-kd-border-strong bg-kd-input"
+                  />
                 </View>
                 <Text className="text-kd-micro font-semibold text-kd-text-subtle">
                   เลือกทั้งหมด ({filteredProducts.length})
                 </Text>
               </View>
-              <Text className="text-kd-micro font-black text-kd-emerald">
-                เลือกแล้ว {draftSelectedIds.size} รายการ
-              </Text>
+              <Badge className="border-transparent bg-kd-emerald-soft px-2 dark:bg-kd-card-muted">
+                <Text className="text-kd-micro font-black text-kd-emerald">เลือกแล้ว {draftSelectedIds.size}</Text>
+              </Badge>
             </Pressable>
           ) : null}
 
@@ -1070,16 +1358,18 @@ function ProductSelectSheet({
             className="absolute bottom-0 left-0 right-0 flex-row items-center justify-end gap-2 border-t border-kd-border bg-kd-panel px-3 pt-2"
             style={{ paddingBottom: Math.max(bottomInset, 12) }}
           >
-            <Pressable
+            <Button
               accessibilityRole="button"
+              variant="ghost"
               onPress={onClose}
               className="h-10 justify-center rounded-kd-md px-3"
             >
               <Text className="text-kd-caption font-black text-kd-text-muted">ยกเลิก</Text>
-            </Pressable>
-            <Pressable
+            </Button>
+            <Button
               accessibilityRole="button"
               disabled={draftSelectedIds.size === 0}
+              variant="ghost"
               onPress={() => onConfirm(Array.from(draftSelectedIds))}
               className={`h-10 flex-row items-center justify-center gap-1.5 rounded-kd-md px-4 ${
                 draftSelectedIds.size === 0 ? 'bg-kd-border' : 'bg-kd-emerald'
@@ -1089,7 +1379,7 @@ function ProductSelectSheet({
               <Text className="text-kd-caption font-black text-white">
                 เลือก {draftSelectedIds.size > 0 ? `${draftSelectedIds.size} รายการ` : ''}
               </Text>
-            </Pressable>
+            </Button>
           </View>
         </View>
       </View>
@@ -1121,14 +1411,14 @@ function CatalogSelectRow({
         borderColor: selected ? alpha(theme.emerald, 0.55) : theme.border,
       }}
     >
-      <View
-        className="h-5 w-5 items-center justify-center rounded-full border-2"
-        style={{
-          backgroundColor: selected ? theme.emerald : 'transparent',
-          borderColor: selected ? theme.emerald : theme.borderStrong,
-        }}
-      >
-        {selected ? <Check size={12} color={theme.white} strokeWidth={3} /> : null}
+      <View pointerEvents="none">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onPress}
+          checkedClassName="border-kd-emerald"
+          indicatorClassName="bg-kd-emerald"
+          className="h-5 w-5 rounded-[6px] border-2 border-kd-border-strong bg-kd-input"
+        />
       </View>
       <View className="h-12 w-12 overflow-hidden rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
         {product.imageUrl ? (
@@ -1199,34 +1489,48 @@ function ProductPresetSheet({
                   <Text className="text-kd-micro text-kd-text-subtle">บันทึก/โหลดชุดสินค้าที่เลือกจากคลัง</Text>
                 </View>
               </View>
-              <Pressable
+              <Button
                 accessibilityLabel="ปิด Product Preset"
                 accessibilityRole="button"
+                variant="ghost"
+                size="icon"
                 onPress={onClose}
                 className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
               >
                 <X size={15} color={theme.textMuted} strokeWidth={2.3} />
-              </Pressable>
+              </Button>
             </View>
 
-            <View className="flex-row">
-              <ProductSettingsTabButton
-                active={mode === 'save'}
-                color={theme.emerald}
-                icon={Save}
-                label="บันทึก"
-                theme={theme}
-                onPress={() => onModeChange('save')}
-              />
-              <ProductSettingsTabButton
-                active={mode === 'load'}
-                color={theme.emerald}
-                icon={FolderOpen}
-                label="โหลด"
-                theme={theme}
-                onPress={() => onModeChange('load')}
-              />
-            </View>
+            <Tabs
+              value={mode}
+              onValueChange={(nextMode) => onModeChange(nextMode as 'save' | 'load')}
+              className="gap-0"
+            >
+              <TabsList className="mr-0 h-10 w-full rounded-none bg-transparent p-0">
+                <TabsTrigger
+                  value="save"
+                  className={`min-h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-none border-0 border-b-2 bg-transparent ${
+                    mode === 'save' ? 'border-kd-emerald' : 'border-transparent'
+                  }`}
+                >
+                  <Save size={13} color={mode === 'save' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
+                  <Text className="text-kd-caption font-black" style={{ color: mode === 'save' ? theme.emerald : theme.textSubtle }}>
+                    บันทึก
+                  </Text>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="load"
+                  className={`min-h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-none border-0 border-b-2 bg-transparent ${
+                    mode === 'load' ? 'border-kd-emerald' : 'border-transparent'
+                  }`}
+                >
+                  <FolderOpen size={13} color={mode === 'load' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
+                  <Text className="text-kd-caption font-black" style={{ color: mode === 'load' ? theme.emerald : theme.textSubtle }}>
+                    โหลด
+                  </Text>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </View>
 
           <ScrollView
@@ -1249,7 +1553,7 @@ function ProductPresetSheet({
                   </Text>
                   <View className="mt-3 gap-1.5">
                     <Text className="text-kd-micro font-semibold text-kd-text-subtle">ชื่อ preset</Text>
-                    <TextInput
+                    <Input
                       value={name}
                       onChangeText={onNameChange}
                       placeholder="เช่น ชุดรีวิวสินค้า 9:16"
@@ -1259,9 +1563,10 @@ function ProductPresetSheet({
                     />
                   </View>
                 </View>
-                <Pressable
+                <Button
                   accessibilityRole="button"
                   disabled={saveDisabled}
+                  variant="ghost"
                   onPress={onSave}
                   className={`h-11 flex-row items-center justify-center gap-2 rounded-kd-lg ${
                     saveDisabled ? 'bg-kd-border' : 'bg-kd-text'
@@ -1271,7 +1576,7 @@ function ProductPresetSheet({
                   <Text className={`text-kd-body font-black ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
                     บันทึก preset
                   </Text>
-                </Pressable>
+                </Button>
               </View>
             ) : (
               <View className="gap-2">
@@ -1282,8 +1587,9 @@ function ProductPresetSheet({
                   </View>
                 ) : (
                   presets.map((preset) => (
-                    <Pressable
+                    <Button
                       accessibilityRole="button"
+                      variant="ghost"
                       key={preset.id}
                       onPress={() => onLoad(preset)}
                       className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
@@ -1298,7 +1604,7 @@ function ProductPresetSheet({
                         </Text>
                       </View>
                       <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
-                    </Pressable>
+                    </Button>
                   ))
                 )}
               </View>
@@ -1359,34 +1665,48 @@ function SettingsPresetSheet({
                   </Text>
                 </View>
               </View>
-              <Pressable
+              <Button
                 accessibilityLabel="ปิด Preset ตั้งค่า"
                 accessibilityRole="button"
+                variant="ghost"
+                size="icon"
                 onPress={onClose}
                 className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
               >
                 <X size={15} color={theme.textMuted} strokeWidth={2.3} />
-              </Pressable>
+              </Button>
             </View>
 
-            <View className="flex-row">
-              <ProductSettingsTabButton
-                active={mode === 'save'}
-                color={theme.emerald}
-                icon={Save}
-                label="บันทึก"
-                theme={theme}
-                onPress={() => onModeChange('save')}
-              />
-              <ProductSettingsTabButton
-                active={mode === 'load'}
-                color={theme.emerald}
-                icon={FolderOpen}
-                label="โหลด"
-                theme={theme}
-                onPress={() => onModeChange('load')}
-              />
-            </View>
+            <Tabs
+              value={mode}
+              onValueChange={(nextMode) => onModeChange(nextMode as 'save' | 'load')}
+              className="gap-0"
+            >
+              <TabsList className="mr-0 h-10 w-full rounded-none bg-transparent p-0">
+                <TabsTrigger
+                  value="save"
+                  className={`min-h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-none border-0 border-b-2 bg-transparent ${
+                    mode === 'save' ? 'border-kd-emerald' : 'border-transparent'
+                  }`}
+                >
+                  <Save size={13} color={mode === 'save' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
+                  <Text className="text-kd-caption font-black" style={{ color: mode === 'save' ? theme.emerald : theme.textSubtle }}>
+                    บันทึก
+                  </Text>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="load"
+                  className={`min-h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-none border-0 border-b-2 bg-transparent ${
+                    mode === 'load' ? 'border-kd-emerald' : 'border-transparent'
+                  }`}
+                >
+                  <FolderOpen size={13} color={mode === 'load' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
+                  <Text className="text-kd-caption font-black" style={{ color: mode === 'load' ? theme.emerald : theme.textSubtle }}>
+                    โหลด
+                  </Text>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </View>
 
           <ScrollView
@@ -1409,7 +1729,7 @@ function SettingsPresetSheet({
                   </Text>
                   <View className="mt-3 gap-1.5">
                     <Text className="text-kd-micro font-semibold text-kd-text-subtle">ชื่อ preset</Text>
-                    <TextInput
+                    <Input
                       value={name}
                       onChangeText={onNameChange}
                       placeholder="เช่น รีวิวสั้น 9:16 โทนพรีเมียม"
@@ -1419,9 +1739,10 @@ function SettingsPresetSheet({
                     />
                   </View>
                 </View>
-                <Pressable
+                <Button
                   accessibilityRole="button"
                   disabled={saveDisabled}
+                  variant="ghost"
                   onPress={onSave}
                   className={`h-11 flex-row items-center justify-center gap-2 rounded-kd-lg ${
                     saveDisabled ? 'bg-kd-border' : 'bg-kd-text'
@@ -1431,7 +1752,7 @@ function SettingsPresetSheet({
                   <Text className={`text-kd-body font-black ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
                     บันทึก preset ตั้งค่า
                   </Text>
-                </Pressable>
+                </Button>
               </View>
             ) : (
               <View className="gap-2">
@@ -1442,8 +1763,9 @@ function SettingsPresetSheet({
                   </View>
                 ) : (
                   presets.map((preset) => (
-                    <Pressable
+                    <Button
                       accessibilityRole="button"
+                      variant="ghost"
                       key={preset.id}
                       onPress={() => onLoad(preset)}
                       className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
@@ -1458,7 +1780,7 @@ function SettingsPresetSheet({
                         </Text>
                       </View>
                       <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
-                    </Pressable>
+                    </Button>
                   ))
                 )}
               </View>
@@ -1534,35 +1856,49 @@ function ProductSettingsModal({
                   #{product.productId || product.catalogId} · จากคลังสินค้า
                 </Text>
               </View>
-              <Pressable
+              <Button
                 accessibilityLabel="ปิดตั้งค่าสินค้า"
                 accessibilityRole="button"
+                variant="ghost"
+                size="icon"
                 onPress={onClose}
                 className="h-9 w-9 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
               >
                 <X size={16} color={theme.textMuted} strokeWidth={2.3} />
-              </Pressable>
+              </Button>
             </View>
 
             {showImageTab && showVideoTab ? (
-              <View className="flex-row">
-                <ProductSettingsTabButton
-                  active={activeTab === 'image'}
-                  color={theme.amber}
-                  icon={ImageIcon}
-                  label="รูปภาพ"
-                  theme={theme}
-                  onPress={() => onTabChange('image')}
-                />
-                <ProductSettingsTabButton
-                  active={activeTab === 'video'}
-                  color={theme.red}
-                  icon={Video}
-                  label="วิดีโอ"
-                  theme={theme}
-                  onPress={() => onTabChange('video')}
-                />
-              </View>
+              <Tabs
+                value={activeTab}
+                onValueChange={(nextTab) => onTabChange(nextTab as ProductSettingsTab)}
+                className="gap-0"
+              >
+                <TabsList className="mr-0 h-10 w-full rounded-none bg-transparent p-0">
+                  <TabsTrigger
+                    value="image"
+                    className={`min-h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-none border-0 border-b-2 bg-transparent ${
+                      activeTab === 'image' ? 'border-kd-amber' : 'border-transparent'
+                    }`}
+                  >
+                    <ImageIcon size={13} color={activeTab === 'image' ? theme.amber : theme.textSubtle} strokeWidth={2.2} />
+                    <Text className="text-kd-caption font-black" style={{ color: activeTab === 'image' ? theme.amber : theme.textSubtle }}>
+                      รูปภาพ
+                    </Text>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="video"
+                    className={`min-h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-none border-0 border-b-2 bg-transparent ${
+                      activeTab === 'video' ? 'border-kd-red' : 'border-transparent'
+                    }`}
+                  >
+                    <Video size={13} color={activeTab === 'video' ? theme.red : theme.textSubtle} strokeWidth={2.2} />
+                    <Text className="text-kd-caption font-black" style={{ color: activeTab === 'video' ? theme.red : theme.textSubtle }}>
+                      วิดีโอ
+                    </Text>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             ) : null}
           </View>
 
@@ -1593,34 +1929,41 @@ function ProductSettingsModal({
             className="absolute bottom-0 left-0 right-0 flex-row items-center gap-2 border-t border-kd-border bg-kd-panel px-3 pt-2"
             style={{ paddingBottom: Math.max(bottomInset, 12) }}
           >
-            <Pressable
+            <Button
               accessibilityLabel="รีเซ็ตตั้งค่าสินค้า"
               accessibilityRole="button"
+              variant="ghost"
+              size="icon"
               onPress={onReset}
               className="h-10 w-10 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
             >
               <RotateCcw size={15} color={theme.textMuted} strokeWidth={2.2} />
-            </Pressable>
-            <Pressable
+            </Button>
+            <Button
               accessibilityLabel="บันทึก Preset ตั้งค่า"
               accessibilityRole="button"
+              variant="ghost"
+              size="icon"
               onPress={() => onOpenSettingsPreset('save')}
               className="h-10 w-10 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
             >
               <Save size={15} color={theme.textMuted} strokeWidth={2.2} />
-            </Pressable>
-            <Pressable
+            </Button>
+            <Button
               accessibilityLabel="โหลด Preset ตั้งค่า"
               accessibilityRole="button"
+              variant="ghost"
+              size="icon"
               onPress={() => onOpenSettingsPreset('load')}
               className="h-10 w-10 items-center justify-center rounded-kd-md border border-kd-border bg-kd-input"
             >
               <FolderOpen size={15} color={theme.textMuted} strokeWidth={2.2} />
-            </Pressable>
-            <Pressable
+            </Button>
+            <Button
               accessibilityLabel="นำค่านี้ไปใช้กับสินค้าที่เลือกทั้งหมด"
               accessibilityRole="button"
               disabled={!canApplyAll}
+              variant="ghost"
               onPress={onApplyAll}
               className={`h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-md border ${
                 canApplyAll
@@ -1630,14 +1973,15 @@ function ProductSettingsModal({
             >
               <Copy size={14} color={theme.textMuted} strokeWidth={2.2} />
               <Text className="text-kd-caption font-black text-kd-text-muted">นำไปใช้ทั้งหมด</Text>
-            </Pressable>
-            <Pressable
+            </Button>
+            <Button
               accessibilityRole="button"
+              variant="ghost"
               onPress={onClose}
               className="h-10 flex-1 items-center justify-center rounded-kd-md bg-kd-text"
             >
               <Text className="text-kd-caption font-black text-white dark:text-black">เสร็จสิ้น</Text>
-            </Pressable>
+            </Button>
           </View>
         </View>
       </View>
@@ -2237,12 +2581,11 @@ function ProgressBlock({
           </Text>
         </View>
 
-        <View className="h-2 overflow-hidden rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
-          <View
-            className="h-full rounded-full bg-kd-emerald"
-            style={{ width: `${Math.max(0, Math.min(1, progressRatio)) * 100}%` }}
-          />
-        </View>
+        <Progress
+          value={Math.max(0, Math.min(1, progressRatio)) * 100}
+          className="h-2 bg-kd-panel-muted dark:bg-kd-card-muted"
+          indicatorClassName="bg-kd-emerald"
+        />
 
         <View className="flex-row gap-2">
           <ProgressMetric color={theme.blue} icon={RefreshCw} label="รอบ" theme={theme} value={`${progress.currentRound}/${progress.totalRounds}`} />
@@ -2308,7 +2651,7 @@ function SectionCard({
 function SelectField({
   label,
   options,
-  theme,
+  theme: _theme,
   value,
   onChange,
 }: {
@@ -2318,80 +2661,56 @@ function SelectField({
   value: OptionValue;
   onChange: (value: OptionValue) => void;
 }): React.JSX.Element {
-  const insets = useSafeAreaInsets();
-  const [open, setOpen] = useState(false);
   const selectedOption = options.find((option) => String(option.value) === String(value)) ?? options[0];
+  const selectedValue = selectedOption
+    ? { label: selectedOption.label, value: String(selectedOption.value) }
+    : undefined;
+
+  const handleValueChange = (option: { value: string; label: string } | undefined): void => {
+    if (!option) {
+      return;
+    }
+
+    const originalOption = options.find((item) => String(item.value) === option.value);
+    if (originalOption) {
+      onChange(originalOption.value);
+    }
+  };
 
   return (
     <View className="min-w-0 flex-1 gap-1">
       <Text className="text-kd-micro font-semibold uppercase text-kd-text-subtle">{label}</Text>
-      <Pressable
-        accessibilityLabel={label}
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        className="h-10 flex-row items-center justify-between gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-2.5"
-      >
-        <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text">
-          {selectedOption?.label ?? '-'}
-        </Text>
-        <ChevronDown size={14} color={theme.textSubtle} strokeWidth={2.2} />
-      </Pressable>
-
-      {open ? (
-        <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible>
-          <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setOpen(false)}>
-            <View
-              className="rounded-t-[18px] border border-kd-border bg-kd-panel px-3 pt-3"
-              style={{ paddingBottom: Math.max(insets.bottom + 12, 92) }}
-            >
-              <View className="mb-2 flex-row items-center justify-between">
-                <Text className="text-[14px] font-black text-kd-text">{label}</Text>
-                <Pressable
-                  accessibilityLabel={`ปิด ${label}`}
-                  accessibilityRole="button"
-                  onPress={() => setOpen(false)}
-                  className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
-                >
-                  <X size={15} color={theme.textMuted} strokeWidth={2.3} />
-                </Pressable>
-              </View>
-              <View className="gap-1.5">
-                {options.map((option) => {
-                  const active = String(option.value) === String(value);
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      key={String(option.value)}
-                      onPress={() => {
-                        onChange(option.value);
-                        setOpen(false);
-                      }}
-                      className="min-h-10 flex-row items-center gap-2 rounded-kd-md border px-2.5"
-                      style={{
-                        backgroundColor: active ? alpha(theme.emerald, theme.isDark ? 0.16 : 0.08) : theme.input,
-                        borderColor: active ? alpha(theme.emerald, 0.55) : theme.border,
-                      }}
-                    >
-                      <View
-                        className="h-4 w-4 items-center justify-center rounded-full border"
-                        style={{
-                          backgroundColor: active ? theme.emerald : 'transparent',
-                          borderColor: active ? theme.emerald : theme.borderStrong,
-                        }}
-                      >
-                        {active ? <Check size={10} color={theme.white} strokeWidth={3} /> : null}
-                      </View>
-                      <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text">
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          </Pressable>
-        </Modal>
-      ) : null}
+      <Select value={selectedValue} onValueChange={handleValueChange}>
+        <SelectTrigger
+          accessibilityLabel={label}
+          className="h-10 w-full rounded-kd-lg border-kd-border bg-kd-input px-2.5 active:bg-kd-panel-muted dark:bg-kd-input dark:active:bg-kd-card-muted"
+        >
+          <SelectValue
+            placeholder="-"
+            className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text"
+          />
+        </SelectTrigger>
+        <SelectContent
+          align="start"
+          side="bottom"
+          sideOffset={6}
+          className="w-72 rounded-kd-lg border-kd-border bg-kd-panel p-1 shadow-lg shadow-black/10 dark:bg-kd-card"
+        >
+          <SelectGroup>
+            <SelectLabel className="px-2 py-1.5 text-kd-micro font-black uppercase text-kd-text-subtle">
+              {label}
+            </SelectLabel>
+            {options.map((option) => (
+              <SelectItem
+                key={String(option.value)}
+                value={String(option.value)}
+                label={option.label}
+                className="min-h-10 rounded-kd-md border border-transparent px-2.5 active:bg-kd-emerald-soft dark:active:bg-kd-emerald-soft"
+              />
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </View>
   );
 }
@@ -2416,44 +2735,107 @@ function OptionGroup({
   onToggle?: (value: OptionValue) => void;
 }): React.JSX.Element {
   const values = Array.isArray(value) ? value : [value];
+  const valueStrings = values.map((item) => String(item));
+
+  const handleSingleChange = (nextValue: string | undefined): void => {
+    if (!nextValue) {
+      return;
+    }
+
+    const originalOption = options.find((option) => String(option.value) === nextValue);
+    if (originalOption) {
+      onChange?.(originalOption.value);
+    }
+  };
+
+  const handleMultipleChange = (nextValues: string[]): void => {
+    const changedOption = options.find((option) => {
+      const optionValue = String(option.value);
+      return values.includes(option.value)
+        ? !nextValues.includes(optionValue)
+        : nextValues.includes(optionValue);
+    });
+
+    if (changedOption) {
+      onToggle?.(changedOption.value);
+    }
+  };
 
   return (
     <View className="min-w-0 flex-1 gap-1.5">
       <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
-      <View className="flex-row flex-wrap gap-1.5">
-        {options.map((option) => {
-          const active = values.includes(option.value);
-          return (
-            <Pressable
-              accessibilityRole={onToggle ? 'checkbox' : 'button'}
-              accessibilityState={onToggle ? { checked: active } : undefined}
-              key={String(option.value)}
-              onPress={() => {
-                if (onToggle) {
-                  onToggle(option.value);
-                  return;
-                }
-                onChange?.(option.value);
-              }}
-              className={`min-h-[26px] items-center justify-center rounded-kd-md border px-2 ${
-                active ? 'border-transparent bg-kd-text' : 'border-kd-border bg-kd-input'
-              }`}
-              style={columns ? { flexBasis: `${100 / columns - 2}%` } : undefined}
-            >
-              <Text
-                adjustsFontSizeToFit
-                minimumFontScale={0.78}
-                numberOfLines={1}
-                className={`${compact ? 'text-kd-micro' : 'text-kd-caption'} font-semibold ${
-                  active ? 'text-white dark:text-black' : 'text-kd-text-muted'
+      {onToggle ? (
+        <ToggleGroup
+          type="multiple"
+          value={valueStrings}
+          onValueChange={handleMultipleChange}
+          className="flex-row flex-wrap gap-1.5 bg-transparent"
+        >
+          {options.map((option, index) => {
+            const active = values.includes(option.value);
+            return (
+              <ToggleGroupItem
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: active }}
+                isFirst={index === 0}
+                isLast={index === options.length - 1}
+                key={String(option.value)}
+                value={String(option.value)}
+                className={`min-h-[26px] items-center justify-center rounded-kd-md border px-2 ${
+                  active ? 'border-transparent bg-kd-text' : 'border-kd-border bg-kd-input'
                 }`}
+                style={columns ? { flexBasis: `${100 / columns - 2}%` } : undefined}
               >
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+                <Text
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.78}
+                  numberOfLines={1}
+                  className={`${compact ? 'text-kd-micro' : 'text-kd-caption'} font-semibold ${
+                    active ? 'text-white dark:text-black' : 'text-kd-text-muted'
+                  }`}
+                >
+                  {option.label}
+                </Text>
+              </ToggleGroupItem>
+            );
+          })}
+        </ToggleGroup>
+      ) : (
+        <ToggleGroup
+          type="single"
+          value={String(value)}
+          onValueChange={handleSingleChange}
+          className="flex-row flex-wrap gap-1.5 bg-transparent"
+        >
+          {options.map((option, index) => {
+            const active = values.includes(option.value);
+            return (
+              <ToggleGroupItem
+                accessibilityRole="button"
+                isFirst={index === 0}
+                isLast={index === options.length - 1}
+                key={String(option.value)}
+                value={String(option.value)}
+                className={`min-h-[26px] items-center justify-center rounded-kd-md border px-2 ${
+                  active ? 'border-transparent bg-kd-text' : 'border-kd-border bg-kd-input'
+                }`}
+                style={columns ? { flexBasis: `${100 / columns - 2}%` } : undefined}
+              >
+                <Text
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.78}
+                  numberOfLines={1}
+                  className={`${compact ? 'text-kd-micro' : 'text-kd-caption'} font-semibold ${
+                    active ? 'text-white dark:text-black' : 'text-kd-text-muted'
+                  }`}
+                >
+                  {option.label}
+                </Text>
+              </ToggleGroupItem>
+            );
+          })}
+        </ToggleGroup>
+      )}
     </View>
   );
 }
@@ -2473,10 +2855,9 @@ function ToggleRow({
     <View className="min-h-8 flex-row items-center justify-between gap-2">
       <Text className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text-muted">{label}</Text>
       <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: theme.borderStrong, true: alpha(theme.amber, 0.5) }}
-        thumbColor={value ? theme.amber : theme.textSubtle}
+        checked={value}
+        onCheckedChange={onValueChange}
+        className={value ? 'bg-kd-amber' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
       />
     </View>
   );
@@ -2500,16 +2881,26 @@ function SettingInput({
   return (
     <View className="min-w-0 flex-1 gap-1.5">
       <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
-      <TextInput
-        multiline={multiline}
+      {multiline ? (
+        <Textarea
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={theme.textSubtle}
+          className="min-h-[82px] rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5 text-kd-caption text-kd-text"
+          style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
+        />
+      ) : (
+        <Input
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={theme.textSubtle}
-        textAlignVertical={multiline ? 'top' : 'center'}
-        className={`${multiline ? 'min-h-[82px]' : 'min-h-9'} rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5 text-kd-caption text-kd-text`}
+        textAlignVertical="center"
+        className="min-h-9 rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5 text-kd-caption text-kd-text"
         style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
       />
+      )}
     </View>
   );
 }
@@ -2587,15 +2978,16 @@ function ProductRow({
           <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">
             {formatPrice(product.source.price)}
           </Text>
-          <Pressable
+          <Button
             accessibilityLabel="เอาสินค้าออกจาก Auto Pipeline"
             accessibilityRole="button"
+            variant="ghost"
             onPress={onRemove}
             className="h-7 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-panel px-2"
           >
             <X size={11} color={theme.textSubtle} strokeWidth={2.4} />
             <Text className="text-kd-micro font-black text-kd-text-subtle">เอาออก</Text>
-          </Pressable>
+          </Button>
         </View>
       </View>
     </View>

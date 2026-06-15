@@ -1,5 +1,6 @@
 import './global.css';
 
+import { PortalHost } from '@rn-primitives/portal';
 import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -29,6 +30,7 @@ export default function App(): React.JSX.Element {
           <LibraryProvider>
             <GeneratedMediaProvider>
               <KubdeeMobileApp />
+              <PortalHost />
               <Toaster
                 theme={colorScheme === 'light' ? 'light' : 'dark'}
                 richColors
