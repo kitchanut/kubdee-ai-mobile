@@ -9,7 +9,6 @@ import {
   Check,
   Clock3,
   Copy,
-  ExternalLink,
   FolderOpen,
   Image as ImageIcon,
   Package,
@@ -317,7 +316,6 @@ export default function AutoPilotScreen({
             onRoundChange={(value) => controller.updateSetting('totalRounds', Number(value))}
             onToggleCaption={(value) => controller.updateSetting('aiGenerateCaption', value)}
             onToggleCta={(value) => controller.updateSetting('aiGenerateCta', value)}
-            onToggleOpenNewTab={(value) => controller.updateSetting('openNewTab', value)}
             onToggleRewrite={(value) => controller.updateSetting('aiRewritePromptOnAudioFailure', value)}
             onToggleSendImage={(value) => controller.updateSetting('aiSendImageToAi', value)}
             onVideoModelChange={(value) => {
@@ -485,7 +483,6 @@ function ExtensionBasicSettingsBlock({
   onRoundChange,
   onToggleCaption,
   onToggleCta,
-  onToggleOpenNewTab,
   onToggleRewrite,
   onToggleSendImage,
   onVideoModelChange,
@@ -499,7 +496,6 @@ function ExtensionBasicSettingsBlock({
   onRoundChange: (value: OptionValue) => void;
   onToggleCaption: (value: boolean) => void;
   onToggleCta: (value: boolean) => void;
-  onToggleOpenNewTab: (value: boolean) => void;
   onToggleRewrite: (value: boolean) => void;
   onToggleSendImage: (value: boolean) => void;
   onVideoModelChange: (value: OptionValue) => void;
@@ -561,14 +557,6 @@ function ExtensionBasicSettingsBlock({
         theme={theme}
         value={settings.flowVideoDuration}
         onChange={onDurationChange}
-      />
-
-      <ExtensionToggleRow
-        icon={ExternalLink}
-        label="เปิดโครมด้วยแทปใหม่"
-        theme={theme}
-        value={settings.openNewTab}
-        onValueChange={onToggleOpenNewTab}
       />
 
       <View className="gap-1.5">
@@ -726,12 +714,12 @@ function HashtagCountSelector({
               isLast={index === 4}
               key={count}
               value={String(count)}
-              className={`h-[22px] w-[22px] items-center justify-center rounded-kd-md p-0 ${
-                active ? 'bg-kd-amber' : 'bg-kd-panel-muted dark:bg-kd-card-muted'
+              className={`h-5 min-h-5 w-5 min-w-5 items-center justify-center rounded-full p-0 ${
+                active ? 'bg-black dark:bg-white' : 'bg-transparent'
               }`}
               style={{ opacity: enabled ? 1 : 0.45 }}
             >
-              <Text className={`text-kd-micro font-semibold ${active ? 'text-white' : 'text-kd-text-subtle'}`}>
+              <Text className={`text-kd-micro font-semibold ${active ? 'text-white dark:text-black' : 'text-kd-text-subtle'}`}>
                 {count}
               </Text>
             </ToggleGroupItem>

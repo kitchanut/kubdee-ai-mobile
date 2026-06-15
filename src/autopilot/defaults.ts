@@ -13,7 +13,6 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   flowVideoModel: 'veo_31_lite_lower',
   flowVideoDuration: 8,
   browserMode: 'chrome',
-  openNewTab: true,
   aiGenerateCaption: false,
   aiSendImageToAi: false,
   aiGenerateCta: false,
