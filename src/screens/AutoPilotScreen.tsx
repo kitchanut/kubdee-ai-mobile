@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, View } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bot,
+  ChevronDown,
   ChevronRight,
   Check,
   Clock3,
   Copy,
+  ExternalLink,
   FolderOpen,
   Image as ImageIcon,
-  MonitorPlay,
   Package,
   RefreshCw,
   RotateCcw,
@@ -66,15 +68,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -85,7 +78,6 @@ import { alpha } from '@/theme/tokens';
 import { useLibrary } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
 import type {
-  AutoPilotBrowserMode,
   AutoPilotImageSettings,
   AutoPilotProduct,
   AutoPilotProductSettings,
@@ -312,9 +304,9 @@ export default function AutoPilotScreen({
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerClassName="px-4 pt-4"
-        contentContainerStyle={{ paddingBottom: 112 + Math.max(insets.bottom, 12) }}
+        contentContainerStyle={{ paddingBottom: 92 + Math.max(insets.bottom, 12) }}
       >
-        <View className="gap-5">
+        <View className="gap-4">
           <ExtensionBasicSettingsBlock
             settings={controller.settings}
             theme={theme}
@@ -325,7 +317,9 @@ export default function AutoPilotScreen({
             onRoundChange={(value) => controller.updateSetting('totalRounds', Number(value))}
             onToggleCaption={(value) => controller.updateSetting('aiGenerateCaption', value)}
             onToggleCta={(value) => controller.updateSetting('aiGenerateCta', value)}
+            onToggleOpenNewTab={(value) => controller.updateSetting('openNewTab', value)}
             onToggleRewrite={(value) => controller.updateSetting('aiRewritePromptOnAudioFailure', value)}
+            onToggleSendImage={(value) => controller.updateSetting('aiSendImageToAi', value)}
             onVideoModelChange={(value) => {
               const nextModel = String(value);
               controller.updateSetting('flowVideoModel', nextModel);
@@ -459,7 +453,7 @@ export default function AutoPilotScreen({
             }
             void controller.startRun();
           }}
-          className={`h-[72px] flex-row items-center justify-center gap-2 rounded-[18px] ${
+          className={`h-[50px] flex-row items-center justify-center gap-2 rounded-kd-xl ${
             controller.runState.status === 'running'
               ? 'bg-kd-red'
               : canStart
@@ -468,11 +462,11 @@ export default function AutoPilotScreen({
           }`}
         >
           {controller.runState.status === 'running' ? (
-            <Square size={15} color={theme.white} fill={theme.white} strokeWidth={2} />
+            <Square size={14} color={theme.white} fill={theme.white} strokeWidth={2} />
           ) : (
-            <Sparkles size={18} color={canStart ? (theme.isDark ? '#000000' : theme.white) : theme.textSubtle} strokeWidth={2.2} />
+            <Sparkles size={16} color={canStart ? (theme.isDark ? '#000000' : theme.white) : theme.textSubtle} strokeWidth={2.2} />
           )}
-          <Text className={`text-kd-label font-black ${controller.runState.status === 'running' ? 'text-white' : canStart ? (theme.isDark ? 'text-black' : 'text-white') : 'text-kd-text-subtle'}`}>
+          <Text className={`text-[13px] font-semibold ${controller.runState.status === 'running' ? 'text-white' : canStart ? (theme.isDark ? 'text-black' : 'text-white') : 'text-kd-text-subtle'}`}>
             {controller.runState.status === 'running' ? 'หยุด Auto Pilot' : 'เริ่มสร้าง'}
           </Text>
         </Button>
@@ -491,7 +485,9 @@ function ExtensionBasicSettingsBlock({
   onRoundChange,
   onToggleCaption,
   onToggleCta,
+  onToggleOpenNewTab,
   onToggleRewrite,
+  onToggleSendImage,
   onVideoModelChange,
 }: {
   settings: AutoPilotSettings;
@@ -503,7 +499,9 @@ function ExtensionBasicSettingsBlock({
   onRoundChange: (value: OptionValue) => void;
   onToggleCaption: (value: boolean) => void;
   onToggleCta: (value: boolean) => void;
+  onToggleOpenNewTab: (value: boolean) => void;
   onToggleRewrite: (value: boolean) => void;
+  onToggleSendImage: (value: boolean) => void;
   onVideoModelChange: (value: OptionValue) => void;
 }): React.JSX.Element {
   const durationOptions = VIDEO_DURATION_OPTIONS.filter(
@@ -511,11 +509,11 @@ function ExtensionBasicSettingsBlock({
   );
 
   return (
-    <View className="gap-4">
+    <View className="gap-2">
       <ExtensionSectionTitle icon={Star} title="ตั้งค่าพื้นฐาน" theme={theme} />
 
-      <View className="gap-3">
-        <View className="flex-row gap-3">
+      <View className="gap-1.5">
+        <View className="flex-row gap-2.5">
           <SelectField
             label="จำนวนรอบ"
             options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({ label: String(round), value: round }))}
@@ -540,7 +538,7 @@ function ExtensionBasicSettingsBlock({
           />
         </View>
 
-        <View className="flex-row gap-3">
+        <View className="flex-row gap-2.5">
           <SelectField
             label="Model รูป"
             options={FLOW_IMAGE_MODELS.map((model) => ({ label: model.label, value: model.value }))}
@@ -565,22 +563,46 @@ function ExtensionBasicSettingsBlock({
         onChange={onDurationChange}
       />
 
-      <View className="gap-3">
-        <ExtensionToggleRow
-          icon={Star}
-          label="AI คิด Caption/Hashtags"
-          rightSlot={settings.aiGenerateCaption ? (
-            <HashtagCountSelector
-              enabled={settings.aiGenerateCaption}
-              theme={theme}
-              value={settings.aiHashtagCount}
-              onChange={onHashtagCountChange}
-            />
+      <ExtensionToggleRow
+        icon={ExternalLink}
+        label="เปิดโครมด้วยแทปใหม่"
+        theme={theme}
+        value={settings.openNewTab}
+        onValueChange={onToggleOpenNewTab}
+      />
+
+      <View className="gap-1.5">
+        <View className="gap-1">
+          <ExtensionToggleRow
+            icon={Star}
+            label="AI คิด Caption/Hashtags"
+            rightSlot={settings.aiGenerateCaption ? (
+              <HashtagCountSelector
+                enabled={settings.aiGenerateCaption}
+                theme={theme}
+                value={settings.aiHashtagCount}
+                onChange={onHashtagCountChange}
+              />
+            ) : null}
+            theme={theme}
+            value={settings.aiGenerateCaption}
+            onValueChange={onToggleCaption}
+          />
+          {settings.aiGenerateCaption ? (
+            <View className="min-h-7 flex-row items-center gap-3 pl-7">
+              <View className="min-w-0 flex-1 flex-row flex-wrap items-baseline gap-x-1.5">
+                <Text className="text-kd-caption font-medium text-kd-text-muted">ส่งรูปให้ AI วิเคราะห์</Text>
+                <Text className="text-kd-tiny text-kd-text-subtle">(ปิดไว้จะประหยัด token กว่า)</Text>
+              </View>
+              <Switch
+                size="sm"
+                checked={settings.aiSendImageToAi}
+                onCheckedChange={onToggleSendImage}
+                className={settings.aiSendImageToAi ? 'bg-black dark:bg-zinc-200' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
+              />
+            </View>
           ) : null}
-          theme={theme}
-          value={settings.aiGenerateCaption}
-          onValueChange={onToggleCaption}
-        />
+        </View>
         <ExtensionToggleRow
           icon={Copy}
           label="AI คิด CTA"
@@ -610,9 +632,9 @@ function ExtensionSectionTitle({
   title: string;
 }): React.JSX.Element {
   return (
-    <View className="flex-row items-center gap-3">
-      <Icon size={20} color={theme.textMuted} strokeWidth={2.2} />
-      <Text className="text-[17px] font-black text-kd-text">{title}</Text>
+    <View className="flex-row items-center gap-2">
+      <Icon size={16} color={theme.textMuted} strokeWidth={2} />
+      <Text className="text-[13px] font-semibold text-kd-text">{title}</Text>
     </View>
   );
 }
@@ -630,9 +652,9 @@ function DurationSegment({
 }): React.JSX.Element {
   return (
     <View className="flex-row items-center justify-between gap-3">
-      <View className="min-w-0 flex-1 flex-row items-center gap-3">
-        <Clock3 size={20} color={theme.textMuted} strokeWidth={2.1} />
-        <Text className="text-[15px] font-black text-kd-text-muted">ความยาวคลิป</Text>
+      <View className="min-w-0 flex-1 flex-row items-center gap-2">
+        <Clock3 size={15} color={theme.textMuted} strokeWidth={2.1} />
+        <Text className="text-kd-caption font-medium text-kd-text-muted">ความยาวคลิป</Text>
       </View>
       <ToggleGroup
         type="single"
@@ -643,7 +665,7 @@ function DurationSegment({
           }
           onChange(Number(nextValue));
         }}
-        className="flex-row rounded-kd-lg bg-kd-panel-muted p-1 dark:bg-kd-card-muted"
+        className="flex-row gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted"
       >
         {options.map((duration) => {
           const active = duration === value;
@@ -652,12 +674,12 @@ function DurationSegment({
               accessibilityRole="button"
               key={duration}
               value={String(duration)}
-              className={`h-8 min-w-11 items-center justify-center rounded-kd-md px-2 ${
+              className={`h-[22px] items-center justify-center rounded-kd-md px-2.5 ${
                 active ? 'bg-white dark:bg-kd-input' : ''
               }`}
-              style={active ? { shadowColor: theme.shadow, shadowOpacity: 0.08, shadowRadius: 6 } : undefined}
+              style={active ? { shadowColor: theme.shadow, shadowOpacity: 0.08, shadowRadius: 4 } : undefined}
             >
-              <Text className={`text-kd-label font-black ${active ? 'text-kd-amber' : 'text-kd-text-subtle'}`}>
+              <Text className={`text-kd-micro font-semibold ${active ? 'text-kd-amber' : 'text-kd-text-subtle'}`}>
                 {duration}s
               </Text>
             </ToggleGroupItem>
@@ -680,8 +702,8 @@ function HashtagCountSelector({
   onChange: (value: number) => void;
 }): React.JSX.Element {
   return (
-    <View className="flex-row items-center gap-2">
-      <Text className="text-kd-caption font-black text-kd-text-subtle">#</Text>
+    <View className="flex-row items-center gap-1">
+      <Text className="text-kd-micro font-semibold text-kd-text-subtle">#</Text>
       <ToggleGroup
         type="single"
         value={String(value)}
@@ -692,7 +714,7 @@ function HashtagCountSelector({
           onChange(Number(nextValue));
         }}
         disabled={!enabled}
-        className="flex-row gap-1 bg-transparent"
+        className="flex-row gap-0.5 bg-transparent"
       >
         {[1, 2, 3, 4, 5].map((count, index) => {
           const active = enabled && count === value;
@@ -704,12 +726,12 @@ function HashtagCountSelector({
               isLast={index === 4}
               key={count}
               value={String(count)}
-              className={`h-7 w-7 items-center justify-center rounded-kd-md p-0 ${
-                active ? 'bg-kd-amber' : 'bg-transparent'
+              className={`h-[22px] w-[22px] items-center justify-center rounded-kd-md p-0 ${
+                active ? 'bg-kd-amber' : 'bg-kd-panel-muted dark:bg-kd-card-muted'
               }`}
               style={{ opacity: enabled ? 1 : 0.45 }}
             >
-              <Text className={`text-kd-caption font-black ${active ? 'text-white' : 'text-kd-text-subtle'}`}>
+              <Text className={`text-kd-micro font-semibold ${active ? 'text-white' : 'text-kd-text-subtle'}`}>
                 {count}
               </Text>
             </ToggleGroupItem>
@@ -736,117 +758,22 @@ function ExtensionToggleRow({
   onValueChange: (value: boolean) => void;
 }): React.JSX.Element {
   return (
-    <View className="min-h-9 flex-row items-center gap-3">
-      <Icon size={20} color={theme.textMuted} strokeWidth={2.1} />
+    <View className="min-h-6 flex-row items-center gap-2.5">
+      <Icon size={15} color={theme.textMuted} strokeWidth={2} />
       <Text
         adjustsFontSizeToFit
-        minimumFontScale={0.78}
+        minimumFontScale={0.85}
         numberOfLines={1}
-        className="min-w-0 flex-1 text-[15px] font-black text-kd-text-muted"
+        className="min-w-0 flex-1 text-kd-caption font-medium text-kd-text-muted"
       >
         {label}
       </Text>
       {rightSlot}
       <Switch
+        size="sm"
         checked={value}
         onCheckedChange={onValueChange}
-        className={value ? 'bg-kd-amber' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
-      />
-    </View>
-  );
-}
-
-function HeaderBlock({
-  enabledStepCount,
-  runState,
-  theme,
-  selectedCount,
-  totalCount,
-}: {
-  enabledStepCount: number;
-  runState: AutoPilotRunState;
-  theme: KubdeeTheme;
-  selectedCount: number;
-  totalCount: number;
-}): React.JSX.Element {
-  const isRunning = runState.status === 'running';
-  const statusColor =
-    runState.status === 'error'
-      ? theme.red
-      : runState.status === 'completed'
-        ? theme.emerald
-        : isRunning
-          ? theme.amber
-          : theme.textSubtle;
-
-  return (
-    <View className="gap-3 rounded-[14px] border border-kd-border bg-kd-card px-3 py-3">
-      <View className="flex-row items-center gap-3">
-        <View className="h-10 w-10 items-center justify-center rounded-kd-lg" style={{ backgroundColor: alpha(theme.amber, theme.isDark ? 0.18 : 0.12) }}>
-          <Star size={20} color={theme.amber} strokeWidth={2.2} />
-        </View>
-        <View className="min-w-0 flex-1">
-          <Text className="text-[15px] font-black text-kd-text">Auto Pipeline</Text>
-          <Text className="text-kd-caption text-kd-text-subtle">Google Flow standalone บนมือถือ</Text>
-        </View>
-        <View className="flex-row items-center gap-1 rounded-full border border-kd-border bg-kd-input px-2 py-1">
-          <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
-          <Text className="text-kd-micro font-black text-kd-text-muted">{getRunStatusLabel(runState.status)}</Text>
-        </View>
-      </View>
-
-      <View className="flex-row gap-2">
-        <HeaderMetric label="สินค้า" value={`${selectedCount}/${totalCount}`} theme={theme} />
-        <HeaderMetric label="ขั้นตอน" value={String(enabledStepCount)} theme={theme} />
-        <HeaderMetric label="Flow" value={runState.progress.currentStep === 'video' ? 'Video' : runState.progress.currentStep === 'image' ? 'Image' : 'Ready'} theme={theme} />
-      </View>
-    </View>
-  );
-}
-
-function HeaderMetric({
-  label,
-  theme,
-  value,
-}: {
-  label: string;
-  theme: KubdeeTheme;
-  value: string;
-}): React.JSX.Element {
-  return (
-    <View className="min-h-10 flex-1 justify-center rounded-kd-md border border-kd-border bg-kd-input px-2">
-      <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
-      <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">{value}</Text>
-    </View>
-  );
-}
-
-function RunnerBlock({
-  browserMode,
-  theme,
-  onBrowserModeChange,
-}: {
-  browserMode: AutoPilotBrowserMode;
-  theme: KubdeeTheme;
-  onBrowserModeChange: (value: AutoPilotBrowserMode) => void;
-}): React.JSX.Element {
-  return (
-    <View className="gap-2 rounded-kd-lg bg-kd-panel-muted p-2 dark:bg-kd-card-muted">
-      <View className="flex-row items-center gap-2">
-        <MonitorPlay size={14} color={theme.textMuted} strokeWidth={2} />
-        <Text className="flex-1 text-kd-caption font-semibold text-kd-text-muted">
-          Standalone · ใช้ browser และ Accessibility บนเครื่องมือถือ
-        </Text>
-      </View>
-      <SelectField
-        label="Browser"
-        options={[
-          { label: 'Chrome', value: 'chrome' },
-          { label: 'Browser ปริยาย', value: 'default' },
-        ]}
-        theme={theme}
-        value={browserMode}
-        onChange={(value) => onBrowserModeChange(value as AutoPilotBrowserMode)}
+        className={value ? 'bg-black dark:bg-zinc-200' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
       />
     </View>
   );
@@ -871,7 +798,7 @@ function ActivityLogBlock({
       <View className="flex-row items-center justify-between border-b border-kd-border px-3 py-2.5">
         <View className="min-w-0 flex-1 flex-row items-center gap-2">
           <View className="h-2 w-2 rounded-full" style={{ backgroundColor: isRunning ? theme.emerald : theme.amber }} />
-          <Text className="text-[13px] font-black text-kd-text">Activity Log</Text>
+          <Text className="text-[13px] font-semibold text-kd-text">Activity Log</Text>
         </View>
         <View className="flex-row items-center gap-1">
           {isRunning ? (
@@ -935,11 +862,11 @@ function PipelineStepsBlock({
   onToggle: (value: AutoPilotStepType) => void;
 }): React.JSX.Element {
   return (
-    <View className="gap-4">
+    <View className="gap-1.5">
       <ExtensionSectionTitle icon={Sparkles} title="ขั้นตอนการทำงาน" theme={theme} />
-      <View className="flex-row items-center justify-between">
-        {AUTO_PILOT_STEPS.map((step, index) => (
-          <View key={step.id} className="flex-row items-center">
+      <View className="flex-row items-center pt-1">
+        {AUTO_PILOT_STEPS.map((step) => (
+          <Fragment key={step.id}>
             <PipelineStepButton
               active={enabledSteps.includes(step.id)}
               label={step.id === 'image' ? 'รูปภาพ' : 'วิดีโอ'}
@@ -947,18 +874,18 @@ function PipelineStepsBlock({
               theme={theme}
               onPress={() => onToggle(step.id)}
             />
-            <View className="w-10 items-center">
-              <ChevronRight size={18} color={theme.textSubtle} strokeWidth={2.1} />
+            <View className="flex-1 items-center">
+              <ChevronRight size={12} color={theme.border} strokeWidth={2} />
             </View>
-          </View>
+          </Fragment>
         ))}
         <DisabledPipelineIcon icon="tiktok" theme={theme} />
-        <View className="w-10 items-center">
-          <ChevronRight size={18} color={theme.textSubtle} strokeWidth={2.1} />
+        <View className="flex-1 items-center">
+          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
         </View>
         <DisabledPipelineIcon icon="youtube" theme={theme} />
-        <View className="w-10 items-center">
-          <ChevronRight size={18} color={theme.textSubtle} strokeWidth={2.1} />
+        <View className="flex-1 items-center">
+          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
         </View>
         <DisabledPipelineIcon icon="facebook" theme={theme} />
       </View>
@@ -976,8 +903,8 @@ function DisabledPipelineIcon({
   const Icon = icon === 'tiktok' ? TikTokLogo : icon === 'youtube' ? YouTubeLogo : FacebookLogo;
 
   return (
-    <View className="h-[62px] w-[62px] items-center justify-center rounded-[14px] border border-kd-border bg-kd-input opacity-45">
-      <Icon size={24} color={theme.textSubtle} cutoutColor={theme.input} isDark={theme.isDark} />
+    <View className="h-8 w-8 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-input opacity-40">
+      <Icon size={16} color={theme.textSubtle} cutoutColor={theme.input} isDark={theme.isDark} />
     </View>
   );
 }
@@ -1004,96 +931,18 @@ function PipelineStepButton({
       accessibilityRole="checkbox"
       accessibilityState={{ checked: active }}
       onPress={onPress}
-      className="relative h-[62px] w-[62px] items-center justify-center rounded-[14px] border"
-      style={{
-        backgroundColor: active ? alpha(color, theme.isDark ? 0.18 : 0.1) : theme.input,
-        borderColor: active ? alpha(color, 0.85) : theme.border,
-      }}
-    >
-      <View
-        className="h-11 w-11 items-center justify-center rounded-kd-lg"
-        style={{ backgroundColor: active ? alpha(color, theme.isDark ? 0.2 : 0.12) : theme.panelMuted }}
-      >
-        <Icon size={24} color={active ? color : theme.textSubtle} strokeWidth={2.1} />
-      </View>
-      {active ? (
-        <View className="absolute right-1 top-1 h-5 w-5 items-center justify-center rounded-full bg-kd-emerald">
-          <Check size={12} color={theme.white} strokeWidth={3} />
-        </View>
-      ) : null}
-    </Pressable>
-  );
-}
-
-function LegacyPipelineStepsBlock({
-  enabledSteps,
-  theme,
-  onToggle,
-}: {
-  enabledSteps: AutoPilotStepType[];
-  theme: KubdeeTheme;
-  onToggle: (value: AutoPilotStepType) => void;
-}): React.JSX.Element {
-  return (
-    <SectionCard theme={theme} icon={Sparkles} title="ขั้นตอนการทำงาน">
-      <View className="flex-row items-center">
-        {AUTO_PILOT_STEPS.map((step, index) => (
-          <View key={step.id} className="flex-1 flex-row items-center">
-            <LegacyPipelineStepButton
-              active={enabledSteps.includes(step.id)}
-              label={step.id === 'image' ? 'รูปภาพ' : 'วิดีโอ'}
-              step={step.id}
-              theme={theme}
-              onPress={() => onToggle(step.id)}
-            />
-            {index < AUTO_PILOT_STEPS.length - 1 ? (
-              <View className="w-8 items-center">
-                <ChevronRight size={16} color={theme.textSubtle} strokeWidth={2.2} />
-              </View>
-            ) : null}
-          </View>
-        ))}
-      </View>
-    </SectionCard>
-  );
-}
-
-function LegacyPipelineStepButton({
-  active,
-  label,
-  step,
-  theme,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  step: AutoPilotStepType;
-  theme: KubdeeTheme;
-  onPress: () => void;
-}): React.JSX.Element {
-  const color = step === 'image' ? theme.amber : theme.red;
-  const Icon = step === 'image' ? ImageIcon : Video;
-
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: active }}
-      onPress={onPress}
-      className="min-h-[64px] flex-1 items-center justify-center gap-1.5 rounded-kd-lg border px-2"
+      className="relative h-8 w-8 items-center justify-center rounded-kd-lg border"
       style={{
         backgroundColor: active ? alpha(color, theme.isDark ? 0.18 : 0.1) : theme.input,
         borderColor: active ? alpha(color, 0.55) : theme.border,
       }}
     >
-      <View className="relative h-8 w-8 items-center justify-center rounded-kd-md" style={{ backgroundColor: active ? alpha(color, 0.16) : theme.panelMuted }}>
-        <Icon size={17} color={active ? color : theme.textSubtle} strokeWidth={2.2} />
-        {active ? (
-          <View className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full bg-kd-emerald">
-            <Check size={10} color={theme.white} strokeWidth={3} />
-          </View>
-        ) : null}
-      </View>
-      <Text className="text-kd-caption font-black" style={{ color: active ? color : theme.textMuted }}>{label}</Text>
+      <Icon size={16} color={active ? color : theme.textSubtle} strokeWidth={2} />
+      {active ? (
+        <View className="absolute -right-1 -top-1 h-3.5 w-3.5 items-center justify-center rounded-full bg-kd-emerald">
+          <Check size={9} color={theme.white} strokeWidth={3} />
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -1121,43 +970,43 @@ function ProductCatalogBlock({
 }): React.JSX.Element {
   return (
     <View className="gap-3">
-      <View className="flex-row items-center gap-2">
-        <Tag size={22} color={theme.textMuted} strokeWidth={2.1} />
-        <Text numberOfLines={1} className="min-w-0 flex-1 text-[15px] font-black text-kd-text-muted">
+      <View className="flex-row items-center gap-1.5">
+        <Tag size={16} color={theme.textMuted} strokeWidth={2} />
+        <Text numberOfLines={1} className="text-[13px] font-semibold text-kd-text">
           ข้อมูลสินค้า
         </Text>
-        <Badge variant="outline" className="h-7 border-kd-border bg-kd-input px-2">
-          <Text className="text-kd-label font-black text-kd-text-muted">{selectedProducts.length}</Text>
-        </Badge>
+        <View className="h-5 min-w-5 items-center justify-center rounded-full bg-kd-panel-muted px-1.5 dark:bg-kd-card-muted">
+          <Text className="text-kd-micro font-semibold text-kd-text-subtle">{selectedProducts.length}</Text>
+        </View>
+        <View className="flex-1" />
         <Button
           accessibilityLabel="เปิด Product Preset"
           accessibilityRole="button"
           variant="ghost"
           onPress={onOpenPreset}
-          className="h-9 flex-row items-center justify-center gap-1 rounded-kd-md px-2"
+          className="h-7 flex-row items-center justify-center gap-0.5 rounded-kd-md px-1.5"
         >
-          <Text className="text-kd-label font-black text-kd-text-subtle">Preset</Text>
-          <Text className="text-kd-caption font-black text-kd-text-subtle">⌄</Text>
+          <Text className="text-kd-caption font-medium text-kd-text-subtle">Preset</Text>
+          <Text className="text-kd-micro font-medium text-kd-text-subtle">⌄</Text>
         </Button>
         <Button
           accessibilityLabel="เพิ่มสินค้าเอง"
           accessibilityRole="button"
           disabled
           variant="ghost"
-          className="h-9 flex-row items-center justify-center gap-1 rounded-kd-md px-1.5 opacity-55"
+          className="h-7 flex-row items-center justify-center gap-0.5 rounded-kd-md px-1.5 opacity-55"
         >
-          <Text className="text-kd-label font-black text-kd-text-subtle">+</Text>
-          <Text className="text-kd-label font-black text-kd-text-subtle">เพิ่มเอง</Text>
+          <Text className="text-kd-caption font-medium text-kd-text-subtle">+ เพิ่มเอง</Text>
         </Button>
         <Button
           accessibilityLabel="เลือกสินค้าจากคลัง"
           accessibilityRole="button"
           variant="ghost"
           onPress={onOpenProductSelect}
-          className="h-10 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-emerald px-3"
+          className="h-[30px] flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-emerald px-2.5"
         >
-          <Package size={15} color={theme.white} strokeWidth={2.1} />
-          <Text className="text-kd-label font-black text-white">จากคลัง</Text>
+          <Package size={13} color={theme.white} strokeWidth={2.2} />
+          <Text className="text-kd-caption font-medium text-white">จากคลัง</Text>
         </Button>
       </View>
 
@@ -1268,7 +1117,7 @@ function ProductSelectSheet({
                   <Package size={15} color={theme.emerald} strokeWidth={2.1} />
                 </View>
                 <View className="min-w-0 flex-1">
-                  <Text className="text-[14px] font-black text-kd-text">เลือกจากคลังสินค้า</Text>
+                  <Text className="text-[14px] font-semibold text-kd-text">เลือกจากคลังสินค้า</Text>
                   <Text className="text-kd-micro text-kd-text-subtle">{products.length} รายการในโปรไฟล์นี้</Text>
                 </View>
               </View>
@@ -1328,7 +1177,7 @@ function ProductSelectSheet({
                 </Text>
               </View>
               <Badge className="border-transparent bg-kd-emerald-soft px-2 dark:bg-kd-card-muted">
-                <Text className="text-kd-micro font-black text-kd-emerald">เลือกแล้ว {draftSelectedIds.size}</Text>
+                <Text className="text-kd-micro font-medium text-kd-emerald">เลือกแล้ว {draftSelectedIds.size}</Text>
               </Badge>
             </Pressable>
           ) : null}
@@ -1364,7 +1213,7 @@ function ProductSelectSheet({
               onPress={onClose}
               className="h-10 justify-center rounded-kd-md px-3"
             >
-              <Text className="text-kd-caption font-black text-kd-text-muted">ยกเลิก</Text>
+              <Text className="text-kd-caption font-medium text-kd-text-muted">ยกเลิก</Text>
             </Button>
             <Button
               accessibilityRole="button"
@@ -1376,7 +1225,7 @@ function ProductSelectSheet({
               }`}
             >
               <Check size={14} color={theme.white} strokeWidth={2.4} />
-              <Text className="text-kd-caption font-black text-white">
+              <Text className="text-kd-caption font-medium text-white">
                 เลือก {draftSelectedIds.size > 0 ? `${draftSelectedIds.size} รายการ` : ''}
               </Text>
             </Button>
@@ -1485,7 +1334,7 @@ function ProductPresetSheet({
                   <FolderOpen size={15} color={theme.textMuted} strokeWidth={2.1} />
                 </View>
                 <View className="min-w-0 flex-1">
-                  <Text className="text-[14px] font-black text-kd-text">Product Preset</Text>
+                  <Text className="text-[14px] font-semibold text-kd-text">Product Preset</Text>
                   <Text className="text-kd-micro text-kd-text-subtle">บันทึก/โหลดชุดสินค้าที่เลือกจากคลัง</Text>
                 </View>
               </View>
@@ -1514,7 +1363,7 @@ function ProductPresetSheet({
                   }`}
                 >
                   <Save size={13} color={mode === 'save' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
-                  <Text className="text-kd-caption font-black" style={{ color: mode === 'save' ? theme.emerald : theme.textSubtle }}>
+                  <Text className="text-kd-caption font-medium" style={{ color: mode === 'save' ? theme.emerald : theme.textSubtle }}>
                     บันทึก
                   </Text>
                 </TabsTrigger>
@@ -1525,7 +1374,7 @@ function ProductPresetSheet({
                   }`}
                 >
                   <FolderOpen size={13} color={mode === 'load' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
-                  <Text className="text-kd-caption font-black" style={{ color: mode === 'load' ? theme.emerald : theme.textSubtle }}>
+                  <Text className="text-kd-caption font-medium" style={{ color: mode === 'load' ? theme.emerald : theme.textSubtle }}>
                     โหลด
                   </Text>
                 </TabsTrigger>
@@ -1547,7 +1396,7 @@ function ProductPresetSheet({
             {mode === 'save' ? (
               <View className="gap-3">
                 <View className="rounded-kd-lg border border-kd-border bg-kd-card px-3 py-3">
-                  <Text className="text-kd-caption font-black text-kd-text">บันทึกชุดสินค้าที่เลือก</Text>
+                  <Text className="text-kd-caption font-medium text-kd-text">บันทึกชุดสินค้าที่เลือก</Text>
                   <Text className="mt-0.5 text-kd-micro text-kd-text-subtle">
                     รวมสินค้า {selectedCount} รายการ พร้อม settings รูปภาพ/วิดีโอของแต่ละสินค้า
                   </Text>
@@ -1573,7 +1422,7 @@ function ProductPresetSheet({
                   }`}
                 >
                   <Save size={15} color={theme.isDark && !saveDisabled ? '#000000' : theme.white} strokeWidth={2.2} />
-                  <Text className={`text-kd-body font-black ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
+                  <Text className={`text-kd-body font-medium ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
                     บันทึก preset
                   </Text>
                 </Button>
@@ -1595,10 +1444,10 @@ function ProductPresetSheet({
                       className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
                     >
                       <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
-                        <Text className="text-kd-caption font-black text-kd-text">{preset.productIds.length}</Text>
+                        <Text className="text-kd-caption font-medium text-kd-text">{preset.productIds.length}</Text>
                       </View>
                       <View className="min-w-0 flex-1">
-                        <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">{preset.name}</Text>
+                        <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">{preset.name}</Text>
                         <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
                           {preset.productIds.length} สินค้า · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
                         </Text>
@@ -1659,7 +1508,7 @@ function SettingsPresetSheet({
                   <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
                 </View>
                 <View className="min-w-0 flex-1">
-                  <Text className="text-[14px] font-black text-kd-text">Preset ตั้งค่า</Text>
+                  <Text className="text-[14px] font-semibold text-kd-text">Preset ตั้งค่า</Text>
                   <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
                     รูปภาพ+วิดีโอของ {product.name || product.productId || 'สินค้า'}
                   </Text>
@@ -1690,7 +1539,7 @@ function SettingsPresetSheet({
                   }`}
                 >
                   <Save size={13} color={mode === 'save' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
-                  <Text className="text-kd-caption font-black" style={{ color: mode === 'save' ? theme.emerald : theme.textSubtle }}>
+                  <Text className="text-kd-caption font-medium" style={{ color: mode === 'save' ? theme.emerald : theme.textSubtle }}>
                     บันทึก
                   </Text>
                 </TabsTrigger>
@@ -1701,7 +1550,7 @@ function SettingsPresetSheet({
                   }`}
                 >
                   <FolderOpen size={13} color={mode === 'load' ? theme.emerald : theme.textSubtle} strokeWidth={2.2} />
-                  <Text className="text-kd-caption font-black" style={{ color: mode === 'load' ? theme.emerald : theme.textSubtle }}>
+                  <Text className="text-kd-caption font-medium" style={{ color: mode === 'load' ? theme.emerald : theme.textSubtle }}>
                     โหลด
                   </Text>
                 </TabsTrigger>
@@ -1723,7 +1572,7 @@ function SettingsPresetSheet({
             {mode === 'save' ? (
               <View className="gap-3">
                 <View className="rounded-kd-lg border border-kd-border bg-kd-card px-3 py-3">
-                  <Text className="text-kd-caption font-black text-kd-text">บันทึก preset ตั้งค่า</Text>
+                  <Text className="text-kd-caption font-medium text-kd-text">บันทึก preset ตั้งค่า</Text>
                   <Text className="mt-0.5 text-kd-micro text-kd-text-subtle">
                     เก็บค่ารูปภาพและวิดีโอของสินค้านี้ไว้ใช้ซ้ำกับสินค้าอื่น
                   </Text>
@@ -1749,7 +1598,7 @@ function SettingsPresetSheet({
                   }`}
                 >
                   <Save size={15} color={theme.isDark && !saveDisabled ? '#000000' : theme.white} strokeWidth={2.2} />
-                  <Text className={`text-kd-body font-black ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
+                  <Text className={`text-kd-body font-medium ${theme.isDark && !saveDisabled ? 'text-black' : 'text-white'}`}>
                     บันทึก preset ตั้งค่า
                   </Text>
                 </Button>
@@ -1774,7 +1623,7 @@ function SettingsPresetSheet({
                         <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
                       </View>
                       <View className="min-w-0 flex-1">
-                        <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">{preset.name}</Text>
+                        <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">{preset.name}</Text>
                         <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
                           รูปภาพ+วิดีโอ · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
                         </Text>
@@ -1849,7 +1698,7 @@ function ProductSettingsModal({
                 )}
               </View>
               <View className="min-w-0 flex-1">
-                <Text numberOfLines={1} className="text-[14px] font-black text-kd-text">
+                <Text numberOfLines={1} className="text-[14px] font-semibold text-kd-text">
                   ตั้งค่า: {product.name || product.productId || 'สินค้า'}
                 </Text>
                 <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
@@ -1882,7 +1731,7 @@ function ProductSettingsModal({
                     }`}
                   >
                     <ImageIcon size={13} color={activeTab === 'image' ? theme.amber : theme.textSubtle} strokeWidth={2.2} />
-                    <Text className="text-kd-caption font-black" style={{ color: activeTab === 'image' ? theme.amber : theme.textSubtle }}>
+                    <Text className="text-kd-caption font-medium" style={{ color: activeTab === 'image' ? theme.amber : theme.textSubtle }}>
                       รูปภาพ
                     </Text>
                   </TabsTrigger>
@@ -1893,7 +1742,7 @@ function ProductSettingsModal({
                     }`}
                   >
                     <Video size={13} color={activeTab === 'video' ? theme.red : theme.textSubtle} strokeWidth={2.2} />
-                    <Text className="text-kd-caption font-black" style={{ color: activeTab === 'video' ? theme.red : theme.textSubtle }}>
+                    <Text className="text-kd-caption font-medium" style={{ color: activeTab === 'video' ? theme.red : theme.textSubtle }}>
                       วิดีโอ
                     </Text>
                   </TabsTrigger>
@@ -1972,7 +1821,7 @@ function ProductSettingsModal({
               }`}
             >
               <Copy size={14} color={theme.textMuted} strokeWidth={2.2} />
-              <Text className="text-kd-caption font-black text-kd-text-muted">นำไปใช้ทั้งหมด</Text>
+              <Text className="text-kd-caption font-medium text-kd-text-muted">นำไปใช้ทั้งหมด</Text>
             </Button>
             <Button
               accessibilityRole="button"
@@ -1980,7 +1829,7 @@ function ProductSettingsModal({
               onPress={onClose}
               className="h-10 flex-1 items-center justify-center rounded-kd-md bg-kd-text"
             >
-              <Text className="text-kd-caption font-black text-white dark:text-black">เสร็จสิ้น</Text>
+              <Text className="text-kd-caption font-medium text-white dark:text-black">เสร็จสิ้น</Text>
             </Button>
           </View>
         </View>
@@ -2013,7 +1862,7 @@ function ProductSettingsTabButton({
       style={{ borderBottomColor: active ? color : 'transparent' }}
     >
       <Icon size={13} color={active ? color : theme.textSubtle} strokeWidth={2.2} />
-      <Text className="text-kd-caption font-black" style={{ color: active ? color : theme.textSubtle }}>
+      <Text className="text-kd-caption font-medium" style={{ color: active ? color : theme.textSubtle }}>
         {label}
       </Text>
     </Pressable>
@@ -2040,7 +1889,7 @@ function SettingsSection({
       <View className="flex-row items-center justify-between">
         <View className="min-w-0 flex-1 flex-row items-center gap-2">
           <Icon size={14} color={color} strokeWidth={2.1} />
-          <Text className="text-kd-caption font-black text-kd-text">{title}</Text>
+          <Text className="text-kd-caption font-medium text-kd-text">{title}</Text>
         </View>
         <Pressable accessibilityRole="button" onPress={onApplyAll} className="px-1.5 py-1">
           <Text className="text-kd-micro font-semibold text-kd-text-subtle">นำไปใช้ทั้งหมด</Text>
@@ -2569,14 +2418,14 @@ function ProgressBlock({
       <View className="gap-2">
         <View className="flex-row items-center justify-between">
           <View className="min-w-0 flex-1">
-            <Text className="text-kd-caption font-black text-kd-text">
+            <Text className="text-kd-caption font-medium text-kd-text">
               {getRunStatusLabel(runState.status)} · {getRunStageLabel(progress.currentStage)}
             </Text>
             <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
               {progress.currentProductName || 'ยังไม่มีสินค้าที่กำลังทำ'} · {currentStepLabel}
             </Text>
           </View>
-          <Text className="text-kd-caption font-black text-kd-text">
+          <Text className="text-kd-caption font-medium text-kd-text">
             {Math.round(progressRatio * 100)}%
           </Text>
         </View>
@@ -2614,7 +2463,7 @@ function ProgressMetric({
   return (
     <View className="min-h-[74px] flex-1 items-center justify-center gap-1 rounded-kd-md bg-kd-panel-muted px-1.5 dark:bg-kd-card-muted">
       <View className="h-10 w-10 items-center justify-center rounded-full border px-0.5" style={{ borderColor: alpha(color, 0.55), backgroundColor: alpha(color, theme.isDark ? 0.14 : 0.08) }}>
-        <Text adjustsFontSizeToFit minimumFontScale={0.72} numberOfLines={1} className="text-kd-caption font-black" style={{ color }}>{value}</Text>
+        <Text adjustsFontSizeToFit minimumFontScale={0.72} numberOfLines={1} className="text-kd-caption font-medium" style={{ color }}>{value}</Text>
       </View>
       <View className="flex-row items-center gap-1">
         <Icon size={10} color={theme.textSubtle} strokeWidth={2} />
@@ -2641,7 +2490,7 @@ function SectionCard({
         <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
           <Icon size={15} color={theme.textMuted} strokeWidth={2} />
         </View>
-        <Text className="text-[13px] font-black text-kd-text">{title}</Text>
+        <Text className="text-[13px] font-semibold text-kd-text">{title}</Text>
       </View>
       {children}
     </View>
@@ -2651,7 +2500,7 @@ function SectionCard({
 function SelectField({
   label,
   options,
-  theme: _theme,
+  theme,
   value,
   onChange,
 }: {
@@ -2661,56 +2510,58 @@ function SelectField({
   value: OptionValue;
   onChange: (value: OptionValue) => void;
 }): React.JSX.Element {
-  const selectedOption = options.find((option) => String(option.value) === String(value)) ?? options[0];
-  const selectedValue = selectedOption
-    ? { label: selectedOption.label, value: String(selectedOption.value) }
-    : undefined;
-
-  const handleValueChange = (option: { value: string; label: string } | undefined): void => {
-    if (!option) {
-      return;
-    }
-
-    const originalOption = options.find((item) => String(item.value) === option.value);
-    if (originalOption) {
-      onChange(originalOption.value);
-    }
-  };
+  const selectedLabel = options.find((o) => String(o.value) === String(value))?.label ?? '';
 
   return (
     <View className="min-w-0 flex-1 gap-1">
-      <Text className="text-kd-micro font-semibold uppercase text-kd-text-subtle">{label}</Text>
-      <Select value={selectedValue} onValueChange={handleValueChange}>
-        <SelectTrigger
-          accessibilityLabel={label}
-          className="h-10 w-full rounded-kd-lg border-kd-border bg-kd-input px-2.5 active:bg-kd-panel-muted dark:bg-kd-input dark:active:bg-kd-card-muted"
+      <Text className="text-kd-micro font-normal text-kd-text-subtle">{label}</Text>
+      <View className="w-full overflow-hidden rounded-kd-lg border border-kd-border bg-kd-input" style={{ height: 36 }}>
+        {/* Custom text with correct font */}
+        <View
+          pointerEvents="none"
+          style={{ position: 'absolute', left: 10, right: 28, top: 0, bottom: 0, justifyContent: 'center' }}
         >
-          <SelectValue
-            placeholder="-"
-            className="min-w-0 flex-1 text-kd-caption font-semibold text-kd-text"
-          />
-        </SelectTrigger>
-        <SelectContent
-          align="start"
-          side="bottom"
-          sideOffset={6}
-          className="w-72 rounded-kd-lg border-kd-border bg-kd-panel p-1 shadow-lg shadow-black/10 dark:bg-kd-card"
+          <Text className="text-kd-caption font-normal text-kd-text" numberOfLines={1}>
+            {selectedLabel}
+          </Text>
+        </View>
+        {/* Cover native arrow + show custom ChevronDown */}
+        <View
+          pointerEvents="none"
+          style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 28, backgroundColor: theme.input, justifyContent: 'center', alignItems: 'center' }}
         >
-          <SelectGroup>
-            <SelectLabel className="px-2 py-1.5 text-kd-micro font-black uppercase text-kd-text-subtle">
-              {label}
-            </SelectLabel>
-            {options.map((option) => (
-              <SelectItem
-                key={String(option.value)}
-                value={String(option.value)}
-                label={option.label}
-                className="min-h-10 rounded-kd-md border border-transparent px-2.5 active:bg-kd-emerald-soft dark:active:bg-kd-emerald-soft"
-              />
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+          <ChevronDown size={13} color={theme.textMuted} strokeWidth={2} />
+        </View>
+        {/* Transparent Picker — handles tap + shows dialog */}
+        <Picker
+          selectedValue={String(value)}
+          onValueChange={(itemValue) => {
+            const original = options.find((o) => String(o.value) === String(itemValue));
+            if (original) onChange(original.value);
+          }}
+          mode="dialog"
+          dropdownIconColor={theme.input}
+          style={{
+            color: 'transparent',
+            backgroundColor: 'transparent',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+          }}
+        >
+          {options.map((option) => (
+            <Picker.Item
+              key={String(option.value)}
+              label={option.label}
+              value={String(option.value)}
+              color={theme.text}
+              style={{ fontSize: 12 }}
+            />
+          ))}
+        </Picker>
+      </View>
     </View>
   );
 }
@@ -2857,7 +2708,7 @@ function ToggleRow({
       <Switch
         checked={value}
         onCheckedChange={onValueChange}
-        className={value ? 'bg-kd-amber' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
+        className={value ? 'bg-black dark:bg-zinc-200' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
       />
     </View>
   );
@@ -2940,7 +2791,7 @@ function ProductRow({
           style={{ height: 74, width: 82 }}
         >
           <View className="absolute left-1 top-1 z-10 h-5 min-w-5 items-center justify-center rounded-full border border-kd-border bg-kd-card px-1">
-            <Text className="text-kd-micro font-black text-kd-text">{index + 1}</Text>
+            <Text className="text-kd-micro font-medium text-kd-text">{index + 1}</Text>
           </View>
           {product.preview ? (
             <Image source={{ uri: product.preview }} className="h-full w-full" resizeMode="cover" />
@@ -2959,7 +2810,7 @@ function ProductRow({
             adjustsFontSizeToFit
             minimumFontScale={0.72}
             numberOfLines={1}
-            className="text-[9px] font-black text-kd-text"
+            className="text-[9px] font-medium text-kd-text"
           >
             ตั้งค่า
           </Text>
@@ -2975,7 +2826,7 @@ function ProductRow({
           </Text>
         </View>
         <View className="mt-1 flex-row items-center justify-between gap-2">
-          <Text numberOfLines={1} className="text-kd-caption font-black text-kd-text">
+          <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">
             {formatPrice(product.source.price)}
           </Text>
           <Button
@@ -2986,7 +2837,7 @@ function ProductRow({
             className="h-7 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-panel px-2"
           >
             <X size={11} color={theme.textSubtle} strokeWidth={2.4} />
-            <Text className="text-kd-micro font-black text-kd-text-subtle">เอาออก</Text>
+            <Text className="text-kd-micro font-medium text-kd-text-subtle">เอาออก</Text>
           </Button>
         </View>
       </View>

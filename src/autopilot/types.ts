@@ -71,7 +71,9 @@ export interface AutoPilotSettings {
   flowVideoModel: string;
   flowVideoDuration: number;
   browserMode: AutoPilotBrowserMode;
+  openNewTab: boolean;
   aiGenerateCaption: boolean;
+  aiSendImageToAi: boolean;
   aiGenerateCta: boolean;
   aiRewritePromptOnAudioFailure: boolean;
   aiHashtagCount: number;
