@@ -25,8 +25,23 @@ function withKubdeeAccessibility(config, props = {}) {
     manifest.queries = manifest.queries || [{}];
     const queries = manifest.queries[0];
     queries.package = queries.package || [];
-    if (!queries.package.some((item) => item.$?.['android:name'] === targetPackage)) {
-      queries.package.push({ $: { 'android:name': targetPackage } });
+    for (const packageName of [targetPackage, 'com.android.chrome']) {
+      if (!queries.package.some((item) => item.$?.['android:name'] === packageName)) {
+        queries.package.push({ $: { 'android:name': packageName } });
+      }
+    }
+    queries.intent = queries.intent || [];
+    const hasHttpsViewIntent = queries.intent.some((item) => {
+      const action = item.action?.[0]?.$?.['android:name'];
+      const scheme = item.data?.[0]?.$?.['android:scheme'];
+      return action === 'android.intent.action.VIEW' && scheme === 'https';
+    });
+    if (!hasHttpsViewIntent) {
+      queries.intent.push({
+        action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
+        category: [{ $: { 'android:name': 'android.intent.category.BROWSABLE' } }],
+        data: [{ $: { 'android:scheme': 'https' } }],
+      });
     }
 
     application.service = application.service || [];

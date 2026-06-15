@@ -19,7 +19,12 @@ import type {
   AutoPilotVideoSettings,
 } from '@/autopilot/types';
 import type { AffiliateProduct } from '@/library/types';
-import { subscribeGoogleFlowLogs } from '@/native/AccessibilityBridge';
+import {
+  getAccessibilityStatus,
+  openAccessibilitySettings,
+  requestGoogleFlowMediaPermissions,
+  subscribeGoogleFlowLogs,
+} from '@/native/AccessibilityBridge';
 
 type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
 
@@ -568,6 +573,18 @@ export function useAutoPilotController({
     if (selectedProducts.length === 0) {
       appendLog('error', 'ยังไม่ได้เลือกสินค้า');
       return;
+    }
+
+    const accessibilityStatus = await getAccessibilityStatus();
+    if (!accessibilityStatus.running) {
+      appendLog('error', 'ต้องเปิด Kubdee AI Accessibility ก่อนเริ่ม Auto Pilot');
+      await openAccessibilitySettings();
+      return;
+    }
+
+    const mediaPermissionGranted = await requestGoogleFlowMediaPermissions();
+    if (!mediaPermissionGranted) {
+      appendLog('warning', 'ยังไม่ได้สิทธิ์อ่านรูป/วิดีโอ อาจแนบรูปหรือบันทึกไฟล์จาก Google Flow ไม่ครบ');
     }
 
     const runId = createRunId();

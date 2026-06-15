@@ -4,8 +4,11 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
+import android.content.ContentUris
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -13,19 +16,29 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import org.json.JSONObject
 
 data class ShopeeLikedProduct(
   val name: String,
@@ -46,8 +59,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
   @Volatile
   private var stopRequested = false
 
+  @Volatile
+  private var googleFlowStopRequested = false
+
+  @Volatile
+  private var currentGoogleFlowRunId: String? = null
+
   companion object {
     private const val TAG = "KubdeeAccessibility"
+    private const val GOOGLE_FLOW_URL = "https://labs.google/fx/en/tools/flow"
+    private const val TARGET_PACKAGE_CHROME = "com.android.chrome"
     private val SHOPEE_LIKED_TEXTS = listOf("สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "Liked", "My Likes", "My liked items")
     private val SHOPEE_RECOMMENDATION_TEXTS = listOf(
       "คุณอาจจะชอบ",
@@ -118,7 +139,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val root = rootInActiveWindow ?: return false
     val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
     val target = when {
-      focused?.isEditable == true -> focused
+      focused?.isEditable == true && !isBlockedEditableNode(focused) -> focused
       else -> findEditableNode(root)
     } ?: return false
 
@@ -149,6 +170,142 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   fun clearStopShopeeAutomation() {
     stopRequested = false
+  }
+
+  fun requestStopGoogleFlowAutomation() {
+    googleFlowStopRequested = true
+    logGoogleFlowStep("กำลังหยุด Auto Pilot Google Flow...")
+  }
+
+  fun clearStopGoogleFlowAutomation() {
+    googleFlowStopRequested = false
+  }
+
+  fun runGoogleFlowAutoPilot(payloadJson: String): Boolean {
+    Thread {
+      try {
+        clearStopGoogleFlowAutomation()
+        resetAutomationLog()
+        val payload = JSONObject(payloadJson)
+        val runId = payload.optString("runId", "mobile-auto")
+        currentGoogleFlowRunId = runId
+        val products = payload.optJSONArray("products")
+        val productCount = products?.length() ?: 0
+        val settings = payload.optJSONObject("settings")
+        val browserMode = settings?.optString("browserMode", "chrome") ?: "chrome"
+        val totalRounds = settings?.optInt("totalRounds", 1)?.coerceIn(1, 20) ?: 1
+        val enabledSteps = googleFlowEnabledSteps(payload)
+
+        if (productCount <= 0) {
+          throw IllegalStateException("ไม่มีสินค้าสำหรับ Auto Pilot")
+        }
+        if (enabledSteps.isEmpty()) {
+          throw IllegalStateException("ยังไม่ได้เลือกขั้นตอนรูป/วิดีโอ")
+        }
+
+        logGoogleFlowStep("เริ่ม Auto Pilot Google Flow ($productCount สินค้า)")
+        KubdeeAccessibilityModule.emitGoogleFlowLog(
+          message = "Google Flow runner เริ่มทำงาน",
+          status = "running",
+          runId = currentGoogleFlowRunId
+        )
+        emitGoogleFlowProgress(
+          message = "เตรียม Auto Pilot Google Flow",
+          stage = "started",
+          round = 0,
+          totalRounds = totalRounds,
+          productIndex = 0,
+          productTotal = productCount
+        )
+        checkGoogleFlowStopRequested()
+        logGoogleFlowStep("เปิด Google Flow ด้วย browser บนมือถือ")
+        if (!launchUrl(GOOGLE_FLOW_URL, preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null)) {
+          throw IllegalStateException("เปิด Google Flow ไม่สำเร็จ")
+        }
+
+        sleepGoogleFlowStep(3500)
+        logGoogleFlowStep("Google Flow เปิดแล้ว (run: ${runId.takeLast(8)})")
+        if (ensureGoogleFlowReadyAfterLaunch(browserMode)) {
+          logGoogleFlowStep("หน้า Google Flow พร้อมใช้งาน")
+        } else {
+          throw IllegalStateException("หน้า Google Flow ยังไม่พร้อมใช้งาน")
+        }
+
+        val generatedImageByProductId = mutableMapOf<String, GoogleFlowDownloadedAsset>()
+        val productReferenceAssetByProductId = mutableMapOf<String, GoogleFlowDownloadedAsset>()
+
+        for (round in 1..totalRounds) {
+          checkGoogleFlowStopRequested()
+          emitGoogleFlowProgress(
+            message = "เริ่มรอบ $round/$totalRounds",
+            stage = "round_started",
+            round = round,
+            totalRounds = totalRounds,
+            productIndex = 0,
+            productTotal = productCount
+          )
+
+          for (productIndex in 0 until productCount) {
+            checkGoogleFlowStopRequested()
+            val product = products?.optJSONObject(productIndex) ?: continue
+            val productKey = googleFlowProductKey(product)
+            val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
+            val productReferenceAsset = productReferenceAssetByProductId[productKey]
+              ?: prepareGoogleFlowProductReferenceAsset(product)?.also { productReferenceAssetByProductId[productKey] = it }
+            emitGoogleFlowProgress(
+              message = "สินค้า ${productIndex + 1}/$productCount: ${productName.take(38)}",
+              product = product,
+              stage = "product_started",
+              round = round,
+              totalRounds = totalRounds,
+              productIndex = productIndex + 1,
+              productTotal = productCount
+            )
+
+            for (step in enabledSteps) {
+              val generatedAsset = runGoogleFlowProductStep(
+                payload = payload,
+                product = product,
+                step = step,
+                round = round,
+                totalRounds = totalRounds,
+                productIndex = productIndex + 1,
+                productTotal = productCount,
+                referenceAsset = when (step) {
+                  "image" -> productReferenceAsset
+                  "video" -> generatedImageByProductId[productKey] ?: productReferenceAsset
+                  else -> null
+                }
+              )
+              if (step == "image" && generatedAsset != null) {
+                generatedImageByProductId[productKey] = generatedAsset
+                logGoogleFlowStep("เก็บรูปอ้างอิงสำหรับวิดีโอแล้ว: ${generatedAsset.fileName ?: generatedAsset.uri}")
+              }
+            }
+
+            val delayMs = googleFlowDelayMs(settings)
+            if (delayMs > 0 && productIndex < productCount - 1) {
+              sleepGoogleFlowStep(delayMs)
+            }
+          }
+        }
+
+        logGoogleFlowStatus("Auto Pilot Google Flow จบแล้ว", "completed")
+      } catch (error: GoogleFlowAutomationStoppedException) {
+        logGoogleFlowStatus("หยุด Auto Pilot Google Flow แล้ว", "stopped")
+      } catch (error: Exception) {
+        Log.e(TAG, "Google Flow runner failed", error)
+        logGoogleFlowStatus("Google Flow error: ${error.message ?: "unknown"}", "error")
+      } finally {
+        hideAutomationOverlay(2500L)
+        currentGoogleFlowRunId = null
+      }
+    }.also { thread ->
+      thread.name = "KubdeeGoogleFlowAutoPilot"
+      thread.start()
+    }
+
+    return true
   }
 
   fun runShopeeSearch(targetPackage: String, keyword: String): Boolean {
@@ -320,10 +477,1138 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return true
   }
 
+  private fun launchUrl(url: String, preferredPackage: String? = null): Boolean {
+    val uri = Uri.parse(url)
+    val intents = mutableListOf<Intent>()
+    if (preferredPackage == TARGET_PACKAGE_CHROME) {
+      intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
+        setClassName(TARGET_PACKAGE_CHROME, "com.google.android.apps.chrome.Main")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      })
+    }
+    intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      if (!preferredPackage.isNullOrBlank() && packageManager.getLaunchIntentForPackage(preferredPackage) != null) {
+        setPackage(preferredPackage)
+      }
+    })
+    if (!preferredPackage.isNullOrBlank()) {
+      intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      })
+    }
+
+    for (intent in intents) {
+      try {
+        startActivity(intent)
+        return true
+      } catch (_: Exception) {
+        // Try the next fallback.
+      }
+    }
+    return false
+  }
+
+  private fun waitForGoogleFlowReady(timeoutMs: Long): Boolean {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkGoogleFlowStopRequested()
+      if (handleChromeFirstRunIfNeeded()) {
+        sleepGoogleFlowStep(1200)
+      }
+      dismissGoogleFlowBlockingPopups()
+      if (isChromeGoogleFlowErrorPage()) {
+        logGoogleFlowStep("Chrome แสดง error page จะลองโหลด Google Flow ใหม่")
+        reloadGoogleFlowPage()
+        sleepGoogleFlowStep(3500)
+      }
+      if (
+        containsAnyText(
+          listOf(
+            "Google Flow",
+            "Your AI creative studio",
+            "New project",
+            "โปรเจ็กต์ใหม่",
+            "Create with Google Flow",
+            "Create with Flow",
+            "Prompt",
+            "Describe",
+            "Generate"
+          ),
+          contains = true
+        ) ||
+        findEditableNode(rootInActiveWindow) != null
+      ) {
+        return true
+      }
+      sleepGoogleFlowStep(750)
+    }
+    return false
+  }
+
+  private fun ensureGoogleFlowReadyAfterLaunch(browserMode: String): Boolean {
+    if (waitForGoogleFlowReady(22_000L)) {
+      return true
+    }
+
+    logGoogleFlowStep("ยังไม่เห็นหน้า Flow พร้อมใช้งาน จะ reload/open Google Flow ซ้ำ")
+    if (!reloadGoogleFlowPage()) {
+      launchUrl(GOOGLE_FLOW_URL, preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null)
+    }
+    sleepGoogleFlowStep(4000L)
+    return waitForGoogleFlowReady(28_000L)
+  }
+
+  private fun reloadGoogleFlowPage(): Boolean {
+    dismissGoogleFlowBlockingPopups()
+    if (clickByAnyText(listOf("โหลดใหม่", "Reload", "Try again", "ลองอีกครั้ง"), exact = false)) {
+      return true
+    }
+    return launchUrl(GOOGLE_FLOW_URL, preferredPackage = TARGET_PACKAGE_CHROME)
+  }
+
+  private fun isChromeGoogleFlowErrorPage(): Boolean =
+    containsAnyText(
+      listOf(
+        "แย่จัง",
+        "ไม่สามารถเปิดหน้านี้",
+        "Aw, Snap",
+        "This site can't be reached",
+        "This page isn't working"
+      ),
+      contains = true
+    )
+
+  private fun runGoogleFlowProductStep(
+    payload: JSONObject,
+    product: JSONObject,
+    step: String,
+    round: Int,
+    totalRounds: Int,
+    productIndex: Int,
+    productTotal: Int,
+    referenceAsset: GoogleFlowDownloadedAsset?
+  ): GoogleFlowDownloadedAsset? {
+    val stepLabel = if (step == "video") "วิดีโอ" else "รูปภาพ"
+    val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
+
+    emitGoogleFlowProgress(
+      message = "รอบ $round · เริ่มสร้าง$stepLabel $productIndex/$productTotal",
+      product = product,
+      step = step,
+      stage = "step_started",
+      round = round,
+      totalRounds = totalRounds,
+      productIndex = productIndex,
+      productTotal = productTotal
+    )
+    checkGoogleFlowStopRequested()
+    dismissGoogleFlowBlockingPopups()
+    ensureGoogleFlowWorkspaceReady()
+
+    if (selectGoogleFlowStepMode(step)) {
+      logGoogleFlowStep("เลือกโหมด $stepLabel แล้ว")
+    } else {
+      logGoogleFlowStep("ยังไม่ยืนยันโหมด $stepLabel จะใช้หน้าปัจจุบันของ Flow ต่อ")
+    }
+
+    val modelSelected = selectGoogleFlowModel(payload, step)
+    if (modelSelected) {
+      logGoogleFlowStep("เลือก model สำหรับ$stepLabel แล้ว")
+    }
+
+    if (referenceAsset != null) {
+      val attached = attachGoogleFlowReferenceAsset(referenceAsset)
+      if (attached) {
+        if (step == "video") {
+          logGoogleFlowStep("แนบรูปอ้างอิงให้วิดีโอแล้ว")
+        } else {
+          logGoogleFlowStep("แนบรูปสินค้าอ้างอิงให้ขั้นสร้างรูปแล้ว")
+        }
+      } else {
+        if (step == "video") {
+          logGoogleFlowStep("ยังแนบรูปให้วิดีโอไม่ได้ จะใส่ไฟล์อ้างอิงใน prompt แทน")
+        } else {
+          logGoogleFlowStep("ยังแนบรูปสินค้าไม่ได้ จะใช้ prompt อย่างเดียว")
+        }
+      }
+    }
+
+    val prompt = buildGoogleFlowProductPrompt(product, payload, step, referenceAsset)
+    logGoogleFlowStep("เตรียม prompt: ${productName.take(34)}")
+    if (!inputGoogleFlowPrompt(prompt)) {
+      throw IllegalStateException("กรอก prompt ใน Google Flow ไม่สำเร็จ")
+    }
+    logGoogleFlowStep("กรอก prompt สำหรับ${stepLabel}แล้ว")
+
+    val preview = product.optString("preview", product.optString("imageUrl", "")).trim()
+    if (preview.isNotBlank()) {
+      logGoogleFlowStep("มีรูปสินค้าอ้างอิงใน payload แล้ว (${preview.take(28)}...)")
+    } else {
+      logGoogleFlowStep("ไม่มีรูปสินค้าอ้างอิงในสินค้า จะใช้ prompt อย่างเดียว")
+    }
+
+    if (!submitGoogleFlowGenerate()) {
+      throw IllegalStateException("กด Generate ใน Google Flow ไม่สำเร็จ")
+    }
+    emitGoogleFlowProgress(
+      message = "กด Generate สำหรับ${stepLabel}แล้ว",
+      product = product,
+      step = step,
+      stage = "submitted",
+      round = round,
+      totalRounds = totalRounds,
+      productIndex = productIndex,
+      productTotal = productTotal
+    )
+    val generated = waitForGoogleFlowGeneration(step, googleFlowGenerationTimeoutMs(payload, step))
+    if (!generated) {
+      emitGoogleFlowProgress(
+        message = "ข้ามการดาวน์โหลด${stepLabel} เพราะยังไม่พบผลลัพธ์ที่พร้อม",
+        product = product,
+        step = step,
+        stage = "failed",
+        round = round,
+        totalRounds = totalRounds,
+        productIndex = productIndex,
+        productTotal = productTotal
+      )
+      return null
+    }
+
+    val downloadedAsset = downloadGoogleFlowResult(step)
+    if (downloadedAsset != null) {
+      emitGoogleFlowAsset(product, step, downloadedAsset)
+      return downloadedAsset
+    } else {
+      emitGoogleFlowProgress(
+        message = "สร้าง${stepLabel}แล้ว แต่ยังหาไฟล์ download ล่าสุดไม่ได้",
+        product = product,
+        step = step,
+        stage = "download_missing",
+        round = round,
+        totalRounds = totalRounds,
+        productIndex = productIndex,
+        productTotal = productTotal
+      )
+    }
+    return null
+  }
+
+  private fun focusGoogleFlowPromptEditor(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val editable = findEditableNode(root)
+    if (editable != null) {
+      return clickNode(editable) || editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+    }
+
+    if (clickByAnyText(listOf("Prompt", "Describe", "Enter a prompt", "อธิบาย"), exact = false)) {
+      sleepGoogleFlowStep(500)
+      return findEditableNode(rootInActiveWindow) != null
+    }
+
+    val screen = screenBounds(root)
+    val tapped = tapBlocking(screen.centerX().toFloat(), (screen.bottom - screen.height() * 0.18f).toFloat())
+    if (tapped) {
+      sleepGoogleFlowStep(500)
+    }
+    return tapped
+  }
+
+  private fun inputGoogleFlowPrompt(prompt: String): Boolean {
+    if (!focusGoogleFlowPromptEditor()) {
+      logGoogleFlowStep("ไม่พบช่อง prompt ของ Google Flow")
+      return false
+    }
+
+    if (inputText(prompt)) {
+      logGoogleFlowStep("ป้อน prompt ผ่าน accessibility text สำเร็จ")
+      return true
+    }
+
+    logGoogleFlowStep("accessibility text ใช้ไม่ได้ จะลองวาง prompt ผ่าน clipboard")
+    return pasteTextIntoFocusedField(prompt)
+  }
+
+  private fun pasteTextIntoFocusedField(text: String): Boolean {
+    return try {
+      val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+      clipboard.setPrimaryClip(ClipData.newPlainText("kubdee-google-flow-prompt", text))
+      sleepGoogleFlowStep(250)
+
+      val root = rootInActiveWindow ?: return false
+      val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+      val target = when {
+        focused?.isEditable == true && !isBlockedEditableNode(focused) -> focused
+        else -> findEditableNode(root)
+      }
+
+      if (target == null) {
+        return pasteTextByContextMenu()
+      }
+
+      target.performAction(AccessibilityNodeInfo.ACTION_PASTE) || inputText(text) || pasteTextByContextMenu()
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to paste Google Flow prompt", error)
+      false
+    }
+  }
+
+  private fun pasteTextByContextMenu(): Boolean {
+    val screen = screenBounds(rootInActiveWindow)
+    val x = screen.centerX().toFloat()
+    val y = (screen.bottom - screen.height() * 0.18f).toFloat()
+    if (!longPressBlocking(x, y)) {
+      return false
+    }
+    sleepGoogleFlowStep(550)
+    val clickedPaste = clickByAnyText(listOf("Paste", "วาง"), exact = false)
+    if (clickedPaste) {
+      sleepGoogleFlowStep(400)
+    }
+    return clickedPaste
+  }
+
+  private fun buildGoogleFlowProductPrompt(
+    product: JSONObject,
+    payload: JSONObject,
+    step: String,
+    referenceAsset: GoogleFlowDownloadedAsset?
+  ): String {
+    val name = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
+    val caption = product.optString("caption", "")
+    val hashtags = product.optString("hashtags", "")
+    val cta = product.optString("cta", "")
+    val productUrl = product.optString("productUrl", "")
+    val preview = product.optString("preview", "")
+    val settings = payload.optJSONObject("settings")
+    val duration = settings?.optInt("flowVideoDuration", 8) ?: 8
+    val productSettings = product.optJSONObject("settings")
+    val imageSettings = productSettings?.optJSONObject("image")
+    val videoSettings = productSettings?.optJSONObject("video")
+    val imagePromptMode = imageSettings?.optString("promptMode", "auto") ?: "auto"
+    val videoPromptMode = videoSettings?.optString("promptMode", "auto") ?: "auto"
+    val imageAspectRatio = promptSettingValue(imageSettings, "aspectRatio", "9:16")
+    val imageOutputCount = promptSettingValue(imageSettings, "outputCount", "1")
+    val videoAspectRatio = promptSettingValue(videoSettings, "aspectRatio", "9:16")
+    val videoSceneCount = promptSettingValue(videoSettings, "sceneCount", "1")
+    val videoOutputCount = if ((videoSceneCount.toIntOrNull() ?: 1) > 1) {
+      "1"
+    } else {
+      promptSettingValue(videoSettings, "outputCount", "1")
+    }
+    val imageCharacterInstruction = imageCharacterInstruction(imageSettings)
+    val imageSceneInstruction = imageSceneInstruction(imageSettings)
+    val productDisplayInstruction = productDisplayInstruction(imageSettings)
+    val videoCharacterInstruction = videoCharacterInstruction(videoSettings)
+    val videoForbiddenWords = videoSettings?.optString("forbiddenWords", "").orEmpty().trim()
+
+    if (step == "image" && imagePromptMode == "custom") {
+      val customPrompt = imageSettings?.optString("customPrompt", "").orEmpty().trim()
+      if (customPrompt.isNotBlank()) {
+        return listOf(
+          customPrompt,
+          "สินค้า: $name",
+          if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
+          if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
+          "สัดส่วนภาพ: $imageAspectRatio",
+          "จำนวนรูปที่ต้องการ: $imageOutputCount",
+          imageCharacterInstruction,
+          imageSceneInstruction,
+          productDisplayInstruction,
+          imageSettings?.optString("systemPrompt", "").orEmpty(),
+          hashtags
+        ).filter { it.isNotBlank() }.joinToString("; ")
+      }
+    }
+    if (step == "video" && videoPromptMode == "custom") {
+      val customPrompt = videoSettings?.optString("customPrompt", "").orEmpty().trim()
+      if (customPrompt.isNotBlank()) {
+        return listOf(
+          customPrompt,
+          "สินค้า: $name",
+          if (referenceAsset != null) {
+            "ใช้รูปอ้างอิงจากขั้นสร้างรูปก่อนหน้าเป็นภาพหลัก: ${referenceAsset.fileName ?: referenceAsset.uri}"
+          } else {
+            ""
+          },
+          if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
+          if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
+          "สัดส่วนวิดีโอ: $videoAspectRatio",
+          "ความยาวประมาณ ${duration} วินาที",
+          "จำนวนวิดีโอที่ต้องการ: $videoOutputCount",
+          "จำนวนฉาก: $videoSceneCount",
+          videoCharacterInstruction,
+          if (videoForbiddenWords.isNotBlank()) "คำต้องห้าม: $videoForbiddenWords" else "",
+          videoSettings?.optString("systemPrompt", "").orEmpty(),
+          hashtags
+        ).filter { it.isNotBlank() }.joinToString("; ")
+      }
+    }
+
+    return if (step == "video") {
+      val dialogueMode = videoSettings?.optString("dialogueMode", "auto") ?: "auto"
+      val dialogue = when (dialogueMode) {
+        "none" -> "ไม่มีบทพูด ให้เป็นวิดีโอเงียบหรือมีเสียงบรรยากาศเท่านั้น"
+        "custom" -> videoSettings?.optString("dialogue", "").orEmpty()
+        else -> caption.ifBlank { "พูดแนะนำจุดเด่นสินค้าแบบกระชับ เป็นภาษาไทย ฟังเป็นธรรมชาติ" }
+      }
+      val videoStyle = promptSetting(
+        settings = videoSettings,
+        key = "presetStyle",
+        fallback = "รีวิวสินค้าแบบจริงใจ น่าเชื่อถือ เหมาะกับ social commerce"
+      )
+      val cameraMotion = promptSetting(
+        settings = videoSettings,
+        key = "cameraMotion",
+        customKey = "cameraMotionCustom",
+        fallback = "natural handheld, slow push in, product close-up"
+      )
+      val voiceCharacter = promptSetting(
+        settings = videoSettings,
+        key = "voiceCharacter",
+        customKey = "voiceCharacterCustom"
+      )
+      val scriptStyle = promptSetting(
+        settings = videoSettings,
+        key = "scriptStyle",
+        customKey = "scriptStyleCustom"
+      )
+      val musicSfx = when (videoSettings?.optString("musicSfxMode", "auto") ?: "auto") {
+        "none" -> "ไม่มีเพลงหรือเอฟเฟกต์เสียง"
+        "custom" -> videoSettings?.optString("musicSfxCustom", "").orEmpty().trim()
+        else -> "เพลงและเอฟเฟกต์เสียงเหมาะกับโฆษณาสินค้าแบบ social commerce"
+      }
+      listOf(
+        "สร้างวิดีโอโฆษณาสินค้าภาษาไทย สัดส่วน $videoAspectRatio ความยาวประมาณ ${duration} วินาที",
+        "สินค้า: $name",
+        if (referenceAsset != null) {
+          "ใช้รูปอ้างอิงจากขั้นสร้างรูปก่อนหน้าเป็นภาพหลัก: ${referenceAsset.fileName ?: referenceAsset.uri}"
+        } else {
+          ""
+        },
+        if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
+        if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
+        "ให้ใช้ภาพสินค้าอ้างอิงเท่านั้น สินค้าต้องเหมือนจริงและไม่เปลี่ยนรูปทรง",
+        "สไตล์: $videoStyle",
+        "จำนวนวิดีโอที่ต้องการ: $videoOutputCount",
+        "จำนวนฉาก: $videoSceneCount",
+        videoCharacterInstruction,
+        "กล้อง: $cameraMotion",
+        if (voiceCharacter.isNotBlank()) "เสียงตัวละคร: $voiceCharacter" else "",
+        if (scriptStyle.isNotBlank()) "สไตล์สคริปต์: $scriptStyle" else "",
+        if (musicSfx.isNotBlank()) "เพลง/SFX: $musicSfx" else "",
+        "บทพูด/ข้อความประกอบ: $dialogue",
+        if (cta.isNotBlank()) "CTA: $cta" else "",
+        if (videoForbiddenWords.isNotBlank()) "คำต้องห้าม: $videoForbiddenWords" else "",
+        videoSettings?.optString("systemPrompt", "").orEmpty(),
+        "ข้อห้าม: ห้ามมี subtitle ห้ามมีข้อความมั่ว ห้ามมีขอบดำ วิดีโอต้องเต็มจอ",
+        hashtags
+      ).filter { it.isNotBlank() }.joinToString("; ")
+    } else {
+      val imageStyle = promptSetting(
+        settings = imageSettings,
+        key = "presetStyle",
+        customKey = "presetStyleCustom",
+        fallback = "auto"
+      )
+      val background = promptSetting(
+        settings = imageSettings,
+        key = "background",
+        customKey = "backgroundCustom",
+        fallback = "auto"
+      )
+      val lighting = promptSetting(
+        settings = imageSettings,
+        key = "lighting",
+        customKey = "lightingCustom",
+        fallback = "auto"
+      )
+      val frame = promptSetting(
+        settings = imageSettings,
+        key = "frame",
+        customKey = "frameCustom"
+      )
+      val textOverlay = promptSetting(
+        settings = imageSettings,
+        key = "textOverlay",
+        customKey = "textOverlayCustom"
+      )
+      listOf(
+        "สร้างรูปโฆษณาสินค้า สัดส่วน $imageAspectRatio",
+        "สินค้า: $name",
+        if (preview.isNotBlank()) "รูปสินค้าอ้างอิง: $preview" else "",
+        if (productUrl.isNotBlank()) "ลิงก์สินค้า: $productUrl" else "",
+        "ให้สินค้าชัดเจนเหมือนภาพอ้างอิง ใช้แสงสวย โทนขายของออนไลน์",
+        "สไตล์: $imageStyle",
+        "จำนวนรูปที่ต้องการ: $imageOutputCount",
+        imageCharacterInstruction,
+        imageSceneInstruction,
+        productDisplayInstruction,
+        "ฉาก: $background",
+        "แสง: $lighting",
+        if (frame.isNotBlank()) "เฟรมภาพ: $frame" else "",
+        if (textOverlay.isNotBlank()) "ข้อความบนภาพ: $textOverlay" else "",
+        imageSettings?.optString("systemPrompt", "").orEmpty(),
+        "ฉากสะอาด น่าเชื่อถือ เหมาะกับ marketplace",
+        "ห้ามบิดเบือนสินค้า ห้ามมีข้อความมั่วบนภาพ",
+        hashtags
+      ).filter { it.isNotBlank() }.joinToString("; ")
+    }
+  }
+
+  private fun promptSetting(
+    settings: JSONObject?,
+    key: String,
+    customKey: String? = null,
+    fallback: String = ""
+  ): String {
+    val value = settings?.optString(key, "").orEmpty().trim()
+    val customValue = customKey?.let { settings?.optString(it, "").orEmpty().trim() }.orEmpty()
+    return when {
+      value == "custom" && customValue.isNotBlank() -> customValue
+      value.isNotBlank() && value != "auto" && value != "custom" -> value
+      customValue.isNotBlank() -> customValue
+      else -> fallback
+    }
+  }
+
+  private fun promptSettingValue(settings: JSONObject?, key: String, fallback: String): String =
+    settings?.optString(key, fallback).orEmpty().trim().ifBlank { fallback }
+
+  private fun imageCharacterInstruction(settings: JSONObject?): String {
+    val mode = promptSettingValue(settings, "characterMode", "auto")
+    val description = settings?.optString("characterDescription", "").orEmpty().trim()
+    return when {
+      mode == "none" -> "ตัวละคร: ไม่มีคนในภาพ ให้โฟกัสสินค้าเท่านั้น"
+      mode == "description" && description.isNotBlank() -> "ตัวละคร: $description"
+      mode == "description" -> "ตัวละคร: มีคนรีวิวสินค้าแบบธรรมชาติ"
+      else -> "ตัวละคร: ออโต้ เลือกคน/มือ/องค์ประกอบให้เหมาะกับสินค้า"
+    }
+  }
+
+  private fun imageSceneInstruction(settings: JSONObject?): String {
+    val mode = promptSettingValue(settings, "sceneMode", "auto")
+    val description = settings?.optString("sceneDescription", "").orEmpty().trim()
+    return when {
+      mode == "none" -> "ฉากหลัก: ไม่มีฉากซับซ้อน ใช้พื้นหลังสะอาด"
+      mode == "description" && description.isNotBlank() -> "ฉากหลัก: $description"
+      mode == "description" -> "ฉากหลัก: ฉากใช้งานจริงที่เหมาะกับสินค้า"
+      else -> "ฉากหลัก: ออโต้ เลือกฉากที่ช่วยขายสินค้า"
+    }
+  }
+
+  private fun productDisplayInstruction(settings: JSONObject?): String =
+    when (promptSettingValue(settings, "productDisplayMode", "auto")) {
+      "wear" -> "การโชว์สินค้า: ให้ตัวละครสวม ใส่ หรือใช้สินค้าตามประเภทรายการ"
+      "hold" -> "การโชว์สินค้า: ให้ถือสินค้าเด่นชัดในมือ"
+      "use" -> "การโชว์สินค้า: แสดงการใช้งานจริงของสินค้า"
+      "display" -> "การโชว์สินค้า: วางสินค้าเด่นบนฉากแบบ product display"
+      else -> "การโชว์สินค้า: ออโต้ เลือกวิธีนำเสนอที่ขายดีที่สุด"
+    }
+
+  private fun videoCharacterInstruction(settings: JSONObject?): String =
+    when (promptSettingValue(settings, "characterMode", "fromImage")) {
+      "none" -> "ตัวละครวิดีโอ: ไม่มีคนในวิดีโอ โฟกัสสินค้าและ movement"
+      else -> "ตัวละครวิดีโอ: ใช้ตัวละคร/มือ/สินค้าให้ต่อเนื่องจากรูปอ้างอิง"
+    }
+
+  private fun googleFlowProductKey(product: JSONObject): String =
+    product.optString("productId").ifBlank {
+      product.optString("id").ifBlank {
+        product.optString("catalogId").ifBlank {
+          product.optString("name", "สินค้า")
+        }
+      }
+    }
+
+  private fun prepareGoogleFlowProductReferenceAsset(product: JSONObject): GoogleFlowDownloadedAsset? {
+    val preview = product.optString("preview", product.optString("imageUrl", "")).trim()
+    if (preview.isBlank()) return null
+
+    return try {
+      val asset = when {
+        preview.startsWith("data:", ignoreCase = true) -> saveGoogleFlowReferenceFromDataUrl(preview, product)
+        preview.startsWith("http://", ignoreCase = true) || preview.startsWith("https://", ignoreCase = true) ->
+          saveGoogleFlowReferenceFromRemoteUrl(preview, product)
+        preview.startsWith("content://", ignoreCase = true) || preview.startsWith("file://", ignoreCase = true) ->
+          saveGoogleFlowReferenceFromUri(Uri.parse(preview), product, preview)
+        preview.startsWith("/") -> saveGoogleFlowReferenceFromFilePath(preview, product)
+        else -> null
+      }
+
+      if (asset != null) {
+        logGoogleFlowStep("เตรียมไฟล์รูปสินค้าอ้างอิงแล้ว: ${asset.fileName ?: asset.uri}")
+      } else {
+        logGoogleFlowStep("ยังเตรียมไฟล์รูปสินค้าอ้างอิงไม่ได้ จะใช้ prompt อย่างเดียว")
+      }
+      asset
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to prepare Google Flow product reference", error)
+      logGoogleFlowStep("เตรียมรูปสินค้าอ้างอิงไม่สำเร็จ: ${error.message ?: "unknown"}")
+      null
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromRemoteUrl(sourceUrl: String, product: JSONObject): GoogleFlowDownloadedAsset? {
+    val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+      instanceFollowRedirects = true
+      connectTimeout = 12_000
+      readTimeout = 20_000
+      requestMethod = "GET"
+      setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+      setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+    }
+
+    return try {
+      val status = connection.responseCode
+      if (status !in 200..299) {
+        return null
+      }
+      val mimeType = normalizeGoogleFlowImageMimeType(connection.contentType)
+      val fileName = googleFlowReferenceFileName(product, mimeType)
+      connection.inputStream.use { input ->
+        saveGoogleFlowReferenceStream(input, fileName, mimeType)
+      }
+    } finally {
+      connection.disconnect()
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromDataUrl(dataUrl: String, product: JSONObject): GoogleFlowDownloadedAsset? {
+    val commaIndex = dataUrl.indexOf(',')
+    if (commaIndex <= 0) return null
+
+    val header = dataUrl.substring(0, commaIndex)
+    val payload = dataUrl.substring(commaIndex + 1)
+    val mimeType = normalizeGoogleFlowImageMimeType(header.substringAfter("data:", "image/jpeg").substringBefore(';'))
+    val bytes = if (header.contains(";base64", ignoreCase = true)) {
+      Base64.decode(payload, Base64.DEFAULT)
+    } else {
+      Uri.decode(payload).toByteArray(Charsets.UTF_8)
+    }
+    val fileName = googleFlowReferenceFileName(product, mimeType)
+    return ByteArrayInputStream(bytes).use { input ->
+      saveGoogleFlowReferenceStream(input, fileName, mimeType)
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromUri(
+    uri: Uri,
+    product: JSONObject,
+    source: String
+  ): GoogleFlowDownloadedAsset? {
+    val mimeType = normalizeGoogleFlowImageMimeType(contentResolver.getType(uri) ?: mimeTypeFromGoogleFlowSource(source))
+    val fileName = googleFlowReferenceFileName(product, mimeType)
+    return contentResolver.openInputStream(uri)?.use { input ->
+      saveGoogleFlowReferenceStream(input, fileName, mimeType)
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromFilePath(path: String, product: JSONObject): GoogleFlowDownloadedAsset? {
+    val file = File(path)
+    if (!file.exists() || !file.isFile) return null
+
+    val mimeType = normalizeGoogleFlowImageMimeType(mimeTypeFromGoogleFlowSource(path))
+    val fileName = googleFlowReferenceFileName(product, mimeType)
+    return FileInputStream(file).use { input ->
+      saveGoogleFlowReferenceStream(input, fileName, mimeType)
+    }
+  }
+
+  private fun saveGoogleFlowReferenceStream(
+    input: InputStream,
+    fileName: String,
+    mimeType: String
+  ): GoogleFlowDownloadedAsset? {
+    val createdAt = System.currentTimeMillis()
+    var sizeBytes = 0L
+
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      val values = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+        put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Kubdee AI")
+        put(MediaStore.MediaColumns.IS_PENDING, 1)
+      }
+      val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+      val output = contentResolver.openOutputStream(uri) ?: return null
+      output.use { stream ->
+        sizeBytes = copyGoogleFlowStream(input, stream)
+      }
+
+      val doneValues = ContentValues().apply {
+        put(MediaStore.MediaColumns.SIZE, sizeBytes)
+        put(MediaStore.MediaColumns.IS_PENDING, 0)
+      }
+      contentResolver.update(uri, doneValues, null, null)
+      GoogleFlowDownloadedAsset(
+        uri = uri.toString(),
+        fileName = fileName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        createdAt = createdAt
+      )
+    } else {
+      val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Kubdee AI")
+      if (!directory.exists() && !directory.mkdirs()) {
+        return null
+      }
+      val file = File(directory, fileName)
+      FileOutputStream(file).use { output ->
+        sizeBytes = copyGoogleFlowStream(input, output)
+      }
+      GoogleFlowDownloadedAsset(
+        uri = Uri.fromFile(file).toString(),
+        fileName = fileName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        createdAt = createdAt
+      )
+    }
+  }
+
+  private fun copyGoogleFlowStream(input: InputStream, output: OutputStream): Long {
+    val buffer = ByteArray(16 * 1024)
+    var total = 0L
+    while (true) {
+      val read = input.read(buffer)
+      if (read <= 0) break
+      output.write(buffer, 0, read)
+      total += read.toLong()
+    }
+    output.flush()
+    return total
+  }
+
+  private fun googleFlowReferenceFileName(product: JSONObject, mimeType: String): String {
+    val rawKey = googleFlowProductKey(product)
+    val safeKey = rawKey
+      .lowercase(Locale.ROOT)
+      .replace(Regex("""[^a-z0-9ก-๙_-]+"""), "-")
+      .trim('-')
+      .take(36)
+      .ifBlank { "product" }
+    return "kubdee-product-$safeKey-${System.currentTimeMillis()}.${extensionForGoogleFlowImageMimeType(mimeType)}"
+  }
+
+  private fun mimeTypeFromGoogleFlowSource(source: String): String {
+    val cleanPath = source.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+    return when {
+      cleanPath.endsWith(".png") -> "image/png"
+      cleanPath.endsWith(".webp") -> "image/webp"
+      cleanPath.endsWith(".gif") -> "image/gif"
+      cleanPath.endsWith(".heic") -> "image/heic"
+      cleanPath.endsWith(".heif") -> "image/heif"
+      else -> "image/jpeg"
+    }
+  }
+
+  private fun normalizeGoogleFlowImageMimeType(value: String?): String {
+    val mimeType = value
+      ?.substringBefore(';')
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .orEmpty()
+    return when {
+      mimeType == "image/jpg" -> "image/jpeg"
+      mimeType.startsWith("image/") -> mimeType
+      else -> "image/jpeg"
+    }
+  }
+
+  private fun extensionForGoogleFlowImageMimeType(mimeType: String): String =
+    when (mimeType.lowercase(Locale.ROOT)) {
+      "image/png" -> "png"
+      "image/webp" -> "webp"
+      "image/gif" -> "gif"
+      "image/heic" -> "heic"
+      "image/heif" -> "heif"
+      else -> "jpg"
+    }
+
+  private fun attachGoogleFlowReferenceAsset(asset: GoogleFlowDownloadedAsset?): Boolean {
+    if (asset == null) return false
+    val fileName = asset.fileName?.trim().orEmpty()
+    if (fileName.isBlank()) return false
+
+    dismissGoogleFlowBlockingPopups()
+    val openedPicker = clickByAnyText(
+      listOf(
+        "Add image",
+        "Reference image",
+        "Image to video",
+        "Upload",
+        "Choose file",
+        "อัปโหลด",
+        "เพิ่มรูป",
+        "เลือกรูป",
+        "เลือกไฟล์"
+      ),
+      exact = false
+    )
+    if (!openedPicker) {
+      return false
+    }
+
+    sleepGoogleFlowStep(1200L)
+    dismissGoogleFlowBlockingPopups()
+
+    val stem = fileName.substringBeforeLast('.', fileName)
+    var selectedFile = clickByAnyText(listOf(fileName, stem), exact = false)
+    if (!selectedFile && clickByAnyText(listOf("Downloads", "ดาวน์โหลด", "Recent", "ล่าสุด"), exact = false)) {
+      sleepGoogleFlowStep(800L)
+      selectedFile = clickByAnyText(listOf(fileName, stem), exact = false)
+    }
+    if (!selectedFile && scrollFirstScrollableForward()) {
+      sleepGoogleFlowStep(700L)
+      selectedFile = clickByAnyText(listOf(fileName, stem), exact = false)
+    }
+
+    if (!selectedFile) {
+      performBack()
+      sleepGoogleFlowStep(500L)
+      return false
+    }
+
+    sleepGoogleFlowStep(900L)
+    clickByAnyText(listOf("Done", "Select", "Open", "Add", "เสร็จ", "เลือก", "เปิด", "เพิ่ม"), exact = false)
+    sleepGoogleFlowStep(1400L)
+    return true
+  }
+
+  private fun googleFlowEnabledSteps(payload: JSONObject): List<String> {
+    val steps = payload.optJSONArray("enabledSteps") ?: return listOf("image", "video")
+    val output = mutableListOf<String>()
+    for (index in 0 until steps.length()) {
+      val step = steps.optString(index)
+      if ((step == "image" || step == "video") && !output.contains(step)) {
+        output.add(step)
+      }
+    }
+    return output
+  }
+
+  private fun googleFlowDelayMs(settings: JSONObject?): Long =
+    when (settings?.optString("delayPreset", "normal")) {
+      "fast" -> 800L
+      "slow" -> 2600L
+      else -> 1500L
+    }
+
+  private fun googleFlowGenerationTimeoutMs(payload: JSONObject, step: String): Long {
+    val settings = payload.optJSONObject("settings")
+    val duration = settings?.optInt("flowVideoDuration", 8) ?: 8
+    return if (step == "video") {
+      (duration.coerceIn(4, 10) * 22_000L).coerceAtLeast(90_000L)
+    } else {
+      75_000L
+    }
+  }
+
+  private fun ensureGoogleFlowWorkspaceReady() {
+    repeat(4) {
+      var advanced = false
+      if (handleChromeFirstRunIfNeeded()) {
+        advanced = true
+        sleepGoogleFlowStep(1400)
+      }
+      dismissGoogleFlowBlockingPopups()
+      if (clickGoogleFlowLandingCtaIfNeeded()) {
+        logGoogleFlowStep("กดเข้า Google Flow studio จากหน้า landing")
+        advanced = true
+        sleepGoogleFlowStep(2500)
+      }
+      if (containsAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), contains = true)) {
+        clickByAnyText(listOf("New project", "โปรเจ็กต์ใหม่"), exact = false)
+        advanced = true
+        sleepGoogleFlowStep(1800)
+      }
+      if (containsAnyText(listOf("Try Flow", "Start", "เริ่ม"), contains = true)) {
+        clickByAnyText(listOf("Try Flow", "Start", "เริ่ม"), exact = false)
+        advanced = true
+        sleepGoogleFlowStep(1800)
+      }
+      if (!advanced) {
+        return
+      }
+    }
+  }
+
+  private fun handleChromeFirstRunIfNeeded(): Boolean {
+    if (!containsAnyText(listOf("Chrome ในแบบของคุณ", "ปรับเปลี่ยน Chrome", "Make Chrome yours"), contains = true)) {
+      return false
+    }
+    return clickByAnyText(
+      listOf(
+        "ดำเนินการต่อในชื่อ",
+        "Continue as",
+        "อยู่ในโหมดออกจากระบบ",
+        "Use without an account",
+        "Accept",
+        "ยอมรับ"
+      ),
+      exact = false
+    )
+  }
+
+  private fun clickGoogleFlowLandingCtaIfNeeded(): Boolean {
+    if (!containsAnyText(listOf("Your AI creative studio", "Create with Google Flow", "Google Flow"), contains = true)) {
+      return false
+    }
+    return clickByAnyText(
+      listOf(
+        "Create with Google Flow",
+        "Create with Flow",
+        "Start creating",
+        "Try Flow",
+        "เริ่มสร้างด้วย Google Flow"
+      ),
+      exact = false
+    )
+  }
+
+  private fun selectGoogleFlowStepMode(step: String): Boolean {
+    val labels = if (step == "video") {
+      listOf("Video", "วิดีโอ", "Generate video", "สร้างวิดีโอ")
+    } else {
+      listOf("Image", "รูปภาพ", "Generate image", "สร้างรูป")
+    }
+    return clickByAnyText(labels, exact = false)
+  }
+
+  private fun selectGoogleFlowModel(payload: JSONObject, step: String): Boolean {
+    val settings = payload.optJSONObject("settings") ?: return false
+    val modelValue = if (step == "video") {
+      settings.optString("flowVideoModel", "")
+    } else {
+      settings.optString("flowImageModel", "")
+    }
+    val modelLabels = googleFlowModelLabels(modelValue)
+    if (modelLabels.isEmpty()) return false
+    if (clickByAnyText(modelLabels, exact = false)) return true
+    if (clickByAnyText(listOf("Model", "โมเดล"), exact = false)) {
+      sleepGoogleFlowStep(700)
+      return clickByAnyText(modelLabels, exact = false)
+    }
+    return false
+  }
+
+  private fun googleFlowModelLabels(value: String): List<String> =
+    when (value) {
+      "nano_banana_pro" -> listOf("Nano Banana Pro", "Nano Banana")
+      "nano_banana_2" -> listOf("Nano Banana 2", "Nano Banana")
+      "imagen_4" -> listOf("Imagen 4", "Imagen")
+      "omni_flash" -> listOf("Omni Flash")
+      "veo_31_lite" -> listOf("Veo 3.1 Lite", "Veo")
+      "veo_31_fast" -> listOf("Veo 3.1 Fast", "Veo")
+      "veo_31_quality" -> listOf("Veo 3.1 Quality", "Veo")
+      "veo_31_lite_lower" -> listOf("Veo 3.1 Lite Lower", "Veo 3.1 Lite", "Veo")
+      else -> emptyList()
+    }
+
+  private fun submitGoogleFlowGenerate(): Boolean {
+    dismissGoogleFlowBlockingPopups()
+    dismissSoftKeyboardIfOpen()
+    dismissGoogleFlowBlockingPopups()
+    if (clickByAnyText(listOf("Generate", "สร้าง", "Create", "Submit"), exact = false)) {
+      return true
+    }
+
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val keyboardVisible = containsAnyText(listOf("Switch IME", "Clear Text"), contains = true)
+    val actionNodes = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+    collectClickableNodes(root, actionNodes)
+    val candidate = actionNodes
+      .filter { (bounds, node) ->
+        val text = readNodeText(node)
+        bounds.centerY() > screen.top + (screen.height() * 0.55f).toInt() &&
+          bounds.centerY() < screen.bottom - (screen.height() * 0.06f).toInt() &&
+          bounds.width() in 32..(screen.width() * 0.72f).toInt() &&
+          bounds.height() in 32..180 &&
+          (
+              text.contains("Generate", ignoreCase = true) ||
+              text.contains("Create", ignoreCase = true) ||
+              text.contains("สร้าง", ignoreCase = true) ||
+              (!keyboardVisible && text.isBlank())
+          )
+      }
+      .sortedWith(compareByDescending<Pair<Rect, AccessibilityNodeInfo>> { it.first.bottom }.thenByDescending { it.first.right })
+      .firstOrNull()
+
+    if (candidate != null) {
+      val bounds = candidate.first
+      return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+    }
+
+    return false
+  }
+
+  private fun dismissSoftKeyboardIfOpen(): Boolean {
+    if (!containsAnyText(listOf("Switch IME", "Clear Text"), contains = true)) {
+      return false
+    }
+    val dismissed = performBack()
+    if (dismissed) {
+      sleepGoogleFlowStep(850)
+    }
+    return dismissed
+  }
+
+  private fun waitForGoogleFlowGeneration(step: String, timeoutMs: Long): Boolean {
+    val label = if (step == "video") "วิดีโอ" else "รูปภาพ"
+    val start = System.currentTimeMillis()
+    var lastLog = 0L
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkGoogleFlowStopRequested()
+      dismissGoogleFlowBlockingPopups()
+      if (
+        containsAnyText(listOf("Download", "ดาวน์โหลด", "Done", "เสร็จ", "Export"), contains = true) ||
+        containsAnyText(listOf("Failed", "ล้มเหลว", "try a different prompt"), contains = true)
+      ) {
+        if (containsAnyText(listOf("Failed", "ล้มเหลว", "try a different prompt"), contains = true)) {
+          logGoogleFlowStep("Flow แจ้งล้มเหลวสำหรับ${label}")
+          return false
+        } else {
+          logGoogleFlowStep("Flow มีผลลัพธ์สำหรับ${label}แล้ว")
+          return true
+        }
+      }
+
+      val now = System.currentTimeMillis()
+      if (now - lastLog > 10_000L) {
+        logGoogleFlowStep("รอผล$label ${((now - start) / 1000.0).formatOneDecimal()} วิ")
+        lastLog = now
+      }
+      sleepGoogleFlowStep(1000L)
+    }
+    logGoogleFlowStep("ยังไม่เห็นผลลัพธ์${label}ในเวลาที่กำหนด จะไปขั้นถัดไป")
+    return false
+  }
+
+  private fun downloadGoogleFlowResult(step: String): GoogleFlowDownloadedAsset? {
+    val label = if (step == "video") "วิดีโอ" else "รูปภาพ"
+    val startedAt = System.currentTimeMillis()
+    logGoogleFlowStep("กำลังดาวน์โหลด${label}จาก Google Flow")
+    if (!clickByAnyText(listOf("Download", "ดาวน์โหลด", "Export", "บันทึก"), exact = false)) {
+      return null
+    }
+
+    sleepGoogleFlowStep(3000L)
+    dismissGoogleFlowBlockingPopups()
+    logGoogleFlowStep("ส่งดาวน์โหลด${label}ให้ browser แล้ว")
+    return waitForLatestGoogleFlowDownload(step, startedAt)
+  }
+
+  private fun waitForLatestGoogleFlowDownload(step: String, sinceMs: Long): GoogleFlowDownloadedAsset? {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < 15_000L) {
+      checkGoogleFlowStopRequested()
+      val asset = findLatestDownloadedMedia(step, sinceMs)
+      if (asset != null) {
+        return asset
+      }
+      sleepGoogleFlowStep(1000L)
+    }
+    return null
+  }
+
+  private fun findLatestDownloadedMedia(step: String, sinceMs: Long): GoogleFlowDownloadedAsset? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+      return null
+    }
+
+    val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+    val projection = arrayOf(
+      MediaStore.MediaColumns._ID,
+      MediaStore.MediaColumns.DISPLAY_NAME,
+      MediaStore.MediaColumns.MIME_TYPE,
+      MediaStore.MediaColumns.SIZE,
+      MediaStore.MediaColumns.DATE_ADDED
+    )
+    val sinceSeconds = ((sinceMs / 1000L) - 20L).coerceAtLeast(0L)
+    val mimePrefix = if (step == "video") "video/%" else "image/%"
+    val extensionLike = if (step == "video") "%.mp4" else "%.png"
+    val fallbackExtensionLike = if (step == "video") "%.webm" else "%.jpg"
+    val selection =
+      "${MediaStore.MediaColumns.DATE_ADDED} >= ? AND (" +
+        "${MediaStore.MediaColumns.MIME_TYPE} LIKE ? OR " +
+        "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR " +
+        "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?)"
+    val selectionArgs = arrayOf(
+      sinceSeconds.toString(),
+      mimePrefix,
+      extensionLike,
+      fallbackExtensionLike
+    )
+    val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+
+    return try {
+      contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+        if (!cursor.moveToFirst()) {
+          return@use null
+        }
+
+        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+        val fileName = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME))
+        val mimeType = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE))
+        val sizeBytes = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE))
+        val dateAdded = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED))
+        val uri = ContentUris.withAppendedId(collection, id).toString()
+
+        GoogleFlowDownloadedAsset(
+          uri = uri,
+          fileName = fileName,
+          mimeType = mimeType,
+          sizeBytes = sizeBytes.takeIf { it > 0 },
+          createdAt = dateAdded * 1000L
+        )
+      }
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to query downloaded Google Flow asset", error)
+      null
+    }
+  }
+
+  private fun emitGoogleFlowAsset(product: JSONObject, step: String, downloadedAsset: GoogleFlowDownloadedAsset?) {
+    val label = if (step == "video") "วิดีโอ" else "รูปภาพ"
+    val productId = product.optString("productId", product.optString("id", ""))
+    val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
+    val message = "บันทึกผลลัพธ์${label}: ${productName.take(34)}"
+    Log.d(TAG, "Google Flow runner: $message")
+    addAutomationLogLine(message)
+    KubdeeAccessibilityModule.emitGoogleFlowLog(
+      message = message,
+      event = "asset",
+      step = step,
+      productId = productId,
+      productName = productName,
+      fileUri = downloadedAsset?.uri,
+      fileName = downloadedAsset?.fileName,
+      mimeType = downloadedAsset?.mimeType,
+      sizeBytes = downloadedAsset?.sizeBytes,
+      createdAt = downloadedAsset?.createdAt,
+      runId = currentGoogleFlowRunId
+    )
+    showAutomationOverlay(message)
+  }
+
   private fun tapBlocking(x: Float, y: Float, timeoutMs: Long = 2500): Boolean {
     var completed = false
     val latch = CountDownLatch(1)
     tap(x, y) { success ->
+      completed = success
+      latch.countDown()
+    }
+
+    return latch.await(timeoutMs, TimeUnit.MILLISECONDS) && completed
+  }
+
+  private fun longPressBlocking(x: Float, y: Float, timeoutMs: Long = 3200): Boolean {
+    var completed = false
+    val latch = CountDownLatch(1)
+    dispatchLineGesture(x, y, x, y, 700L) { success ->
       completed = success
       latch.countDown()
     }
@@ -356,6 +1641,57 @@ class KubdeeAccessibilityService : AccessibilityService() {
     showAutomationOverlay(message)
   }
 
+  private fun emitGoogleFlowProgress(
+    message: String,
+    product: JSONObject? = null,
+    step: String? = null,
+    stage: String,
+    round: Int,
+    totalRounds: Int,
+    productIndex: Int,
+    productTotal: Int
+  ) {
+    val productId = product?.let { it.optString("productId", it.optString("id", "")) }
+    val productName = product?.optString("name", "สินค้า")?.ifBlank { "สินค้า" }
+    Log.d(TAG, "Google Flow runner: $message")
+    addAutomationLogLine(message)
+    KubdeeAccessibilityModule.emitGoogleFlowLog(
+      message = message,
+      event = "progress",
+      step = step,
+      stage = stage,
+      productId = productId,
+      productName = productName,
+      currentRound = round,
+      totalRounds = totalRounds,
+      currentProduct = productIndex,
+      totalProducts = productTotal,
+      runId = currentGoogleFlowRunId
+    )
+    showAutomationOverlay(message)
+  }
+
+  private fun logGoogleFlowStep(message: String) {
+    Log.d(TAG, "Google Flow runner: $message")
+    addAutomationLogLine(message)
+    KubdeeAccessibilityModule.emitGoogleFlowLog(
+      message = message,
+      runId = currentGoogleFlowRunId
+    )
+    showAutomationOverlay(message)
+  }
+
+  private fun logGoogleFlowStatus(message: String, status: String) {
+    Log.d(TAG, "Google Flow runner: $message ($status)")
+    addAutomationLogLine(message)
+    KubdeeAccessibilityModule.emitGoogleFlowLog(
+      message = message,
+      status = status,
+      runId = currentGoogleFlowRunId
+    )
+    showAutomationOverlay(message)
+  }
+
   private fun sleepStep(ms: Long) {
     val endAt = System.currentTimeMillis() + ms
     while (System.currentTimeMillis() < endAt) {
@@ -372,6 +1708,25 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun checkStopRequested() {
     if (stopRequested) {
       throw ShopeeAutomationStoppedException()
+    }
+  }
+
+  private fun sleepGoogleFlowStep(ms: Long) {
+    val endAt = System.currentTimeMillis() + ms
+    while (System.currentTimeMillis() < endAt) {
+      checkGoogleFlowStopRequested()
+      try {
+        Thread.sleep(minOf(250L, endAt - System.currentTimeMillis()).coerceAtLeast(1L))
+      } catch (error: InterruptedException) {
+        Thread.currentThread().interrupt()
+        throw error
+      }
+    }
+  }
+
+  private fun checkGoogleFlowStopRequested() {
+    if (googleFlowStopRequested) {
+      throw GoogleFlowAutomationStoppedException()
     }
   }
 
@@ -411,7 +1766,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun findEditableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
     if (node == null) return null
-    if (node.isEditable) return node
+    if (node.isEditable && !isBlockedEditableNode(node)) return node
 
     for (index in 0 until node.childCount) {
       val found = findEditableNode(node.getChild(index))
@@ -419,6 +1774,29 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     return null
+  }
+
+  private fun isBlockedEditableNode(node: AccessibilityNodeInfo): Boolean {
+    val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
+    if (
+      resourceId.contains("com.android.chrome:id/url_bar") ||
+      resourceId.contains("com.android.chrome:id/search_box_text") ||
+      resourceId.contains("omnibox")
+    ) {
+      return true
+    }
+
+    val text = cleanNodeText(readNodeText(node))
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val screen = screenBounds(rootInActiveWindow)
+    return node.packageName?.toString() == TARGET_PACKAGE_CHROME &&
+      bounds.top <= screen.top + (screen.height() * 0.24f).toInt() &&
+      (
+        text.startsWith("http://", ignoreCase = true) ||
+          text.startsWith("https://", ignoreCase = true) ||
+          resourceId.contains("location")
+      )
   }
 
   private fun goToShopeeMeTab(): Boolean {
@@ -1010,6 +2388,21 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
   }
 
+  private fun collectClickableNodes(node: AccessibilityNodeInfo?, output: MutableList<Pair<Rect, AccessibilityNodeInfo>>) {
+    if (node == null) return
+    if (node.isClickable) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      if (bounds.width() > 0 && bounds.height() > 0) {
+        output.add(Rect(bounds) to node)
+      }
+    }
+
+    for (index in 0 until node.childCount) {
+      collectClickableNodes(node.getChild(index), output)
+    }
+  }
+
   private fun readNodeText(node: AccessibilityNodeInfo): String {
     val parts = listOfNotNull(
       node.text?.toString(),
@@ -1176,6 +2569,36 @@ class KubdeeAccessibilityService : AccessibilityService() {
     clickByAnyText(listOf("ปิด", "Close", "ตกลง", "OK", "ข้าม", "Skip"), exact = true)
   }
 
+  private fun dismissGoogleFlowBlockingPopups() {
+    if (containsAnyText(listOf("แปลหน้าเว็บไหม", "Translate this page"), contains = true)) {
+      if (performBack()) {
+        sleepGoogleFlowStep(400)
+      }
+    }
+
+    clickByAnyText(
+      listOf(
+        "ปิด",
+        "Close",
+        "OK",
+        "Got it",
+        "Accept",
+        "ยอมรับ",
+        "While using the app",
+        "ขณะใช้แอป",
+        "Only this time",
+        "เฉพาะครั้งนี้",
+        "ข้าม",
+        "Skip",
+        "Not now",
+        "ภายหลัง",
+        "Cancel",
+        "ยกเลิก"
+      ),
+      exact = false
+    )
+  }
+
   private fun showAutomationOverlay(message: String) {
     mainHandler.post {
       val textView = ensureAutomationOverlay()
@@ -1259,7 +2682,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val safeTop: Int
   )
 
+  private data class GoogleFlowDownloadedAsset(
+    val uri: String,
+    val fileName: String?,
+    val mimeType: String?,
+    val sizeBytes: Long?,
+    val createdAt: Long
+  )
+
   private class ShopeeAutomationStoppedException : RuntimeException("Shopee automation stopped")
+  private class GoogleFlowAutomationStoppedException : RuntimeException("Google Flow automation stopped")
 
   private fun Double.formatOneDecimal(): String = String.format(Locale.ROOT, "%.1f", this)
 }

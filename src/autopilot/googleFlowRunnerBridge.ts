@@ -40,7 +40,17 @@ export function createGoogleFlowRunnerPayload({
 export async function startGoogleFlowRunner(
   payload: GoogleFlowRunnerPayload
 ): Promise<GoogleFlowRunnerStartResult> {
-  const started = await startGoogleFlowAutoPilot(payload);
+  let started = false;
+  try {
+    started = await startGoogleFlowAutoPilot(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: message || 'เริ่ม Google Flow runner บนมือถือไม่สำเร็จ',
+    };
+  }
+
   return started
     ? {
         success: true,

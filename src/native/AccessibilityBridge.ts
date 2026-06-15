@@ -1,5 +1,6 @@
-import { Linking, NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { Linking, NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import type { EmitterSubscription } from 'react-native';
+import type { Permission } from 'react-native';
 
 export interface AccessibilityStatus {
   available: boolean;
@@ -186,6 +187,26 @@ export async function stopGoogleFlowAutoPilot(): Promise<boolean> {
   }
 
   return false;
+}
+
+export async function requestGoogleFlowMediaPermissions(): Promise<boolean> {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  const platformVersion =
+    typeof Platform.Version === 'number' ? Platform.Version : Number.parseInt(String(Platform.Version), 10);
+  const permissions: Permission[] =
+    platformVersion >= 33
+      ? ['android.permission.READ_MEDIA_IMAGES', 'android.permission.READ_MEDIA_VIDEO']
+      : [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE];
+
+  try {
+    const results = await PermissionsAndroid.requestMultiple(permissions);
+    return permissions.every((permission) => results[permission] === PermissionsAndroid.RESULTS.GRANTED);
+  } catch {
+    return false;
+  }
 }
 
 export function subscribeShopeeImportLogs(

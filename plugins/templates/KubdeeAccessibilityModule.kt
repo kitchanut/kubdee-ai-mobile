@@ -233,6 +233,29 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
+  fun startGoogleFlowAutoPilot(payloadJson: String, promise: Promise) {
+    val service = KubdeeAccessibilityService.getInstance()
+    if (service == null) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
+      return
+    }
+
+    promise.resolve(service.runGoogleFlowAutoPilot(payloadJson))
+  }
+
+  @ReactMethod
+  fun stopGoogleFlowAutoPilot(promise: Promise) {
+    val service = KubdeeAccessibilityService.getInstance()
+    if (service == null) {
+      promise.resolve(false)
+      return
+    }
+
+    service.requestStopGoogleFlowAutomation()
+    promise.resolve(true)
+  }
+
+  @ReactMethod
   fun addListener(eventName: String) {
     // Required by React Native NativeEventEmitter.
   }
@@ -280,6 +303,87 @@ class KubdeeAccessibilityModule(
           context
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("KubdeeShopeeImportLog", payload)
+        }
+      }
+    }
+
+    fun emitGoogleFlowLog(
+      message: String,
+      status: String? = null,
+      event: String? = null,
+      step: String? = null,
+      stage: String? = null,
+      productId: String? = null,
+      productName: String? = null,
+      currentRound: Int? = null,
+      totalRounds: Int? = null,
+      currentProduct: Int? = null,
+      totalProducts: Int? = null,
+      fileUri: String? = null,
+      fileName: String? = null,
+      mimeType: String? = null,
+      sizeBytes: Long? = null,
+      createdAt: Long? = null,
+      runId: String? = null
+    ) {
+      val context = eventContext ?: return
+      val payload = Arguments.createMap().apply {
+        putString("message", message)
+        putDouble("ts", System.currentTimeMillis().toDouble())
+        if (runId != null) {
+          putString("runId", runId)
+        }
+        if (status != null) {
+          putString("status", status)
+        }
+        if (event != null) {
+          putString("event", event)
+        }
+        if (step != null) {
+          putString("step", step)
+        }
+        if (stage != null) {
+          putString("stage", stage)
+        }
+        if (productId != null) {
+          putString("productId", productId)
+        }
+        if (productName != null) {
+          putString("productName", productName)
+        }
+        if (currentRound != null) {
+          putInt("currentRound", currentRound)
+        }
+        if (totalRounds != null) {
+          putInt("totalRounds", totalRounds)
+        }
+        if (currentProduct != null) {
+          putInt("currentProduct", currentProduct)
+        }
+        if (totalProducts != null) {
+          putInt("totalProducts", totalProducts)
+        }
+        if (fileUri != null) {
+          putString("fileUri", fileUri)
+        }
+        if (fileName != null) {
+          putString("fileName", fileName)
+        }
+        if (mimeType != null) {
+          putString("mimeType", mimeType)
+        }
+        if (sizeBytes != null) {
+          putDouble("sizeBytes", sizeBytes.toDouble())
+        }
+        if (createdAt != null) {
+          putDouble("createdAt", createdAt.toDouble())
+        }
+      }
+      context.runOnUiQueueThread {
+        if (context.hasActiveReactInstance()) {
+          context
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("KubdeeGoogleFlowLog", payload)
         }
       }
     }

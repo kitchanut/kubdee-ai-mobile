@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.ContentUris
 import android.content.Intent
 import android.graphics.Color
@@ -15,15 +16,23 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -216,13 +225,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
         sleepGoogleFlowStep(3500)
         logGoogleFlowStep("Google Flow เปิดแล้ว (run: ${runId.takeLast(8)})")
-        if (waitForGoogleFlowReady(20_000L)) {
+        if (ensureGoogleFlowReadyAfterLaunch(browserMode)) {
           logGoogleFlowStep("หน้า Google Flow พร้อมใช้งาน")
         } else {
-          logGoogleFlowStep("ยังยืนยันหน้า Google Flow ไม่ได้ แต่จะลองทำงานต่อ")
+          throw IllegalStateException("หน้า Google Flow ยังไม่พร้อมใช้งาน")
         }
 
         val generatedImageByProductId = mutableMapOf<String, GoogleFlowDownloadedAsset>()
+        val productReferenceAssetByProductId = mutableMapOf<String, GoogleFlowDownloadedAsset>()
 
         for (round in 1..totalRounds) {
           checkGoogleFlowStopRequested()
@@ -240,6 +250,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
             val product = products?.optJSONObject(productIndex) ?: continue
             val productKey = googleFlowProductKey(product)
             val productName = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
+            val productReferenceAsset = productReferenceAssetByProductId[productKey]
+              ?: prepareGoogleFlowProductReferenceAsset(product)?.also { productReferenceAssetByProductId[productKey] = it }
             emitGoogleFlowProgress(
               message = "สินค้า ${productIndex + 1}/$productCount: ${productName.take(38)}",
               product = product,
@@ -259,7 +271,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
                 totalRounds = totalRounds,
                 productIndex = productIndex + 1,
                 productTotal = productCount,
-                referenceAsset = if (step == "video") generatedImageByProductId[productKey] else null
+                referenceAsset = when (step) {
+                  "image" -> productReferenceAsset
+                  "video" -> generatedImageByProductId[productKey] ?: productReferenceAsset
+                  else -> null
+                }
               )
               if (step == "image" && generatedAsset != null) {
                 generatedImageByProductId[productKey] = generatedAsset
@@ -462,18 +478,35 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun launchUrl(url: String, preferredPackage: String? = null): Boolean {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+    val uri = Uri.parse(url)
+    val intents = mutableListOf<Intent>()
+    if (preferredPackage == TARGET_PACKAGE_CHROME) {
+      intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
+        setClassName(TARGET_PACKAGE_CHROME, "com.google.android.apps.chrome.Main")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      })
+    }
+    intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       if (!preferredPackage.isNullOrBlank() && packageManager.getLaunchIntentForPackage(preferredPackage) != null) {
         setPackage(preferredPackage)
       }
+    })
+    if (!preferredPackage.isNullOrBlank()) {
+      intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      })
     }
-    return try {
-      startActivity(intent)
-      true
-    } catch (_: Exception) {
-      false
+
+    for (intent in intents) {
+      try {
+        startActivity(intent)
+        return true
+      } catch (_: Exception) {
+        // Try the next fallback.
+      }
     }
+    return false
   }
 
   private fun waitForGoogleFlowReady(timeoutMs: Long): Boolean {
@@ -484,9 +517,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
         sleepGoogleFlowStep(1200)
       }
       dismissGoogleFlowBlockingPopups()
+      if (isChromeGoogleFlowErrorPage()) {
+        logGoogleFlowStep("Chrome แสดง error page จะลองโหลด Google Flow ใหม่")
+        reloadGoogleFlowPage()
+        sleepGoogleFlowStep(3500)
+      }
       if (
         containsAnyText(
           listOf(
+            "Google Flow",
+            "Your AI creative studio",
             "New project",
             "โปรเจ็กต์ใหม่",
             "Create with Google Flow",
@@ -505,6 +545,39 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     return false
   }
+
+  private fun ensureGoogleFlowReadyAfterLaunch(browserMode: String): Boolean {
+    if (waitForGoogleFlowReady(22_000L)) {
+      return true
+    }
+
+    logGoogleFlowStep("ยังไม่เห็นหน้า Flow พร้อมใช้งาน จะ reload/open Google Flow ซ้ำ")
+    if (!reloadGoogleFlowPage()) {
+      launchUrl(GOOGLE_FLOW_URL, preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null)
+    }
+    sleepGoogleFlowStep(4000L)
+    return waitForGoogleFlowReady(28_000L)
+  }
+
+  private fun reloadGoogleFlowPage(): Boolean {
+    dismissGoogleFlowBlockingPopups()
+    if (clickByAnyText(listOf("โหลดใหม่", "Reload", "Try again", "ลองอีกครั้ง"), exact = false)) {
+      return true
+    }
+    return launchUrl(GOOGLE_FLOW_URL, preferredPackage = TARGET_PACKAGE_CHROME)
+  }
+
+  private fun isChromeGoogleFlowErrorPage(): Boolean =
+    containsAnyText(
+      listOf(
+        "แย่จัง",
+        "ไม่สามารถเปิดหน้านี้",
+        "Aw, Snap",
+        "This site can't be reached",
+        "This page isn't working"
+      ),
+      contains = true
+    )
 
   private fun runGoogleFlowProductStep(
     payload: JSONObject,
@@ -544,12 +617,20 @@ class KubdeeAccessibilityService : AccessibilityService() {
       logGoogleFlowStep("เลือก model สำหรับ$stepLabel แล้ว")
     }
 
-    if (step == "video" && referenceAsset != null) {
+    if (referenceAsset != null) {
       val attached = attachGoogleFlowReferenceAsset(referenceAsset)
       if (attached) {
-        logGoogleFlowStep("แนบรูปจากขั้นสร้างรูปให้วิดีโอแล้ว")
+        if (step == "video") {
+          logGoogleFlowStep("แนบรูปอ้างอิงให้วิดีโอแล้ว")
+        } else {
+          logGoogleFlowStep("แนบรูปสินค้าอ้างอิงให้ขั้นสร้างรูปแล้ว")
+        }
       } else {
-        logGoogleFlowStep("ยังแนบรูปให้วิดีโอไม่ได้ จะใส่ไฟล์อ้างอิงใน prompt แทน")
+        if (step == "video") {
+          logGoogleFlowStep("ยังแนบรูปให้วิดีโอไม่ได้ จะใส่ไฟล์อ้างอิงใน prompt แทน")
+        } else {
+          logGoogleFlowStep("ยังแนบรูปสินค้าไม่ได้ จะใช้ prompt อย่างเดียว")
+        }
       }
     }
 
@@ -939,6 +1020,211 @@ class KubdeeAccessibilityService : AccessibilityService() {
           product.optString("name", "สินค้า")
         }
       }
+    }
+
+  private fun prepareGoogleFlowProductReferenceAsset(product: JSONObject): GoogleFlowDownloadedAsset? {
+    val preview = product.optString("preview", product.optString("imageUrl", "")).trim()
+    if (preview.isBlank()) return null
+
+    return try {
+      val asset = when {
+        preview.startsWith("data:", ignoreCase = true) -> saveGoogleFlowReferenceFromDataUrl(preview, product)
+        preview.startsWith("http://", ignoreCase = true) || preview.startsWith("https://", ignoreCase = true) ->
+          saveGoogleFlowReferenceFromRemoteUrl(preview, product)
+        preview.startsWith("content://", ignoreCase = true) || preview.startsWith("file://", ignoreCase = true) ->
+          saveGoogleFlowReferenceFromUri(Uri.parse(preview), product, preview)
+        preview.startsWith("/") -> saveGoogleFlowReferenceFromFilePath(preview, product)
+        else -> null
+      }
+
+      if (asset != null) {
+        logGoogleFlowStep("เตรียมไฟล์รูปสินค้าอ้างอิงแล้ว: ${asset.fileName ?: asset.uri}")
+      } else {
+        logGoogleFlowStep("ยังเตรียมไฟล์รูปสินค้าอ้างอิงไม่ได้ จะใช้ prompt อย่างเดียว")
+      }
+      asset
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to prepare Google Flow product reference", error)
+      logGoogleFlowStep("เตรียมรูปสินค้าอ้างอิงไม่สำเร็จ: ${error.message ?: "unknown"}")
+      null
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromRemoteUrl(sourceUrl: String, product: JSONObject): GoogleFlowDownloadedAsset? {
+    val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+      instanceFollowRedirects = true
+      connectTimeout = 12_000
+      readTimeout = 20_000
+      requestMethod = "GET"
+      setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+      setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+    }
+
+    return try {
+      val status = connection.responseCode
+      if (status !in 200..299) {
+        return null
+      }
+      val mimeType = normalizeGoogleFlowImageMimeType(connection.contentType)
+      val fileName = googleFlowReferenceFileName(product, mimeType)
+      connection.inputStream.use { input ->
+        saveGoogleFlowReferenceStream(input, fileName, mimeType)
+      }
+    } finally {
+      connection.disconnect()
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromDataUrl(dataUrl: String, product: JSONObject): GoogleFlowDownloadedAsset? {
+    val commaIndex = dataUrl.indexOf(',')
+    if (commaIndex <= 0) return null
+
+    val header = dataUrl.substring(0, commaIndex)
+    val payload = dataUrl.substring(commaIndex + 1)
+    val mimeType = normalizeGoogleFlowImageMimeType(header.substringAfter("data:", "image/jpeg").substringBefore(';'))
+    val bytes = if (header.contains(";base64", ignoreCase = true)) {
+      Base64.decode(payload, Base64.DEFAULT)
+    } else {
+      Uri.decode(payload).toByteArray(Charsets.UTF_8)
+    }
+    val fileName = googleFlowReferenceFileName(product, mimeType)
+    return ByteArrayInputStream(bytes).use { input ->
+      saveGoogleFlowReferenceStream(input, fileName, mimeType)
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromUri(
+    uri: Uri,
+    product: JSONObject,
+    source: String
+  ): GoogleFlowDownloadedAsset? {
+    val mimeType = normalizeGoogleFlowImageMimeType(contentResolver.getType(uri) ?: mimeTypeFromGoogleFlowSource(source))
+    val fileName = googleFlowReferenceFileName(product, mimeType)
+    return contentResolver.openInputStream(uri)?.use { input ->
+      saveGoogleFlowReferenceStream(input, fileName, mimeType)
+    }
+  }
+
+  private fun saveGoogleFlowReferenceFromFilePath(path: String, product: JSONObject): GoogleFlowDownloadedAsset? {
+    val file = File(path)
+    if (!file.exists() || !file.isFile) return null
+
+    val mimeType = normalizeGoogleFlowImageMimeType(mimeTypeFromGoogleFlowSource(path))
+    val fileName = googleFlowReferenceFileName(product, mimeType)
+    return FileInputStream(file).use { input ->
+      saveGoogleFlowReferenceStream(input, fileName, mimeType)
+    }
+  }
+
+  private fun saveGoogleFlowReferenceStream(
+    input: InputStream,
+    fileName: String,
+    mimeType: String
+  ): GoogleFlowDownloadedAsset? {
+    val createdAt = System.currentTimeMillis()
+    var sizeBytes = 0L
+
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      val values = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+        put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Kubdee AI")
+        put(MediaStore.MediaColumns.IS_PENDING, 1)
+      }
+      val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+      val output = contentResolver.openOutputStream(uri) ?: return null
+      output.use { stream ->
+        sizeBytes = copyGoogleFlowStream(input, stream)
+      }
+
+      val doneValues = ContentValues().apply {
+        put(MediaStore.MediaColumns.SIZE, sizeBytes)
+        put(MediaStore.MediaColumns.IS_PENDING, 0)
+      }
+      contentResolver.update(uri, doneValues, null, null)
+      GoogleFlowDownloadedAsset(
+        uri = uri.toString(),
+        fileName = fileName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        createdAt = createdAt
+      )
+    } else {
+      val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Kubdee AI")
+      if (!directory.exists() && !directory.mkdirs()) {
+        return null
+      }
+      val file = File(directory, fileName)
+      FileOutputStream(file).use { output ->
+        sizeBytes = copyGoogleFlowStream(input, output)
+      }
+      GoogleFlowDownloadedAsset(
+        uri = Uri.fromFile(file).toString(),
+        fileName = fileName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        createdAt = createdAt
+      )
+    }
+  }
+
+  private fun copyGoogleFlowStream(input: InputStream, output: OutputStream): Long {
+    val buffer = ByteArray(16 * 1024)
+    var total = 0L
+    while (true) {
+      val read = input.read(buffer)
+      if (read <= 0) break
+      output.write(buffer, 0, read)
+      total += read.toLong()
+    }
+    output.flush()
+    return total
+  }
+
+  private fun googleFlowReferenceFileName(product: JSONObject, mimeType: String): String {
+    val rawKey = googleFlowProductKey(product)
+    val safeKey = rawKey
+      .lowercase(Locale.ROOT)
+      .replace(Regex("""[^a-z0-9ก-๙_-]+"""), "-")
+      .trim('-')
+      .take(36)
+      .ifBlank { "product" }
+    return "kubdee-product-$safeKey-${System.currentTimeMillis()}.${extensionForGoogleFlowImageMimeType(mimeType)}"
+  }
+
+  private fun mimeTypeFromGoogleFlowSource(source: String): String {
+    val cleanPath = source.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+    return when {
+      cleanPath.endsWith(".png") -> "image/png"
+      cleanPath.endsWith(".webp") -> "image/webp"
+      cleanPath.endsWith(".gif") -> "image/gif"
+      cleanPath.endsWith(".heic") -> "image/heic"
+      cleanPath.endsWith(".heif") -> "image/heif"
+      else -> "image/jpeg"
+    }
+  }
+
+  private fun normalizeGoogleFlowImageMimeType(value: String?): String {
+    val mimeType = value
+      ?.substringBefore(';')
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .orEmpty()
+    return when {
+      mimeType == "image/jpg" -> "image/jpeg"
+      mimeType.startsWith("image/") -> mimeType
+      else -> "image/jpeg"
+    }
+  }
+
+  private fun extensionForGoogleFlowImageMimeType(mimeType: String): String =
+    when (mimeType.lowercase(Locale.ROOT)) {
+      "image/png" -> "png"
+      "image/webp" -> "webp"
+      "image/gif" -> "gif"
+      "image/heic" -> "heic"
+      "image/heif" -> "heif"
+      else -> "jpg"
     }
 
   private fun attachGoogleFlowReferenceAsset(asset: GoogleFlowDownloadedAsset?): Boolean {
@@ -2284,6 +2570,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun dismissGoogleFlowBlockingPopups() {
+    if (containsAnyText(listOf("แปลหน้าเว็บไหม", "Translate this page"), contains = true)) {
+      if (performBack()) {
+        sleepGoogleFlowStep(400)
+      }
+    }
+
     clickByAnyText(
       listOf(
         "ปิด",
@@ -2299,7 +2591,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
         "ข้าม",
         "Skip",
         "Not now",
-        "ภายหลัง"
+        "ภายหลัง",
+        "Cancel",
+        "ยกเลิก"
       ),
       exact = false
     )
