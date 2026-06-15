@@ -53,6 +53,7 @@ function withKubdeeAccessibility(config, props = {}) {
         'android:permission': 'android.permission.BIND_ACCESSIBILITY_SERVICE',
         'android:exported': 'true',
         'android:label': '@string/kubdee_accessibility_service_label',
+        'android:process': ':automation',
       },
       'intent-filter': [
         {
@@ -79,6 +80,23 @@ function withKubdeeAccessibility(config, props = {}) {
       application.service[existingIndex] = service;
     } else {
       application.service.push(service);
+    }
+
+    application.receiver = application.receiver || [];
+    const receiverName = '.automation.KubdeeAutomationCommandReceiver';
+    const existingReceiverIndex = application.receiver.findIndex((item) => item.$?.['android:name'] === receiverName);
+    const receiver = {
+      $: {
+        'android:name': receiverName,
+        'android:exported': 'false',
+        'android:process': ':automation',
+      },
+    };
+
+    if (existingReceiverIndex >= 0) {
+      application.receiver[existingReceiverIndex] = receiver;
+    } else {
+      application.receiver.push(receiver);
     }
 
     return config;
@@ -132,6 +150,10 @@ function withKubdeeAccessibility(config, props = {}) {
         accessibilityModuleKt(packageName, targetPackage)
       );
       writeFileIfChanged(
+        path.join(automationRoot, 'KubdeeAutomationCommandReceiver.kt'),
+        automationCommandReceiverKt(packageName)
+      );
+      writeFileIfChanged(
         path.join(automationRoot, 'KubdeeAccessibilityPackage.kt'),
         accessibilityPackageKt(packageName)
       );
@@ -169,8 +191,47 @@ function patchMainApplication(filePath, packageName) {
   const addLine = '          add(KubdeeAccessibilityPackage())';
   let source = fs.readFileSync(filePath, 'utf8');
 
+  const imports = [
+    'import android.app.ActivityManager',
+    'import android.os.Build',
+    'import android.os.Process',
+  ];
+  for (const line of imports) {
+    if (!source.includes(line)) {
+      source = source.replace('import android.app.Application\n', `import android.app.Application\n${line}\n`);
+    }
+  }
+
   if (!source.includes(importLine)) {
     source = source.replace(`package ${packageName}\n\n`, `package ${packageName}\n\n${importLine}\n`);
+  }
+
+  if (!source.includes('React host is not available in the automation process')) {
+    source = source.replace(
+      '  override val reactHost: ReactHost by lazy {\n',
+      '  override val reactHost: ReactHost by lazy {\n    if (isAutomationProcess()) {\n      throw IllegalStateException("React host is not available in the automation process")\n    }\n\n'
+    );
+  }
+
+  if (!source.includes('    if (isAutomationProcess()) {\n      return\n    }\n\n    DefaultNewArchitectureEntryPoint.releaseLevel')) {
+    source = source.replace(
+      '    super.onCreate()\n    DefaultNewArchitectureEntryPoint.releaseLevel',
+      '    super.onCreate()\n    if (isAutomationProcess()) {\n      return\n    }\n\n    DefaultNewArchitectureEntryPoint.releaseLevel'
+    );
+  }
+
+  if (!source.includes('    if (isAutomationProcess()) {\n      return\n    }\n\n    ApplicationLifecycleDispatcher.onConfigurationChanged')) {
+    source = source.replace(
+      '    super.onConfigurationChanged(newConfig)\n    ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)',
+      '    super.onConfigurationChanged(newConfig)\n    if (isAutomationProcess()) {\n      return\n    }\n\n    ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)'
+    );
+  }
+
+  if (!source.includes('  private fun isAutomationProcess(): Boolean =')) {
+    source = source.replace(
+      '\n}\n',
+      '\n  private fun isAutomationProcess(): Boolean =\n    currentProcessName()?.endsWith(":automation") == true\n\n  private fun currentProcessName(): String? {\n    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {\n      return getProcessName()\n    }\n\n    val currentPid = Process.myPid()\n    val activityManager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return null\n    return activityManager.runningAppProcesses?.firstOrNull { processInfo ->\n      processInfo.pid == currentPid\n    }?.processName\n  }\n}\n'
+    );
   }
 
   if (!source.includes(addLine)) {
@@ -657,6 +718,12 @@ class KubdeeAccessibilityModule(
   }
 }
 `;
+}
+
+function automationCommandReceiverKt(packageName) {
+  return renderTemplate('KubdeeAutomationCommandReceiver.kt', {
+    PACKAGE_NAME: packageName,
+  });
 }
 
 function accessibilityPackageKt(packageName) {

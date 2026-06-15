@@ -86,14 +86,56 @@ class KubdeeAccessibilityService : AccessibilityService() {
     @Volatile
     private var currentService: KubdeeAccessibilityService? = null
 
+    @Volatile
+    private var pendingGoogleFlowPayloadJson: String? = null
+
+    @Volatile
+    private var pendingGoogleFlowStopRequested = false
+
     fun getInstance(): KubdeeAccessibilityService? = currentService
 
     fun isRunning(): Boolean = currentService != null
+
+    fun dispatchGoogleFlowStart(payloadJson: String): Boolean {
+      pendingGoogleFlowStopRequested = false
+      val service = currentService
+      if (service != null) {
+        return service.runGoogleFlowAutoPilot(payloadJson)
+      }
+
+      pendingGoogleFlowPayloadJson = payloadJson
+      return false
+    }
+
+    fun dispatchGoogleFlowStop(): Boolean {
+      pendingGoogleFlowPayloadJson = null
+      val service = currentService
+      if (service != null) {
+        service.requestStopGoogleFlowAutomation()
+        return true
+      }
+
+      pendingGoogleFlowStopRequested = true
+      return false
+    }
+
+    private fun takePendingGoogleFlowPayload(): String? {
+      val payload = pendingGoogleFlowPayloadJson
+      pendingGoogleFlowPayloadJson = null
+      return payload
+    }
   }
 
   override fun onServiceConnected() {
     super.onServiceConnected()
     currentService = this
+    if (pendingGoogleFlowStopRequested) {
+      pendingGoogleFlowStopRequested = false
+      requestStopGoogleFlowAutomation()
+    }
+    takePendingGoogleFlowPayload()?.let { payloadJson ->
+      runGoogleFlowAutoPilot(payloadJson)
+    }
   }
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {

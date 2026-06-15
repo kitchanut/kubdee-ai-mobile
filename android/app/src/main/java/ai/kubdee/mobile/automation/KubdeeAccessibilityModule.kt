@@ -30,7 +30,7 @@ class KubdeeAccessibilityModule(
       val map = Arguments.createMap().apply {
         putBoolean("available", true)
         putBoolean("enabled", enabled)
-        putBoolean("running", KubdeeAccessibilityService.isRunning())
+        putBoolean("running", enabled || KubdeeAccessibilityService.isRunning())
         putString("packageName", reactContext.packageName)
         putString("serviceComponent", component.flattenToString())
         putString("targetPackage", TARGET_PACKAGE_SHOPEE)
@@ -234,24 +234,28 @@ class KubdeeAccessibilityModule(
 
   @ReactMethod
   fun startGoogleFlowAutoPilot(payloadJson: String, promise: Promise) {
-    val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
-      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
       return
     }
 
-    promise.resolve(service.runGoogleFlowAutoPilot(payloadJson))
+    sendAutomationCommand(KubdeeAutomationCommandReceiver.ACTION_START_GOOGLE_FLOW) {
+      putExtra(KubdeeAutomationCommandReceiver.EXTRA_PAYLOAD_JSON, payloadJson)
+    }
+    promise.resolve(true)
+    moveAppTaskToBack()
   }
 
   @ReactMethod
   fun stopGoogleFlowAutoPilot(promise: Promise) {
-    val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
       promise.resolve(false)
       return
     }
 
-    service.requestStopGoogleFlowAutomation()
+    sendAutomationCommand(KubdeeAutomationCommandReceiver.ACTION_STOP_GOOGLE_FLOW)
     promise.resolve(true)
   }
 
@@ -284,6 +288,21 @@ class KubdeeAccessibilityModule(
 
     val expected = component.flattenToString()
     return enabledSetting.split(':').any { it.equals(expected, ignoreCase = true) }
+  }
+
+  private fun sendAutomationCommand(action: String, configure: Intent.() -> Unit = {}) {
+    val intent = Intent(action).apply {
+      component = ComponentName(reactContext, KubdeeAutomationCommandReceiver::class.java)
+      setPackage(reactContext.packageName)
+      configure()
+    }
+    reactContext.sendBroadcast(intent)
+  }
+
+  private fun moveAppTaskToBack() {
+    reactContext.runOnUiQueueThread {
+      reactContext.currentActivity?.moveTaskToBack(true)
+    }
   }
 
   companion object {

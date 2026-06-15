@@ -1,7 +1,10 @@
 package ai.kubdee.mobile
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.res.Configuration
+import android.os.Build
+import android.os.Process
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -18,6 +21,10 @@ import expo.modules.ExpoReactHostFactory
 class MainApplication : Application(), ReactApplication {
 
   override val reactHost: ReactHost by lazy {
+    if (isAutomationProcess()) {
+      throw IllegalStateException("React host is not available in the automation process")
+    }
+
     ExpoReactHostFactory.getDefaultReactHost(
       context = applicationContext,
       packageList =
@@ -31,6 +38,10 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    if (isAutomationProcess()) {
+      return
+    }
+
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
@@ -42,6 +53,25 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
+    if (isAutomationProcess()) {
+      return
+    }
+
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
+  }
+
+  private fun isAutomationProcess(): Boolean =
+    currentProcessName()?.endsWith(":automation") == true
+
+  private fun currentProcessName(): String? {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      return getProcessName()
+    }
+
+    val currentPid = Process.myPid()
+    val activityManager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return null
+    return activityManager.runningAppProcesses?.firstOrNull { processInfo ->
+      processInfo.pid == currentPid
+    }?.processName
   }
 }
