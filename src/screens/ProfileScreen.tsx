@@ -376,13 +376,17 @@ export default function ProfileScreen({
 
       appendFlowLog('▶️ รอผลวิดีโอ (สูงสุด 5 นาที)…');
       const startedAt = Date.now();
-      let resultUrl: string | null = null;
+      let resultUrls: string[] = [];
       let allFailed = false;
-      // Google Flow shows tiles as Queued before a percentage appears; a Queued
-      // tile is "still working", not failed. Only conclude failure once no tile
-      // is generating/queued across several consecutive polls (~12s), mirroring
-      // the desktop FAILED_CONFIRMATION window.
+      // Google Flow shows tiles as Queued (no %) before a percentage appears; a
+      // Queued/generating tile is "still working", not failed. We wait until NO
+      // tile is generating (all outputs settled), then conclude:
+      //   - success once that "no generating" state is stable (~8s, guards the
+      //     fail->queued flicker), collecting EVERY ready video (x2 etc.);
+      //   - failure only after ~12s of all-failed with nothing generating
+      //     (mirrors the desktop FAILED_CONFIRMATION window).
       let failConfirm = 0;
+      let doneConfirm = 0;
       while (Date.now() - startedAt < 300000) {
         await new Promise((r) => setTimeout(r, 4000));
         const vr = await flowRef.current?.runAction('videoResults', { count: 4 }, 20000);
@@ -393,32 +397,45 @@ export default function ProfileScreen({
               failedCount?: number;
               generatingCount?: number;
               tilesFound?: number;
+              progress?: number | null;
             }
           | undefined;
         if (!vr?.ok || !vrr) continue;
         const generating = vrr.generatingCount ?? 0;
         const failed = vrr.failedCount ?? 0;
+        const okCount = vrr.successCount ?? 0;
+        const videos = vrr.videos ?? [];
+        const pct = vrr.progress;
         appendFlowLog(
-          `… tiles ${vrr.tilesFound ?? 0} · gen ${generating} · ok ${vrr.successCount ?? 0} · fail ${failed}`
+          `… ${pct != null ? `${pct}% · ` : ''}gen ${generating} · ok ${okCount} · fail ${failed}`
         );
-        if ((vrr.videos?.length ?? 0) > 0) {
-          resultUrl = vrr.videos![0];
-          break;
-        }
-        if (generating > 0 || (vrr.tilesFound ?? 0) === 0) {
-          failConfirm = 0; // still queued / generating, or tiles not shown yet
+        if (generating > 0 || pct != null || (vrr.tilesFound ?? 0) === 0) {
+          // A visible percentage anywhere means it is still rendering (desktop treats
+          // progress>0 as isGenerating), even if a tile briefly flashes a Failed overlay.
+          failConfirm = 0;
+          doneConfirm = 0;
           continue;
         }
-        if (failed > 0) {
+        // Nothing generating anymore — let the state settle before concluding.
+        if (videos.length > 0) {
+          doneConfirm += 1;
+          if (doneConfirm >= 2) {
+            resultUrls = videos;
+            break;
+          }
+        } else if (failed > 0) {
           failConfirm += 1;
           if (failConfirm >= 3) {
             allFailed = true;
             break;
           }
+        } else {
+          failConfirm = 0;
+          doneConfirm = 0;
         }
       }
-      if (resultUrl) {
-        appendFlowLog(`🎬 วิดีโอเสร็จ! ${resultUrl.slice(0, 48)}…`);
+      if (resultUrls.length > 0) {
+        appendFlowLog(`🎬 เสร็จ ${resultUrls.length} วิดีโอ! ${resultUrls[0].slice(0, 40)}…`);
       } else if (allFailed) {
         appendFlowLog('❌ การสร้างล้มเหลว (Failed)');
       } else {
@@ -1109,7 +1126,7 @@ export default function ProfileScreen({
               <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
             </TouchableOpacity>
           </View>
-          <View className="flex-1">
+          <View className="relative flex-1">
             <FlowWebView
               key={flowReloadKey}
               ref={flowRef}
@@ -1117,11 +1134,22 @@ export default function ProfileScreen({
               onStatusChange={handleFlowStatus}
               onAccount={handleFlowAccount}
             />
+            {/* Transparent log overlay — floats over the WebView (taps pass through). */}
+            {flowLogs.length > 0 ? (
+              <View
+                pointerEvents="none"
+                style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
+                className="absolute inset-x-2 bottom-2 rounded-kd-lg px-3 py-2"
+              >
+                {flowLogs.slice(-8).map((line, idx) => (
+                  <Text key={idx} numberOfLines={1} className="text-kd-micro leading-4 text-white">
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
           </View>
           <View className="border-t border-kd-border bg-kd-panel px-3 py-2">
-            <Text className="mb-1 text-kd-micro font-semibold text-kd-text-subtle">
-              ทดสอบ automation (New project → prompt → submit)
-            </Text>
             <View className="flex-row items-end gap-2">
               <TextInput
                 value={flowPrompt}
@@ -1149,15 +1177,6 @@ export default function ProfileScreen({
                 )}
               </TouchableOpacity>
             </View>
-            {flowLogs.length > 0 ? (
-              <ScrollView className="mt-2 max-h-40 rounded-kd-lg bg-kd-card-muted px-2 py-1">
-                {flowLogs.map((line, idx) => (
-                  <Text key={idx} className="text-kd-micro leading-5 text-kd-text-subtle">
-                    {line}
-                  </Text>
-                ))}
-              </ScrollView>
-            ) : null}
           </View>
         </SafeAreaView>
       </Modal>

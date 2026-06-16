@@ -45,20 +45,27 @@ export const VIDEO_RESULTS_BODY = `
     for (var t = 0; t < rowTiles.length; t++) tiles.push(rowTiles[t]);
   }
 
-  var result = { videos: [], images: 0, failedCount: 0, successCount: 0, generatingCount: 0, tilesFound: tiles.length };
+  var result = { videos: [], images: 0, failedCount: 0, successCount: 0, generatingCount: 0, tilesFound: tiles.length, progress: null };
+  var progressVals = [];
   var limit = tiles.slice(0, n);
   for (var z = 0; z < limit.length; z++) {
     var tile = limit[z];
     var tileText = tile.textContent || '';
     var video = tile.querySelector('video');
+    // Generating signals (Queued / a percentage / the Thai label) are checked
+    // FIRST: a still-generating tile keeps a hidden "Failed" overlay in its DOM,
+    // so checking failed first would wrongly count an in-progress tile as failed.
+    var pm = tileText.match(/(\\d{1,3})\\s?%/);
+    var generating = /\\bQueued\\b/i.test(tileText) || tileText.indexOf('กำลังสร้าง') !== -1 || !!pm;
+    if (generating) {
+      if (pm) progressVals.push(parseInt(pm[1], 10));
+      result.generatingCount++;
+      continue;
+    }
     // Failed text is glued into the tile's textContent (e.g. "warningFailedOops..."),
     // so a word-boundary regex misses it — use a plain lowercase substring match.
     var isFailed = tileText.toLowerCase().indexOf('failed') !== -1 || tileText.indexOf('สร้างไม่สำเร็จ') !== -1;
     if (isFailed) { result.failedCount++; continue; }
-    // Still working: the tile is Queued, shows a percentage, or the Thai label.
-    // (Queued tiles have no video URL yet — they must NOT be treated as failed.)
-    var generating = /\\bQueued\\b/i.test(tileText) || tileText.indexOf('กำลังสร้าง') !== -1 || /\\d{1,3}\\s?%/.test(tileText);
-    if (generating) { result.generatingCount++; continue; }
     var url = video ? getVideoUrl(video) : '';
     // A tile with a resolved video URL that is neither generating nor failed is done.
     if (url) {
@@ -71,6 +78,23 @@ export const VIDEO_RESULTS_BODY = `
     // Anything else (tile still rendering, no clear state) — treat as still working
     // so the poller waits instead of declaring failure prematurely.
     result.generatingCount++;
+  }
+  // Progress %: page-wide scan for an element whose text is exactly "NN%"
+  // (desktop Strategy 1) — more robust than tile-text matching because the
+  // percentage badge may sit just outside the inspected tiles.
+  var pdivs = document.querySelectorAll('div, span');
+  for (var d = 0; d < pdivs.length; d++) {
+    var dt = (pdivs[d].textContent || '').trim();
+    if (/^\\d{1,3}\\s?%$/.test(dt)) {
+      var r2 = pdivs[d].getBoundingClientRect();
+      if (r2.width > 0 && r2.height > 0) progressVals.push(parseInt(dt, 10));
+    }
+  }
+  // Lowest percentage (the slowest output) — matches desktop minProgress.
+  if (progressVals.length > 0) {
+    var minP = progressVals[0];
+    for (var pIdx = 1; pIdx < progressVals.length; pIdx++) { if (progressVals[pIdx] < minP) minP = progressVals[pIdx]; }
+    result.progress = minP;
   }
   return result;
 `;
