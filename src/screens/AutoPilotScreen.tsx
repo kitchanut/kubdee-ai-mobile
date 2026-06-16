@@ -187,8 +187,9 @@ export default function AutoPilotScreen({
     selectedProfileId.length > 0 &&
     controller.selectedProducts.length > 0 &&
     controller.enabledSteps.length > 0;
+  const canDebugOpenProject = controller.runState.status !== 'running' && selectedProfileId.length > 0;
   const startButtonBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 8;
-  const startButtonScrollPadding = 50 + 12 + startButtonBottomPadding + 34;
+  const startButtonScrollPadding = 50 + 10 + 40 + 12 + startButtonBottomPadding + 34;
 
   const openProductSettings = (productId: string): void => {
     setEditingProductId(productId);
@@ -449,6 +450,21 @@ export default function AutoPilotScreen({
         className="absolute bottom-0 left-0 right-0 bg-kd-panel px-4 pt-3"
         style={{ paddingBottom: startButtonBottomPadding }}
       >
+        <Button
+          accessibilityRole="button"
+          disabled={!canDebugOpenProject}
+          onPress={() => {
+            void controller.startOpenProjectDebugRun();
+          }}
+          className={`mb-2 h-10 flex-row items-center justify-center gap-2 rounded-kd-lg border ${
+            canDebugOpenProject ? 'border-kd-border bg-kd-card' : 'border-kd-border bg-kd-border'
+          }`}
+        >
+          <Bot size={14} color={canDebugOpenProject ? theme.text : theme.textSubtle} strokeWidth={2.1} />
+          <Text className={`text-[12px] font-semibold ${canDebugOpenProject ? 'text-kd-text' : 'text-kd-text-subtle'}`}>
+            ทดสอบเปิด Flow + New project
+          </Text>
+        </Button>
         <Button
           accessibilityRole="button"
           disabled={!canStart && controller.runState.status !== 'running'}

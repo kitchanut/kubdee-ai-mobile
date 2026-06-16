@@ -9,6 +9,7 @@ export type AutoPilotStepType = (typeof AUTO_PILOT_STEP_TYPES)[keyof typeof AUTO
 
 export type AutoPilotDelayPreset = 'slow' | 'normal' | 'fast';
 export type AutoPilotBrowserMode = 'chrome' | 'default';
+export type AutoPilotDebugMode = 'none' | 'open_project_only';
 export type AutoPilotRunStatus = 'idle' | 'running' | 'completed' | 'stopped' | 'error';
 export type AutoPilotLogLevel = 'info' | 'success' | 'warning' | 'error' | 'action';
 
@@ -76,6 +77,7 @@ export interface AutoPilotSettings {
   aiGenerateCta: boolean;
   aiRewritePromptOnAudioFailure: boolean;
   aiHashtagCount: number;
+  debugMode: AutoPilotDebugMode;
 }
 
 export interface AutoPilotProduct {

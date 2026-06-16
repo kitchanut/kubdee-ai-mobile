@@ -9,6 +9,7 @@ import {
 } from '@/autopilot/googleFlowRunnerBridge';
 import { getAutoPilotProductId, toAutoPilotProduct } from '@/autopilot/productAdapter';
 import type {
+  AutoPilotDebugMode,
   AutoPilotImageSettings,
   AutoPilotLogLevel,
   AutoPilotProduct,
@@ -27,6 +28,9 @@ import {
 } from '@/native/AccessibilityBridge';
 
 type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
+type StartRunOptions = {
+  debugMode?: AutoPilotDebugMode;
+};
 
 const initialRunState: AutoPilotRunState = {
   runId: null,
@@ -559,18 +563,21 @@ export function useAutoPilotController({
     });
   }, []);
 
-  const startRun = useCallback(async (): Promise<void> => {
+  const startRun = useCallback(async (options?: StartRunOptions): Promise<void> => {
+    const debugMode = options?.debugMode ?? 'none';
+    const isOpenProjectDebug = debugMode === 'open_project_only';
+
     if (!profileLocalId) {
       appendLog('error', 'ยังไม่ได้เลือกโปรไฟล์');
       return;
     }
 
-    if (enabledSteps.length === 0) {
+    if (!isOpenProjectDebug && enabledSteps.length === 0) {
       appendLog('error', 'ยังไม่ได้เลือกขั้นตอน');
       return;
     }
 
-    if (selectedProducts.length === 0) {
+    if (!isOpenProjectDebug && selectedProducts.length === 0) {
       appendLog('error', 'ยังไม่ได้เลือกสินค้า');
       return;
     }
@@ -582,19 +589,27 @@ export function useAutoPilotController({
       return;
     }
 
-    const mediaPermissionGranted = await requestGoogleFlowMediaPermissions();
-    if (!mediaPermissionGranted) {
-      appendLog('warning', 'ยังไม่ได้สิทธิ์อ่านรูป/วิดีโอ อาจแนบรูปหรือบันทึกไฟล์จาก Google Flow ไม่ครบ');
+    if (!isOpenProjectDebug) {
+      const mediaPermissionGranted = await requestGoogleFlowMediaPermissions();
+      if (!mediaPermissionGranted) {
+        appendLog('warning', 'ยังไม่ได้สิทธิ์อ่านรูป/วิดีโอ อาจแนบรูปหรือบันทึกไฟล์จาก Google Flow ไม่ครบ');
+      }
     }
 
     const runId = createRunId();
     runIdRef.current = runId;
+    const runProducts = isOpenProjectDebug ? [] : selectedProducts;
+    const runEnabledSteps = isOpenProjectDebug ? [] : enabledSteps;
+    const runSettings: AutoPilotSettings = {
+      ...settings,
+      debugMode,
+    };
     const payload = createGoogleFlowRunnerPayload({
-      enabledSteps,
-      products: selectedProducts,
+      enabledSteps: runEnabledSteps,
+      products: runProducts,
       profileLocalId,
       runId,
-      settings,
+      settings: runSettings,
     });
 
     setRunState({
@@ -602,13 +617,18 @@ export function useAutoPilotController({
       status: 'running',
       progress: {
         ...initialRunState.progress,
-        totalRounds: settings.totalRounds,
-        totalProducts: selectedProducts.length,
+        totalRounds: isOpenProjectDebug ? 1 : runSettings.totalRounds,
+        totalProducts: runProducts.length,
       },
       logs: [],
     });
 
-    appendLog('action', `ส่งงานไป Google Flow บนมือถือ: ${selectedProducts.length} สินค้า`);
+    appendLog(
+      'action',
+      isOpenProjectDebug
+        ? 'ทดสอบเปิด Google Flow และกด New project'
+        : `ส่งงานไป Google Flow บนมือถือ: ${runProducts.length} สินค้า`
+    );
     const result = await startGoogleFlowRunner(payload);
 
     if (!result.success) {
@@ -619,6 +639,11 @@ export function useAutoPilotController({
 
     appendLog('success', result.message || 'Google Flow runner บนมือถือรับงานแล้ว');
   }, [appendLog, enabledSteps, profileLocalId, selectedProducts, settings]);
+
+  const startOpenProjectDebugRun = useCallback(
+    (): Promise<void> => startRun({ debugMode: 'open_project_only' }),
+    [startRun]
+  );
 
   const stopRun = useCallback(async (): Promise<void> => {
     const runId = runState.runId;
@@ -653,6 +678,7 @@ export function useAutoPilotController({
     selectAllVisibleProducts,
     setSelectedProductsFromCatalog,
     settings,
+    startOpenProjectDebugRun,
     startRun,
     stopRun,
     toggleProduct,
