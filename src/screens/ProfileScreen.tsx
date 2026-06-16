@@ -373,7 +373,57 @@ export default function ProfileScreen({
       }
       const cleared = sb.result?.clearedPrompt ? ', prompt เคลียร์' : '';
       appendFlowLog(`✅ submit แล้ว (${String(sb.result?.method ?? '')}${cleared})`);
-      appendFlowLog('🎉 สำเร็จ — กำลังสร้างวิดีโอใน Flow');
+
+      appendFlowLog('▶️ รอผลวิดีโอ (สูงสุด 5 นาที)…');
+      const startedAt = Date.now();
+      let resultUrl: string | null = null;
+      let allFailed = false;
+      // Google Flow shows tiles as Queued before a percentage appears; a Queued
+      // tile is "still working", not failed. Only conclude failure once no tile
+      // is generating/queued across several consecutive polls (~12s), mirroring
+      // the desktop FAILED_CONFIRMATION window.
+      let failConfirm = 0;
+      while (Date.now() - startedAt < 300000) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const vr = await flowRef.current?.runAction('videoResults', { count: 4 }, 20000);
+        const vrr = vr?.result as
+          | {
+              videos?: string[];
+              successCount?: number;
+              failedCount?: number;
+              generatingCount?: number;
+              tilesFound?: number;
+            }
+          | undefined;
+        if (!vr?.ok || !vrr) continue;
+        const generating = vrr.generatingCount ?? 0;
+        const failed = vrr.failedCount ?? 0;
+        appendFlowLog(
+          `… tiles ${vrr.tilesFound ?? 0} · gen ${generating} · ok ${vrr.successCount ?? 0} · fail ${failed}`
+        );
+        if ((vrr.videos?.length ?? 0) > 0) {
+          resultUrl = vrr.videos![0];
+          break;
+        }
+        if (generating > 0 || (vrr.tilesFound ?? 0) === 0) {
+          failConfirm = 0; // still queued / generating, or tiles not shown yet
+          continue;
+        }
+        if (failed > 0) {
+          failConfirm += 1;
+          if (failConfirm >= 3) {
+            allFailed = true;
+            break;
+          }
+        }
+      }
+      if (resultUrl) {
+        appendFlowLog(`🎬 วิดีโอเสร็จ! ${resultUrl.slice(0, 48)}…`);
+      } else if (allFailed) {
+        appendFlowLog('❌ การสร้างล้มเหลว (Failed)');
+      } else {
+        appendFlowLog('⏱️ หมดเวลารอ (ยังสร้างไม่เสร็จ)');
+      }
     } catch (error) {
       appendFlowLog(`❌ error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -1072,15 +1122,6 @@ export default function ProfileScreen({
             <Text className="mb-1 text-kd-micro font-semibold text-kd-text-subtle">
               ทดสอบ automation (New project → prompt → submit)
             </Text>
-            {flowLogs.length > 0 ? (
-              <ScrollView className="mb-2 max-h-24 rounded-kd-lg bg-kd-card-muted px-2 py-1">
-                {flowLogs.map((line, idx) => (
-                  <Text key={idx} className="text-kd-micro leading-5 text-kd-text-subtle">
-                    {line}
-                  </Text>
-                ))}
-              </ScrollView>
-            ) : null}
             <View className="flex-row items-end gap-2">
               <TextInput
                 value={flowPrompt}
@@ -1097,7 +1138,7 @@ export default function ProfileScreen({
                 activeOpacity={0.8}
                 disabled={flowRunning}
                 onPress={() => void runFlowTest()}
-                className={`h-10 min-w-[72px] flex-row items-center justify-center gap-1.5 rounded-kd-lg px-3 ${
+                className={`h-10 min-w-[64px] flex-row items-center justify-center gap-1.5 rounded-kd-lg px-3 ${
                   flowRunning ? 'bg-kd-border' : 'bg-kd-orange'
                 }`}
               >
@@ -1108,6 +1149,15 @@ export default function ProfileScreen({
                 )}
               </TouchableOpacity>
             </View>
+            {flowLogs.length > 0 ? (
+              <ScrollView className="mt-2 max-h-40 rounded-kd-lg bg-kd-card-muted px-2 py-1">
+                {flowLogs.map((line, idx) => (
+                  <Text key={idx} className="text-kd-micro leading-5 text-kd-text-subtle">
+                    {line}
+                  </Text>
+                ))}
+              </ScrollView>
+            ) : null}
           </View>
         </SafeAreaView>
       </Modal>
