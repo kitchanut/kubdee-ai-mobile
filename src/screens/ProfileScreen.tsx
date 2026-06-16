@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -36,7 +36,11 @@ import { BACKEND_URL } from '@/auth/constants';
 import { formatExpiryLabel, formatPlanLabel } from '@/auth/plan';
 import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import Text from '@/components/ui/KubdeeText';
-import FlowWebView, { type FlowAccount, type FlowConnectionState } from '@/flow/FlowWebView';
+import FlowWebView, {
+  type FlowAccount,
+  type FlowConnectionState,
+  type FlowWebViewHandle,
+} from '@/flow/FlowWebView';
 import {
   loadFlowAccount,
   loadFlowConnectionState,
@@ -292,6 +296,13 @@ export default function ProfileScreen({
     });
   }, []);
 
+  const flowRef = useRef<FlowWebViewHandle>(null);
+  const [flowPrompt, setFlowPrompt] = useState(
+    'a cinematic shot of a fluffy cat walking on a beach at sunset, slow motion'
+  );
+  const [flowLogs, setFlowLogs] = useState<string[]>([]);
+  const [flowRunning, setFlowRunning] = useState(false);
+
   const flowConnected = flowState === 'connected';
   const handleFlowStatus = (state: FlowConnectionState): void => {
     setFlowState(state);
@@ -307,6 +318,53 @@ export default function ProfileScreen({
       void saveFlowAccount(merged);
       return merged;
     });
+  };
+
+  const appendFlowLog = (message: string): void => {
+    setFlowLogs((prev) => [...prev.slice(-24), message]);
+  };
+
+  // Slice 1 test: New project -> fill prompt -> submit, driven through the WebView.
+  const runFlowTest = async (): Promise<void> => {
+    if (flowRunning) return;
+    const prompt = flowPrompt.trim();
+    if (!prompt) {
+      appendFlowLog('⚠️ ใส่ prompt ก่อน');
+      return;
+    }
+    setFlowRunning(true);
+    setFlowLogs([]);
+    try {
+      appendFlowLog('▶️ New project…');
+      const np = await flowRef.current?.runAction('newProject', {}, 25000);
+      if (!np?.ok) {
+        appendFlowLog(`❌ New project: ${np?.error ?? 'no handle'}`);
+        return;
+      }
+      appendFlowLog(np.result?.already ? '✅ อยู่ในโปรเจกต์อยู่แล้ว' : '✅ เข้าโปรเจกต์แล้ว');
+
+      appendFlowLog('▶️ กรอก prompt…');
+      const fp = await flowRef.current?.runAction('fillPrompt', { prompt }, 30000);
+      if (!fp?.ok) {
+        appendFlowLog(`❌ fillPrompt: ${fp?.error ?? 'no handle'}`);
+        return;
+      }
+      appendFlowLog(`✅ กรอก prompt แล้ว (${String(fp.result?.type ?? '')})`);
+
+      appendFlowLog('▶️ กด submit…');
+      const sb = await flowRef.current?.runAction('submit', {}, 45000);
+      if (!sb?.ok) {
+        appendFlowLog(`❌ submit: ${sb?.error ?? 'no handle'}`);
+        return;
+      }
+      const cleared = sb.result?.clearedPrompt ? ', prompt เคลียร์' : '';
+      appendFlowLog(`✅ submit แล้ว (${String(sb.result?.method ?? '')}${cleared})`);
+      appendFlowLog('🎉 สำเร็จ — กำลังสร้างวิดีโอใน Flow');
+    } catch (error) {
+      appendFlowLog(`❌ error: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setFlowRunning(false);
+    }
   };
 
   const displayName = user?.name || user?.email || 'Kubdee AI User';
@@ -987,12 +1045,56 @@ export default function ProfileScreen({
               <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
             </TouchableOpacity>
           </View>
-          <FlowWebView
-            key={flowReloadKey}
-            backgroundColor={theme.screen}
-            onStatusChange={handleFlowStatus}
-            onAccount={handleFlowAccount}
-          />
+          <View className="flex-1">
+            <FlowWebView
+              key={flowReloadKey}
+              ref={flowRef}
+              backgroundColor={theme.screen}
+              onStatusChange={handleFlowStatus}
+              onAccount={handleFlowAccount}
+            />
+          </View>
+          <View className="border-t border-kd-border bg-kd-panel px-3 py-2">
+            <Text className="mb-1 text-kd-micro font-semibold text-kd-text-subtle">
+              ทดสอบ automation (New project → prompt → submit)
+            </Text>
+            {flowLogs.length > 0 ? (
+              <ScrollView className="mb-2 max-h-24 rounded-kd-lg bg-kd-card-muted px-2 py-1">
+                {flowLogs.map((line, idx) => (
+                  <Text key={idx} className="text-kd-micro leading-5 text-kd-text-subtle">
+                    {line}
+                  </Text>
+                ))}
+              </ScrollView>
+            ) : null}
+            <View className="flex-row items-end gap-2">
+              <TextInput
+                value={flowPrompt}
+                onChangeText={setFlowPrompt}
+                placeholder="prompt สำหรับทดสอบ"
+                placeholderTextColor={theme.textMuted}
+                multiline
+                editable={!flowRunning}
+                className="max-h-20 min-h-[40px] flex-1 rounded-kd-lg border border-kd-border bg-kd-card px-3 py-2 text-kd-body text-kd-text"
+              />
+              <TouchableOpacity
+                accessibilityLabel="รันทดสอบ automation"
+                accessibilityRole="button"
+                activeOpacity={0.8}
+                disabled={flowRunning}
+                onPress={() => void runFlowTest()}
+                className={`h-10 min-w-[72px] flex-row items-center justify-center gap-1.5 rounded-kd-lg px-3 ${
+                  flowRunning ? 'bg-kd-border' : 'bg-kd-orange'
+                }`}
+              >
+                {flowRunning ? (
+                  <ActivityIndicator size="small" color={theme.textMuted} />
+                ) : (
+                  <Text className="text-kd-body font-semibold text-white">รัน</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
         </SafeAreaView>
       </Modal>
     </>

@@ -1,7 +1,10 @@
-import { forwardRef } from 'react';
+import { forwardRef, useImperativeHandle, useRef } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
+
+import { buildActionScript } from '@kubdee/flow-core';
+import type { FlowActionName, FlowActionResult } from '@kubdee/flow-core';
 
 export type FlowConnectionState = 'unknown' | 'signin' | 'loggedout' | 'connected';
 
@@ -164,17 +167,57 @@ interface FlowWebViewProps {
 }
 
 /**
+ * Imperative API exposed via ref — lets a parent drive Google Flow by injecting
+ * the shared page actions and awaiting their postMessage result.
+ */
+export interface FlowWebViewHandle {
+  runAction: (
+    action: FlowActionName,
+    args?: Record<string, unknown>,
+    timeoutMs?: number
+  ) => Promise<FlowActionResult>;
+  reload: () => void;
+}
+
+/**
  * Shared Google Flow WebView. Persists its Google session via the app-wide
  * Android CookieManager (shared cookies) so logging in once is enough — both
  * this connection screen and the automation runner reuse the same session.
  */
-const FlowWebView = forwardRef<WebView, FlowWebViewProps>(function FlowWebView(
+const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function FlowWebView(
   { onStatusChange, onAccount, onNavigationChange, style, backgroundColor = '#000000' },
   ref
 ) {
+  const innerRef = useRef<WebView>(null);
+  const pendingRef = useRef<
+    Map<string, { resolve: (r: FlowActionResult) => void; timer: ReturnType<typeof setTimeout> }>
+  >(new Map());
+  const idRef = useRef(0);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      runAction(action, args = {}, timeoutMs = 30000) {
+        return new Promise<FlowActionResult>((resolve) => {
+          const id = `act_${(idRef.current += 1)}`;
+          const timer = setTimeout(() => {
+            pendingRef.current.delete(id);
+            resolve({ ok: false, error: `timeout (${timeoutMs}ms): ${action}` });
+          }, timeoutMs);
+          pendingRef.current.set(id, { resolve, timer });
+          innerRef.current?.injectJavaScript(buildActionScript(id, action, args));
+        });
+      },
+      reload() {
+        innerRef.current?.reload();
+      },
+    }),
+    []
+  );
+
   return (
     <WebView
-      ref={ref}
+      ref={innerRef}
       source={{ uri: FLOW_URL }}
       userAgent={CHROME_MOBILE_UA}
       javaScriptEnabled
@@ -193,7 +236,20 @@ const FlowWebView = forwardRef<WebView, FlowWebViewProps>(function FlowWebView(
             state?: FlowConnectionState;
             href?: string;
             account?: FlowAccount | null;
+            id?: string;
+            ok?: boolean;
+            result?: Record<string, unknown>;
+            error?: string;
           };
+          if (data?.type === 'flowResult' && data.id) {
+            const entry = pendingRef.current.get(data.id);
+            if (entry) {
+              clearTimeout(entry.timer);
+              pendingRef.current.delete(data.id);
+              entry.resolve({ ok: !!data.ok, result: data.result, error: data.error });
+            }
+            return;
+          }
           if (data?.type === 'flowStatus' && data.state) {
             onStatusChange?.(data.state, data.href ?? '');
             if (data.account && (data.account.email || data.account.photo || data.account.name)) {

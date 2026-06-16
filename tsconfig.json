@@ -6,7 +6,9 @@
     "jsxImportSource": "nativewind",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@kubdee/flow-core": ["src/flow-core"],
+      "@kubdee/flow-core/*": ["src/flow-core/*"]
     }
   }
 }
