@@ -16,9 +16,10 @@
  * so it lifts cleanly into a standalone `@kubdee/flow-core` package later.
  */
 
+import { CONFIGURE_POPPER_BODY } from './configurePopperBody';
 import { FLOW_SELECTORS } from './selectors';
 
-export type FlowActionName = 'newProject' | 'fillPrompt' | 'submit';
+export type FlowActionName = 'newProject' | 'configurePopper' | 'fillPrompt' | 'submit';
 
 export interface FlowActionResult {
   ok: boolean;
@@ -233,6 +234,7 @@ const SUBMIT_BODY = `
 
 const ACTION_BODIES: Record<FlowActionName, string> = {
   newProject: NEW_PROJECT_BODY,
+  configurePopper: CONFIGURE_POPPER_BODY,
   fillPrompt: FILL_PROMPT_BODY,
   submit: SUBMIT_BODY,
 };

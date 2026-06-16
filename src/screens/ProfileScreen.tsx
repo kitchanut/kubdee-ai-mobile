@@ -343,6 +343,20 @@ export default function ProfileScreen({
       }
       appendFlowLog(np.result?.already ? '✅ อยู่ในโปรเจกต์อยู่แล้ว' : '✅ เข้าโปรเจกต์แล้ว');
 
+      const videoModel = 'veo_31_fast';
+      appendFlowLog(`▶️ ตั้งค่าโหมดวิดีโอ (${videoModel})…`);
+      const cfg = await flowRef.current?.runAction(
+        'configurePopper',
+        { targetMode: 'video', videoModel },
+        60000
+      );
+      const cfgRes = cfg?.result as { success?: boolean; error?: string } | undefined;
+      if (cfg?.ok && cfgRes?.success) {
+        appendFlowLog('✅ ตั้งค่าโหมดวิดีโอ + model แล้ว');
+      } else {
+        appendFlowLog(`⚠️ configurePopper: ${cfgRes?.error ?? cfg?.error ?? 'ไม่สำเร็จ'} — ทำต่อ`);
+      }
+
       appendFlowLog('▶️ กรอก prompt…');
       const fp = await flowRef.current?.runAction('fillPrompt', { prompt }, 30000);
       if (!fp?.ok) {
