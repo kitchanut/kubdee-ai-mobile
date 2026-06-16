@@ -20,6 +20,7 @@ import {
   Globe2,
   LogOut,
   Plus,
+  RefreshCw,
   RotateCcw,
   Trash2,
   User,
@@ -27,12 +28,21 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/AuthContext';
+import { GoogleLogo } from '@/components/BrandLogos';
 import { BACKEND_URL } from '@/auth/constants';
 import { formatExpiryLabel, formatPlanLabel } from '@/auth/plan';
 import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import Text from '@/components/ui/KubdeeText';
+import FlowWebView, { type FlowAccount, type FlowConnectionState } from '@/flow/FlowWebView';
+import {
+  loadFlowAccount,
+  loadFlowConnectionState,
+  saveFlowAccount,
+  saveFlowConnectionState,
+} from '@/flow/flowConnection';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 
@@ -264,6 +274,40 @@ export default function ProfileScreen({
   const [profileName, setProfileName] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<string>(GROUP_NONE);
   const [newGroupName, setNewGroupName] = useState('');
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [flowState, setFlowState] = useState<FlowConnectionState | null>(null);
+  const [flowAccount, setFlowAccount] = useState<FlowAccount | null>(null);
+  const [flowReloadKey, setFlowReloadKey] = useState(0);
+
+  useEffect(() => {
+    void loadFlowConnectionState().then((stored) => {
+      if (stored) {
+        setFlowState(stored);
+      }
+    });
+    void loadFlowAccount().then((account) => {
+      if (account) {
+        setFlowAccount(account);
+      }
+    });
+  }, []);
+
+  const flowConnected = flowState === 'connected';
+  const handleFlowStatus = (state: FlowConnectionState): void => {
+    setFlowState(state);
+    void saveFlowConnectionState(state);
+  };
+  const handleFlowAccount = (account: FlowAccount): void => {
+    setFlowAccount((prev) => {
+      const merged: FlowAccount = {
+        email: account.email || prev?.email,
+        name: account.name || prev?.name,
+        photo: account.photo || prev?.photo,
+      };
+      void saveFlowAccount(merged);
+      return merged;
+    });
+  };
 
   const displayName = user?.name || user?.email || 'Kubdee AI User';
   const planLabel = formatPlanLabel(user?.plan);
@@ -406,9 +450,89 @@ export default function ProfileScreen({
     );
   };
 
+  // Google Flow connection block. Shown at the TOP when not connected yet (to prompt the user to
+  // log in), or tucked back down near the account section once connected.
+  const flowSection = (
+    <View className="gap-3">
+      {/* Header only once connected (when it sits down near the account section). */}
+      {flowConnected ? (
+        <View className="mt-1 flex-row items-center justify-between gap-2">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
+            <GoogleLogo size={14} />
+            <Text className="shrink text-kd-caption font-semibold text-kd-text-muted">Google Flow</Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View
+        className={`gap-2 rounded-kd-xl border p-2 ${
+          flowConnected ? 'border-kd-border bg-kd-panel' : 'border-kd-orange bg-kd-orange-soft'
+        }`}
+      >
+        <View className="flex-row items-center gap-2">
+          {flowConnected && flowAccount?.photo ? (
+            <Image source={{ uri: flowAccount.photo }} className="h-[38px] w-[38px] rounded-kd-xl" />
+          ) : (
+            <View className="h-[38px] w-[38px] items-center justify-center rounded-kd-xl bg-white dark:bg-kd-card-muted">
+              <GoogleLogo size={20} />
+            </View>
+          )}
+          <View className="min-w-0 flex-1">
+            <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+              {flowConnected && flowAccount?.name ? flowAccount.name : 'เชื่อมต่อ Google Flow'}
+            </Text>
+            <Text numberOfLines={1} className="mt-px text-kd-micro font-medium text-kd-text-subtle">
+              {flowConnected
+                ? flowAccount?.email || 'login ครั้งเดียว ใช้สร้างวิดีโออัตโนมัติบนเครื่องนี้'
+                : 'ยังไม่เชื่อม — เข้าสู่ระบบ Google ก่อนเริ่มใช้งาน'}
+            </Text>
+          </View>
+          <View
+            className={`shrink-0 rounded-kd-md border px-2 py-1 ${
+              flowConnected
+                ? 'border-kd-emerald/40 bg-kd-emerald/10 dark:bg-kd-emerald/15'
+                : 'border-kd-orange bg-white dark:bg-kd-card-muted'
+            }`}
+          >
+            <Text
+              className={`text-kd-tiny font-semibold ${
+                flowConnected ? 'text-kd-emerald' : 'text-kd-orange'
+              }`}
+            >
+              {flowConnected ? 'เชื่อมต่อแล้ว' : 'ยังไม่เชื่อมต่อ'}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.82}
+          onPress={() => {
+            setFlowReloadKey((key) => key + 1);
+            setFlowOpen(true);
+          }}
+          className={`h-[34px] flex-row items-center justify-center gap-1.5 rounded-kd-lg border ${
+            flowConnected ? 'border-kd-border bg-kd-panel' : 'border-transparent bg-kd-orange'
+          }`}
+        >
+          <Text
+            className={`text-kd-caption font-semibold ${
+              flowConnected ? 'text-kd-text-muted' : 'text-white'
+            }`}
+          >
+            {flowConnected ? 'จัดการการเชื่อมต่อ' : 'เชื่อมต่อ / เข้าสู่ระบบ Google Flow'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   return (
     <>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
+        {/* Google Flow — show on top until connected, then it moves down near the account section */}
+        {flowConnected ? null : flowSection}
+
         {/* Extension: โปรไฟล์ header — Users icon + sync button + เพิ่ม */}
         <View className="flex-row items-center justify-between gap-2">
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
@@ -651,6 +775,9 @@ export default function ProfileScreen({
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Google Flow — once connected it lives down here near the account section */}
+        {flowConnected ? flowSection : null}
       </ScrollView>
 
       {/* Extension: create profile modal overlay */}
@@ -822,6 +949,51 @@ export default function ProfileScreen({
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Google Flow connection (WebView login) modal */}
+      <Modal animationType="slide" visible={flowOpen} onRequestClose={() => setFlowOpen(false)}>
+        <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-kd-screen">
+          <View className="flex-row items-center gap-2 border-b border-kd-border bg-kd-panel px-3 py-2">
+            <GoogleLogo size={16} />
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                Google Flow
+              </Text>
+              <Text numberOfLines={1} className="text-kd-micro font-medium text-kd-text-subtle">
+                {flowState === 'connected'
+                  ? 'เชื่อมต่อแล้ว — login ครั้งเดียวใช้ได้ตลอด'
+                  : flowState === 'signin'
+                    ? 'กำลังเข้าสู่ระบบ Google…'
+                    : 'เข้าสู่ระบบ Google เพื่อเชื่อมต่อ'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              accessibilityLabel="โหลดใหม่"
+              accessibilityRole="button"
+              activeOpacity={0.7}
+              onPress={() => setFlowReloadKey((key) => key + 1)}
+              className="h-8 w-8 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel"
+            >
+              <RefreshCw size={15} color={theme.textMuted} strokeWidth={2.2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityLabel="ปิด"
+              accessibilityRole="button"
+              activeOpacity={0.7}
+              onPress={() => setFlowOpen(false)}
+              className="h-8 w-8 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel"
+            >
+              <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+            </TouchableOpacity>
+          </View>
+          <FlowWebView
+            key={flowReloadKey}
+            backgroundColor={theme.screen}
+            onStatusChange={handleFlowStatus}
+            onAccount={handleFlowAccount}
+          />
+        </SafeAreaView>
       </Modal>
     </>
   );
