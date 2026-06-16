@@ -3,6 +3,7 @@ package __PACKAGE_NAME__.automation
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -240,11 +241,20 @@ class KubdeeAccessibilityModule(
       return
     }
 
+    // Open Chrome on the Google Flow URL from the foreground app process FIRST. A foreground
+    // app may bring an activity to the front; the background :automation service may not — its
+    // launch resolves to Chrome's translucent trampoline, which closes instantly and bounces
+    // back to the launcher in an endless loop. Launching here guarantees Chrome is in the
+    // foreground before the runner (service) starts driving it.
+    openGoogleFlowInChrome()
+
     sendAutomationCommand(KubdeeAutomationCommandReceiver.ACTION_START_GOOGLE_FLOW) {
       putExtra(KubdeeAutomationCommandReceiver.EXTRA_PAYLOAD_JSON, payloadJson)
     }
     promise.resolve(true)
-    moveAppTaskToBack()
+    // NOTE: do NOT call moveAppTaskToBack() here. Launching Chrome above already backgrounds this
+    // app; an extra moveTaskToBack (which runs late on the UI queue) was observed to drop the
+    // freshly opened Chrome window back to the previous task a few seconds later.
   }
 
   @ReactMethod
@@ -305,8 +315,41 @@ class KubdeeAccessibilityModule(
     }
   }
 
+  private fun openGoogleFlowInChrome() {
+    reactContext.runOnUiQueueThread {
+      val uri = Uri.parse(GOOGLE_FLOW_URL)
+      val launcher = reactContext.currentActivity ?: reactContext
+      // Try Chrome explicitly. Don't gate on resolveActivity(): under Android package-visibility
+      // it can return null even when Chrome is installed, which would silently fall back to the
+      // default browser (e.g. Samsung Internet). Just attempt the launch and catch failures.
+      try {
+        launcher.startActivity(
+          Intent(Intent.ACTION_VIEW, uri).apply {
+            setPackage(GOOGLE_FLOW_CHROME_PACKAGE)
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+        )
+        return@runOnUiQueueThread
+      } catch (_: Exception) {
+      }
+      // Fallback: let the system's default browser open it.
+      try {
+        launcher.startActivity(
+          Intent(Intent.ACTION_VIEW, uri).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+        )
+      } catch (_: Exception) {
+      }
+    }
+  }
+
   companion object {
     const val TARGET_PACKAGE_SHOPEE = "__TARGET_PACKAGE__"
+    private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
+    private const val GOOGLE_FLOW_CHROME_PACKAGE = "com.android.chrome"
 
     @Volatile
     private var eventContext: ReactApplicationContext? = null

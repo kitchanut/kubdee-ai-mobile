@@ -577,26 +577,31 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun launchUrl(url: String, preferredPackage: String? = null): Boolean {
     val uri = Uri.parse(url)
-    val intents = mutableListOf<Intent>()
-    if (preferredPackage == TARGET_PACKAGE_CHROME) {
-      intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
-        setClassName(TARGET_PACKAGE_CHROME, "com.google.android.apps.chrome.Main")
+    // When a specific browser is requested (Chrome) ALWAYS target it explicitly and NEVER fall
+    // back to the system default browser. On this device the default is Samsung Internet, and the
+    // old fallback made the background service open the WRONG browser, which then fought the
+    // Chrome window and bounced the foreground back and forth. Do NOT gate on
+    // getLaunchIntentForPackage(): in the :automation process it can return null even though
+    // Chrome is installed and reachable via an explicit ACTION_VIEW intent. Also do NOT target
+    // com.google.android.apps.chrome.Main: that alias is a translucent trampoline that closes
+    // immediately when started from the background.
+    if (!preferredPackage.isNullOrBlank()) {
+      return startActivityOnMainThread(
+        Intent(Intent.ACTION_VIEW, uri).apply {
+          setPackage(preferredPackage)
+          addCategory(Intent.CATEGORY_BROWSABLE)
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+      )
+    }
+    return startActivityOnMainThread(
+      Intent(Intent.ACTION_VIEW, uri).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      })
-    }
-    intents.add(Intent(Intent.ACTION_VIEW, uri).apply {
-      addCategory(Intent.CATEGORY_BROWSABLE)
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      if (!preferredPackage.isNullOrBlank() && packageManager.getLaunchIntentForPackage(preferredPackage) != null) {
-        setPackage(preferredPackage)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
       }
-    })
-    for (intent in intents) {
-      if (startActivityOnMainThread(intent)) {
-        return true
-      }
-    }
-    return false
+    )
   }
 
   private fun startActivityOnMainThread(intent: Intent): Boolean {
@@ -626,35 +631,31 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun openGoogleFlowInBrowser(browserMode: String): Boolean {
     val preferredPackage = if (browserMode == "chrome") TARGET_PACKAGE_CHROME else null
-    if (preferredPackage != null && isChromeActiveWindow()) {
-      dismissChromeTransientUiForNavigation()
-      if (isGoogleFlowProjectEditorVisible()) {
-        rememberCurrentGoogleFlowProjectUrl()
-        return true
-      }
-      val currentAddress = currentChromeAddressText()
-      if (isGoogleFlowAddress(currentAddress)) {
-        return true
-      }
-      if (currentAddress.isNotBlank()) {
-        logGoogleFlowStep("Chrome อยู่หน้าอื่น (${currentAddress.take(32)}) จะใช้แท็บเดิมเปิด Flow")
-      }
-      if (navigateChromeAddressBarTo(GOOGLE_FLOW_URL)) {
-        return true
-      }
-    }
-
-    val launched = launchUrl(GOOGLE_FLOW_URL, preferredPackage = preferredPackage)
-
-    if (!waitForChromeActiveWindow(8_000L)) {
-      if (preferredPackage != null) {
-        launchUrl(GOOGLE_FLOW_URL, preferredPackage = preferredPackage)
-      }
-      if (!waitForChromeActiveWindow(5_000L)) {
+    if (preferredPackage != null) {
+      // Chrome is opened by the foreground app (KubdeeAccessibilityModule.openGoogleFlowInChrome).
+      // This background service must NOT launch the browser itself: a background launch creates a
+      // brand-new Chrome task that never settles, so the accessibility window can't be detected as
+      // active and we relaunch again — a self-sustaining churn loop that bounces the foreground.
+      // Just wait for the Chrome window that the foreground app opened.
+      if (!isChromeActiveWindow() && !waitForChromeActiveWindow(20_000L)) {
+        logGoogleFlowStep("ยังไม่เห็นหน้าต่าง Chrome หลังเปิดจากแอป")
         return false
       }
+      // Chrome was opened on the Flow URL by the foreground app (openGoogleFlowInChrome). Do NOT
+      // touch it here — no Back press, no address-bar typing, no coordinate taps. On a freshly
+      // opened single-tab Chrome those actions drop it to the home screen and kill the run. Just
+      // confirm Chrome is up; waitForGoogleFlowReady drives the page by clicking on-screen buttons.
+      if (isGoogleFlowProjectEditorVisible()) {
+        rememberCurrentGoogleFlowProjectUrl()
+      }
+      return true
     }
 
+    // Non-Chrome mode only: launch the default browser ourselves.
+    val launched = launchUrl(GOOGLE_FLOW_URL, preferredPackage = preferredPackage)
+    if (!waitForChromeActiveWindow(8_000L) && !waitForChromeActiveWindow(5_000L)) {
+      return false
+    }
     sleepGoogleFlowStep(1200L)
     dismissChromeTransientUiForNavigation()
     if (isGoogleFlowProjectEditorVisible()) {
@@ -663,10 +664,6 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val address = currentChromeAddressText()
     if (isGoogleFlowAddress(address)) {
       return true
-    }
-
-    if (address.isNotBlank()) {
-      logGoogleFlowStep("Chrome ยังอยู่หน้าอื่น (${address.take(32)}) จะใส่ URL Flow โดยตรง")
     }
     return ensureChromeNavigatedTo(GOOGLE_FLOW_URL, preferredPackage, 35_000L) || launched
   }
@@ -693,6 +690,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val activePackage = activeWindowPackageName().ifBlank { "unknown" }
       logGoogleFlowStep("Chrome ไม่ได้อยู่ foreground ($activePackage) จะดึง Google Flow กลับมา")
     }
+    // The foreground app process is what actually opens Chrome (see
+    // KubdeeAccessibilityModule.openGoogleFlowInChrome). From this background service we can only
+    // retry the URL via Chrome's real VIEW handler. Do NOT use the launcher intent here: it
+    // resolves to Chrome's translucent trampoline, which closes immediately and bounces back to
+    // the launcher in a loop.
     return launchUrl(GOOGLE_FLOW_URL, preferredPackage = TARGET_PACKAGE_CHROME)
   }
 
@@ -901,6 +903,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     var lastProjectOpenAt = 0L
     var firstFlowShellWithoutReadyAt = 0L
     var lastFlowShellReloadAt = 0L
+    var foregroundRecoveryAttempts = 0
     while (System.currentTimeMillis() - start < timeoutMs) {
       checkGoogleFlowStopRequested()
       if (dismissGoogleFlowSystemDialogs()) {
@@ -908,18 +911,20 @@ class KubdeeAccessibilityService : AccessibilityService() {
         continue
       }
       if (!isChromeActiveWindow()) {
-        val now = System.currentTimeMillis()
-        if (now - lastProjectOpenAt < 28_000L) {
-          sleepGoogleFlowStep(900)
-          continue
-        }
-        if (now - lastForegroundRecoveryAt > 3_000L) {
-          bringGoogleFlowChromeToFront()
-          lastForegroundRecoveryAt = now
+        // Do NOT relaunch Chrome from this background service. Relaunching spawns a brand-new
+        // Chrome task every few seconds, keeping the window in transition so it can never be
+        // detected as active — a self-sustaining churn loop that bounces the foreground between
+        // Chrome and the launcher. The foreground app already opened Chrome; just wait for it to
+        // come back to the front (e.g. after a transient system dialog).
+        foregroundRecoveryAttempts += 1
+        if (foregroundRecoveryAttempts > 30) {
+          logGoogleFlowStep("Chrome ไม่ได้อยู่ foreground นานเกินไป จะหยุด (เปิด Chrome ค้างไว้แล้วลองใหม่)")
+          return false
         }
         sleepGoogleFlowStep(900)
         continue
       }
+      foregroundRecoveryAttempts = 0
       if (handleChromeFirstRunIfNeeded()) {
         sleepGoogleFlowStep(1200)
       }
@@ -972,45 +977,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
           continue
         }
       }
-      if (address.isBlank() && containsChromeText(listOf("ค้นหา Google หรือพิมพ์ URL", "Search or type URL", "Search or type web address"), contains = true)) {
-        if (now - lastNavigateAt > 4_000L) {
-          logGoogleFlowStep("Chrome อยู่หน้าแท็บว่าง จะใส่ URL Google Flow โดยตรง")
-          ensureChromeNavigatedTo(GOOGLE_FLOW_URL, TARGET_PACKAGE_CHROME, 35_000L)
-          lastNavigateAt = now
-        }
+      // The foreground app already opened Chrome on the correct Flow URL. Do NOT re-navigate,
+      // reload, or relaunch from this background service — typing in the address bar or relaunching
+      // drops the freshly opened single-tab Chrome to the home screen and kills the run. If the
+      // page is not recognized as Flow yet, just keep waiting for it to finish loading (the
+      // landing / New project buttons are handled above).
+      if (address.isBlank() || !isGoogleFlowAddress(address)) {
         sleepGoogleFlowStep(900)
         continue
-      }
-      if (address.isBlank()) {
-        if (now - lastProjectOpenAt < 28_000L) {
-          sleepGoogleFlowStep(900)
-          continue
-        }
-        if (now - lastNavigateAt > 6_000L) {
-          logGoogleFlowStep("ยังอ่าน URL ใน Chrome ไม่ได้ จะใส่ URL Google Flow โดยตรง")
-          ensureChromeNavigatedTo(GOOGLE_FLOW_URL, TARGET_PACKAGE_CHROME, 35_000L)
-          lastNavigateAt = now
-          sleepGoogleFlowStep(1200)
-          continue
-        }
-      }
-      if (address.isNotBlank() && !isGoogleFlowAddress(address)) {
-        if (now - lastProjectOpenAt < 28_000L) {
-          sleepGoogleFlowStep(900)
-          continue
-        }
-        if (now - lastNavigateAt > 5_000L) {
-          logGoogleFlowStep("Chrome ไม่ได้อยู่หน้า Flow (${address.take(32)}) จะเปิด Flow ใหม่")
-          ensureChromeNavigatedTo(GOOGLE_FLOW_URL, TARGET_PACKAGE_CHROME, 35_000L)
-          lastNavigateAt = now
-        }
-        sleepGoogleFlowStep(900)
-        continue
-      }
-      if (isChromeGoogleFlowErrorPage()) {
-        logGoogleFlowStep("Chrome แสดง error page จะลองโหลด Google Flow ใหม่")
-        reloadGoogleFlowPage()
-        sleepGoogleFlowStep(3500)
       }
       if (
         isGoogleFlowProjectAddress(currentChromeAddressText()) &&
@@ -2368,6 +2342,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
       try {
         Thread.sleep(minOf(250L, endAt - System.currentTimeMillis()).coerceAtLeast(1L))
       } catch (error: InterruptedException) {
+        if (googleFlowStopRequested) {
+          throw GoogleFlowAutomationStoppedException()
+        }
         Thread.currentThread().interrupt()
         throw error
       }

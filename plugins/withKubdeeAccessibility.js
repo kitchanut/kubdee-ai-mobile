@@ -252,6 +252,12 @@ function patchMainApplication(filePath, packageName) {
 }
 
 function accessibilityServiceXml(targetPackage) {
+  // NOTE: intentionally NO android:packageNames restriction.
+  // The Google Flow runner drives Chrome (com.android.chrome) plus system
+  // dialogs/permission prompts, so the service must observe ALL packages, not
+  // just `targetPackage`. Re-adding packageNames blinds the service to Chrome
+  // and makes openGoogleFlowInBrowser loop forever (reopens Chrome endlessly).
+  void targetPackage;
   return `<?xml version="1.0" encoding="utf-8"?>
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
   android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked|typeViewFocused"
@@ -260,8 +266,7 @@ function accessibilityServiceXml(targetPackage) {
   android:canPerformGestures="true"
   android:canRetrieveWindowContent="true"
   android:description="@string/kubdee_accessibility_service_description"
-  android:notificationTimeout="100"
-  android:packageNames="${targetPackage}" />
+  android:notificationTimeout="100" />
 `;
 }
 
