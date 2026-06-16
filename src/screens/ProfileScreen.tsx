@@ -365,6 +365,16 @@ export default function ProfileScreen({
       }
       appendFlowLog(`✅ กรอก prompt แล้ว (${String(fp.result?.type ?? '')})`);
 
+      // Snapshot the page BEFORE submit (desktop existingVideoUrls) so the poll
+      // can filter out videos that already existed and count only new outputs.
+      let baselineUrls: string[] = [];
+      const snap = await flowRef.current?.runAction('videoSnapshot', {}, 15000);
+      const snapRes = snap?.result as { videoUrls?: string[]; tileCount?: number } | undefined;
+      if (snap?.ok && snapRes) {
+        baselineUrls = snapRes.videoUrls ?? [];
+        appendFlowLog(`📸 ก่อนสร้าง: วิดีโอเดิม ${baselineUrls.length} · tiles ${snapRes.tileCount ?? 0}`);
+      }
+
       appendFlowLog('▶️ กด submit…');
       const sb = await flowRef.current?.runAction('submit', {}, 45000);
       if (!sb?.ok) {
@@ -389,27 +399,33 @@ export default function ProfileScreen({
       let doneConfirm = 0;
       while (Date.now() - startedAt < 300000) {
         await new Promise((r) => setTimeout(r, 4000));
-        const vr = await flowRef.current?.runAction('videoResults', { count: 4 }, 20000);
+        const vr = await flowRef.current?.runAction(
+          'videoResults',
+          { count: 4, ignoreUrls: baselineUrls },
+          20000
+        );
         const vrr = vr?.result as
           | {
               videos?: string[];
               successCount?: number;
               failedCount?: number;
               generatingCount?: number;
+              queuedCount?: number;
               tilesFound?: number;
               progress?: number | null;
             }
           | undefined;
         if (!vr?.ok || !vrr) continue;
         const generating = vrr.generatingCount ?? 0;
+        const queued = vrr.queuedCount ?? 0;
         const failed = vrr.failedCount ?? 0;
         const okCount = vrr.successCount ?? 0;
         const videos = vrr.videos ?? [];
         const pct = vrr.progress;
         appendFlowLog(
-          `… ${pct != null ? `${pct}% · ` : ''}gen ${generating} · ok ${okCount} · fail ${failed}`
+          `… ${pct != null ? `${pct}% · ` : ''}gen ${generating} · queue ${queued} · ok ${okCount} · fail ${failed}`
         );
-        if (generating > 0 || pct != null || (vrr.tilesFound ?? 0) === 0) {
+        if (generating > 0 || queued > 0 || pct != null || (vrr.tilesFound ?? 0) === 0) {
           // A visible percentage anywhere means it is still rendering (desktop treats
           // progress>0 as isGenerating), even if a tile briefly flashes a Failed overlay.
           failConfirm = 0;
@@ -1126,30 +1142,7 @@ export default function ProfileScreen({
               <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
             </TouchableOpacity>
           </View>
-          <View className="relative flex-1">
-            <FlowWebView
-              key={flowReloadKey}
-              ref={flowRef}
-              backgroundColor={theme.screen}
-              onStatusChange={handleFlowStatus}
-              onAccount={handleFlowAccount}
-            />
-            {/* Transparent log overlay — floats over the WebView (taps pass through). */}
-            {flowLogs.length > 0 ? (
-              <View
-                pointerEvents="none"
-                style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
-                className="absolute inset-x-2 bottom-2 rounded-kd-lg px-3 py-2"
-              >
-                {flowLogs.slice(-8).map((line, idx) => (
-                  <Text key={idx} numberOfLines={1} className="text-kd-micro leading-4 text-white">
-                    {line}
-                  </Text>
-                ))}
-              </View>
-            ) : null}
-          </View>
-          <View className="border-t border-kd-border bg-kd-panel px-3 py-2">
+          <View className="border-b border-kd-border bg-kd-panel px-3 py-2">
             <View className="flex-row items-end gap-2">
               <TextInput
                 value={flowPrompt}
@@ -1177,6 +1170,29 @@ export default function ProfileScreen({
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+          <View className="relative flex-1">
+            <FlowWebView
+              key={flowReloadKey}
+              ref={flowRef}
+              backgroundColor={theme.screen}
+              onStatusChange={handleFlowStatus}
+              onAccount={handleFlowAccount}
+            />
+            {/* Transparent log overlay — floats over the TOP of the WebView (taps pass through). */}
+            {flowLogs.length > 0 ? (
+              <View
+                pointerEvents="none"
+                style={{ backgroundColor: 'rgba(0,0,0,0.62)' }}
+                className="absolute inset-x-2 top-2 rounded-kd-lg px-3 py-2"
+              >
+                {flowLogs.slice(-8).map((line, idx) => (
+                  <Text key={idx} numberOfLines={1} className="text-kd-micro leading-4 text-white">
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
           </View>
         </SafeAreaView>
       </Modal>

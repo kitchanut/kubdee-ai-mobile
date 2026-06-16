@@ -18,6 +18,7 @@
 
 import { CONFIGURE_POPPER_BODY } from './configurePopperBody';
 import { VIDEO_RESULTS_BODY } from './extractVideosBody';
+import { VIDEO_SNAPSHOT_BODY } from './snapshotBody';
 import { FLOW_SELECTORS } from './selectors';
 
 export type FlowActionName =
@@ -25,6 +26,7 @@ export type FlowActionName =
   | 'configurePopper'
   | 'fillPrompt'
   | 'submit'
+  | 'videoSnapshot'
   | 'videoResults';
 
 export interface FlowActionResult {
@@ -243,6 +245,7 @@ const ACTION_BODIES: Record<FlowActionName, string> = {
   configurePopper: CONFIGURE_POPPER_BODY,
   fillPrompt: FILL_PROMPT_BODY,
   submit: SUBMIT_BODY,
+  videoSnapshot: VIDEO_SNAPSHOT_BODY,
   videoResults: VIDEO_RESULTS_BODY,
 };
 
