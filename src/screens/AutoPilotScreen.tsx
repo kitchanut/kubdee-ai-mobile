@@ -122,6 +122,9 @@ const VIDEO_SECTION_KEYS = {
   additional: ['forbiddenWords', 'systemPrompt'],
 } satisfies Record<string, Array<keyof AutoPilotVideoSettings>>;
 
+// ยังไม่ใช้ฟีเจอร์ "ส่งรูปให้ AI วิเคราะห์" — ซ่อนแถวไว้ก่อน (สลับเป็น true เพื่อเปิดใช้)
+const SHOW_SEND_IMAGE_TO_AI = false;
+
 function formatPrice(price: string | null): string {
   if (!price) {
     return '-';
@@ -187,9 +190,9 @@ export default function AutoPilotScreen({
     selectedProfileId.length > 0 &&
     controller.selectedProducts.length > 0 &&
     controller.enabledSteps.length > 0;
-  const canDebugOpenProject = controller.runState.status !== 'running' && selectedProfileId.length > 0;
   const startButtonBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 8;
-  const startButtonScrollPadding = 50 + 10 + 40 + 12 + startButtonBottomPadding + 34;
+  // bottom bar = pt-3 (12) + start button (50) + bottom padding, plus breathing room
+  const startButtonScrollPadding = 12 + 50 + startButtonBottomPadding + 16;
 
   const openProductSettings = (productId: string): void => {
     setEditingProductId(productId);
@@ -452,21 +455,6 @@ export default function AutoPilotScreen({
       >
         <Button
           accessibilityRole="button"
-          disabled={!canDebugOpenProject}
-          onPress={() => {
-            void controller.startOpenProjectDebugRun();
-          }}
-          className={`mb-2 h-10 flex-row items-center justify-center gap-2 rounded-kd-lg border ${
-            canDebugOpenProject ? 'border-kd-border bg-kd-card' : 'border-kd-border bg-kd-border'
-          }`}
-        >
-          <Bot size={14} color={canDebugOpenProject ? theme.text : theme.textSubtle} strokeWidth={2.1} />
-          <Text className={`text-[12px] font-semibold ${canDebugOpenProject ? 'text-kd-text' : 'text-kd-text-subtle'}`}>
-            ทดสอบเปิด Flow + New project
-          </Text>
-        </Button>
-        <Button
-          accessibilityRole="button"
           disabled={!canStart && controller.runState.status !== 'running'}
           onPress={() => {
             if (controller.runState.status === 'running') {
@@ -600,7 +588,7 @@ function ExtensionBasicSettingsBlock({
             value={settings.aiGenerateCaption}
             onValueChange={onToggleCaption}
           />
-          {settings.aiGenerateCaption ? (
+          {SHOW_SEND_IMAGE_TO_AI && settings.aiGenerateCaption ? (
             <View className="min-h-7 flex-row items-center gap-3 pl-7">
               <View className="min-w-0 flex-1 flex-row flex-wrap items-baseline gap-x-1.5">
                 <Text className="text-kd-caption font-medium text-kd-text-muted">ส่งรูปให้ AI วิเคราะห์</Text>

@@ -18,7 +18,6 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   aiGenerateCta: true,
   aiRewritePromptOnAudioFailure: true,
   aiHashtagCount: 3,
-  debugMode: 'none',
 };
 
 export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
