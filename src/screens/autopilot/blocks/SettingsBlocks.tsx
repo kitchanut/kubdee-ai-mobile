@@ -1,9 +1,8 @@
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Clock3, Copy, Sparkles, Star } from 'lucide-react-native';
 import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_ROUND_OPTIONS, FLOW_IMAGE_MODELS, FLOW_VIDEO_MODELS, VIDEO_DURATION_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { KubdeeTheme } from '@/theme/tokens';
 import type { AutoPilotSettings } from '@/autopilot/types';
 import { SHOW_SEND_IMAGE_TO_AI, type OptionValue } from '../constants';
@@ -163,24 +162,15 @@ function DurationSegment({
         <Clock3 size={15} color={theme.textMuted} strokeWidth={2.1} />
         <Text className="text-kd-caption font-medium text-kd-text-muted">ความยาวคลิป</Text>
       </View>
-      <ToggleGroup
-        type="single"
-        value={String(value)}
-        onValueChange={(nextValue) => {
-          if (!nextValue) {
-            return;
-          }
-          onChange(Number(nextValue));
-        }}
-        className="flex-row gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted"
-      >
+      <View className="flex-row gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted">
         {options.map((duration) => {
           const active = duration === value;
           return (
-            <ToggleGroupItem
+            <Pressable
               accessibilityRole="button"
+              accessibilityState={{ selected: active }}
               key={duration}
-              value={String(duration)}
+              onPress={() => onChange(duration)}
               className={`h-[22px] items-center justify-center rounded-kd-md px-2.5 ${
                 active ? 'bg-white dark:bg-kd-input' : ''
               }`}
@@ -189,10 +179,10 @@ function DurationSegment({
               <Text className={`text-kd-micro font-semibold ${active ? 'text-kd-amber' : 'text-kd-text-subtle'}`}>
                 {duration}s
               </Text>
-            </ToggleGroupItem>
+            </Pressable>
           );
         })}
-      </ToggleGroup>
+      </View>
     </View>
   );
 }
@@ -211,28 +201,16 @@ function HashtagCountSelector({
   return (
     <View className="flex-row items-center gap-1">
       <Text className="text-kd-micro font-semibold text-kd-text-subtle">#</Text>
-      <ToggleGroup
-        type="single"
-        value={String(value)}
-        onValueChange={(nextValue) => {
-          if (!nextValue) {
-            return;
-          }
-          onChange(Number(nextValue));
-        }}
-        disabled={!enabled}
-        className="flex-row gap-0.5 bg-transparent"
-      >
-        {[1, 2, 3, 4, 5].map((count, index) => {
+      <View className="flex-row gap-0.5">
+        {[1, 2, 3, 4, 5].map((count) => {
           const active = enabled && count === value;
           return (
-            <ToggleGroupItem
+            <Pressable
               accessibilityRole="button"
+              accessibilityState={{ selected: active, disabled: !enabled }}
               disabled={!enabled}
-              isFirst={index === 0}
-              isLast={index === 4}
               key={count}
-              value={String(count)}
+              onPress={() => onChange(count)}
               className={`h-5 min-h-5 w-5 min-w-5 items-center justify-center rounded-full p-0 ${
                 active ? 'bg-black dark:bg-white' : 'bg-transparent'
               }`}
@@ -241,10 +219,10 @@ function HashtagCountSelector({
               <Text className={`text-kd-micro font-semibold ${active ? 'text-white dark:text-black' : 'text-kd-text-subtle'}`}>
                 {count}
               </Text>
-            </ToggleGroupItem>
+            </Pressable>
           );
         })}
-      </ToggleGroup>
+      </View>
     </View>
   );
 }

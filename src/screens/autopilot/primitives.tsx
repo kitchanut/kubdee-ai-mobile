@@ -7,7 +7,6 @@ import { Bot, ChevronDown } from 'lucide-react-native';
 import Text from '@/components/ui/KubdeeText';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
@@ -159,40 +158,20 @@ export function OptionGroup({
   const contextAccent = useContext(SettingsAccentContext);
   const accentColor = accent ?? contextAccent ?? theme.amber;
   const values = Array.isArray(value) ? value : [value];
-  const valueStrings = values.map((item) => String(item));
   const isGrid = variant === 'grid';
 
-  const handleSingleChange = (nextValue: string | undefined): void => {
-    if (!nextValue) {
-      return;
-    }
-
-    const originalOption = options.find((option) => String(option.value) === nextValue);
-    if (originalOption) {
-      onChange?.(originalOption.value);
-    }
-  };
-
-  const handleMultipleChange = (nextValues: string[]): void => {
-    const changedOption = options.find((option) => {
-      const optionValue = String(option.value);
-      return values.includes(option.value)
-        ? !nextValues.includes(optionValue)
-        : nextValues.includes(optionValue);
-    });
-
-    if (changedOption) {
-      onToggle?.(changedOption.value);
+  const handlePress = (optionValue: OptionValue): void => {
+    if (onToggle) {
+      onToggle(optionValue);
+    } else {
+      onChange?.(optionValue);
     }
   };
 
   // segmented = light gray track with a white (accent-text) selected pill;
   // grid = individually bordered chips that tint with the accent when selected.
-  const trackClass = isGrid
-    ? 'flex-row flex-wrap gap-1.5 bg-transparent'
-    : 'flex-row flex-wrap gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted';
-  const itemClass = `min-h-[30px] items-center justify-center rounded-kd-md px-2 ${isGrid ? 'border' : ''}`;
-
+  // NOTE: ใช้ Pressable + token rounded-kd-* ตรง ๆ (ไม่ใช้ ToggleGroup) เพราะ
+  // ToggleGroupItem มี base `rounded-none` ที่ twMerge ไม่รู้จัก custom token เลย override ไม่ได้ → ขอบเหลี่ยม
   const sizeStyle = columns
     ? { flexBasis: `${100 / columns - 1.5}%` as DimensionValue }
     : isGrid
@@ -222,53 +201,40 @@ export function OptionGroup({
     ];
   };
 
-  const renderItems = (): React.JSX.Element[] =>
-    options.map((option) => {
-      const active = values.includes(option.value);
-      return (
-        <ToggleGroupItem
-          accessibilityRole={onToggle ? 'checkbox' : 'button'}
-          accessibilityState={{ checked: active, selected: active }}
-          key={String(option.value)}
-          value={String(option.value)}
-          className={itemClass}
-          style={itemStyle(active)}
-        >
-          <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.78}
-            numberOfLines={1}
-            className={`${compact ? 'text-kd-micro' : 'text-kd-caption'} font-semibold`}
-            style={{ color: active ? accentColor : theme.textSubtle }}
-          >
-            {option.label}
-          </Text>
-        </ToggleGroupItem>
-      );
-    });
-
   return (
     <View className="min-w-0 flex-1 gap-1.5">
       {label ? <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text> : null}
-      {onToggle ? (
-        <ToggleGroup
-          type="multiple"
-          value={valueStrings}
-          onValueChange={handleMultipleChange}
-          className={trackClass}
-        >
-          {renderItems()}
-        </ToggleGroup>
-      ) : (
-        <ToggleGroup
-          type="single"
-          value={String(value)}
-          onValueChange={handleSingleChange}
-          className={trackClass}
-        >
-          {renderItems()}
-        </ToggleGroup>
-      )}
+      <View
+        className={
+          isGrid
+            ? 'flex-row flex-wrap gap-1.5'
+            : 'flex-row flex-wrap gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted'
+        }
+      >
+        {options.map((option) => {
+          const active = values.includes(option.value);
+          return (
+            <Pressable
+              accessibilityRole={onToggle ? 'checkbox' : 'button'}
+              accessibilityState={{ checked: active, selected: active }}
+              key={String(option.value)}
+              onPress={() => handlePress(option.value)}
+              className={`min-h-[30px] items-center justify-center rounded-kd-md px-2 ${isGrid ? 'border' : ''}`}
+              style={itemStyle(active)}
+            >
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.78}
+                numberOfLines={1}
+                className={`${compact ? 'text-kd-micro' : 'text-kd-caption'} font-semibold`}
+                style={{ color: active ? accentColor : theme.textSubtle }}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
