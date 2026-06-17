@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { Bot, Image as ImageIcon, Settings2, SlidersHorizontal, Sparkles, Star } from 'lucide-react-native';
+import { Bot, Camera, Image as ImageIcon, Settings2, SlidersHorizontal, Sparkles, Star, Sun, Type } from 'lucide-react-native';
 
 import type { AutoPilotImageSettings, AutoPilotImageStyleMode, AutoPilotPromptMode } from '@/autopilot/types';
 import {
@@ -43,7 +43,7 @@ export function ImageProductSettingsForm({
 }): React.JSX.Element {
   const accent = theme.amber;
 
-  // ชุดของตัวละคร + ข้อความในภาพ — ใช้ซ้ำใน AI mode และทุก styleMode
+  // ชุดของตัวละคร — ใช้ทุก styleMode + AI ; ข้อความในภาพ — ใช้ใน AI mode (auto mode มี section แยกล่างสุด)
   const OutfitBlock = (): React.JSX.Element => (
     <View className="gap-1.5">
       <FieldHeader label="ชุดของตัวละคร" />
@@ -219,7 +219,6 @@ export function ImageProductSettingsForm({
                   customPlaceholder="พิมพ์สไตล์รูปภาพที่ต้องการ..."
                 />
                 <OutfitBlock />
-                <TextOverlayBlock />
               </View>
             ) : null}
 
@@ -255,44 +254,7 @@ export function ImageProductSettingsForm({
                     onChange={(value) => onChange('productDisplayMode', value)}
                   />
                 </View>
-                <View className="gap-1.5">
-                  <FieldHeader label="การจัดแสง" />
-                  <CardOptionGrid
-                    options={LIGHTING_OPTIONS}
-                    theme={theme}
-                    accent={accent}
-                    value={settings.lighting}
-                    onChange={(value) => onChange('lighting', value)}
-                  />
-                  {settings.lighting === '__custom__' ? (
-                    <SettingInput
-                      placeholder="เช่น soft window light, cinematic warm light"
-                      theme={theme}
-                      value={settings.lightingCustom}
-                      onChangeText={(value) => onChange('lightingCustom', value)}
-                    />
-                  ) : null}
-                </View>
-                <View className="gap-1.5">
-                  <FieldHeader label="มุมกล้อง" />
-                  <CardOptionGrid
-                    options={FRAME_OPTIONS}
-                    theme={theme}
-                    accent={accent}
-                    value={settings.frame}
-                    onChange={(value) => onChange('frame', value)}
-                  />
-                  {settings.frame === '__custom__' ? (
-                    <SettingInput
-                      placeholder="เช่น hero close-up with product in hand"
-                      theme={theme}
-                      value={settings.frameCustom}
-                      onChangeText={(value) => onChange('frameCustom', value)}
-                    />
-                  ) : null}
-                </View>
                 <OutfitBlock />
-                <TextOverlayBlock />
               </View>
             ) : null}
 
@@ -314,7 +276,6 @@ export function ImageProductSettingsForm({
                   onChange={(value) => onChange('viralStyle', value)}
                 />
                 <OutfitBlock />
-                <TextOverlayBlock />
               </View>
             ) : null}
           </View>
@@ -340,7 +301,6 @@ export function ImageProductSettingsForm({
               accent={accent}
             />
             <View className="gap-1.5">
-              <FieldHeader label="สถานที่ / ฉากหลัง" />
               <CardOptionGrid
                 options={LOCATION_OPTIONS}
                 theme={theme}
@@ -361,7 +321,95 @@ export function ImageProductSettingsForm({
         </SettingsSection>
       ) : null}
 
-      {/* 7. คำสั่งเพิ่มเติม */}
+      {/* 7. แสง */}
+      {settings.promptMode === 'auto' ? (
+        <SettingsSection
+          color={accent}
+          icon={Sun}
+          theme={theme}
+          title="แสง"
+          onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.lighting)}
+        >
+          <View className="gap-1.5">
+            <CardOptionGrid
+              options={LIGHTING_OPTIONS}
+              theme={theme}
+              accent={accent}
+              value={settings.lighting}
+              onChange={(value) => onChange('lighting', value)}
+            />
+            {settings.lighting === '__custom__' ? (
+              <SettingInput
+                placeholder="เช่น soft window light, cinematic warm light"
+                theme={theme}
+                value={settings.lightingCustom}
+                onChangeText={(value) => onChange('lightingCustom', value)}
+              />
+            ) : null}
+          </View>
+        </SettingsSection>
+      ) : null}
+
+      {/* 8. มุมกล้อง */}
+      {settings.promptMode === 'auto' ? (
+        <SettingsSection
+          color={accent}
+          icon={Camera}
+          theme={theme}
+          title="มุมกล้อง"
+          onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.frame)}
+        >
+          <View className="gap-1.5">
+            <CardOptionGrid
+              options={FRAME_OPTIONS}
+              theme={theme}
+              accent={accent}
+              value={settings.frame}
+              onChange={(value) => onChange('frame', value)}
+            />
+            {settings.frame === '__custom__' ? (
+              <SettingInput
+                placeholder="เช่น hero close-up with product in hand"
+                theme={theme}
+                value={settings.frameCustom}
+                onChangeText={(value) => onChange('frameCustom', value)}
+              />
+            ) : null}
+          </View>
+        </SettingsSection>
+      ) : null}
+
+      {/* 9. ข้อความในภาพ */}
+      {settings.promptMode === 'auto' ? (
+        <SettingsSection
+          color={accent}
+          icon={Type}
+          theme={theme}
+          title="ข้อความในภาพ"
+          onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.textOverlay)}
+        >
+          <View className="gap-1.5">
+            <CardOptionGrid
+              columns={3}
+              options={TEXT_OVERLAY_OPTIONS}
+              theme={theme}
+              accent={accent}
+              value={settings.textOverlay}
+              onChange={(value) => onChange('textOverlay', value)}
+            />
+            {settings.textOverlay === 'custom' ? (
+              <SettingInput
+                placeholder="พิมพ์ข้อความที่ต้องการในภาพ..."
+                theme={theme}
+                value={settings.textOverlayCustom}
+                onChangeText={(value) => onChange('textOverlayCustom', value)}
+              />
+            ) : null}
+          </View>
+        </SettingsSection>
+      ) : null}
+
+      {/* 10. คำสั่งเพิ่มเติม */}
       <SettingsSection
         color={accent}
         icon={Settings2}

@@ -1,4 +1,4 @@
-import { Image, Modal, ScrollView, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Modal, Platform, ScrollView, View } from 'react-native';
 import {
   Copy,
   FolderOpen,
@@ -65,7 +65,10 @@ export function ProductSettingsModal({
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
-      <View className="flex-1 justify-end bg-black/60">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1 justify-end bg-black/60"
+      >
         <View
           className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
           style={{ maxHeight: '94%', minHeight: '78%' }}
@@ -138,6 +141,8 @@ export function ProductSettingsModal({
           <SettingsAccentContext.Provider value={activeTab === 'video' ? theme.red : theme.amber}>
             <ScrollView
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
               contentContainerClassName="gap-4 px-3 py-3"
               contentContainerStyle={{ paddingBottom: 92 + Math.max(bottomInset, 12) }}
             >
@@ -219,7 +224,7 @@ export function ProductSettingsModal({
             </Button>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

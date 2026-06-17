@@ -58,7 +58,7 @@ export function ManualPromptInput({
         placeholder={placeholder}
         placeholderTextColor={theme.textSubtle}
         className="min-h-[110px] rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5 text-kd-caption text-kd-text"
-        style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
+        style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 13, lineHeight: 18 }}
       />
     </View>
   );

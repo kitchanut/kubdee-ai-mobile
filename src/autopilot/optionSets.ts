@@ -281,10 +281,10 @@ export const FRAME_OPTIONS: AutoPilotOption[] = [
   { value: 'ภาพมุมกว้าง', label: 'มุมกว้าง' },
   { value: 'ภาพระยะกลาง', label: 'ระยะกลาง' },
   { value: 'ภาพระยะใกล้', label: 'ระยะใกล้' },
-  { value: 'มุมสูง', label: 'มุมสูง' },
-  { value: 'มุมต่ำ', label: 'มุมต่ำ' },
   { value: 'มุมภาพเหนือไหล่', label: 'เหนือไหล่' },
   { value: 'มุมมองบุคคล', label: 'POV' },
+  { value: 'มุมสูง', label: 'มุมสูง' },
+  { value: 'มุมต่ำ', label: 'มุมต่ำ' },
   { value: 'GoPro Selfie', label: 'GoPro' },
   { value: '__custom__', label: 'พิมพ์เอง', isCustom: true },
 ];

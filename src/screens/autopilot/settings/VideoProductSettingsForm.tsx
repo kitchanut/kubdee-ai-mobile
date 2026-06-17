@@ -260,7 +260,7 @@ export function VideoProductSettingsForm({
                       placeholder={multiScene ? 'คั่นฉากด้วย | เช่น สวัสดีค่ะ|สั่งซื้อเลย' : 'พิมพ์บทพูด...'}
                       placeholderTextColor={theme.textSubtle}
                       className={`min-h-9 rounded-kd-md border border-kd-border bg-kd-input px-2 py-1.5 text-kd-caption text-kd-text ${dialogueList.length > 1 ? 'pr-7' : ''}`}
-                      style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
+                      style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 13 }}
                     />
                     {dialogueList.length > 1 ? (
                       <Pressable
