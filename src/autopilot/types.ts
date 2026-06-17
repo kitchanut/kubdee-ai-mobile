@@ -12,18 +12,37 @@ export type AutoPilotBrowserMode = 'chrome' | 'default';
 export type AutoPilotRunStatus = 'idle' | 'running' | 'completed' | 'stopped' | 'error';
 export type AutoPilotLogLevel = 'info' | 'success' | 'warning' | 'error' | 'action';
 
+export type AutoPilotPromptMode = 'auto' | 'ai' | 'custom';
+export type AutoPilotImageStyleMode = 'preset' | 'custom' | 'viral';
+
 export interface AutoPilotImageSettings {
   aspectRatio: string;
   outputCount: string;
+  // ตัวละคร (auto | gallery | upload | description | none)
   characterMode: string;
+  selectedCharacterId: string | null;
+  customCharacterUri: string | null;
+  customCharacterPreview: string;
   characterDescription: string;
+  // ฉาก (auto | gallery | upload | description | none)
   sceneMode: string;
+  selectedSceneId: string | null;
+  customSceneUri: string | null;
+  customScenePreview: string;
   sceneDescription: string;
-  promptMode: 'auto' | 'custom';
+  // การสร้าง Prompt
+  promptMode: AutoPilotPromptMode;
   customPrompt: string;
-  styleMode: 'preset' | 'custom';
+  // สไตล์รูปภาพ
+  styleMode: AutoPilotImageStyleMode;
   presetStyle: string;
   presetStyleCustom: string;
+  presetSubTab: string;
+  viralStyle: string;
+  viralStyleCustom: string;
+  viralSubTab: string;
+  customStyle: string;
+  // รายละเอียดสไตล์
   background: string;
   backgroundCustom: string;
   lighting: string;
@@ -32,6 +51,8 @@ export interface AutoPilotImageSettings {
   frameCustom: string;
   textOverlay: string;
   textOverlayCustom: string;
+  characterOutfit: string;
+  characterOutfitCustom: string;
   productDisplayMode: string;
   systemPrompt: string;
 }
@@ -40,7 +61,7 @@ export interface AutoPilotVideoSettings {
   aspectRatio: string;
   outputCount: string;
   characterMode: string;
-  promptMode: 'auto' | 'custom';
+  promptMode: AutoPilotPromptMode;
   customPrompt: string;
   presetStyle: string;
   presetStyleCustom: string;
@@ -53,6 +74,8 @@ export interface AutoPilotVideoSettings {
   scriptStyleCustom: string;
   dialogueMode: 'auto' | 'none' | 'custom';
   dialogue: string;
+  dialogueList: string[];
+  dialogueListOrder: 'sequential' | 'random';
   musicSfxMode: 'auto' | 'none' | 'custom';
   musicSfxCustom: string;
   forbiddenWords: string;
