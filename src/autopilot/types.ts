@@ -8,7 +8,7 @@ export const AUTO_PILOT_STEP_TYPES = {
 export type AutoPilotStepType = (typeof AUTO_PILOT_STEP_TYPES)[keyof typeof AUTO_PILOT_STEP_TYPES];
 
 export type AutoPilotDelayPreset = 'slow' | 'normal' | 'fast';
-export type AutoPilotBrowserMode = 'chrome' | 'default';
+export type AutoPilotBrowserMode = 'webview' | 'chrome' | 'default';
 export type AutoPilotRunStatus = 'idle' | 'running' | 'completed' | 'stopped' | 'error';
 export type AutoPilotLogLevel = 'info' | 'success' | 'warning' | 'error' | 'action';
 
@@ -107,6 +107,7 @@ export interface AutoPilotProduct {
   source: AffiliateProduct;
   preview: string | null;
   name: string;
+  description: string;
   productId: string;
   productUrl: string;
   caption: string;
@@ -144,11 +145,17 @@ export interface AutoPilotRunState {
   logs: AutoPilotRunLog[];
 }
 
+export interface GoogleFlowRunnerPromptBundle {
+  image?: string;
+  video?: string;
+}
+
 export interface GoogleFlowRunnerProduct {
   id: string;
   catalogId: string;
   preview: string | null;
   name: string;
+  description: string;
   productId: string;
   productUrl: string;
   caption: string;
@@ -156,17 +163,20 @@ export interface GoogleFlowRunnerProduct {
   cta: string;
   platform: string;
   settings: AutoPilotProductSettings;
+  prompts?: GoogleFlowRunnerPromptBundle;
 }
 
 export interface GoogleFlowRunnerPayload {
   sourceApp: 'mobile';
-  runner: 'on-device-google-flow-browser';
+  runner: 'on-device-google-flow-webview';
   version: 1;
   profileLocalId: string;
   runId: string;
   enabledSteps: AutoPilotStepType[];
   settings: AutoPilotSettings;
   products: GoogleFlowRunnerProduct[];
+  promptCatalogVersion?: number | null;
+  promptCatalogSource?: 'remote' | 'cache' | 'seed';
   createdAt: number;
 }
 
@@ -175,4 +185,25 @@ export interface GoogleFlowRunnerStartResult {
   runId?: string;
   message?: string;
   error?: string;
+}
+
+export interface GoogleFlowRunnerLogEntry {
+  message: string;
+  ts: number;
+  runId?: string;
+  status?: 'running' | 'completed' | 'stopped' | 'error';
+  event?: 'asset' | 'progress';
+  step?: AutoPilotStepType;
+  stage?: string;
+  productId?: string;
+  productName?: string;
+  currentRound?: number;
+  totalRounds?: number;
+  currentProduct?: number;
+  totalProducts?: number;
+  fileUri?: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  createdAt?: number;
 }

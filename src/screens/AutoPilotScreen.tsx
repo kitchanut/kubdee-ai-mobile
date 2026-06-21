@@ -14,6 +14,7 @@ import {
   type AutoPilotSettingsPreset,
 } from '@/autopilot/settingsPresetStore';
 import { useAutoPilotController } from '@/autopilot/useAutoPilotController';
+import GoogleFlowWebViewRunnerHost from '@/autopilot/GoogleFlowWebViewRunnerHost';
 import type { AutoPilotProductSettings } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,7 @@ import { ProductSettingsModal } from './autopilot/ProductSettingsModal';
 import type { ProductSettingsTab } from './autopilot/constants';
 import { ExtensionBasicSettingsBlock } from './autopilot/blocks/SettingsBlocks';
 import { PipelineStepsBlock } from './autopilot/blocks/PipelineStepsBlock';
-import { ActivityLogBlock } from './autopilot/blocks/RunStatus';
+import { ActivityLogSheet, RunStatusSummaryBlock } from './autopilot/blocks/RunStatus';
 import { ProductCatalogBlock } from './autopilot/blocks/ProductCatalog';
 import {
   ProductPresetSheet,
@@ -55,6 +56,7 @@ export default function AutoPilotScreen({
   const [settingsPresetName, setSettingsPresetName] = useState('');
   const [settingsPresetMessage, setSettingsPresetMessage] = useState<string | null>(null);
   const [settingsPresets, setSettingsPresets] = useState<AutoPilotSettingsPreset[]>([]);
+  const [activityLogOpen, setActivityLogOpen] = useState(false);
 
   const profileProducts = useMemo(() => {
     if (!selectedProfileId) {
@@ -73,6 +75,7 @@ export default function AutoPilotScreen({
     ? controller.products.find((product) => product.id === editingProductId)
     : null;
   const isRunning = controller.runState.status === 'running';
+  const showRunStatus = isRunning || controller.runState.logs.length > 0;
   const canStart =
     !isRunning &&
     selectedProfileId.length > 0 &&
@@ -253,14 +256,11 @@ export default function AutoPilotScreen({
             onUpdateProductField={controller.updateProductField}
           />
 
-          {controller.runState.status === 'running' || controller.runState.logs.length > 0 ? (
-            <ActivityLogBlock
+          {showRunStatus ? (
+            <RunStatusSummaryBlock
               runState={controller.runState}
               theme={theme}
-              onClear={controller.clearLogs}
-              onStop={() => {
-                void controller.stopRun();
-              }}
+              onOpenLogs={() => setActivityLogOpen(true)}
             />
           ) : null}
         </View>
@@ -341,6 +341,19 @@ export default function AutoPilotScreen({
         />
       ) : null}
 
+      {activityLogOpen ? (
+        <ActivityLogSheet
+          bottomInset={insets.bottom}
+          runState={controller.runState}
+          theme={theme}
+          onClear={controller.clearLogs}
+          onClose={() => setActivityLogOpen(false)}
+          onStop={() => {
+            void controller.stopRun();
+          }}
+        />
+      ) : null}
+
       {showStartBar ? (
         <View
           className="absolute bottom-0 left-0 right-0 bg-kd-panel px-4 pt-3"
@@ -371,6 +384,8 @@ export default function AutoPilotScreen({
           </Button>
         </View>
       ) : null}
+
+      <GoogleFlowWebViewRunnerHost theme={theme} />
     </View>
   );
 }

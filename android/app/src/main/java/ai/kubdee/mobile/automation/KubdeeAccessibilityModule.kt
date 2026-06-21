@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -13,6 +15,8 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class KubdeeAccessibilityModule(
   private val reactContext: ReactApplicationContext
@@ -241,20 +245,20 @@ class KubdeeAccessibilityModule(
       return
     }
 
-    // Open Chrome on the Google Flow URL from the foreground app process FIRST. A foreground
-    // app may bring an activity to the front; the background :automation service may not — its
-    // launch resolves to Chrome's translucent trampoline, which closes instantly and bounces
-    // back to the launcher in an endless loop. Launching here guarantees Chrome is in the
-    // foreground before the runner (service) starts driving it.
-    openGoogleFlowInChrome()
-
-    sendAutomationCommand(KubdeeAutomationCommandReceiver.ACTION_START_GOOGLE_FLOW) {
-      putExtra(KubdeeAutomationCommandReceiver.EXTRA_PAYLOAD_JSON, payloadJson)
+    if (!openGoogleFlowInChromeBlocking()) {
+      promise.reject("OPEN_FLOW_FAILED", "เปิด Google Flow ใน Chrome ไม่สำเร็จ")
+      return
     }
-    promise.resolve(true)
-    // NOTE: do NOT call moveAppTaskToBack() here. Launching Chrome above already backgrounds this
-    // app; an extra moveTaskToBack (which runs late on the UI queue) was observed to drop the
-    // freshly opened Chrome window back to the previous task a few seconds later.
+
+    // Let the Chrome task win foreground before the app process broadcasts the payload. Without
+    // this short handoff delay, Samsung/Chrome can bounce back to the Kubdee task during the
+    // activity transition and the accessibility runner never sees Chrome as foreground.
+    Handler(Looper.getMainLooper()).postDelayed({
+      sendAutomationCommand(KubdeeAutomationCommandReceiver.ACTION_START_GOOGLE_FLOW) {
+        putExtra(KubdeeAutomationCommandReceiver.EXTRA_PAYLOAD_JSON, payloadJson)
+      }
+      promise.resolve(true)
+    }, 1200L)
   }
 
   @ReactMethod
@@ -315,8 +319,21 @@ class KubdeeAccessibilityModule(
     }
   }
 
-  private fun openGoogleFlowInChrome() {
+  private fun openGoogleFlowInChromeBlocking(): Boolean {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      return openGoogleFlowInChromeOnUiThread()
+    }
+
+    var opened = false
+    val latch = CountDownLatch(1)
     reactContext.runOnUiQueueThread {
+      opened = openGoogleFlowInChromeOnUiThread()
+      latch.countDown()
+    }
+    return latch.await(2_000L, TimeUnit.MILLISECONDS) && opened
+  }
+
+  private fun openGoogleFlowInChromeOnUiThread(): Boolean {
       val uri = Uri.parse(GOOGLE_FLOW_URL)
       val launcher = reactContext.currentActivity ?: reactContext
       // Try Chrome explicitly. Don't gate on resolveActivity(): under Android package-visibility
@@ -330,7 +347,7 @@ class KubdeeAccessibilityModule(
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
           }
         )
-        return@runOnUiQueueThread
+        return true
       } catch (_: Exception) {
       }
       // Fallback: let the system's default browser open it.
@@ -341,9 +358,10 @@ class KubdeeAccessibilityModule(
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
           }
         )
+        return true
       } catch (_: Exception) {
       }
-    }
+    return false
   }
 
   companion object {

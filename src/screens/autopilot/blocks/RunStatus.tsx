@@ -1,5 +1,5 @@
-import { ScrollView, View } from 'react-native';
-import { Clock3, Image as ImageIcon, Package, RefreshCw, Square, Trash2, Video } from 'lucide-react-native';
+import { Modal, ScrollView, View } from 'react-native';
+import { Clock3, Image as ImageIcon, Info, Package, RefreshCw, Square, Trash2, Video, X } from 'lucide-react-native';
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -9,78 +9,219 @@ import type { AutoPilotRunState } from '@/autopilot/types';
 import { formatTime } from '../constants';
 import { ProgressMetric, SectionCard } from '../primitives';
 
-export function ActivityLogBlock({
+export function RunStatusSummaryBlock({
   runState,
   theme,
-  onClear,
-  onStop,
+  onOpenLogs,
 }: {
   runState: AutoPilotRunState;
   theme: KubdeeTheme;
+  onOpenLogs: () => void;
+}): React.JSX.Element {
+  const progress = runState.progress;
+  const progressRatio = getRunProgressRatio(runState);
+  const currentStepLabel = getCurrentStepLabel(progress.currentStep);
+
+  return (
+    <SectionCard theme={theme} icon={Clock3} title="สถานะการทำงาน">
+      <View className="gap-2.5">
+        <View className="flex-row items-start justify-between gap-2">
+          <View className="min-w-0 flex-1">
+            <View className="flex-row items-center gap-1.5">
+              <View
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: getRunStatusColor(runState.status, theme) }}
+              />
+              <Text className="text-kd-caption font-medium text-kd-text">
+                {getRunStatusLabel(runState.status)} · {getRunStageLabel(progress.currentStage)}
+              </Text>
+            </View>
+            <Text numberOfLines={1} className="mt-1 text-kd-micro text-kd-text-subtle">
+              {progress.currentProductName || 'ยังไม่มีสินค้าที่กำลังทำ'} · {currentStepLabel}
+            </Text>
+          </View>
+
+          <Button
+            accessibilityLabel="เปิดรายละเอียดการทำงาน"
+            accessibilityRole="button"
+            variant="ghost"
+            size="sm"
+            onPress={onOpenLogs}
+            className="h-8 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-panel-muted px-2.5 dark:bg-kd-card-muted"
+          >
+            <Info size={13} color={theme.textMuted} strokeWidth={2.2} />
+            <Text className="text-kd-micro font-semibold text-kd-text-subtle">รายละเอียด</Text>
+          </Button>
+        </View>
+
+        <View className="gap-1.5">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-kd-micro text-kd-text-subtle">ความคืบหน้า</Text>
+            <Text className="text-kd-micro font-semibold text-kd-text">
+              {Math.round(progressRatio * 100)}%
+            </Text>
+          </View>
+          <Progress
+            value={Math.max(0, Math.min(1, progressRatio)) * 100}
+            className="h-2 bg-kd-panel-muted dark:bg-kd-card-muted"
+            indicatorClassName="bg-kd-emerald"
+          />
+        </View>
+
+        <View className="flex-row gap-2">
+          <ProgressMetric color={theme.blue} icon={RefreshCw} label="รอบ" theme={theme} value={`${progress.currentRound}/${progress.totalRounds}`} />
+          <ProgressMetric color={theme.emerald} icon={Package} label="สินค้า" theme={theme} value={`${progress.currentProduct}/${progress.totalProducts}`} />
+          <ProgressMetric color={theme.amber} icon={ImageIcon} label="รูป" theme={theme} value={`${progress.generatedImages}/${progress.failedImages}`} />
+          <ProgressMetric color={theme.red} icon={Video} label="วิดีโอ" theme={theme} value={`${progress.generatedVideos}/${progress.failedVideos}`} />
+        </View>
+      </View>
+    </SectionCard>
+  );
+}
+
+export function ActivityLogSheet({
+  bottomInset,
+  runState,
+  theme,
+  onClear,
+  onClose,
+  onStop,
+}: {
+  bottomInset: number;
+  runState: AutoPilotRunState;
+  theme: KubdeeTheme;
   onClear: () => void;
+  onClose: () => void;
   onStop: () => void;
 }): React.JSX.Element {
   const isRunning = runState.status === 'running';
-  const logs = runState.logs.slice(-18);
+  const logs = runState.logs.slice(-80);
 
   return (
-    <View className="overflow-hidden rounded-[14px] border border-kd-border bg-kd-card">
-      <View className="flex-row items-center justify-between border-b border-kd-border px-3 py-2.5">
-        <View className="min-w-0 flex-1 flex-row items-center gap-2">
-          <View className="h-2 w-2 rounded-full" style={{ backgroundColor: isRunning ? theme.emerald : theme.amber }} />
-          <Text className="text-[13px] font-semibold text-kd-text">Activity Log</Text>
-        </View>
-        <View className="flex-row items-center gap-1">
-          {isRunning ? (
-            <Button
-              accessibilityLabel="หยุด Auto Pilot"
-              accessibilityRole="button"
-              variant="ghost"
-              size="icon"
-              onPress={onStop}
-              className="h-8 w-8 items-center justify-center rounded-kd-md"
-              style={{ backgroundColor: alpha(theme.red, theme.isDark ? 0.18 : 0.1) }}
-            >
-              <Square size={13} color={theme.red} fill={theme.red} strokeWidth={2} />
-            </Button>
-          ) : null}
-          <Button
-            accessibilityLabel="ล้าง Activity Log"
-            accessibilityRole="button"
-            disabled={logs.length === 0}
-            variant="ghost"
-            size="icon"
-            onPress={onClear}
-            className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
-            style={{ opacity: logs.length === 0 ? 0.45 : 1 }}
-          >
-            <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
-          </Button>
-        </View>
-      </View>
-
-      <View style={{ maxHeight: 210 }}>
-        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 px-3 py-2.5">
-          {logs.length === 0 ? (
-            <View className="min-h-[86px] items-center justify-center gap-1.5">
-              <Clock3 size={22} color={theme.textSubtle} strokeWidth={1.8} />
-              <Text className="text-kd-caption font-semibold text-kd-text-subtle">Ready to start...</Text>
-            </View>
-          ) : (
-            logs.map((log) => (
-              <View key={log.id} className="flex-row gap-2">
-                <Text className="w-[58px] text-kd-micro text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
-                <Text className="flex-1 text-kd-caption leading-4" style={{ color: getLogTextColor(log.level, theme) }}>
-                  {log.message}
-                </Text>
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View className="flex-1 justify-end bg-black/60">
+        <View
+          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          style={{ maxHeight: '72%' }}
+        >
+          <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
+            <View className="flex-row items-center justify-between pb-2">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+                  <Info size={15} color={theme.textMuted} strokeWidth={2.1} />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[14px] font-semibold text-kd-text">รายละเอียดการทำงาน</Text>
+                  <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                    {getRunStatusLabel(runState.status)} · แสดง log ล่าสุด {logs.length} รายการ
+                  </Text>
+                </View>
               </View>
-            ))
-          )}
-        </ScrollView>
+              <View className="flex-row items-center gap-1">
+                {isRunning ? (
+                  <Button
+                    accessibilityLabel="หยุด Auto Pilot"
+                    accessibilityRole="button"
+                    variant="ghost"
+                    size="icon"
+                    onPress={onStop}
+                    className="h-8 w-8 items-center justify-center rounded-kd-md"
+                    style={{ backgroundColor: alpha(theme.red, theme.isDark ? 0.18 : 0.1) }}
+                  >
+                    <Square size={13} color={theme.red} fill={theme.red} strokeWidth={2} />
+                  </Button>
+                ) : null}
+                <Button
+                  accessibilityLabel="ล้างรายละเอียดการทำงาน"
+                  accessibilityRole="button"
+                  disabled={logs.length === 0}
+                  variant="ghost"
+                  size="icon"
+                  onPress={onClear}
+                  className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+                  style={{ opacity: logs.length === 0 ? 0.45 : 1 }}
+                >
+                  <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
+                </Button>
+                <Button
+                  accessibilityLabel="ปิดรายละเอียดการทำงาน"
+                  accessibilityRole="button"
+                  variant="ghost"
+                  size="icon"
+                  onPress={onClose}
+                  className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+                >
+                  <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+                </Button>
+              </View>
+            </View>
+          </View>
+
+          <ScrollView
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            contentContainerClassName="gap-1.5 px-3 py-3"
+            contentContainerStyle={{ paddingBottom: Math.max(bottomInset, 20) }}
+          >
+            {logs.length === 0 ? (
+              <View className="min-h-[120px] items-center justify-center gap-1.5">
+                <Clock3 size={24} color={theme.textSubtle} strokeWidth={1.8} />
+                <Text className="text-kd-caption font-semibold text-kd-text-subtle">ยังไม่มีรายละเอียดการทำงาน</Text>
+              </View>
+            ) : (
+              logs.map((log) => (
+                <View key={log.id} className="flex-row gap-2 rounded-kd-md bg-kd-card px-2.5 py-2">
+                  <Text className="w-[58px] text-kd-micro text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
+                  <Text className="flex-1 text-kd-caption leading-4" style={{ color: getLogTextColor(log.level, theme) }}>
+                    {log.message}
+                  </Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </View>
       </View>
-    </View>
+    </Modal>
   );
 }
+
+function getRunProgressRatio(runState: AutoPilotRunState): number {
+  const progress = runState.progress;
+  const totalWork = Math.max(1, progress.totalRounds * Math.max(1, progress.totalProducts));
+  const currentWork = Math.min(
+    totalWork,
+    Math.max(0, (Math.max(0, progress.currentRound - 1) * Math.max(1, progress.totalProducts)) + progress.currentProduct)
+  );
+
+  return runState.status === 'completed' ? 1 : currentWork / totalWork;
+}
+
+function getCurrentStepLabel(step: AutoPilotRunState['progress']['currentStep']): string {
+  switch (step) {
+    case 'image':
+      return 'รูปภาพ';
+    case 'video':
+      return 'วิดีโอ';
+    default:
+      return 'ยังไม่เลือกขั้นตอน';
+  }
+}
+
+function getRunStatusColor(status: AutoPilotRunState['status'], theme: KubdeeTheme): string {
+  switch (status) {
+    case 'running':
+      return theme.emerald;
+    case 'completed':
+      return theme.blue;
+    case 'error':
+      return theme.red;
+    case 'stopped':
+      return theme.amber;
+    default:
+      return theme.textSubtle;
+  }
+}
+
 function getRunStatusLabel(status: AutoPilotRunState['status']): string {
   switch (status) {
     case 'running':
@@ -136,59 +277,4 @@ function getLogTextColor(level: AutoPilotRunState['logs'][number]['level'], them
     default:
       return theme.textMuted;
   }
-}
-
-function ProgressBlock({
-  runState,
-  theme,
-}: {
-  runState: AutoPilotRunState;
-  theme: KubdeeTheme;
-}): React.JSX.Element {
-  const progress = runState.progress;
-  const totalWork = Math.max(1, progress.totalRounds * Math.max(1, progress.totalProducts));
-  const currentWork = Math.min(
-    totalWork,
-    Math.max(0, (Math.max(0, progress.currentRound - 1) * Math.max(1, progress.totalProducts)) + progress.currentProduct)
-  );
-  const progressRatio = runState.status === 'completed' ? 1 : currentWork / totalWork;
-  const currentStepLabel =
-    progress.currentStep === 'image'
-      ? 'รูปภาพ'
-      : progress.currentStep === 'video'
-        ? 'วิดีโอ'
-        : 'ยังไม่เลือกขั้นตอน';
-
-  return (
-    <SectionCard theme={theme} icon={Clock3} title="สถานะการทำงาน">
-      <View className="gap-2">
-        <View className="flex-row items-center justify-between">
-          <View className="min-w-0 flex-1">
-            <Text className="text-kd-caption font-medium text-kd-text">
-              {getRunStatusLabel(runState.status)} · {getRunStageLabel(progress.currentStage)}
-            </Text>
-            <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-              {progress.currentProductName || 'ยังไม่มีสินค้าที่กำลังทำ'} · {currentStepLabel}
-            </Text>
-          </View>
-          <Text className="text-kd-caption font-medium text-kd-text">
-            {Math.round(progressRatio * 100)}%
-          </Text>
-        </View>
-
-        <Progress
-          value={Math.max(0, Math.min(1, progressRatio)) * 100}
-          className="h-2 bg-kd-panel-muted dark:bg-kd-card-muted"
-          indicatorClassName="bg-kd-emerald"
-        />
-
-        <View className="flex-row gap-2">
-          <ProgressMetric color={theme.blue} icon={RefreshCw} label="รอบ" theme={theme} value={`${progress.currentRound}/${progress.totalRounds}`} />
-          <ProgressMetric color={theme.emerald} icon={Package} label="สินค้า" theme={theme} value={`${progress.currentProduct}/${progress.totalProducts}`} />
-          <ProgressMetric color={theme.amber} icon={ImageIcon} label="รูป" theme={theme} value={`${progress.generatedImages}/${progress.failedImages}`} />
-          <ProgressMetric color={theme.red} icon={Video} label="วิดีโอ" theme={theme} value={`${progress.generatedVideos}/${progress.failedVideos}`} />
-        </View>
-      </View>
-    </SectionCard>
-  );
 }

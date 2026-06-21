@@ -6,7 +6,9 @@ import {
   createGoogleFlowRunnerPayload,
   startGoogleFlowRunner,
   stopGoogleFlowRunner,
+  subscribeGoogleFlowRunnerLogs,
 } from '@/autopilot/googleFlowRunnerBridge';
+import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
 import { getAutoPilotProductId, toAutoPilotProduct } from '@/autopilot/productAdapter';
 import type {
   AutoPilotImageSettings,
@@ -19,12 +21,6 @@ import type {
   AutoPilotVideoSettings,
 } from '@/autopilot/types';
 import type { AffiliateProduct } from '@/library/types';
-import {
-  getAccessibilityStatus,
-  openAccessibilitySettings,
-  requestGoogleFlowMediaPermissions,
-  subscribeGoogleFlowLogs,
-} from '@/native/AccessibilityBridge';
 
 type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
 
@@ -161,7 +157,7 @@ export function useAutoPilotController({
   }, [runState.runId]);
 
   useEffect(() => {
-    const subscription = subscribeGoogleFlowLogs((entry) => {
+    const subscription = subscribeGoogleFlowRunnerLogs((entry) => {
       const incomingRunId = entry.runId?.trim();
       const activeRunId = runIdRef.current;
       if (incomingRunId && activeRunId && incomingRunId !== activeRunId) {
@@ -184,6 +180,7 @@ export function useAutoPilotController({
 
       if (entry.event === 'progress') {
         const failedStage = entry.stage === 'failed' || entry.stage === 'download_missing';
+        const generatedStage = entry.stage === 'generated';
         setRunState((current) => ({
           ...current,
           progress: {
@@ -203,6 +200,14 @@ export function useAutoPilotController({
               failedStage && entry.step === 'video'
                 ? current.progress.failedVideos + 1
                 : current.progress.failedVideos,
+            generatedImages:
+              generatedStage && entry.step === 'image'
+                ? current.progress.generatedImages + 1
+                : current.progress.generatedImages,
+            generatedVideos:
+              generatedStage && entry.step === 'video'
+                ? current.progress.generatedVideos + 1
+                : current.progress.generatedVideos,
           },
         }));
       }
@@ -575,22 +580,19 @@ export function useAutoPilotController({
       return;
     }
 
-    const accessibilityStatus = await getAccessibilityStatus();
-    if (!accessibilityStatus.running) {
-      appendLog('error', 'ต้องเปิด Kubdee AI Accessibility ก่อนเริ่ม Auto Pilot');
-      await openAccessibilitySettings();
+    const catalogResult = await loadPromptCatalog();
+    if (!catalogResult.catalog) {
+      appendLog('error', 'โหลดชุด prompt ไม่สำเร็จ');
       return;
-    }
-
-    const mediaPermissionGranted = await requestGoogleFlowMediaPermissions();
-    if (!mediaPermissionGranted) {
-      appendLog('warning', 'ยังไม่ได้สิทธิ์อ่านรูป/วิดีโอ อาจแนบรูปหรือบันทึกไฟล์จาก Google Flow ไม่ครบ');
     }
 
     const runId = createRunId();
     runIdRef.current = runId;
     const payload = createGoogleFlowRunnerPayload({
       enabledSteps,
+      promptCatalog: catalogResult.catalog,
+      promptCatalogSource: catalogResult.source,
+      promptCatalogVersion: catalogResult.version,
       products: selectedProducts,
       profileLocalId,
       runId,
@@ -608,7 +610,14 @@ export function useAutoPilotController({
       logs: [],
     });
 
-    appendLog('action', `ส่งงานไป Google Flow บนมือถือ: ${selectedProducts.length} สินค้า`);
+    const catalogSourceLabel =
+      catalogResult.source === 'remote'
+        ? 'เว็บ'
+        : catalogResult.source === 'cache'
+          ? 'cache'
+          : 'fallback ในแอป';
+    appendLog('info', `ใช้ชุด prompt จาก${catalogSourceLabel} v${catalogResult.version ?? '-'}`);
+    appendLog('action', `ส่งงานไป Google Flow WebView: ${selectedProducts.length} สินค้า`);
     const result = await startGoogleFlowRunner(payload);
 
     if (!result.success) {

@@ -1254,6 +1254,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
     step: String,
     referenceAsset: GoogleFlowDownloadedAsset?
   ): String {
+    val payloadPrompt = product.optJSONObject("prompts")?.optString(step, "").orEmpty().trim()
+    if (payloadPrompt.isNotBlank()) {
+      val referenceNote =
+        if (step == "video" && referenceAsset != null && !payloadPrompt.contains("รูปอ้างอิง")) {
+          "ใช้รูปอ้างอิงจากขั้นสร้างรูปก่อนหน้าเป็นภาพหลัก: ${referenceAsset.fileName ?: referenceAsset.uri}"
+        } else {
+          ""
+        }
+      return listOf(payloadPrompt, referenceNote).filter { it.isNotBlank() }.joinToString("; ")
+    }
+
     val name = product.optString("name", "สินค้า").ifBlank { "สินค้า" }
     val caption = product.optString("caption", "")
     val hashtags = product.optString("hashtags", "")

@@ -12,7 +12,7 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   flowImageModel: 'nano_banana_pro',
   flowVideoModel: 'veo_31_lite_lower',
   flowVideoDuration: 8,
-  browserMode: 'chrome',
+  browserMode: 'webview',
   aiGenerateCaption: true,
   aiSendImageToAi: false,
   aiGenerateCta: true,
