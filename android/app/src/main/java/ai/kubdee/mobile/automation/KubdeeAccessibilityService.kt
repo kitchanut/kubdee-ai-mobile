@@ -26,12 +26,14 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.webkit.CookieManager
 import android.widget.Button
 import android.widget.TextView
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
@@ -39,6 +41,7 @@ import java.net.URL
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 import org.json.JSONObject
 
 data class ShopeeLikedProduct(
@@ -50,6 +53,22 @@ data class ShopeeLikedProduct(
   val imageUrl: String?,
   val status: String,
   val scrapedAt: Long
+)
+
+data class ShopeePostingVideo(
+  val fileUri: String,
+  val productName: String?,
+  val productId: String?,
+  val productUrl: String?,
+  val caption: String?,
+  val hashtags: String?,
+  val galleryVideoId: String?,
+  val platform: String?
+)
+
+data class PreparedShopeeVideo(
+  val uri: Uri,
+  val displayName: String
 )
 
 class KubdeeAccessibilityService : AccessibilityService() {
@@ -77,8 +96,28 @@ class KubdeeAccessibilityService : AccessibilityService() {
   companion object {
     private const val TAG = "KubdeeAccessibility"
     private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
+    private const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
     private const val TARGET_PACKAGE_CHROME = "com.android.chrome"
     private val SHOPEE_LIKED_TEXTS = listOf("สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "Liked", "My Likes", "My liked items")
+    private val SHOPEE_AFFILIATE_TEXTS = listOf(
+      "โปรแกรม Affiliate",
+      "Shopee Affiliate",
+      "Affiliate Program",
+      "Affiliate"
+    )
+    private val SHOPEE_ACCOUNT_TEXTS = listOf("บัญชีผู้ใช้", "บัญชี", "Account")
+    private val SHOPEE_VIDEO_ACCOUNT_TEXTS = listOf(
+      "หน้าบัญชี Shopee Video",
+      "Shopee Video",
+      "Video Account",
+      "บัญชี Shopee Video"
+    )
+    private val SHOPEE_VIDEO_COMPOSER_TEXTS = listOf(
+      "โพสต์วิดีโอ",
+      "โพสวิดีโอ",
+      "Post Video",
+      "Click to post video"
+    )
     private val SHOPEE_RECOMMENDATION_TEXTS = listOf(
       "คุณอาจจะชอบ",
       "คณอาจจะชอบ",
@@ -86,6 +125,29 @@ class KubdeeAccessibilityService : AccessibilityService() {
       "you may also like",
       "you might also like",
       "recommended for you"
+    )
+    private val SHOPEE_PRODUCT_DETAIL_MARKERS = listOf(
+      "ซื้อเลย",
+      "ซื้อโดยใช้โค้ด",
+      "เพิ่มไปยังรถเข็น",
+      "เพิ่มลงรถเข็น",
+      "แชทเลย",
+      "แชร์เพื่อรับ",
+      "ค่าคอมมิชชั่น",
+      "คัดลอกลิงก์",
+      "คัดลอกลิงค์",
+      "โค้ดแชร์สินค้า",
+      "บันทึกรูปภาพ",
+      "คะแนนสินค้า",
+      "รายละเอียดสินค้า",
+      "ตัวเลือกสินค้า",
+      "ค้นหารีวิว",
+      "Buy Now",
+      "Add to Cart",
+      "Copy Link",
+      "Copy link",
+      "Product Ratings",
+      "Product Details"
     )
     private val PRICE_REGEX = Regex("""(?:฿|B)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)""")
     private val PRICE_NUMBER_REGEX = Regex("""^[0-9][0-9,]*(?:\.[0-9]{1,2})?$""")
@@ -459,6 +521,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return true
   }
 
+  @Synchronized
   fun importShopeeLikedProducts(targetPackage: String, maxItems: Int): List<ShopeeLikedProduct> {
     val productsByKey = linkedMapOf<String, ShopeeLikedProduct>()
     try {
@@ -531,6 +594,567 @@ class KubdeeAccessibilityService : AccessibilityService() {
     } finally {
       hideAutomationOverlay(2500L)
     }
+  }
+
+  @Synchronized
+  fun postShopeeVideos(payloadJson: String): JSONObject {
+    val results = JSONArray()
+    var postedCount = 0
+    var successCount = 0
+    var videos: List<ShopeePostingVideo> = emptyList()
+
+    return try {
+      clearStopShopeeAutomation()
+      resetAutomationLog()
+
+      val payload = JSONObject(payloadJson)
+      val postAction = payload.optString("postAction", "publish").ifBlank { "publish" }
+      videos = parseShopeePostingVideos(payload.optJSONArray("videos") ?: JSONArray())
+
+      if (videos.isEmpty()) {
+        return JSONObject().apply {
+          put("success", false)
+          put("error", "ไม่มีวิดีโอสำหรับโพสต์ Shopee")
+          put("postedCount", 0)
+          put("results", results)
+        }
+      }
+
+      logShopeePostStep("เริ่มโพสต์ Shopee ${videos.size} คลิป")
+
+      for ((index, video) in videos.withIndex()) {
+        checkStopRequested()
+        try {
+          logShopeePostStep("── คลิป ${index + 1}/${videos.size} ──")
+          val preparedVideo = prepareShopeePostingVideoUri(video.fileUri, index)
+          logShopeePostStep("เตรียมวิดีโอเข้าคลังมือถือแล้ว: ${preparedVideo.displayName}")
+
+          runShopeeVideoPostingFlow(video, preparedVideo, postAction)
+
+          if (postAction == "dryRun") {
+            successCount += 1
+            results.put(JSONObject().apply {
+              put("videoIndex", index)
+              put("success", true)
+              put("dryRun", true)
+            })
+            logShopeePostStep("Dry run: เตรียมข้อมูลโพสต์ Shopee สำเร็จ")
+          } else {
+            postedCount += 1
+            successCount += 1
+            results.put(JSONObject().apply {
+              put("videoIndex", index)
+              put("success", true)
+            })
+            logShopeePostStep("ส่งโพสต์คลิป ${index + 1} แล้ว")
+            sleepStep(6000L)
+          }
+        } catch (error: ShopeeAutomationStoppedException) {
+          throw error
+        } catch (error: Exception) {
+          val message = error.message ?: "โพสต์ Shopee ไม่สำเร็จ"
+          results.put(JSONObject().apply {
+            put("videoIndex", index)
+            put("success", false)
+            put("error", message)
+          })
+          logShopeePostStep("คลิป ${index + 1} ล้มเหลว: $message")
+        }
+      }
+
+      logShopeePostStep("โพสต์ Shopee เสร็จ $postedCount/${videos.size} คลิป")
+      JSONObject().apply {
+        put("success", successCount > 0)
+        put("postedCount", postedCount)
+        put("successCount", successCount)
+        if (successCount == 0) {
+          put("error", "Shopee posting ไม่สำเร็จทุกคลิป")
+        }
+        put("results", results)
+      }
+    } catch (error: ShopeeAutomationStoppedException) {
+      logShopeePostStep("หยุดโพสต์ Shopee แล้ว ($postedCount/${videos.size})")
+      JSONObject().apply {
+        put("success", successCount > 0)
+        put("postedCount", postedCount)
+        put("successCount", successCount)
+        put("results", results)
+        put("stopped", true)
+      }
+    } catch (error: Exception) {
+      val message = error.message ?: "Shopee posting ผิดพลาด"
+      logShopeePostStep("Shopee posting ผิดพลาด: $message")
+      JSONObject().apply {
+        put("success", false)
+        put("error", message)
+        put("postedCount", postedCount)
+        put("successCount", successCount)
+        put("results", results)
+      }
+    } finally {
+      hideAutomationOverlay(2500L)
+    }
+  }
+
+  private fun parseShopeePostingVideos(array: JSONArray): List<ShopeePostingVideo> {
+    val output = mutableListOf<ShopeePostingVideo>()
+    for (index in 0 until array.length()) {
+      val item = array.optJSONObject(index) ?: continue
+      val fileUri = item.optCleanString("fileUri")
+        ?: item.optCleanString("filePath")
+        ?: continue
+
+      output.add(
+        ShopeePostingVideo(
+          fileUri = fileUri,
+          productName = item.optCleanString("productName"),
+          productId = item.optCleanString("productId"),
+          productUrl = item.optCleanString("productUrl"),
+          caption = item.optCleanString("caption"),
+          hashtags = item.optCleanString("hashtags"),
+          galleryVideoId = item.optCleanString("galleryVideoId"),
+          platform = item.optCleanString("platform")
+        )
+      )
+    }
+    return output
+  }
+
+  private fun JSONObject.optCleanString(key: String): String? {
+    if (!has(key) || isNull(key)) return null
+    val value = optString(key, "").trim()
+    return value.ifBlank { null }
+  }
+
+  private fun runShopeeVideoPostingFlow(video: ShopeePostingVideo, preparedVideo: PreparedShopeeVideo, postAction: String) {
+    logShopeePostStep("เปิด Shopee เพื่อโพสต์วิดีโอ")
+    if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 1_500L) && !launchPackage(TARGET_PACKAGE_SHOPEE)) {
+      throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
+    }
+    if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 8_000L)) {
+      throw IllegalStateException("ยังไม่เห็นหน้าต่าง Shopee หลังเปิดแอป")
+    }
+
+    sleepStep(2500L)
+    dismissShopeeBlockingPopups()
+
+    if (!navigateShopeeVideoAccount()) {
+      throw IllegalStateException("ไม่พบหน้า Shopee Video สำหรับโพสต์")
+    }
+
+    openShopeeVideoComposer()
+    selectPreparedShopeeVideoFromGallery(preparedVideo)
+    tapShopeeNext("ถัดไปจาก preview")
+    sleepStep(3000L)
+    tapShopeeNext("ถัดไปจาก editor")
+    sleepStep(4000L)
+    fillShopeePostingCaption(video)
+    attachShopeePostingProductBestEffort(video)
+
+    if (postAction == "dryRun") {
+      logShopeePostStep("Dry run: หยุดก่อนกดโพสต์")
+      return
+    }
+
+    tapShopeePostButton()
+  }
+
+  private fun navigateShopeeVideoAccount(): Boolean {
+    if (!goToShopeeMeTab()) return false
+    sleepStep(1200L)
+
+    logShopeePostStep("เปิด โปรแกรม Affiliate")
+    if (!scrollUntilTapText(SHOPEE_AFFILIATE_TEXTS, maxAttempts = 8)) {
+      logShopeePostStep("ไม่พบเมนู โปรแกรม Affiliate")
+      return false
+    }
+    sleepStep(4000L)
+
+    logShopeePostStep("ไปที่ บัญชีผู้ใช้")
+    if (!clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false)) {
+      logShopeePostStep("ไม่พบเมนู บัญชีผู้ใช้")
+      return false
+    }
+    sleepStep(2500L)
+
+    logShopeePostStep("เปิด หน้าบัญชี Shopee Video")
+    if (!scrollUntilTapText(SHOPEE_VIDEO_ACCOUNT_TEXTS, maxAttempts = 5)) {
+      logShopeePostStep("ไม่พบ หน้าบัญชี Shopee Video")
+      return false
+    }
+    sleepStep(4000L)
+    return true
+  }
+
+  private fun openShopeeVideoComposer() {
+    logShopeePostStep("กดปุ่ม โพสต์วิดีโอ")
+    if (!tapShopeeVideoComposerButton()) {
+      throw IllegalStateException("ไม่พบปุ่ม โพสต์วิดีโอ")
+    }
+    sleepStep(4000L)
+    tapAndroidPermissionAllow()
+  }
+
+  private fun selectPreparedShopeeVideoFromGallery(preparedVideo: PreparedShopeeVideo) {
+    logShopeePostStep("เปิดคลังภาพ")
+    if (!clickByAnyText(listOf("คลังภาพ", "Gallery", "Albums"), exact = false)) {
+      throw IllegalStateException("ไม่พบปุ่ม คลังภาพ")
+    }
+    sleepStep(3000L)
+    tapAndroidPermissionAllow()
+
+    logShopeePostStep("เลือกไฟล์ล่าสุดจากคลัง: ${preparedVideo.displayName}")
+    if (!tapFirstShopeeGalleryMedia()) {
+      throw IllegalStateException("ไม่พบไฟล์ล่าสุดจากคลัง (${preparedVideo.displayName})")
+    }
+    sleepStep(3000L)
+  }
+
+  private fun tapShopeeNext(label: String) {
+    logShopeePostStep(label)
+    if (!clickByAnyText(listOf("ถัดไป", "Next"), exact = false)) {
+      throw IllegalStateException("ไม่พบปุ่ม $label")
+    }
+    sleepStep(1500L)
+  }
+
+  private fun fillShopeePostingCaption(video: ShopeePostingVideo) {
+    val fullText = listOfNotNull(
+      video.caption?.trim()?.ifBlank { null } ?: video.productName?.trim()?.ifBlank { null },
+      formatShopeeHashtagText(video.hashtags)
+    ).joinToString(" ").trim()
+
+    if (fullText.isBlank()) {
+      logShopeePostStep("ไม่มีแคปชั่น/แฮชแท็ก ข้ามการกรอก")
+      return
+    }
+
+    logShopeePostStep("กรอกแคปชั่น")
+    val firstEditable = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
+    if (firstEditable == null) {
+      clickByAnyText(listOf("แคปชั่น", "คำอธิบาย", "Caption", "Description"), exact = false)
+      sleepStep(800L)
+    }
+
+    val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
+      ?: throw IllegalStateException("ไม่พบช่องกรอกแคปชั่น")
+
+    clickNode(edit)
+    sleepStep(450L)
+    if (!setNodeText(edit, fullText)) {
+      throw IllegalStateException("กรอกแคปชั่นไม่สำเร็จ")
+    }
+    sleepStep(800L)
+    clickByAnyText(listOf("ตกลง", "Done"), exact = false)
+    sleepStep(800L)
+  }
+
+  private fun attachShopeePostingProductBestEffort(video: ShopeePostingVideo) {
+    val productUrl = video.productUrl?.trim().orEmpty()
+    val productName = video.productName?.trim().orEmpty()
+    if (productUrl.isBlank() && productName.isBlank()) {
+      logShopeePostStep("ไม่มีข้อมูลสินค้า ข้ามการแนบสินค้า")
+      return
+    }
+
+    try {
+      logShopeePostStep("แนบสินค้า Shopee")
+      if (!clickByAnyText(listOf("แตะเพื่อเพิ่มสินค้า", "เพิ่มสินค้า", "Tap to add product"), exact = false)) {
+        logShopeePostStep("ไม่พบปุ่มเพิ่มสินค้า ข้ามการแนบสินค้า")
+        return
+      }
+      sleepStep(1800L)
+
+      if (productUrl.isNotBlank() && clickByAnyText(listOf("ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"), exact = false)) {
+        sleepStep(1200L)
+        val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
+        if (edit != null) {
+          clickNode(edit)
+          sleepStep(400L)
+          setNodeText(edit, productUrl)
+          sleepStep(800L)
+          if (clickByAnyText(listOf("เพิ่ม", "Add", "ตกลง", "OK", "ยืนยัน", "Confirm"), exact = false)) {
+            sleepStep(2000L)
+            clickByAnyText(listOf("เพิ่ม", "Add", "เลือก", "Select", "เสร็จ", "Done"), exact = false)
+            sleepStep(1800L)
+            logShopeePostStep("แนบสินค้าด้วยลิงก์แล้ว")
+            return
+          }
+        }
+      }
+
+      if (productName.isNotBlank()) {
+        val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
+        if (edit != null) {
+          clickNode(edit)
+          sleepStep(400L)
+          setNodeText(edit, productName)
+          pressImeEnterOn(edit)
+          sleepStep(2600L)
+          if (clickByAnyText(listOf("เพิ่ม", "Add", "เลือก", "Select"), exact = false)) {
+            sleepStep(1800L)
+            logShopeePostStep("แนบสินค้าด้วยชื่อสินค้าแล้ว")
+            return
+          }
+        }
+      }
+
+      logShopeePostStep("แนบสินค้าไม่สำเร็จ จะโพสต์ต่อโดยไม่แนบสินค้า")
+      performBack()
+      sleepStep(800L)
+    } catch (error: Exception) {
+      logShopeePostStep("แนบสินค้าไม่สำเร็จ: ${error.message ?: "unknown"}")
+      performBack()
+      sleepStep(800L)
+    }
+  }
+
+  private fun tapShopeePostButton() {
+    logShopeePostStep("กดโพสต์")
+    if (!clickByAnyText(listOf("โพสต์", "Post"), exact = true)) {
+      throw IllegalStateException("ไม่พบปุ่มโพสต์")
+    }
+    logShopeePostStep("กดโพสต์แล้ว รอ Shopee รับคำสั่ง")
+    sleepStep(2000L)
+  }
+
+  private fun tapShopeeVideoComposerButton(): Boolean {
+    if (clickByAnyText(SHOPEE_VIDEO_COMPOSER_TEXTS, exact = false)) return true
+
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes)
+    val candidate = textNodes
+      .filter { node ->
+        SHOPEE_VIDEO_COMPOSER_TEXTS.any { needle -> node.text.contains(needle, ignoreCase = true) } &&
+          node.bounds.top >= screen.top + (screen.height() * 0.55f).toInt()
+      }
+      .sortedByDescending { it.bounds.top }
+      .firstOrNull()
+      ?: return false
+    return tapBlocking(candidate.bounds.centerX().toFloat(), candidate.bounds.centerY().toFloat())
+  }
+
+  private fun scrollUntilTapText(texts: List<String>, maxAttempts: Int): Boolean {
+    repeat(maxAttempts) {
+      dismissShopeeBlockingPopups()
+      if (clickByAnyText(texts, exact = false)) return true
+      if (!scrollFirstScrollableForward()) {
+        swipeUpByScreen()
+      }
+      sleepStep(900L)
+    }
+    return clickByAnyText(texts, exact = false)
+  }
+
+  private fun tapAndroidPermissionAllow(): Boolean =
+    clickByAnyText(
+      listOf("อนุญาตทั้งหมด", "อนุญาต", "Allow all", "Allow", "While using the app", "ขณะใช้แอป"),
+      exact = false
+    )
+
+  private fun tapFirstShopeeGalleryMedia(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+    collectShopeeGalleryMediaCandidates(root, screen, candidates)
+    logShopeePostStep("พบ media candidate ${candidates.size} รายการในคลัง")
+
+    val candidate = candidates
+      .sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.top }.thenBy { it.first.left })
+      .firstOrNull()
+      ?: return false
+
+    return tapBlocking(candidate.first.centerX().toFloat(), candidate.first.centerY().toFloat())
+  }
+
+  private fun collectShopeeGalleryMediaCandidates(
+    node: AccessibilityNodeInfo?,
+    screen: Rect,
+    output: MutableList<Pair<Rect, AccessibilityNodeInfo>>
+  ) {
+    if (node == null) return
+    if (node.isVisibleToUser) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val className = node.className?.toString().orEmpty()
+      val width = bounds.width()
+      val height = bounds.height()
+      val text = listOfNotNull(node.text?.toString(), node.contentDescription?.toString())
+        .joinToString(" ")
+      val looksLikeMediaClass = className.contains("ImageView", ignoreCase = true) ||
+        className.contains("TextureView", ignoreCase = true)
+      val looksLikeVideoLabel = Regex("""\b\d{1,2}:\d{2}\b""").containsMatchIn(text) ||
+        text.contains("video", ignoreCase = true) ||
+        text.contains("วิดีโอ", ignoreCase = true)
+      val ratio = if (height > 0) width.toFloat() / height.toFloat() else 0f
+      val looksLikeMedia = looksLikeMediaClass || looksLikeVideoLabel || node.isCheckable
+
+      if (
+        looksLikeMedia &&
+          width >= screen.width() * 0.16f &&
+          height >= screen.height() * 0.08f &&
+          width <= screen.width() * 0.45f &&
+          height <= screen.height() * 0.35f &&
+          ratio in 0.55f..1.85f &&
+          bounds.top >= screen.top + (screen.height() * 0.14f).toInt() &&
+          bounds.bottom <= screen.bottom - (screen.height() * 0.08f).toInt()
+      ) {
+        output.add(Rect(bounds) to node)
+      }
+    }
+
+    for (index in 0 until node.childCount) {
+      collectShopeeGalleryMediaCandidates(node.getChild(index), screen, output)
+    }
+  }
+
+  private fun prepareShopeePostingVideoUri(source: String, index: Int): PreparedShopeeVideo {
+    val sourceUri = Uri.parse(source)
+    val mimeType = normalizeShopeeVideoMimeType(
+      if (sourceUri.scheme == "content") contentResolver.getType(sourceUri) else null
+    )
+    val nowSeconds = System.currentTimeMillis() / 1000L
+    val fileName = "kubdee-shopee-${System.currentTimeMillis()}-$index.${extensionForShopeeVideoMimeType(mimeType)}"
+    val values = ContentValues().apply {
+      put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+      put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+      put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/Kubdee")
+      put(MediaStore.MediaColumns.DATE_ADDED, nowSeconds)
+      put(MediaStore.MediaColumns.DATE_MODIFIED, nowSeconds)
+      put(MediaStore.MediaColumns.IS_PENDING, 1)
+    }
+    val targetUri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+      ?: throw IllegalStateException("สร้างไฟล์วิดีโอสำหรับ Shopee ไม่สำเร็จ")
+
+    try {
+      openShopeeSourceInputStream(source, sourceUri).use { input ->
+        val output = contentResolver.openOutputStream(targetUri)
+          ?: throw IllegalStateException("เปิดปลายทางวิดีโอไม่สำเร็จ")
+        output.use {
+          copyGoogleFlowStream(input, it)
+        }
+      }
+      contentResolver.update(
+        targetUri,
+        ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+        null,
+        null
+      )
+      waitForPreparedShopeeVideoIndexed(fileName, 5_000L)
+      return PreparedShopeeVideo(targetUri, fileName)
+    } catch (error: Exception) {
+      contentResolver.delete(targetUri, null, null)
+      throw error
+    }
+  }
+
+  private fun waitForPreparedShopeeVideoIndexed(displayName: String, timeoutMs: Long): Boolean {
+    val start = System.currentTimeMillis()
+    val projection = arrayOf(MediaStore.MediaColumns._ID)
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkStopRequested()
+      contentResolver.query(
+        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        "${MediaStore.MediaColumns.DISPLAY_NAME}=?",
+        arrayOf(displayName),
+        "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+      )?.use { cursor ->
+        if (cursor.moveToFirst()) {
+          return true
+        }
+      }
+      Thread.sleep(300L)
+    }
+    logShopeePostStep("ยังไม่ยืนยันไฟล์ใน MediaStore: $displayName")
+    return false
+  }
+
+  private fun openShopeeSourceInputStream(source: String, sourceUri: Uri): InputStream {
+    return when (sourceUri.scheme?.lowercase(Locale.ROOT)) {
+      "content" -> contentResolver.openInputStream(sourceUri)
+      "file" -> FileInputStream(File(sourceUri.path.orEmpty()))
+      "http", "https" -> openRemoteShopeeVideoStream(source)
+      "data" -> openDataUrlInputStream(source)
+      null, "" -> FileInputStream(File(source))
+      else -> contentResolver.openInputStream(sourceUri)
+    } ?: throw IllegalStateException("เปิดไฟล์วิดีโอต้นทางไม่สำเร็จ")
+  }
+
+  private fun openRemoteShopeeVideoStream(sourceUrl: String): InputStream {
+    val cookie = try {
+      val manager = CookieManager.getInstance()
+      manager.getCookie(sourceUrl)
+        ?: manager.getCookie("https://labs.google")
+        ?: manager.getCookie("https://labs.google/fx/tools/flow")
+    } catch (_: Exception) {
+      null
+    }
+    logShopeePostStep(if (cookie.isNullOrBlank()) "ดาวน์โหลดวิดีโอ: ไม่พบ WebView cookie" else "ดาวน์โหลดวิดีโอ: พบ WebView cookie")
+    val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+      instanceFollowRedirects = true
+      connectTimeout = 20_000
+      readTimeout = 60_000
+      requestMethod = "GET"
+      setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+      setRequestProperty("Accept", "video/*,*/*;q=0.8")
+      setRequestProperty("Accept-Language", "th-TH,th;q=0.9,en;q=0.8")
+      if (!cookie.isNullOrBlank()) {
+        setRequestProperty("Cookie", cookie)
+      }
+    }
+    try {
+      val status = connection.responseCode
+      if (status !in 200..299) {
+        throw IllegalStateException("ดาวน์โหลดวิดีโอไม่สำเร็จ HTTP $status")
+      }
+      return object : FilterInputStream(connection.inputStream) {
+        override fun close() {
+          try {
+            super.close()
+          } finally {
+            connection.disconnect()
+          }
+        }
+      }
+    } catch (error: Exception) {
+      connection.disconnect()
+      throw error
+    }
+  }
+
+  private fun openDataUrlInputStream(dataUrl: String): InputStream {
+    val payload = dataUrl.substringAfter(',', missingDelimiterValue = "")
+    if (payload.isBlank()) {
+      throw IllegalStateException("data URL วิดีโอไม่ถูกต้อง")
+    }
+    val decoded = Base64.decode(payload, Base64.DEFAULT)
+    return ByteArrayInputStream(decoded)
+  }
+
+  private fun normalizeShopeeVideoMimeType(value: String?): String =
+    if (!value.isNullOrBlank() && value.startsWith("video/", ignoreCase = true)) value else "video/mp4"
+
+  private fun extensionForShopeeVideoMimeType(mimeType: String): String =
+    when (mimeType.lowercase(Locale.ROOT)) {
+      "video/quicktime" -> "mov"
+      "video/webm" -> "webm"
+      "video/3gpp" -> "3gp"
+      else -> "mp4"
+    }
+
+  private fun formatShopeeHashtagText(value: String?): String {
+    val raw = value?.trim().orEmpty()
+    if (raw.isBlank()) return ""
+    val seen = mutableSetOf<String>()
+    return raw
+      .split(Regex("""[\s,，、]+"""))
+      .map { it.trim().trimStart('#', '＃').trim() }
+      .filter { it.isNotBlank() }
+      .filter { seen.add(it.lowercase(Locale.ROOT)) }
+      .joinToString(" ") { "#${it.take(40)}" }
   }
 
   private fun dispatchLineGesture(
@@ -2287,6 +2911,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
     showAutomationOverlay(message)
   }
 
+  private fun logShopeePostStep(message: String) {
+    Log.d(TAG, "Shopee post runner: $message")
+    addAutomationLogLine(message)
+    KubdeeAccessibilityModule.emitShopeePostLog(message)
+    showAutomationOverlay(message)
+  }
+
   private fun emitGoogleFlowProgress(
     message: String,
     product: JSONObject? = null,
@@ -2679,8 +3310,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val hasTopEditAction = textNodes.any { node ->
       node.bounds.top <= topLimit && listOf("แก้ไข", "Edit").any { node.text.equals(it, ignoreCase = true) }
     }
+    val hasDetailMarker = textNodes.any { node ->
+      node.bounds.top < bottomNavStart && SHOPEE_PRODUCT_DETAIL_MARKERS.any { marker ->
+        node.text.contains(marker, ignoreCase = true)
+      }
+    }
     val hasProductGridPrice = findPriceNodes(textNodes).any { node ->
       node.bounds.top > topLimit && node.bounds.bottom < bottomNavStart
+    }
+
+    if (hasDetailMarker && !hasTopLikedTitle && !hasTopEditAction) {
+      return false
     }
 
     return !hasBottomMeTab && (hasTopLikedTitle || hasTopEditAction || hasProductGridPrice)
@@ -2723,6 +3363,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     val safeTop = likedProductSafeTop(textNodes, screen)
     val safeBottom = screen.bottom - (screen.height() * 0.08f).toInt()
+    if (textNodes.any { node ->
+        node.bounds.centerY() in safeTop..safeBottom && SHOPEE_PRODUCT_DETAIL_MARKERS.any { marker ->
+          node.text.contains(marker, ignoreCase = true)
+        }
+      }
+    ) {
+      return emptyList<ShopeeLikedProductCandidate>() to false
+    }
+
     val recommendationTop = findShopeeRecommendationStartY(textNodes)
     val visibleTextNodes = textNodes.filter { node ->
       val centerY = node.bounds.centerY()
@@ -2993,13 +3642,19 @@ class KubdeeAccessibilityService : AccessibilityService() {
       clickByResourceHint(listOf("copy", "clipboard", "link"))
 
   private fun returnToShopeeLikedList(): Boolean {
-    repeat(4) { attempt ->
+    repeat(6) { attempt ->
       checkStopRequested()
+      if (isShopeeShareSheetVisible()) {
+        logStep("ปิดแผ่นแชร์สินค้า")
+        performBack()
+        sleepStep(900L)
+        return@repeat
+      }
       if (isShopeeLikedListVisible()) {
         if (attempt > 0) logStep("กลับหน้ารายการถูกใจแล้ว")
         return true
       }
-      logStep("กด back กลับหน้ารายการถูกใจ (${attempt + 1}/4)")
+      logStep("กด back กลับหน้ารายการถูกใจ (${attempt + 1}/6)")
       performBack()
       sleepStep(900L)
     }

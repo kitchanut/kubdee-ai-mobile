@@ -1,8 +1,10 @@
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { CheckCircle2, Cloud, Heart, ListChecks, Settings, ShoppingBag, Square } from 'lucide-react-native';
+import { CheckCircle2, Cloud, Heart, Link, ListChecks, Send, Settings, ShoppingBag, Square, Video } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner-native';
 
+import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
+import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import Text from '@/components/ui/KubdeeText';
 import NumberStepper from '@/components/ui/NumberStepper';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -12,10 +14,13 @@ import {
   getAccessibilityStatus,
   importShopeeLikedProducts,
   openAccessibilitySettings,
+  postShopeeVideos,
+  requestAndroidVideoPermission,
   stopShopeeAutomation,
   subscribeShopeeImportLogs,
+  subscribeShopeePostLogs,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeeImportLog } from '@/native/AccessibilityBridge';
+import type { NativeShopeeImportLog, NativeShopeePostLog } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 interface ShopeeScreenProps {
@@ -29,12 +34,18 @@ export default function ShopeeScreen({
   theme,
   selectedCount,
 }: ShopeeScreenProps): React.JSX.Element {
-  const [subMode, setSubMode] = useState<'import' | 'settings'>('import');
+  const [subMode, setSubMode] = useState<'import' | 'post' | 'settings'>('import');
   const [importLimit, setImportLimit] = useState(50);
   const [isImporting, setIsImporting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [runMessage, setRunMessage] = useState('พร้อมดึงสินค้าจาก Shopee');
   const [logs, setLogs] = useState<NativeShopeeImportLog[]>([]);
+  const [selectedPostVideoIds, setSelectedPostVideoIds] = useState<Set<string>>(new Set());
+  const [postMessage, setPostMessage] = useState('เลือกวิดีโอจาก Auto Pilot เพื่อเตรียมโพสต์ Shopee');
+  const [postLogs, setPostLogs] = useState<NativeShopeePostLog[]>([]);
+  const [isPosting, setIsPosting] = useState(false);
+  const [isStoppingPost, setIsStoppingPost] = useState(false);
+  const { getAssetsByKind } = useGeneratedMedia();
   const {
     products,
     isSyncing,
@@ -50,6 +61,19 @@ export default function ShopeeScreen({
 
     return products.filter((product) => product.profileLocalId === selectedProfileId).length;
   }, [products, selectedProfileId]);
+
+  const generatedVideos = useMemo(
+    () => getAssetsByKind('videos', selectedProfileId),
+    [getAssetsByKind, selectedProfileId]
+  );
+  const selectedPostVideos = useMemo(
+    () => generatedVideos.filter((video) => selectedPostVideoIds.has(video.id)),
+    [generatedVideos, selectedPostVideoIds]
+  );
+  const readyPostVideoCount = useMemo(
+    () => selectedPostVideos.filter(isLocalPostableVideo).length,
+    [selectedPostVideos]
+  );
 
   const appendLog = useCallback((message: string, ts = Date.now()): void => {
     setLogs((current) => [...current, { message, ts }].slice(-80));
@@ -67,13 +91,32 @@ export default function ShopeeScreen({
     };
   }, []);
 
+  useEffect(() => {
+    const subscription = subscribeShopeePostLogs((entry) => {
+      setPostLogs((current) => [...current, entry].slice(-80));
+      setPostMessage(entry.message);
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedPostVideoIds((current) => {
+      const availableIds = new Set(generatedVideos.map((video) => video.id));
+      const next = new Set(Array.from(current).filter((id) => availableIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [generatedVideos]);
+
   const handleImportShopeeProducts = useCallback(async (): Promise<void> => {
     if (!selectedProfileId) {
       toast.error('เลือกโปรไฟล์ก่อนดึงสินค้า');
       return;
     }
 
-    if (isImporting || isSyncing) {
+    if (isImporting || isPosting || isSyncing) {
       return;
     }
 
@@ -136,7 +179,7 @@ export default function ShopeeScreen({
       setIsImporting(false);
       setIsStopping(false);
     }
-  }, [appendLog, importLimit, importShopeeProducts, isImporting, isSyncing, selectedProfileId]);
+  }, [appendLog, importLimit, importShopeeProducts, isImporting, isPosting, isSyncing, selectedProfileId]);
 
   const handleStopImport = useCallback(async (): Promise<void> => {
     if (!isImporting || isStopping) {
@@ -173,6 +216,143 @@ export default function ShopeeScreen({
     toast.error(result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ');
   }, [isSyncing, syncProducts]);
 
+  const togglePostVideo = useCallback((videoId: string): void => {
+    setSelectedPostVideoIds((current) => {
+      const next = new Set(current);
+      if (next.has(videoId)) {
+        next.delete(videoId);
+      } else {
+        next.add(videoId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handlePostShopeeVideos = useCallback(async (postAction: 'publish' | 'dryRun' = 'publish'): Promise<void> => {
+    if (selectedPostVideos.length === 0) {
+      toast.warning('เลือกวิดีโอก่อนเตรียมโพสต์ Shopee');
+      return;
+    }
+
+    const missingFileCount = selectedPostVideos.filter((video) => !isLocalPostableVideo(video)).length;
+
+    if (missingFileCount > 0) {
+      const message = `ยังไม่พร้อมโพสต์: ต้องใช้ไฟล์วิดีโอในเครื่อง ${missingFileCount}`;
+      setPostMessage(message);
+      toast.warning(message);
+      return;
+    }
+
+    const missingProductUrlCount = selectedPostVideos.filter((video) => !video.productUrl).length;
+    if (missingProductUrlCount > 0) {
+      toast.warning(`ไม่มีลิงก์สินค้า ${missingProductUrlCount} รายการ จะค้นหาด้วยชื่อสินค้าแทน`);
+    }
+
+    if (isPosting || isImporting) {
+      if (isImporting) {
+        toast.warning('กำลังดึงสินค้า Shopee อยู่ รอให้จบก่อนโพสต์');
+      }
+      return;
+    }
+
+    try {
+      const status = await getAccessibilityStatus();
+      if (!status.running) {
+        setPostMessage('กรุณาเปิด Kubdee AI ใน Accessibility ก่อน');
+        Alert.alert(
+          'เปิด Accessibility ก่อน',
+          'Kubdee AI ต้องใช้ Accessibility เพื่อเปิด Shopee และโพสต์วิดีโอผ่านเครื่องนี้',
+          [
+            { text: 'ยกเลิก', style: 'cancel' },
+            {
+              text: 'เปิดตั้งค่า',
+              onPress: () => {
+                void openAccessibilitySettings();
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      const mediaAllowed = await requestAndroidVideoPermission();
+      if (!mediaAllowed) {
+        toast.warning('ต้องอนุญาตอ่านวิดีโอเพื่อโพสต์ Shopee');
+        setPostMessage('ต้องอนุญาตอ่านวิดีโอเพื่อโพสต์ Shopee');
+        return;
+      }
+
+      setIsPosting(true);
+      setIsStoppingPost(false);
+      setPostLogs([]);
+      setPostMessage(
+        postAction === 'dryRun'
+          ? `เริ่มทดสอบโพสต์ Shopee ${selectedPostVideos.length} วิดีโอ`
+          : `เริ่มโพสต์ Shopee ${selectedPostVideos.length} วิดีโอ`
+      );
+
+      const result = await postShopeeVideos(
+        selectedPostVideos.map((video) => ({
+          fileUri: video.fileUri || '',
+          productName: video.productName,
+          productId: video.productCode,
+          productUrl: video.productUrl,
+          caption: video.caption,
+          hashtags: video.hashtags,
+          galleryVideoId: video.id,
+          platform: video.platform || 'shopee',
+        })),
+        { postAction }
+      );
+
+      if (result.stopped) {
+        const message = `หยุดโพสต์ Shopee แล้ว (${result.postedCount || 0}/${selectedPostVideos.length})`;
+        setPostMessage(message);
+        toast.warning(message);
+        return;
+      }
+
+      if (!result.success) {
+        const message = result.error || 'โพสต์ Shopee ไม่สำเร็จ';
+        setPostMessage(message);
+        toast.error(message);
+        return;
+      }
+
+      const successCount =
+        result.successCount ?? result.results?.filter((entry) => entry.success).length ?? result.postedCount ?? 0;
+      const message = postAction === 'dryRun'
+        ? `ทดสอบโพสต์ Shopee สำเร็จ ${successCount}/${selectedPostVideos.length} วิดีโอ`
+        : `โพสต์ Shopee สำเร็จ ${result.postedCount || 0}/${selectedPostVideos.length} วิดีโอ`;
+      setPostMessage(message);
+      toast.success(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPostMessage(message);
+      toast.error(message);
+    } finally {
+      setIsPosting(false);
+      setIsStoppingPost(false);
+    }
+  }, [isImporting, isPosting, selectedPostVideos]);
+
+  const handleStopPost = useCallback(async (): Promise<void> => {
+    if (!isPosting || isStoppingPost) {
+      return;
+    }
+
+    setIsStoppingPost(true);
+    setPostMessage('กำลังส่งคำสั่งหยุด Shopee post...');
+    const stopped = await stopShopeeAutomation();
+    if (!stopped) {
+      toast.warning('ยังหยุดไม่ได้ เพราะไม่พบ Accessibility Service ที่กำลังทำงาน');
+      setIsStoppingPost(false);
+      return;
+    }
+
+    toast.success('ส่งคำสั่งหยุด Shopee post แล้ว');
+  }, [isPosting, isStoppingPost]);
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
       <View className="flex-row border-b border-kd-border px-2">
@@ -183,6 +363,14 @@ export default function ShopeeScreen({
           label="สินค้า"
           theme={theme}
           onPress={() => setSubMode('import')}
+        />
+        <SubTab
+          active={subMode === 'post'}
+          color={theme.red}
+          icon={Video}
+          label="โพสต์"
+          theme={theme}
+          onPress={() => setSubMode('post')}
         />
         <SubTab
           active={subMode === 'settings'}
@@ -248,39 +436,27 @@ export default function ShopeeScreen({
             </View>
 
             <View className="flex-row gap-2">
-              {isImporting ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={isStopping}
-                  onPress={handleStopImport}
-                  className="h-[38px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red active:opacity-70 disabled:opacity-70"
-                >
-                  {isStopping ? (
-                    <ActivityIndicator color={theme.white} size="small" />
-                  ) : (
-                    <Square size={14} color={theme.white} fill={theme.white} strokeWidth={2} />
-                  )}
-                  <Text className="text-kd-body font-black text-white">
-                    {isStopping ? 'กำลังหยุด' : 'หยุดดึงสินค้า'}
-                  </Text>
-                </Pressable>
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={selectedCount === 0 || isSyncing || !selectedProfileId}
-                  onPress={() => {
-                    void handleImportShopeeProducts();
-                  }}
-                  className="h-[38px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-orange active:opacity-70 disabled:opacity-70"
-                >
+              <Pressable
+                accessibilityRole="button"
+                disabled={selectedCount === 0 || isSyncing || !selectedProfileId || isImporting || isPosting}
+                onPress={() => {
+                  void handleImportShopeeProducts();
+                }}
+                className="h-[38px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-orange active:opacity-70 disabled:opacity-70"
+              >
+                {isImporting ? (
+                  <ActivityIndicator color={theme.white} size="small" />
+                ) : (
                   <ShoppingBag size={14} color="#ffffff" strokeWidth={2.2} />
-                  <Text className="text-kd-body font-black text-white">ดึงสินค้า Shopee</Text>
-                </Pressable>
-              )}
+                )}
+                <Text className="text-kd-body font-black text-white">
+                  {isImporting ? 'กำลังดึงสินค้า' : 'ดึงสินค้า Shopee'}
+                </Text>
+              </Pressable>
 
               <Pressable
                 accessibilityRole="button"
-                disabled={isSyncing || isImporting}
+                disabled={isSyncing || isImporting || isPosting}
                 onPress={() => {
                   void handleSyncProducts();
                 }}
@@ -297,10 +473,189 @@ export default function ShopeeScreen({
             <Text className="text-center text-kd-caption font-bold leading-4 text-kd-text-subtle">{runMessage}</Text>
 
             <View className="gap-1.5">
-              <SectionHeader icon={Heart} theme={theme} title="Import Log" />
-              <View className="gap-1.5 rounded-kd-md border border-kd-border bg-kd-card p-2.5">
-                {logs.length > 0 ? (
-                  logs.slice(-10).map((entry, index) => (
+              <View className="gap-2 rounded-kd-md border border-kd-border bg-kd-card p-2.5">
+                <View className="gap-0.5">
+                  <SectionHeader
+                    icon={Heart}
+                    theme={theme}
+                    title="Import Log"
+                    right={
+                      isImporting ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          disabled={isStopping}
+                          onPress={handleStopImport}
+                          className="h-[32px] flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red px-3 active:opacity-70 disabled:opacity-70"
+                        >
+                          {isStopping ? (
+                            <ActivityIndicator color={theme.white} size="small" />
+                          ) : (
+                            <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
+                          )}
+                          <Text className="text-kd-caption font-black text-white">
+                            {isStopping ? 'กำลังหยุด' : 'หยุด'}
+                          </Text>
+                        </Pressable>
+                      ) : null
+                    }
+                  />
+                  <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle">
+                    {isImporting
+                      ? 'กำลังดึงสินค้า Shopee'
+                      : logs.length > 0
+                        ? `ล่าสุด ${logs.length} รายการ`
+                        : 'ยังไม่มีรายการทำงาน'}
+                  </Text>
+                </View>
+
+                <View className="gap-1.5 rounded-kd-md bg-kd-card-muted p-2">
+                  {logs.length > 0 ? (
+                    logs.slice(-10).map((entry, index) => (
+                      <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
+                        <Text className="w-[48px] shrink-0 text-[10px] text-kd-text-muted">
+                          {formatTime(entry.ts)}
+                        </Text>
+                        <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
+                          {entry.message}
+                        </Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มีรายการทำงาน</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          </>
+        ) : subMode === 'post' ? (
+          <View className="gap-2">
+            <View className="flex-row items-center gap-2.5 rounded-kd-lg border border-kd-red bg-kd-red-soft p-3">
+              <Send size={22} color={theme.red} strokeWidth={2.2} />
+              <View className="min-w-0 flex-1">
+                <Text className="text-kd-label font-black text-kd-text">Shopee Post Queue</Text>
+                <Text className="mt-0.5 text-kd-caption leading-[15px] text-kd-text-subtle" numberOfLines={2}>
+                  เลือกวิดีโอที่สร้างจาก Auto Pilot แล้วเตรียม metadata สำหรับโพสต์ Shopee
+                </Text>
+              </View>
+              <StatusPill
+                backgroundColor={theme.redSoft}
+                color={theme.red}
+                icon={Video}
+                label={`${generatedVideos.length} VIDEO`}
+              />
+            </View>
+
+            <View className="flex-row gap-2">
+              <SummaryTile label="เลือกแล้ว" value={`${selectedPostVideos.length}`} theme={theme} />
+              <SummaryTile label="พร้อมโพสต์" value={`${readyPostVideoCount}`} theme={theme} />
+            </View>
+
+            <View className="flex-row gap-2">
+              <Pressable
+                accessibilityRole="button"
+                disabled={
+                  selectedPostVideos.length === 0 ||
+                  readyPostVideoCount !== selectedPostVideos.length ||
+                  isPosting ||
+                  isImporting
+                }
+                onPress={() => {
+                  void handlePostShopeeVideos('dryRun');
+                }}
+                className="h-[38px] flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-card-muted px-3.5 active:opacity-70 disabled:opacity-60"
+              >
+                <CheckCircle2 size={14} color={theme.textSubtle} strokeWidth={2.2} />
+                <Text className="text-kd-body font-black text-kd-text-subtle">ทดสอบ</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                disabled={
+                  selectedPostVideos.length === 0 ||
+                  readyPostVideoCount !== selectedPostVideos.length ||
+                  isPosting ||
+                  isImporting
+                }
+                onPress={() => {
+                  void handlePostShopeeVideos('publish');
+                }}
+                className="h-[38px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red active:opacity-70 disabled:opacity-60"
+              >
+                {isPosting ? (
+                  <ActivityIndicator color={theme.white} size="small" />
+                ) : (
+                  <Send size={14} color={theme.white} strokeWidth={2.2} />
+                )}
+                <Text className="text-kd-body font-black text-white">
+                  {isPosting ? 'กำลังโพสต์ Shopee' : 'โพสต์ Shopee'}
+                </Text>
+              </Pressable>
+            </View>
+            <Text className="text-center text-kd-caption font-bold leading-4 text-kd-text-subtle">{postMessage}</Text>
+
+            <View className="gap-1.5">
+              <SectionHeader icon={Video} theme={theme} title="Auto Pilot Videos" />
+              {generatedVideos.length > 0 ? (
+                generatedVideos.map((video) => (
+                  <PostVideoCard
+                    key={video.id}
+                    selected={selectedPostVideoIds.has(video.id)}
+                    theme={theme}
+                    video={video}
+                    onToggle={() => togglePostVideo(video.id)}
+                  />
+                ))
+              ) : (
+                <View className="items-center rounded-kd-md border border-kd-border bg-kd-card p-5">
+                  <Video size={24} color={theme.textSubtle} strokeWidth={1.8} />
+                  <Text className="mt-2 text-kd-body font-black text-kd-text">ยังไม่มีวิดีโอจาก Auto Pilot</Text>
+                  <Text className="mt-1 text-center text-kd-caption leading-4 text-kd-text-subtle">
+                    สร้างคลิปจาก Auto Pipeline ก่อน แล้ววิดีโอจะมาอยู่ในคิวนี้
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View className="gap-2 rounded-kd-md border border-kd-border bg-kd-card p-2.5">
+              <View className="gap-0.5">
+                <SectionHeader
+                  icon={Send}
+                  theme={theme}
+                  title="Post Log"
+                  right={
+                    isPosting ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={isStoppingPost}
+                        onPress={() => {
+                          void handleStopPost();
+                        }}
+                        className="h-[32px] flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red px-3 active:opacity-70 disabled:opacity-70"
+                      >
+                        {isStoppingPost ? (
+                          <ActivityIndicator color={theme.white} size="small" />
+                        ) : (
+                          <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
+                        )}
+                        <Text className="text-kd-caption font-black text-white">
+                          {isStoppingPost ? 'กำลังหยุด' : 'หยุด'}
+                        </Text>
+                      </Pressable>
+                    ) : null
+                  }
+                />
+                <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle">
+                  {isPosting
+                    ? 'กำลังโพสต์ Shopee'
+                    : postLogs.length > 0
+                      ? `ล่าสุด ${postLogs.length} รายการ`
+                      : 'ยังไม่มีรายการทำงาน'}
+                </Text>
+              </View>
+
+              <View className="gap-1.5 rounded-kd-md bg-kd-card-muted p-2">
+                {postLogs.length > 0 ? (
+                  postLogs.slice(-10).map((entry, index) => (
                     <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
                       <Text className="w-[48px] shrink-0 text-[10px] text-kd-text-muted">
                         {formatTime(entry.ts)}
@@ -315,7 +670,7 @@ export default function ShopeeScreen({
                 )}
               </View>
             </View>
-          </>
+          </View>
         ) : (
           <View className="gap-1.5">
             <SectionHeader icon={Settings} theme={theme} title="Shopee Settings" />
@@ -335,6 +690,113 @@ function formatTime(timestamp: number): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(timestamp));
+}
+
+function isLocalPostableVideo(video: GeneratedMediaAsset): boolean {
+  const fileUri = video.fileUri?.trim();
+  if (!fileUri) {
+    return false;
+  }
+
+  return (
+    fileUri.startsWith('content://') ||
+    fileUri.startsWith('file://') ||
+    fileUri.startsWith('/')
+  );
+}
+
+function PostVideoCard({
+  selected,
+  theme,
+  video,
+  onToggle,
+}: {
+  selected: boolean;
+  theme: KubdeeTheme;
+  video: GeneratedMediaAsset;
+  onToggle: () => void;
+}): React.JSX.Element {
+  const hasFile = isLocalPostableVideo(video);
+  const hasProductUrl = Boolean(video.productUrl);
+  const hasCaption = Boolean(video.caption);
+  const hasHashtags = Boolean(video.hashtags);
+  const ready = hasFile;
+
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selected }}
+      onPress={onToggle}
+      className={`rounded-kd-md border bg-kd-card p-2.5 active:opacity-80 ${
+        selected ? 'border-kd-red' : 'border-kd-border'
+      }`}
+    >
+      <View className="flex-row items-start gap-2.5">
+        <View
+          className={`h-9 w-9 shrink-0 items-center justify-center rounded-kd-md ${
+            ready ? 'bg-kd-red-soft' : 'bg-kd-card-muted'
+          }`}
+        >
+          <Video size={16} color={ready ? theme.red : theme.textSubtle} strokeWidth={2.1} />
+        </View>
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-start gap-2">
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="text-kd-body font-black text-kd-text">
+                {video.productName}
+              </Text>
+              <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
+                #{video.productCode} · {formatTime(video.createdAt)}
+              </Text>
+            </View>
+            <StatusPill
+              backgroundColor={ready ? theme.emeraldSoft : theme.amberSoft}
+              color={ready ? theme.emerald : theme.amber}
+              icon={ready ? CheckCircle2 : Link}
+              label={ready ? 'READY' : 'CHECK'}
+            />
+          </View>
+
+          <View className="mt-2 flex-row flex-wrap gap-1">
+            <PostMetaPill active={hasFile} label="ไฟล์" theme={theme} />
+            <PostMetaPill active={hasProductUrl} label="ลิงก์สินค้า" theme={theme} />
+            <PostMetaPill active={hasCaption} label="Caption" theme={theme} />
+            <PostMetaPill active={hasHashtags} label="Hashtag" theme={theme} />
+          </View>
+
+          {video.productUrl ? (
+            <Text numberOfLines={1} className="mt-1.5 text-kd-micro text-kd-text-subtle">
+              {video.productUrl}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function PostMetaPill({
+  active,
+  label,
+  theme,
+}: {
+  active: boolean;
+  label: string;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  return (
+    <View
+      className="rounded-kd-sm px-1.5 py-0.5"
+      style={{ backgroundColor: active ? theme.emeraldSoft : theme.cardMuted }}
+    >
+      <Text
+        className="text-[9px] font-bold"
+        style={{ color: active ? theme.emerald : theme.textMuted }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
 }
 
 function SummaryTile({

@@ -14,6 +14,10 @@ export interface GeneratedMediaAsset {
   productId: string;
   productName: string;
   productCode: string;
+  productUrl: string | null;
+  caption: string | null;
+  hashtags: string | null;
+  platform: string | null;
   title: string;
   fileUri: string | null;
   fileName: string | null;
@@ -30,6 +34,10 @@ export interface AddGeneratedMediaAssetInput {
   productId: string;
   productName: string;
   productCode: string;
+  productUrl?: string | null;
+  caption?: string | null;
+  hashtags?: string | null;
+  platform?: string | null;
   fileUri?: string | null;
   fileName?: string | null;
   mimeType?: string | null;
@@ -82,6 +90,10 @@ function normalizeAsset(input: AddGeneratedMediaAssetInput): GeneratedMediaAsset
     productId: cleanText(input.productId) || productCode,
     productName,
     productCode,
+    productUrl: cleanText(input.productUrl) || null,
+    caption: cleanText(input.caption) || null,
+    hashtags: cleanText(input.hashtags) || null,
+    platform: cleanText(input.platform) || null,
     title: fileName || `${stepTitle} Auto Pilot - ${productName}`,
     fileUri: cleanText(input.fileUri) || null,
     fileName,
@@ -116,6 +128,13 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
           typeof asset.createdAt === 'number'
         );
       })
+      .map((asset) => ({
+        ...asset,
+        productUrl: cleanText(asset.productUrl) || null,
+        caption: cleanText(asset.caption) || null,
+        hashtags: cleanText(asset.hashtags) || null,
+        platform: cleanText(asset.platform) || null,
+      }))
       .slice(0, MAX_GENERATED_MEDIA_ASSETS);
   } catch {
     return [];

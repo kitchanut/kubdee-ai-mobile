@@ -225,6 +225,32 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
+  fun postShopeeVideos(payloadJson: String, promise: Promise) {
+    val service = KubdeeAccessibilityService.getInstance()
+    if (service == null) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
+      return
+    }
+
+    if (!openPackageBlocking(TARGET_PACKAGE_SHOPEE)) {
+      promise.reject("APP_NOT_FOUND", "Package not found: $TARGET_PACKAGE_SHOPEE")
+      return
+    }
+
+    Thread {
+      try {
+        val result = service.postShopeeVideos(payloadJson)
+        promise.resolve(result.toString())
+      } catch (error: Exception) {
+        promise.reject("SHOPEE_POST_FAILED", error.message, error)
+      }
+    }.also { thread ->
+      thread.name = "KubdeeShopeePosting"
+      thread.start()
+    }
+  }
+
+  @ReactMethod
   fun stopShopeeAutomation(promise: Promise) {
     val service = KubdeeAccessibilityService.getInstance()
     if (service == null) {
@@ -413,6 +439,21 @@ class KubdeeAccessibilityModule(
           context
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("KubdeeShopeeImportLog", payload)
+        }
+      }
+    }
+
+    fun emitShopeePostLog(message: String) {
+      val context = eventContext ?: return
+      val payload = Arguments.createMap().apply {
+        putString("message", message)
+        putDouble("ts", System.currentTimeMillis().toDouble())
+      }
+      context.runOnUiQueueThread {
+        if (context.hasActiveReactInstance()) {
+          context
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("KubdeeShopeePostLog", payload)
         }
       }
     }

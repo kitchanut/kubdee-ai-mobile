@@ -27,6 +27,36 @@ export interface NativeShopeeImportLog {
   ts: number;
 }
 
+export interface NativeShopeePostLog {
+  message: string;
+  ts: number;
+}
+
+export interface NativeShopeePostingVideoInput {
+  fileUri: string;
+  productName?: string | null;
+  productId?: string | null;
+  productUrl?: string | null;
+  caption?: string | null;
+  hashtags?: string | null;
+  galleryVideoId?: string | null;
+  platform?: string | null;
+}
+
+export interface NativeShopeePostingResult {
+  success: boolean;
+  error?: string;
+  postedCount?: number;
+  successCount?: number;
+  stopped?: boolean;
+  results?: Array<{
+    videoIndex: number;
+    success: boolean;
+    error?: string;
+    dryRun?: boolean;
+  }>;
+}
+
 export interface NativeGoogleFlowLog {
   message: string;
   ts: number;
@@ -59,6 +89,7 @@ type NativeAccessibilityModule = {
   pressImeEnter?: () => Promise<boolean>;
   runShopeeSearch?: (keyword: string) => Promise<boolean>;
   importShopeeLikedProducts?: (maxItems: number) => Promise<NativeShopeeLikedProduct[]>;
+  postShopeeVideos?: (payloadJson: string) => Promise<string>;
   stopShopeeAutomation?: () => Promise<boolean>;
   startGoogleFlowAutoPilot?: (payloadJson: string) => Promise<boolean>;
   stopGoogleFlowAutoPilot?: () => Promise<boolean>;
@@ -165,6 +196,25 @@ export async function importShopeeLikedProducts(maxItems = 40): Promise<NativeSh
   return [];
 }
 
+export async function postShopeeVideos(
+  videos: NativeShopeePostingVideoInput[],
+  settings: { postAction?: 'publish' | 'dryRun' } = {}
+): Promise<NativeShopeePostingResult> {
+  if (Platform.OS === 'android' && nativeModule?.postShopeeVideos) {
+    const payloadJson = await nativeModule.postShopeeVideos(JSON.stringify({
+      videos,
+      postAction: settings.postAction || 'publish',
+    }));
+    try {
+      return JSON.parse(payloadJson) as NativeShopeePostingResult;
+    } catch {
+      return { success: false, error: 'อ่านผลลัพธ์ Shopee posting จาก native ไม่สำเร็จ' };
+    }
+  }
+
+  return { success: false, error: 'Shopee posting ใช้ได้เฉพาะ Android native build' };
+}
+
 export async function stopShopeeAutomation(): Promise<boolean> {
   if (Platform.OS === 'android' && nativeModule?.stopShopeeAutomation) {
     return nativeModule.stopShopeeAutomation();
@@ -209,6 +259,26 @@ export async function requestGoogleFlowMediaPermissions(): Promise<boolean> {
   }
 }
 
+export async function requestAndroidVideoPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  const platformVersion =
+    typeof Platform.Version === 'number' ? Platform.Version : Number.parseInt(String(Platform.Version), 10);
+  const permission =
+    platformVersion >= 33
+      ? 'android.permission.READ_MEDIA_VIDEO'
+      : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+
+  try {
+    const result = await PermissionsAndroid.request(permission);
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
 export function subscribeShopeeImportLogs(
   listener: (entry: NativeShopeeImportLog) => void
 ): EmitterSubscription | null {
@@ -222,6 +292,30 @@ export function subscribeShopeeImportLogs(
     }
 
     const entry = payload as Partial<NativeShopeeImportLog>;
+    if (typeof entry.message !== 'string') {
+      return;
+    }
+
+    listener({
+      message: entry.message,
+      ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+    });
+  });
+}
+
+export function subscribeShopeePostLogs(
+  listener: (entry: NativeShopeePostLog) => void
+): EmitterSubscription | null {
+  if (!nativeEventEmitter) {
+    return null;
+  }
+
+  return nativeEventEmitter.addListener('KubdeeShopeePostLog', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    const entry = payload as Partial<NativeShopeePostLog>;
     if (typeof entry.message !== 'string') {
       return;
     }
