@@ -16,6 +16,7 @@ import type {
 import FlowWebView, { type FlowConnectionState, type FlowWebViewHandle } from '@/flow/FlowWebView';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
+import { saveGoogleFlowDataUrlAsset, waitForGoogleFlowDownload } from '@/native/AccessibilityBridge';
 
 interface GoogleFlowWebViewRunnerHostProps {
   theme: KubdeeTheme;
@@ -35,6 +36,17 @@ interface FlowResultPoll {
 interface FlowSnapshot {
   videoUrls?: string[];
   tileCount?: number;
+}
+
+interface FlowDownloadPayload {
+  method?: string;
+  urlKind?: string;
+  url?: string;
+  dataUrl?: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  error?: string;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -390,7 +402,70 @@ export default function GoogleFlowWebViewRunnerHost({
 
       if (step === 'video') {
         const videos = result.videos ?? [];
-        videos.forEach((url, index) => {
+        for (const [index, url] of videos.entries()) {
+          const downloadStartedAt = Date.now();
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'downloading_result',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `ดาวน์โหลดวิดีโอ Google Flow ลงมือถือ (${index + 1}/${videos.length})`,
+          });
+          const downloadPayload = (await runActionOrThrow(
+            handle,
+            'downloadVideo',
+            { url, index },
+            120_000
+          )) as FlowDownloadPayload;
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'download_triggered',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `รับวิดีโอจาก Flow: ${downloadPayload.method ?? 'unknown'}${
+              downloadPayload.sizeBytes ? ` ${(downloadPayload.sizeBytes / 1024 / 1024).toFixed(1)}MB` : ''
+            }`,
+          });
+
+          let downloaded = downloadPayload.dataUrl
+            ? await saveGoogleFlowDataUrlAsset('video', downloadPayload.dataUrl, downloadPayload.fileName)
+            : null;
+
+          if (!downloaded?.uri) {
+            downloaded = await waitForGoogleFlowDownload('video', downloadStartedAt, 15_000);
+          }
+          if (!downloaded?.uri) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: 'download_missing',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: 'สร้างวิดีโอแล้ว แต่ดาวน์โหลดไฟล์ลงมือถือไม่สำเร็จ',
+            });
+            throw new Error('สร้างวิดีโอแล้ว แต่ดาวน์โหลดไฟล์ลงมือถือไม่สำเร็จ');
+          }
+
           emit({
             event: 'asset',
             runId: payload.runId,
@@ -399,13 +474,14 @@ export default function GoogleFlowWebViewRunnerHost({
             stage: 'generated',
             productId: product.id,
             productName: product.name,
-            fileUri: url,
-            fileName: `google-flow-video-${Date.now()}-${index + 1}.mp4`,
-            mimeType: 'video/mp4',
-            createdAt: Date.now(),
+            fileUri: downloaded.uri,
+            fileName: downloaded.fileName,
+            mimeType: downloaded.mimeType || 'video/mp4',
+            sizeBytes: downloaded.sizeBytes,
+            createdAt: downloaded.createdAt || Date.now(),
             message: `ได้วิดีโอจาก Google Flow แล้ว (${index + 1}/${videos.length})`,
           });
-        });
+        }
       } else {
         emit({
           event: 'progress',

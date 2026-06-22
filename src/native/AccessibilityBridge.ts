@@ -78,6 +78,14 @@ export interface NativeGoogleFlowLog {
   createdAt?: number;
 }
 
+export interface NativeGoogleFlowDownloadedAsset {
+  uri: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: number;
+}
+
 type NativeAccessibilityModule = {
   openAccessibilitySettings?: () => Promise<boolean> | boolean;
   getStatus?: () => Promise<AccessibilityStatus>;
@@ -93,6 +101,16 @@ type NativeAccessibilityModule = {
   stopShopeeAutomation?: () => Promise<boolean>;
   startGoogleFlowAutoPilot?: (payloadJson: string) => Promise<boolean>;
   stopGoogleFlowAutoPilot?: () => Promise<boolean>;
+  waitForGoogleFlowDownload?: (
+    step: 'image' | 'video',
+    sinceMs: number,
+    timeoutMs: number
+  ) => Promise<NativeGoogleFlowDownloadedAsset | null>;
+  saveGoogleFlowDataUrlAsset?: (
+    step: 'image' | 'video',
+    dataUrl: string,
+    fileName?: string | null
+  ) => Promise<NativeGoogleFlowDownloadedAsset | null>;
   performBack?: () => Promise<boolean>;
   addListener?: (eventName: string) => void;
   removeListeners?: (count: number) => void;
@@ -237,6 +255,30 @@ export async function stopGoogleFlowAutoPilot(): Promise<boolean> {
   }
 
   return false;
+}
+
+export async function waitForGoogleFlowDownload(
+  step: 'image' | 'video',
+  sinceMs: number,
+  timeoutMs = 90_000
+): Promise<NativeGoogleFlowDownloadedAsset | null> {
+  if (Platform.OS === 'android' && nativeModule?.waitForGoogleFlowDownload) {
+    return nativeModule.waitForGoogleFlowDownload(step, sinceMs, timeoutMs);
+  }
+
+  return null;
+}
+
+export async function saveGoogleFlowDataUrlAsset(
+  step: 'image' | 'video',
+  dataUrl: string,
+  fileName?: string | null
+): Promise<NativeGoogleFlowDownloadedAsset | null> {
+  if (Platform.OS === 'android' && nativeModule?.saveGoogleFlowDataUrlAsset) {
+    return nativeModule.saveGoogleFlowDataUrlAsset(step, dataUrl, fileName ?? null);
+  }
+
+  return null;
 }
 
 export async function requestGoogleFlowMediaPermissions(): Promise<boolean> {

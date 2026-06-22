@@ -2,11 +2,16 @@ package ai.kubdee.mobile.automation
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.ContentUris
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.net.Uri
 import android.graphics.Path
@@ -29,6 +34,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.CookieManager
 import android.widget.Button
 import android.widget.TextView
+import ai.kubdee.mobile.R
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -77,6 +83,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private var overlayStopButton: Button? = null
   private var automationOverlayUnavailable = false
   private val automationLogLines = mutableListOf<String>()
+  private var automationForegroundActive = false
 
   @Volatile
   private var stopRequested = false
@@ -95,6 +102,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   companion object {
     private const val TAG = "KubdeeAccessibility"
+    private const val AUTOMATION_NOTIFICATION_CHANNEL_ID = "kubdee_automation"
+    private const val AUTOMATION_NOTIFICATION_ID = 2401
     private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
     private const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
     private const val TARGET_PACKAGE_CHROME = "com.android.chrome"
@@ -527,6 +536,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     try {
       clearStopShopeeAutomation()
       resetAutomationLog()
+      beginAutomationForeground("กำลังดึงสินค้า Shopee")
       logStep("เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ")
       if (!waitForPackageActive(targetPackage, 1_500L) && !launchPackage(targetPackage)) {
         throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
@@ -608,6 +618,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       logStep("หยุดดึงสินค้าแล้ว บันทึกเท่าที่พบ ${productsByKey.size} รายการ")
       return productsByKey.values.toList()
     } finally {
+      endAutomationForeground()
       hideAutomationOverlay(2500L)
     }
   }
@@ -622,6 +633,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return try {
       clearStopShopeeAutomation()
       resetAutomationLog()
+      beginAutomationForeground("กำลังโพสต์วิดีโอ Shopee")
 
       val payload = JSONObject(payloadJson)
       val postAction = payload.optString("postAction", "publish").ifBlank { "publish" }
@@ -708,6 +720,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         put("results", results)
       }
     } finally {
+      endAutomationForeground()
       hideAutomationOverlay(2500L)
     }
   }
@@ -787,7 +800,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     sleepStep(4000L)
 
     logShopeePostStep("ไปที่ บัญชีผู้ใช้")
-    if (!clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false)) {
+    if (!tapShopeeAffiliateAccountTab()) {
       logShopeePostStep("ไม่พบเมนู บัญชีผู้ใช้")
       return false
     }
@@ -952,6 +965,57 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return tapBlocking(candidate.bounds.centerX().toFloat(), candidate.bounds.centerY().toFloat())
   }
 
+  private fun tapShopeeAffiliateAccountTab(): Boolean {
+    if (clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false)) return true
+
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val textNodes = mutableListOf<TextNode>()
+      collectTextNodes(root, textNodes)
+      val candidates = textNodes
+        .filter { candidate ->
+          candidate.node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
+            SHOPEE_ACCOUNT_TEXTS.any { needle -> candidate.text.contains(needle, ignoreCase = true) } &&
+            candidate.bounds.top >= screen.top + (screen.height() * 0.78f).toInt()
+        }
+        .sortedWith(compareByDescending<TextNode> { it.bounds.left }.thenByDescending { it.bounds.top })
+
+      for (candidate in candidates) {
+        val tapBounds = bottomNavTapBounds(candidate.node, candidate.bounds, screen)
+        if (tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat())) return true
+        if (clickNode(candidate.node)) return true
+      }
+    }
+
+    val display = displayBounds()
+    return tapBlocking(
+      display.left + display.width() * 0.875f,
+      display.bottom - display.height() * 0.08f,
+      durationMs = 120L
+    )
+  }
+
+  private fun bottomNavTapBounds(node: AccessibilityNodeInfo, fallback: Rect, screen: Rect): Rect {
+    var current: AccessibilityNodeInfo? = node
+    var best = Rect(fallback)
+    while (current != null) {
+      val bounds = Rect()
+      current.getBoundsInScreen(bounds)
+      val isBottomNavCandidate =
+        bounds.width() >= fallback.width() &&
+          bounds.height() >= fallback.height() &&
+          bounds.top >= screen.top + (screen.height() * 0.78f).toInt() &&
+          bounds.bottom <= screen.bottom &&
+          bounds.width() <= screen.width() * 0.28f &&
+          bounds.height() <= screen.height() * 0.16f
+      if (isBottomNavCandidate) {
+        best = Rect(bounds)
+      }
+      current = current.parent
+    }
+    return best
+  }
+
   private fun scrollUntilTapText(texts: List<String>, maxAttempts: Int): Boolean {
     repeat(maxAttempts) {
       dismissShopeeBlockingPopups()
@@ -971,18 +1035,30 @@ class KubdeeAccessibilityService : AccessibilityService() {
     )
 
   private fun tapFirstShopeeGalleryMedia(): Boolean {
-    val root = rootInActiveWindow ?: return false
-    val screen = screenBounds(root)
     val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
-    collectShopeeGalleryMediaCandidates(root, screen, candidates)
+    val roots = shopeeWindowRoots()
+    for (root in roots) {
+      val screen = screenBounds(root)
+      collectShopeeGalleryMediaCandidates(root, screen, candidates)
+      if (candidates.isEmpty()) {
+        collectShopeeGalleryTileCandidates(root, screen, candidates)
+      }
+    }
     logShopeePostStep("พบ media candidate ${candidates.size} รายการในคลัง")
 
     val candidate = candidates
       .sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.top }.thenBy { it.first.left })
       .firstOrNull()
-      ?: return false
+    if (candidate != null) {
+      return tapBlocking(candidate.first.centerX().toFloat(), candidate.first.centerY().toFloat())
+    }
 
-    return tapBlocking(candidate.first.centerX().toFloat(), candidate.first.centerY().toFloat())
+    val screen = roots.firstOrNull()?.let(::screenBounds) ?: displayBounds()
+    return tapBlocking(
+      screen.left + screen.width() * 0.125f,
+      screen.top + screen.height() * 0.195f,
+      durationMs = 120L
+    )
   }
 
   private fun collectShopeeGalleryMediaCandidates(
@@ -1023,6 +1099,36 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     for (index in 0 until node.childCount) {
       collectShopeeGalleryMediaCandidates(node.getChild(index), screen, output)
+    }
+  }
+
+  private fun collectShopeeGalleryTileCandidates(
+    node: AccessibilityNodeInfo?,
+    screen: Rect,
+    output: MutableList<Pair<Rect, AccessibilityNodeInfo>>
+  ) {
+    if (node == null) return
+    if (node.packageName?.toString() == TARGET_PACKAGE_SHOPEE && node.isVisibleToUser && node.isClickable) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val width = bounds.width()
+      val height = bounds.height()
+      val ratio = if (height > 0) width.toFloat() / height.toFloat() else 0f
+      if (
+        width >= screen.width() * 0.16f &&
+          width <= screen.width() * 0.34f &&
+          height >= screen.height() * 0.075f &&
+          height <= screen.height() * 0.18f &&
+          ratio in 0.72f..1.35f &&
+          bounds.top >= screen.top + (screen.height() * 0.12f).toInt() &&
+          bounds.bottom <= screen.bottom - (screen.height() * 0.075f).toInt()
+      ) {
+        output.add(Rect(bounds) to node)
+      }
+    }
+
+    for (index in 0 until node.childCount) {
+      collectShopeeGalleryTileCandidates(node.getChild(index), screen, output)
     }
   }
 
@@ -3095,6 +3201,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
   }
 
+  private fun shopeeWindowRoots(): List<AccessibilityNodeInfo> =
+    accessibilityWindowRoots()
+      .filter { root -> containsNodeFromPackage(root, TARGET_PACKAGE_SHOPEE) }
+      .ifEmpty {
+        rootInActiveWindow
+          ?.takeIf { root -> containsNodeFromPackage(root, TARGET_PACKAGE_SHOPEE) }
+          ?.let { listOf(it) }
+          ?: emptyList()
+      }
+
   private fun chromeWindowRoots(): List<AccessibilityNodeInfo> =
     activeChromeWindowRoots().ifEmpty {
       visibleChromeWindowRoots()
@@ -4466,6 +4582,102 @@ class KubdeeAccessibilityService : AccessibilityService() {
       includeResourceId = false,
       allowedPackageName = TARGET_PACKAGE_CHROME
     ) != null
+  }
+
+  @Synchronized
+  private fun beginAutomationForeground(message: String) {
+    try {
+      val notification = buildAutomationNotification(message)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(
+          AUTOMATION_NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+      } else {
+        startForeground(AUTOMATION_NOTIFICATION_ID, notification)
+      }
+      automationForegroundActive = true
+      Log.d(TAG, "Automation foreground started")
+    } catch (error: Exception) {
+      automationForegroundActive = false
+      Log.w(TAG, "Unable to start automation foreground service", error)
+    }
+  }
+
+  @Synchronized
+  private fun endAutomationForeground() {
+    if (!automationForegroundActive) return
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+      } else {
+        @Suppress("DEPRECATION")
+        stopForeground(true)
+      }
+      Log.d(TAG, "Automation foreground stopped")
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to stop automation foreground service", error)
+    } finally {
+      automationForegroundActive = false
+    }
+  }
+
+  private fun buildAutomationNotification(message: String): Notification {
+    ensureAutomationNotificationChannel()
+    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+    val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+      (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+    val pendingIntent = launchIntent?.let {
+      PendingIntent.getActivity(this, 0, it, pendingFlags)
+    }
+    val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      Notification.Builder(this, AUTOMATION_NOTIFICATION_CHANNEL_ID)
+    } else {
+      @Suppress("DEPRECATION")
+      Notification.Builder(this)
+    }
+
+    builder
+      .setSmallIcon(R.mipmap.ic_launcher)
+      .setContentTitle("Kubdee AI")
+      .setContentText(message)
+      .setOngoing(true)
+      .setShowWhen(false)
+      .setCategory(Notification.CATEGORY_SERVICE)
+
+    pendingIntent?.let { builder.setContentIntent(it) }
+
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+      @Suppress("DEPRECATION")
+      builder.setPriority(Notification.PRIORITY_LOW)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+    }
+
+    return builder.build()
+  }
+
+  private fun ensureAutomationNotificationChannel() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+    val existing = manager.getNotificationChannel(AUTOMATION_NOTIFICATION_CHANNEL_ID)
+    if (existing != null) return
+
+    manager.createNotificationChannel(
+      NotificationChannel(
+        AUTOMATION_NOTIFICATION_CHANNEL_ID,
+        "Kubdee AI Automation",
+        NotificationManager.IMPORTANCE_LOW
+      ).apply {
+        description = "Kubdee AI automation status"
+        setShowBadge(false)
+      }
+    )
   }
 
   private fun showAutomationOverlay(message: String) {
