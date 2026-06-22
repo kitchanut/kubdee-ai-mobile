@@ -127,6 +127,43 @@ class KubdeeAccessibilityService : AccessibilityService() {
       "Post Video",
       "Click to post video"
     )
+    private val SHOPEE_POSTING_SURFACE_TEXTS = listOf(
+      "ถัดไป",
+      "Next",
+      "คลังภาพ",
+      "Gallery",
+      "Albums",
+      "แคปชั่น",
+      "Caption",
+      "แตะเพื่อเพิ่มสินค้า",
+      "เพิ่มสินค้า",
+      "Tap to add product",
+      "โพสต์",
+      "Post"
+    )
+    private val SHOPEE_POSTING_SURFACE_RESOURCE_HINTS = listOf(
+      "view_pager",
+      "tool_container",
+      "bottom_container",
+      "rl_pick_media_title",
+      "tv_pick_next",
+      "tv_publish",
+      "publish",
+      "gallery",
+      "media",
+      "post"
+    )
+    private val SHOPEE_LEAVE_POST_CONFIRM_TEXTS = listOf(
+      "ออก",
+      "ละทิ้ง",
+      "ไม่บันทึก",
+      "ยืนยัน",
+      "ตกลง",
+      "Leave",
+      "Discard",
+      "Confirm",
+      "OK"
+    )
     private val SHOPEE_RECOMMENDATION_TEXTS = listOf(
       "คุณอาจจะชอบ",
       "คณอาจจะชอบ",
@@ -765,7 +802,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     sleepStep(2500L)
-    dismissShopeeBlockingPopups()
+    prepareShopeeNavigationSurface()
 
     if (!navigateShopeeVideoAccount()) {
       throw IllegalStateException("ไม่พบหน้า Shopee Video สำหรับโพสต์")
@@ -964,6 +1001,91 @@ class KubdeeAccessibilityService : AccessibilityService() {
       ?: return false
     return tapBlocking(candidate.bounds.centerX().toFloat(), candidate.bounds.centerY().toFloat())
   }
+
+  private fun prepareShopeeNavigationSurface() {
+    repeat(3) { attempt ->
+      if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 1_000L)) {
+        logShopeePostStep("ดึง Shopee กลับมาหลังออกจากหน้าค้าง (${attempt + 1}/3)")
+        if (!launchPackage(TARGET_PACKAGE_SHOPEE)) {
+          throw IllegalStateException("เปิด Shopee ไม่สำเร็จหลังออกจากหน้าค้าง")
+        }
+        if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 8_000L)) {
+          throw IllegalStateException("ยังไม่เห็นหน้าต่าง Shopee หลังดึงกลับจากหน้าค้าง")
+        }
+        sleepStep(2500L)
+      }
+
+      dismissShopeeBlockingPopups()
+      recoverShopeePostingSurfaceBeforeNavigation()
+
+      if (waitForPackageActive(TARGET_PACKAGE_SHOPEE, 1_000L)) {
+        dismissShopeeBlockingPopups()
+        return
+      }
+    }
+
+    throw IllegalStateException("Shopee หลุด foreground หลังออกจากหน้าค้าง")
+  }
+
+  private fun recoverShopeePostingSurfaceBeforeNavigation() {
+    repeat(5) { attempt ->
+      dismissShopeeBlockingPopups()
+      if (isShopeeMePageVisible() || isShopeeMainNavigationVisible()) return
+      if (!isShopeePostingSurfaceVisible()) return
+
+      logShopeePostStep("ออกจากหน้า Shopee ที่ค้างก่อนเริ่มโพสต์ (${attempt + 1}/5)")
+      if (!performBack()) return
+      sleepStep(1200L)
+      clickByAnyText(SHOPEE_LEAVE_POST_CONFIRM_TEXTS, exact = false)
+      sleepStep(900L)
+    }
+  }
+
+  private fun isShopeePostingSurfaceVisible(): Boolean {
+    val roots = shopeeWindowRoots()
+    if (roots.isEmpty()) return false
+
+    return roots.any { root ->
+      val textNodes = mutableListOf<TextNode>()
+      collectTextNodes(root, textNodes)
+      val shopeeTextNodes = textNodes.filter { node ->
+        node.node.packageName?.toString() == TARGET_PACKAGE_SHOPEE
+      }
+      val hasPostingText = shopeeTextNodes.any { node ->
+        SHOPEE_POSTING_SURFACE_TEXTS.any { needle ->
+          node.text.contains(needle, ignoreCase = true)
+        }
+      }
+      val hasPostingResource = findMatchingNode(
+        node = root,
+        needles = SHOPEE_POSTING_SURFACE_RESOURCE_HINTS,
+        exact = false,
+        includeResourceId = true,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      ) != null
+
+      val isSparseShopeeMediaSurface = shopeeTextNodes.size <= 2 && hasPostingResource
+      isSparseShopeeMediaSurface || (hasPostingText && hasPostingResource)
+    }
+  }
+
+  private fun isShopeeMainNavigationVisible(): Boolean =
+    shopeeWindowRoots().any { root ->
+      findVisibleMatchingNode(
+        node = root,
+        needles = listOf("ฉัน", "Me"),
+        exact = true,
+        includeResourceId = false,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      ) != null ||
+        findMatchingNode(
+          node = root,
+          needles = listOf("tab_bar_button_me", "me_tab", "tab_me"),
+          exact = false,
+          includeResourceId = true,
+          allowedPackageName = TARGET_PACKAGE_SHOPEE
+        ) != null
+    }
 
   private fun tapShopeeAffiliateAccountTab(): Boolean {
     if (clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false)) return true
