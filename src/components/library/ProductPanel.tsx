@@ -605,7 +605,7 @@ export default function ProductPanel({
               </View>
               <Text className="mt-1.5 text-[13px] font-semibold text-kd-text-muted">ยังไม่มีสินค้า</Text>
               <Text className="max-w-[220px] text-center text-kd-caption leading-4 text-kd-text-subtle">
-                ซิงก์จากแอป Desktop ได้เลย
+                ดึงจาก Shopee บนมือถือ หรือซิงก์จาก Cloud ได้เลย
               </Text>
               <View className="mt-1">
                 <DarkActionButton

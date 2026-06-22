@@ -103,7 +103,13 @@ export default function KubdeeMobileApp(): React.JSX.Element {
           />
         );
       case 'shopee':
-        return <ShopeeScreen theme={theme} selectedCount={selectedDeviceIds.size} />;
+        return (
+          <ShopeeScreen
+            selectedProfileId={selectedProfileId}
+            theme={theme}
+            selectedCount={selectedDeviceIds.size}
+          />
+        );
       case 'logs':
         return <LogsScreen theme={theme} />;
       case 'profile':

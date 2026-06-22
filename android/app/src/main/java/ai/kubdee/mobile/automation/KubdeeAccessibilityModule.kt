@@ -35,7 +35,7 @@ class KubdeeAccessibilityModule(
       val map = Arguments.createMap().apply {
         putBoolean("available", true)
         putBoolean("enabled", enabled)
-        putBoolean("running", enabled || KubdeeAccessibilityService.isRunning())
+        putBoolean("running", KubdeeAccessibilityService.isRunning())
         putString("packageName", reactContext.packageName)
         putString("serviceComponent", component.flattenToString())
         putString("targetPackage", TARGET_PACKAGE_SHOPEE)
@@ -90,16 +90,10 @@ class KubdeeAccessibilityModule(
   @ReactMethod
   fun launchApp(packageName: String, promise: Promise) {
     try {
-      val launchIntent = reactContext.packageManager.getLaunchIntentForPackage(packageName)
-      if (launchIntent == null) {
+      if (!openPackageBlocking(packageName)) {
         promise.reject("APP_NOT_FOUND", "Package not found: $packageName")
         return
       }
-
-      launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-      launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-      reactContext.startActivity(launchIntent)
       promise.resolve(true)
     } catch (error: Exception) {
       promise.reject("LAUNCH_FAILED", error.message, error)
@@ -189,6 +183,11 @@ class KubdeeAccessibilityModule(
     val service = KubdeeAccessibilityService.getInstance()
     if (service == null) {
       promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
+      return
+    }
+
+    if (!openPackageBlocking(TARGET_PACKAGE_SHOPEE)) {
+      promise.reject("APP_NOT_FOUND", "Package not found: $TARGET_PACKAGE_SHOPEE")
       return
     }
 
@@ -316,6 +315,37 @@ class KubdeeAccessibilityModule(
   private fun moveAppTaskToBack() {
     reactContext.runOnUiQueueThread {
       reactContext.currentActivity?.moveTaskToBack(true)
+    }
+  }
+
+  private fun openPackageBlocking(packageName: String): Boolean {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      return openPackageOnUiThread(packageName)
+    }
+
+    var opened = false
+    val latch = CountDownLatch(1)
+    reactContext.runOnUiQueueThread {
+      opened = openPackageOnUiThread(packageName)
+      latch.countDown()
+    }
+    return latch.await(2_000L, TimeUnit.MILLISECONDS) && opened
+  }
+
+  private fun openPackageOnUiThread(packageName: String): Boolean {
+    val launchIntent = reactContext.packageManager.getLaunchIntentForPackage(packageName) ?: return false
+    val launcher = reactContext.currentActivity ?: reactContext
+    return try {
+      launcher.startActivity(
+        launchIntent.apply {
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+          addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+      )
+      true
+    } catch (_: Exception) {
+      false
     }
   }
 

@@ -465,11 +465,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
       clearStopShopeeAutomation()
       resetAutomationLog()
       logStep("เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ")
-      if (!launchPackage(targetPackage)) {
+      if (!waitForPackageActive(targetPackage, 1_500L) && !launchPackage(targetPackage)) {
         throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
       }
 
-      sleepStep(3500)
+      if (!waitForPackageActive(targetPackage, 8_000L)) {
+        throw IllegalStateException("ยังไม่เห็นหน้าต่าง Shopee หลังเปิดแอป")
+      }
+
+      sleepStep(2500)
       dismissShopeeBlockingPopups()
 
       if (!goToShopeeMeTab()) {
@@ -684,6 +688,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun activeWindowPackageName(): String =
     rootInActiveWindow?.packageName?.toString().orEmpty()
+
+  private fun waitForPackageActive(packageName: String, timeoutMs: Long): Boolean {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkStopRequested()
+      if (activeWindowPackageName() == packageName) return true
+      sleepStep(250L)
+    }
+    return activeWindowPackageName() == packageName
+  }
 
   private fun bringGoogleFlowChromeToFront(logReason: Boolean = true): Boolean {
     if (logReason) {
@@ -2613,6 +2627,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun openShopeeLikedList(): Boolean {
     repeat(8) { attempt ->
+      dismissShopeeBlockingPopups()
+
       if (isShopeeLikedListVisible()) {
         return true
       }
@@ -3546,9 +3562,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return Rect(0, 0, metrics.widthPixels, metrics.heightPixels)
   }
 
-  private fun dismissShopeeBlockingPopups() {
-    clickByAnyText(listOf("ปิด", "Close", "ตกลง", "OK", "ข้าม", "Skip"), exact = true)
-  }
+  private fun dismissShopeeBlockingPopups(): Boolean =
+    clickByAnyText(
+      listOf("ปิด", "Close", "ตกลง", "OK", "ข้าม", "Skip", "ไว้ทีหลัง", "Later", "Not now"),
+      exact = true
+    )
 
   private fun dismissGoogleFlowBlockingPopups() {
     if (dismissGoogleFlowSystemDialogs()) {

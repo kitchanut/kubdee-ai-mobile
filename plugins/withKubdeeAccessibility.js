@@ -53,7 +53,6 @@ function withKubdeeAccessibility(config, props = {}) {
         'android:permission': 'android.permission.BIND_ACCESSIBILITY_SERVICE',
         'android:exported': 'true',
         'android:label': '@string/kubdee_accessibility_service_label',
-        'android:process': ':automation',
       },
       'intent-filter': [
         {
@@ -89,7 +88,6 @@ function withKubdeeAccessibility(config, props = {}) {
       $: {
         'android:name': receiverName,
         'android:exported': 'false',
-        'android:process': ':automation',
       },
     };
 
