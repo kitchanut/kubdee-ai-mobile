@@ -560,8 +560,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
         checkStopRequested()
         val (visibleProducts, reachedRecommendations) = scrapeVisibleShopeeLikedProductCandidates()
         var added = 0
+        var lostLikedList = false
         for ((index, candidate) in visibleProducts.withIndex()) {
           checkStopRequested()
+          val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
+          if (productsByKey.containsKey(candidateKey)) {
+            logStep("ข้ามสินค้าซ้ำ: ${candidate.product.name.take(34)}")
+            continue
+          }
+
           logStep("เปิด detail สินค้า ${index + 1}/${visibleProducts.size}: ${candidate.product.name.take(34)}")
           val product = enrichShopeeProductFromDetail(candidate) ?: continue
           val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
@@ -571,9 +578,18 @@ class KubdeeAccessibilityService : AccessibilityService() {
             logStep("บันทึกสินค้าแล้ว รวม ${productsByKey.size}: ${product.name.take(34)}")
             if (productsByKey.size >= maxItems) break
           }
+          if (!isShopeeLikedListVisible()) {
+            logStep("ยังไม่อยู่หน้ารายการถูกใจหลังเปิด detail")
+            lostLikedList = !returnToShopeeLikedList()
+            if (lostLikedList) break
+          }
         }
 
         logStep("หน้าถูกใจรอบ $round พบใหม่ $added รวม ${productsByKey.size}")
+        if (lostLikedList) {
+          logStep("หยุดรอบนี้เพื่อไม่กดรายการจากหน้าผิด")
+          break
+        }
         if (reachedRecommendations) {
           logStep("เจอหัวข้อ คุณอาจจะชอบสิ่งนี้ จบรายการถูกใจ")
           break
@@ -3646,19 +3662,37 @@ class KubdeeAccessibilityService : AccessibilityService() {
       checkStopRequested()
       if (isShopeeShareSheetVisible()) {
         logStep("ปิดแผ่นแชร์สินค้า")
-        performBack()
-        sleepStep(900L)
+        if (!performBack()) {
+          tapShopeeTopBackFallback()
+        }
+        sleepStep(1200L)
         return@repeat
       }
       if (isShopeeLikedListVisible()) {
         if (attempt > 0) logStep("กลับหน้ารายการถูกใจแล้ว")
         return true
       }
-      logStep("กด back กลับหน้ารายการถูกใจ (${attempt + 1}/6)")
-      performBack()
+      val actionLabel = if (isShopeeProductDetailVisible()) "กดกลับจากหน้า detail" else "กด back กลับหน้ารายการถูกใจ"
+      logStep("$actionLabel (${attempt + 1}/6)")
+      val backed = performBack()
+      sleepStep(700L)
+      if (!isShopeeLikedListVisible() && (isShopeeProductDetailVisible() || !backed)) {
+        tapShopeeTopBackFallback()
+      }
       sleepStep(900L)
     }
-    return isShopeeLikedListVisible()
+    val returned = isShopeeLikedListVisible()
+    if (!returned) {
+      logStep("ยังกลับหน้ารายการถูกใจไม่ได้")
+    }
+    return returned
+  }
+
+  private fun tapShopeeTopBackFallback(): Boolean {
+    val screen = screenBounds(rootInActiveWindow)
+    val x = screen.left + screen.width() * 0.065f
+    val y = screen.top + screen.height() * 0.07f
+    return tapBlocking(x, y, timeoutMs = 1800L, durationMs = 90L)
   }
 
   private fun normalizePrice(text: String): String? {
