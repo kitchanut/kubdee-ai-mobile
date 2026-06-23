@@ -11,8 +11,12 @@ import {
 
 import { toast } from 'sonner-native';
 
+import {
+  beginAutomationActivityRun,
+  pushAutomationActivityLog,
+  setAutomationActivityRunning,
+} from '@/activity/automationActivityLogStore';
 import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
-import ActivityLogCard from '@/components/ui/ActivityLogCard';
 import Text from '@/components/ui/KubdeeText';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
@@ -22,10 +26,7 @@ import {
   getAccessibilityStatus,
   importShopeeLikedProducts as runNativeShopeeLikedImport,
   openAccessibilitySettings,
-  stopShopeeAutomation,
-  subscribeShopeeImportLogs,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeeImportLog } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import {
@@ -215,11 +216,9 @@ export default function ProductPanel({
   const [sortAscending, setSortAscending] = useState(true);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isShopeeImporting, setIsShopeeImporting] = useState(false);
-  const [isStoppingShopee, setIsStoppingShopee] = useState(false);
-  const [shopeeLogs, setShopeeLogs] = useState<NativeShopeeImportLog[]>([]);
 
   const appendShopeeLog = useCallback((message: string, ts = Date.now()): void => {
-    setShopeeLogs((current) => [...current, { message, ts }].slice(-80));
+    pushAutomationActivityLog('shopee-import', message, ts);
   }, []);
 
   const shopeeProductSaver = useShopeeIncrementalProductSaver({
@@ -227,16 +226,6 @@ export default function ProductPanel({
     importShopeeProducts,
     appendLog: appendShopeeLog,
   });
-
-  useEffect(() => {
-    const subscription = subscribeShopeeImportLogs((entry) => {
-      setShopeeLogs((current) => [...current, entry].slice(-80));
-    });
-
-    return () => {
-      subscription?.remove();
-    };
-  }, []);
 
   const showSyncResult = useCallback((result: ProductSyncResult | null): void => {
     if (!result) {
@@ -373,8 +362,7 @@ export default function ProductPanel({
     }
 
     setIsShopeeImporting(true);
-    setIsStoppingShopee(false);
-    setShopeeLogs([]);
+    beginAutomationActivityRun('shopee-import');
     shopeeProductSaver.startSession(selectedProfileId);
     appendShopeeLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
 
@@ -440,25 +428,9 @@ export default function ProductPanel({
     } finally {
       shopeeProductSaver.stopSession();
       setIsShopeeImporting(false);
-      setIsStoppingShopee(false);
+      setAutomationActivityRunning('shopee-import', false);
     }
   }, [appendShopeeLog, isShopeeImporting, isSyncing, selectedProfileId, shopeeProductSaver]);
-
-  const handleStopShopeeImport = useCallback(async (): Promise<void> => {
-    if (!isShopeeImporting || isStoppingShopee) {
-      return;
-    }
-
-    setIsStoppingShopee(true);
-    appendShopeeLog('กำลังส่งคำสั่งหยุด Shopee import...');
-    const stopped = await stopShopeeAutomation();
-    if (!stopped) {
-      toast.warning('ยังหยุดไม่ได้ เพราะไม่พบ Accessibility Service ที่กำลังทำงาน');
-      setIsStoppingShopee(false);
-      return;
-    }
-    toast.success('ส่งคำสั่งหยุด Shopee import แล้ว');
-  }, [appendShopeeLog, isShopeeImporting, isStoppingShopee]);
 
   const handlePullRefresh = (): void => {
     if (isSyncing) {
@@ -544,23 +516,6 @@ export default function ProductPanel({
           <View className="rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
             <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{syncError}</Text>
           </View>
-        ) : null}
-
-        {isShopeeImporting || shopeeLogs.length > 0 ? (
-          <ActivityLogCard
-            icon={ShoppingBag}
-            theme={theme}
-            logs={shopeeLogs}
-            running={isShopeeImporting}
-            stopping={isStoppingShopee}
-            runningText="กำลังดึงสินค้า Shopee"
-            emptyText="รอข้อความจาก Shopee import..."
-            maxVisible={9}
-            onStop={() => {
-              void handleStopShopeeImport();
-            }}
-            onClear={() => setShopeeLogs([])}
-          />
         ) : null}
 
         {products.length > 0 ? (

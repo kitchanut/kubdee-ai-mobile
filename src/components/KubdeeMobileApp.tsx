@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAutomationActivityNativeBridge } from '@/activity/automationActivityLogStore';
 import { useAuth } from '@/auth/AuthContext';
 import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
@@ -31,6 +32,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     colorScheme === 'light' ? 'light' : 'dark'
   );
   const theme = useMemo(() => (themeMode === 'light' ? lightTheme : darkTheme), [themeMode]);
+  useAutomationActivityNativeBridge();
 
   // Keep NativeWind's dark: variants and CSS vars in sync with the
   // in-app theme toggle (single source of truth stays in themeMode).
@@ -39,25 +41,12 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   }, [themeMode]);
 
   const [activeTab, setActiveTab] = useState<TabId>('pipeline');
-  const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set(['local-android']));
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
   const auth = useAuth();
 
   const toggleThemeMode = (): void => {
     setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
-  };
-
-  const toggleDevice = (deviceId: string): void => {
-    setSelectedDeviceIds((current) => {
-      const next = new Set(current);
-      if (next.has(deviceId)) {
-        next.delete(deviceId);
-      } else {
-        next.add(deviceId);
-      }
-      return next;
-    });
   };
 
   const hasAttemptedProfileSync = auth.lastProfilesSyncedAt !== null || auth.profileDataError !== null;
@@ -149,19 +138,13 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'pipeline':
         return <AutoPilotScreen selectedProfileId={selectedProfileId} theme={theme} />;
       case 'mobile':
-        return (
-          <MobileDevicesScreen
-            selectedDeviceIds={selectedDeviceIds}
-            theme={theme}
-            onToggleDevice={toggleDevice}
-          />
-        );
+        return <MobileDevicesScreen theme={theme} />;
       case 'shopee':
         return (
           <ShopeeScreen
             selectedProfileId={selectedProfileId}
             theme={theme}
-            selectedCount={selectedDeviceIds.size}
+            selectedCount={1}
           />
         );
       case 'logs':
@@ -183,7 +166,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'library':
         return <LibraryScreen selectedProfileId={selectedProfileId} theme={theme} />;
       default:
-        return <MobileDevicesScreen selectedDeviceIds={selectedDeviceIds} theme={theme} onToggleDevice={toggleDevice} />;
+        return <MobileDevicesScreen theme={theme} />;
     }
   };
 

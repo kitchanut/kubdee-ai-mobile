@@ -3,6 +3,12 @@ import { CheckCircle2, Cloud, Heart, Link, ListChecks, Send, Settings, ShoppingB
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner-native';
 
+import {
+  beginAutomationActivityRun,
+  pushAutomationActivityLog,
+  setAutomationActivityRunning,
+  setAutomationActivityStopping,
+} from '@/activity/automationActivityLogStore';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import ActivityLogCard from '@/components/ui/ActivityLogCard';
@@ -80,6 +86,13 @@ export default function ShopeeScreen({
   const appendLog = useCallback((message: string, ts = Date.now()): void => {
     setLogs((current) => [...current, { message, ts }].slice(-80));
     setRunMessage(message);
+    pushAutomationActivityLog('shopee-import', message, ts);
+  }, []);
+
+  const appendPostLog = useCallback((message: string, ts = Date.now()): void => {
+    setPostLogs((current) => [...current, { message, ts }].slice(-80));
+    setPostMessage(message);
+    pushAutomationActivityLog('shopee-post', message, ts);
   }, []);
 
   const shopeeProductSaver = useShopeeIncrementalProductSaver({
@@ -131,6 +144,7 @@ export default function ShopeeScreen({
     setIsImporting(true);
     setIsStopping(false);
     setLogs([]);
+    beginAutomationActivityRun('shopee-import');
     shopeeProductSaver.startSession(selectedProfileId);
     appendLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
 
@@ -191,12 +205,13 @@ export default function ShopeeScreen({
     } catch (error) {
       await shopeeProductSaver.waitForIdle();
       const message = error instanceof Error ? error.message : String(error);
-      setRunMessage(message);
+      appendLog(message);
       toast.error(message);
     } finally {
       shopeeProductSaver.stopSession();
       setIsImporting(false);
       setIsStopping(false);
+      setAutomationActivityRunning('shopee-import', false);
     }
   }, [appendLog, importLimit, isImporting, isPosting, isSyncing, selectedProfileId, shopeeProductSaver]);
 
@@ -206,11 +221,13 @@ export default function ShopeeScreen({
     }
 
     setIsStopping(true);
+    setAutomationActivityStopping('shopee-import', true);
     appendLog('กำลังส่งคำสั่งหยุด Shopee import...');
     const stopped = await stopShopeeAutomation();
     if (!stopped) {
       toast.warning('ยังหยุดไม่ได้ เพราะไม่พบ Accessibility Service ที่กำลังทำงาน');
       setIsStopping(false);
+      setAutomationActivityStopping('shopee-import', false);
       return;
     }
 
@@ -304,7 +321,8 @@ export default function ShopeeScreen({
       setIsPosting(true);
       setIsStoppingPost(false);
       setPostLogs([]);
-      setPostMessage(
+      beginAutomationActivityRun('shopee-post');
+      appendPostLog(
         postAction === 'dryRun'
           ? `เริ่มทดสอบโพสต์ Shopee ${selectedPostVideos.length} วิดีโอ`
           : `เริ่มโพสต์ Shopee ${selectedPostVideos.length} วิดีโอ`
@@ -326,14 +344,14 @@ export default function ShopeeScreen({
 
       if (result.stopped) {
         const message = `หยุดโพสต์ Shopee แล้ว (${result.postedCount || 0}/${selectedPostVideos.length})`;
-        setPostMessage(message);
+        appendPostLog(message);
         toast.warning(message);
         return;
       }
 
       if (!result.success) {
         const message = result.error || 'โพสต์ Shopee ไม่สำเร็จ';
-        setPostMessage(message);
+        appendPostLog(message);
         toast.error(message);
         return;
       }
@@ -343,17 +361,18 @@ export default function ShopeeScreen({
       const message = postAction === 'dryRun'
         ? `ทดสอบโพสต์ Shopee สำเร็จ ${successCount}/${selectedPostVideos.length} วิดีโอ`
         : `โพสต์ Shopee สำเร็จ ${result.postedCount || 0}/${selectedPostVideos.length} วิดีโอ`;
-      setPostMessage(message);
+      appendPostLog(message);
       toast.success(message);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setPostMessage(message);
+      appendPostLog(message);
       toast.error(message);
     } finally {
       setIsPosting(false);
       setIsStoppingPost(false);
+      setAutomationActivityRunning('shopee-post', false);
     }
-  }, [isImporting, isPosting, selectedPostVideos]);
+  }, [appendPostLog, isImporting, isPosting, selectedPostVideos]);
 
   const handleStopPost = useCallback(async (): Promise<void> => {
     if (!isPosting || isStoppingPost) {
@@ -361,16 +380,18 @@ export default function ShopeeScreen({
     }
 
     setIsStoppingPost(true);
-    setPostMessage('กำลังส่งคำสั่งหยุด Shopee post...');
+    setAutomationActivityStopping('shopee-post', true);
+    appendPostLog('กำลังส่งคำสั่งหยุด Shopee post...');
     const stopped = await stopShopeeAutomation();
     if (!stopped) {
       toast.warning('ยังหยุดไม่ได้ เพราะไม่พบ Accessibility Service ที่กำลังทำงาน');
       setIsStoppingPost(false);
+      setAutomationActivityStopping('shopee-post', false);
       return;
     }
 
     toast.success('ส่งคำสั่งหยุด Shopee post แล้ว');
-  }, [isPosting, isStoppingPost]);
+  }, [appendPostLog, isPosting, isStoppingPost]);
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">

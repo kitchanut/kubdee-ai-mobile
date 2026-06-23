@@ -18,6 +18,13 @@ export interface ActivityLogEntry {
   ts: number;
 }
 
+export interface ActivityLogStat {
+  label: string;
+  value: string;
+  color?: string;
+  backgroundColor?: string;
+}
+
 interface ActivityLogCardProps<TLog extends ActivityLogEntry = ActivityLogEntry> {
   theme: KubdeeTheme;
   logs: TLog[];
@@ -33,6 +40,7 @@ interface ActivityLogCardProps<TLog extends ActivityLogEntry = ActivityLogEntry>
   stopLabel?: string;
   stoppingLabel?: string;
   clearLabel?: string;
+  stats?: ActivityLogStat[];
   onStop?: () => void;
   onClear?: () => void;
   formatTimestamp?: (timestamp: number) => string;
@@ -53,6 +61,7 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
   stopLabel = 'หยุด',
   stoppingLabel = 'กำลังหยุด',
   clearLabel = 'ล้างประวัติ',
+  stats = [],
   onStop,
   onClear,
   formatTimestamp = formatLogTime,
@@ -79,6 +88,7 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
             <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle" numberOfLines={1}>
               {statusText}
             </Text>
+            {stats.length > 0 ? <ActivityLogStats stats={stats.slice(0, 3)} theme={theme} compact /> : null}
           </View>
           <ChevronUp size={14} color={theme.textSubtle} strokeWidth={2.2} />
         </Pressable>
@@ -172,6 +182,7 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
                 }
               />
               <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle">{statusText}</Text>
+              {stats.length > 0 ? <ActivityLogStats stats={stats} theme={theme} /> : null}
             </View>
 
             <ScrollView
@@ -198,6 +209,42 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
         </View>
       </Modal>
     </>
+  );
+}
+
+function ActivityLogStats({
+  compact = false,
+  stats,
+  theme,
+}: {
+  compact?: boolean;
+  stats: ActivityLogStat[];
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  return (
+    <View className={`mt-1 flex-row flex-wrap ${compact ? 'gap-1' : 'gap-1.5'}`}>
+      {stats.map((stat) => (
+        <View
+          key={`${stat.label}-${stat.value}`}
+          className="flex-row items-center gap-1 rounded-kd-md px-1.5 py-1"
+          style={{ backgroundColor: stat.backgroundColor ?? theme.cardMuted }}
+        >
+          <Text
+            className="text-[9px] font-extrabold uppercase text-kd-text-muted"
+            numberOfLines={1}
+          >
+            {stat.label}
+          </Text>
+          <Text
+            className="text-[10px] font-black"
+            numberOfLines={1}
+            style={{ color: stat.color ?? theme.text }}
+          >
+            {stat.value}
+          </Text>
+        </View>
+      ))}
+    </View>
   );
 }
 
