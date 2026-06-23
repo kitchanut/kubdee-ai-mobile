@@ -45,6 +45,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -4263,6 +4264,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     val productUrl = relatedTexts.firstNotNullOfOrNull { extractUrl(it.text) }
     val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
+      ?: fallbackShopeeProductIdFromName(name)
     val stock = relatedTexts.firstNotNullOfOrNull { extractStock(it.text) }
 
     val product = ShopeeLikedProduct(
@@ -4330,7 +4332,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
         logStep("ข้ามคัดลอกลิงก์สินค้าเพื่อลด memory ตอน import")
         product.productUrl
       }
-      val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) } ?: product.externalProductId
+      val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
+        ?: product.externalProductId
+        ?: fallbackShopeeProductIdFromName(product.name)
 
       if (imageUrl != null) {
         logStep("ได้รูปจาก detail")
@@ -4695,7 +4699,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val resultFile = File(filesDir, KubdeeClipboardBridgeActivity.RESULT_FILE_NAME)
     try {
       val intent = Intent(this, KubdeeClipboardBridgeActivity::class.java).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        addFlags(
+          Intent.FLAG_ACTIVITY_NEW_TASK or
+            Intent.FLAG_ACTIVITY_MULTIPLE_TASK or
+            Intent.FLAG_ACTIVITY_NO_ANIMATION or
+            Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+            Intent.FLAG_ACTIVITY_NO_HISTORY
+        )
         putExtra(KubdeeClipboardBridgeActivity.EXTRA_REQUEST_ID, requestId)
       }
       startActivity(intent)
@@ -5087,20 +5097,19 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun extractUrl(text: String): String? = URL_REGEX.find(text)?.value
 
   private fun extractShopeeProductIdFromUrl(url: String): String? {
+    extractShopeeProductIdFromResolvedUrl(url)?.let { return it }
     val resolvedUrl = if (url.contains("s.shopee", ignoreCase = true)) resolveShopeeUrl(url) else url
-    val patterns = listOf(
-      Regex("""(?:-|\.|/)i\.(\d+)\.(\d+)"""),
-      Regex("""product/(\d+)/(\d+)"""),
-      Regex("""shopid=(\d+).*itemid=(\d+)"""),
-      Regex("""shop_id=(\d+).*item_id=(\d+)""")
-    )
-    for (pattern in patterns) {
-      val match = pattern.find(resolvedUrl) ?: continue
-      val shopId = match.groupValues.getOrNull(1).orEmpty()
-      val itemId = match.groupValues.getOrNull(2).orEmpty()
-      if (shopId.isNotBlank() && itemId.isNotBlank()) return "shopee:$shopId:$itemId"
-    }
-    return null
+    return extractShopeeProductIdFromResolvedUrl(resolvedUrl)
+  }
+
+  private fun fallbackShopeeProductIdFromName(name: String): String? {
+    val normalized = name.trim().lowercase(Locale.ROOT)
+    if (normalized.isBlank()) return null
+    val digest = MessageDigest.getInstance("SHA-1").digest(normalized.toByteArray(Charsets.UTF_8))
+    val hash = digest.joinToString("") { byte ->
+      (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+    }.take(16)
+    return "shopee:$hash"
   }
 
   private fun resolveShopeeUrl(rawUrl: String): String {
@@ -5135,14 +5144,29 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun extractShopeeProductIdFromResolvedUrl(url: String): String? {
+    val cleanUrl = url.trim()
+    if (cleanUrl.isBlank()) return null
+    val uri = runCatching { Uri.parse(cleanUrl) }.getOrNull()
+    val host = uri?.host.orEmpty()
+    if (host.isNotBlank() && !host.contains("shopee.", ignoreCase = true)) return null
+
+    val shopIdFromQuery = listOf("shopid", "shop_id", "shopId")
+      .firstNotNullOfOrNull { key -> uri?.getQueryParameter(key)?.takeIf { value -> value.all { it.isDigit() } } }
+    val itemIdFromQuery = listOf("itemid", "item_id", "itemId")
+      .firstNotNullOfOrNull { key -> uri?.getQueryParameter(key)?.takeIf { value -> value.all { it.isDigit() } } }
+    if (!shopIdFromQuery.isNullOrBlank() && !itemIdFromQuery.isNullOrBlank()) {
+      return "shopee:$shopIdFromQuery:$itemIdFromQuery"
+    }
+
+    val path = uri?.encodedPath?.let { Uri.decode(it) } ?: cleanUrl
+    val haystack = "$path/"
     val patterns = listOf(
-      Regex("""(?:-|\.|/)i\.(\d+)\.(\d+)"""),
-      Regex("""product/(\d+)/(\d+)"""),
-      Regex("""shopid=(\d+).*itemid=(\d+)"""),
-      Regex("""shop_id=(\d+).*item_id=(\d+)""")
+      Regex("""/product/(\d{4,})/(\d{4,})(?:$|[/?#])""", RegexOption.IGNORE_CASE),
+      Regex("""(?:^|/)(\d{4,})/(\d{4,})(?:$|[/?#])""", RegexOption.IGNORE_CASE),
+      Regex("""(?:^|[./-])i\.(\d{4,})\.(\d{4,})(?:$|[/?#])""", RegexOption.IGNORE_CASE)
     )
     for (pattern in patterns) {
-      val match = pattern.find(url) ?: continue
+      val match = pattern.find(haystack) ?: continue
       val shopId = match.groupValues.getOrNull(1).orEmpty()
       val itemId = match.groupValues.getOrNull(2).orEmpty()
       if (shopId.isNotBlank() && itemId.isNotBlank()) return "shopee:$shopId:$itemId"
