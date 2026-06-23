@@ -15,7 +15,7 @@ import { toast } from 'sonner-native';
 import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { useLibrary } from '@/library/LibraryContext';
-import type { ProductDeleteResult, ProductSyncResult } from '@/library/LibraryContext';
+import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
 import {
   getAccessibilityStatus,
@@ -159,6 +159,22 @@ function formatSyncTime(timestamp: number): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(timestamp));
+}
+
+function formatShopeeImportResult(result: ProductImportResult): string {
+  const parts = [`${result.imported} รายการ`];
+
+  if (result.restoredDeleted > 0) {
+    parts.push(`กู้คืน ${result.restoredDeleted}`);
+  }
+  if (result.skippedDeleted > 0) {
+    parts.push(`ข้ามที่ลบไว้ ${result.skippedDeleted}`);
+  }
+  if (result.skippedStale > 0) {
+    parts.push(`ข้ามข้อมูลเก่า ${result.skippedStale}`);
+  }
+
+  return `นำเข้า Shopee สำเร็จ ${parts.join(' · ')}`;
 }
 
 export default function ProductPanel({
@@ -354,6 +370,7 @@ export default function ProductPanel({
     try {
       const status = await getAccessibilityStatus();
       if (!status.running) {
+        appendShopeeLog('หยุดนำเข้า: ยังไม่ได้เปิด Accessibility Service');
         Alert.alert(
           'เปิด Accessibility ก่อน',
           'Kubdee AI ต้องใช้ Accessibility เพื่อเข้า Shopee และอ่านรายการสินค้าถูกใจบนเครื่องนี้',
@@ -372,24 +389,33 @@ export default function ProductPanel({
 
       const scrapedProducts = await runNativeShopeeLikedImport(50);
       if (scrapedProducts.length === 0) {
+        appendShopeeLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
         toast.warning('ไม่พบสินค้าใน Shopee ถูกใจ');
         return;
       }
 
+      appendShopeeLog(`ดึงจาก Shopee ได้ ${scrapedProducts.length} รายการ กำลังซิงก์เข้าคลัง`);
       const result = await importShopeeProducts(selectedProfileId, scrapedProducts);
       if (!result) {
+        appendShopeeLog('ยังซิงก์ไม่ได้: คลังสินค้ากำลังทำงานอยู่');
         toast.warning('คลังสินค้ากำลังซิงก์อยู่ ลองใหม่อีกครั้ง');
         return;
       }
 
       if (result.success) {
-        toast.success(`นำเข้า Shopee ${result.imported} รายการ`);
+        const message = formatShopeeImportResult(result);
+        appendShopeeLog(message);
+        toast.success(message);
         return;
       }
 
-      toast.error(result.error || 'นำเข้าสินค้า Shopee ไม่สำเร็จ');
+      const message = result.error || 'นำเข้าสินค้า Shopee ไม่สำเร็จ';
+      appendShopeeLog(message);
+      toast.error(message);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      appendShopeeLog(message);
+      toast.error(message);
     } finally {
       setIsShopeeImporting(false);
       setIsStoppingShopee(false);

@@ -83,6 +83,53 @@ function normalizePrice(value: string | null | undefined): string | null {
   return Number.isFinite(numeric) ? String(numeric) : cleaned;
 }
 
+function extractShopeeProductIdFromUrl(value: string | null | undefined): string | null {
+  const raw = cleanText(value);
+  if (!raw) {
+    return null;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  if (!/(^|\.)shopee\./i.test(url.hostname)) {
+    return null;
+  }
+
+  const shopId =
+    url.searchParams.get('shopid') ||
+    url.searchParams.get('shop_id') ||
+    url.searchParams.get('shopId');
+  const itemId =
+    url.searchParams.get('itemid') ||
+    url.searchParams.get('item_id') ||
+    url.searchParams.get('itemId');
+  if (shopId && itemId && /^\d+$/.test(shopId) && /^\d+$/.test(itemId)) {
+    return `shopee:${shopId}:${itemId}`;
+  }
+
+  const path = decodeURIComponent(url.pathname || '');
+  const haystack = `${path}/`;
+  const patterns = [
+    /\/product\/(\d{4,})\/(\d{4,})(?:$|[/?#])/i,
+    /(?:^|\/)(\d{4,})\/(\d{4,})(?:$|[/?#])/i,
+    /(?:^|[./-])i\.(\d{4,})\.(\d{4,})(?:$|[/?#])/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = haystack.match(pattern);
+    if (match) {
+      return `shopee:${match[1]}:${match[2]}`;
+    }
+  }
+
+  return null;
+}
+
 function toShopeeSyncProducts(
   profileLocalId: string,
   products: ShopeeImportProductInput[],
@@ -99,7 +146,8 @@ function toShopeeSyncProducts(
     }
 
     const productUrl = cleanText(product.productUrl);
-    const externalProductId = cleanText(product.externalProductId);
+    const externalProductId =
+      cleanText(product.externalProductId) || extractShopeeProductIdFromUrl(productUrl);
     const imageUrl = cleanText(product.imageUrl);
     const price = normalizePrice(product.price);
     const identity = externalProductId || productUrl || `${name}\u0000${price ?? ''}`;

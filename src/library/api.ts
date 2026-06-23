@@ -76,7 +76,7 @@ export async function fetchAffiliateProducts(
   options?: { profileLocalId?: string }
 ): Promise<AuthApiResult<AffiliateProduct[]>> {
   try {
-    const params = new URLSearchParams({ limit: '1000' });
+    const params = new URLSearchParams({ limit: '5000' });
     if (options?.profileLocalId) {
       params.set('profileLocalId', options.profileLocalId);
     }
