@@ -19,6 +19,7 @@ export interface SyncAffiliateProductInput {
   localId: string;
   profileLocalId: string;
   name: string;
+  description?: string | null;
   externalProductId?: string | null;
   productUrl?: string | null;
   price?: string | null;

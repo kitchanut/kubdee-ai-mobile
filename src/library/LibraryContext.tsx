@@ -83,6 +83,28 @@ function normalizePrice(value: string | null | undefined): string | null {
   return Number.isFinite(numeric) ? String(numeric) : cleaned;
 }
 
+function normalizePlatform(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() || '';
+}
+
+function toNumber(value: number | string | null | undefined): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function extractShopeeProductIdFromUrl(value: string | null | undefined): string | null {
   const raw = cleanText(value);
   if (!raw) {
@@ -130,14 +152,80 @@ function extractShopeeProductIdFromUrl(value: string | null | undefined): string
   return null;
 }
 
+function productExternalKey(
+  profileLocalId: string | null | undefined,
+  platform: string | null | undefined,
+  externalProductId: string | null | undefined
+): string | null {
+  const profile = cleanText(profileLocalId);
+  const productId = cleanText(externalProductId);
+  if (!profile || !productId) {
+    return null;
+  }
+
+  return `${profile}\u0000${normalizePlatform(platform)}\u0000${productId}`;
+}
+
+function getExistingShopeeProduct(
+  localId: string,
+  profileLocalId: string,
+  externalProductId: string | null,
+  existingByLocalId: Map<string, AffiliateProduct>,
+  existingByExternalKey: Map<string, AffiliateProduct>
+): AffiliateProduct | null {
+  const byLocalId = existingByLocalId.get(localId);
+  if (byLocalId) {
+    return byLocalId;
+  }
+
+  const externalKey = productExternalKey(profileLocalId, 'shopee', externalProductId);
+  return externalKey ? existingByExternalKey.get(externalKey) ?? null : null;
+}
+
+function preserveExistingProductFields(
+  payload: SyncAffiliateProductInput,
+  existing: AffiliateProduct | null,
+  fallbackCreatedAt: number
+): SyncAffiliateProductInput {
+  if (!existing) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    description: existing.description,
+    caption: existing.caption,
+    hashtags: existing.hashtags,
+    cta: existing.cta,
+    imagePath: existing.imagePath,
+    imageR2Key: existing.imageR2Key,
+    imageUrl: existing.imageUrl,
+    imageHash: existing.imageHash,
+    imageMimeType: existing.imageMimeType,
+    imageSize: existing.imageSize,
+    imageUploadedAt: toNumber(existing.imageUploadedAt),
+    localCreatedAt: toNumber(existing.localCreatedAt) ?? fallbackCreatedAt,
+  };
+}
+
 function toShopeeSyncProducts(
   profileLocalId: string,
   products: ShopeeImportProductInput[],
-  deviceId: string
+  deviceId: string,
+  existingProducts: AffiliateProduct[] = []
 ): SyncAffiliateProductInput[] {
   const now = Date.now();
   const seen = new Set<string>();
   const syncProducts: SyncAffiliateProductInput[] = [];
+  const existingByLocalId = new Map(existingProducts.map((product) => [product.localId, product]));
+  const existingByExternalKey = new Map<string, AffiliateProduct>();
+
+  for (const product of existingProducts) {
+    const key = productExternalKey(product.profileLocalId, product.platform, product.externalProductId);
+    if (key && !existingByExternalKey.has(key)) {
+      existingByExternalKey.set(key, product);
+    }
+  }
 
   for (const product of products) {
     const name = cleanText(product.name);
@@ -158,7 +246,14 @@ function toShopeeSyncProducts(
     }
     seen.add(localId);
 
-    syncProducts.push({
+    const existingProduct = getExistingShopeeProduct(
+      localId,
+      profileLocalId,
+      externalProductId,
+      existingByLocalId,
+      existingByExternalKey
+    );
+    const payload = preserveExistingProductFields({
       localId,
       profileLocalId,
       name,
@@ -177,7 +272,9 @@ function toShopeeSyncProducts(
       createdByApp: 'mobile',
       sourceDeviceId: deviceId,
       updatedByApp: 'mobile',
-    });
+    }, existingProduct, now);
+
+    syncProducts.push(payload);
   }
 
   return syncProducts;
@@ -245,8 +342,30 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       setIsSyncing(true);
 
       try {
+        let activeToken = token;
+        let existingProducts = products.filter((product) => product.profileLocalId === cleanProfileLocalId);
+        let existingResult = await fetchAffiliateProducts(activeToken, { profileLocalId: cleanProfileLocalId });
+
+        if (!existingResult.ok && existingResult.status === 401) {
+          await recheckPlan();
+          const refreshedTokens = await getStoredAuthTokens();
+          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+            activeToken = refreshedTokens.accessToken;
+            existingResult = await fetchAffiliateProducts(activeToken, { profileLocalId: cleanProfileLocalId });
+          }
+        }
+
+        if (existingResult.ok && existingResult.data) {
+          existingProducts = existingResult.data;
+        }
+
         const deviceId = await getOrCreateSyncDeviceId();
-        const syncPayloadProducts = toShopeeSyncProducts(cleanProfileLocalId, importedProducts, deviceId);
+        const syncPayloadProducts = toShopeeSyncProducts(
+          cleanProfileLocalId,
+          importedProducts,
+          deviceId,
+          existingProducts
+        );
 
         if (syncPayloadProducts.length === 0) {
           return {
@@ -259,7 +378,6 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
           };
         }
 
-        let activeToken = token;
         let result = await syncAffiliateProducts(activeToken, {
           deviceId,
           products: syncPayloadProducts,
@@ -314,7 +432,7 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
         setIsSyncing(false);
       }
     },
-    [recheckPlan, token]
+    [products, recheckPlan, token]
   );
 
   const deleteProducts = useCallback(
