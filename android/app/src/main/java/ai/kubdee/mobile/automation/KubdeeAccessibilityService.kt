@@ -2,6 +2,7 @@ package ai.kubdee.mobile.automation
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -83,7 +84,18 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private var overlayStopButton: Button? = null
   private var automationOverlayUnavailable = false
   private val automationLogLines = mutableListOf<String>()
+  private val automationStatsLock = Any()
   private var automationForegroundActive = false
+  private var automationStartedAtMs = 0L
+  private var automationTaskLabel = "Automation"
+  private var automationUnitLabel = "STEP"
+  private var automationCurrentCount = 0
+  private var automationTotalCount = 0
+  private var automationSuccessCount = 0
+  private var automationFailedCount = 0
+  private var automationRound = 0
+  private var automationTotalRounds = 0
+  private var automationStatusLabel = "RUNNING"
 
   @Volatile
   private var stopRequested = false
@@ -107,7 +119,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
     private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
     private const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
     private const val TARGET_PACKAGE_CHROME = "com.android.chrome"
-    private val SHOPEE_LIKED_TEXTS = listOf("สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "Liked", "My Likes", "My liked items")
+    private val SHOPEE_LIKED_TEXTS = listOf(
+      "สิ่งที่ฉันถูกใจ",
+      "รายการถูกใจ",
+      "สิ่งที่ถูกใจ",
+      "ถูกใจ",
+      "Liked",
+      "Likes",
+      "My Likes",
+      "My liked items"
+    )
     private val SHOPEE_AFFILIATE_TEXTS = listOf(
       "โปรแกรม Affiliate",
       "Shopee Affiliate",
@@ -334,6 +355,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   fun requestStopShopeeAutomation() {
     stopRequested = true
+    updateAutomationStats(statusLabel = "STOPPING")
     logStep("กำลังหยุดงาน Shopee...")
   }
 
@@ -344,6 +366,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   fun requestStopGoogleFlowAutomation() {
     googleFlowStopRequested = true
     googleFlowThread?.interrupt()
+    updateAutomationStats(statusLabel = "STOPPING")
     logGoogleFlowStep("กำลังหยุด Auto Pilot Google Flow...")
   }
 
@@ -376,6 +399,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
         val enabledSteps = googleFlowEnabledSteps(payload)
         val debugMode = settings?.optString("debugMode", "none") ?: "none"
         val openProjectOnlyDebug = debugMode == "open_project_only"
+        configureAutomationStats(
+          taskLabel = if (openProjectOnlyDebug) "Flow Debug" else "Google Flow",
+          unitLabel = if (openProjectOnlyDebug) "STEP" else "PRODUCT",
+          totalCount = if (openProjectOnlyDebug) 1 else productCount,
+          totalRounds = if (openProjectOnlyDebug) 1 else totalRounds
+        )
 
         if (!openProjectOnlyDebug && productCount <= 0) {
           throw IllegalStateException("ไม่มีสินค้าสำหรับ Auto Pilot")
@@ -519,8 +548,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     Thread {
       try {
-        logStep("เปิด Shopee")
-        if (!launchPackage(targetPackage)) {
+        resetAutomationLog()
+        configureAutomationStats("Shopee Search", "STEP", 6)
+        logStep("รีเซ็ต Shopee ก่อนเริ่มงาน")
+        if (!launchPackage(targetPackage, resetTask = true)) {
           logStep("เปิด Shopee ไม่สำเร็จ")
           return@Thread
         }
@@ -573,9 +604,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     try {
       clearStopShopeeAutomation()
       resetAutomationLog()
+      configureAutomationStats("Shopee Import", "ITEM", maxItems)
       beginAutomationForeground("กำลังดึงสินค้า Shopee")
       logStep("เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ")
-      if (!waitForPackageActive(targetPackage, 1_500L) && !launchPackage(targetPackage)) {
+      closeShopeeBeforeFreshLaunch(targetPackage)
+      if (!launchPackage(targetPackage, resetTask = true)) {
         throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
       }
 
@@ -622,6 +655,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           if (!productsByKey.containsKey(key)) {
             productsByKey[key] = product
             added += 1
+            updateAutomationStats(currentCount = productsByKey.size, successCount = productsByKey.size)
             logStep("บันทึกสินค้าแล้ว รวม ${productsByKey.size}: ${product.name.take(34)}")
             if (productsByKey.size >= maxItems) break
           }
@@ -675,6 +709,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val payload = JSONObject(payloadJson)
       val postAction = payload.optString("postAction", "publish").ifBlank { "publish" }
       videos = parseShopeePostingVideos(payload.optJSONArray("videos") ?: JSONArray())
+      configureAutomationStats("Shopee Post", "CLIP", videos.size)
 
       if (videos.isEmpty()) {
         return JSONObject().apply {
@@ -689,6 +724,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
       for ((index, video) in videos.withIndex()) {
         checkStopRequested()
+        updateAutomationStats(currentCount = index + 1, totalCount = videos.size)
         try {
           logShopeePostStep("── คลิป ${index + 1}/${videos.size} ──")
           val preparedVideo = prepareShopeePostingVideoUri(video.fileUri, index)
@@ -698,6 +734,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
           if (postAction == "dryRun") {
             successCount += 1
+            updateAutomationStats(successCount = successCount)
             results.put(JSONObject().apply {
               put("videoIndex", index)
               put("success", true)
@@ -707,6 +744,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           } else {
             postedCount += 1
             successCount += 1
+            updateAutomationStats(successCount = successCount)
             results.put(JSONObject().apply {
               put("videoIndex", index)
               put("success", true)
@@ -718,6 +756,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           throw error
         } catch (error: Exception) {
           val message = error.message ?: "โพสต์ Shopee ไม่สำเร็จ"
+          incrementAutomationFailedCount()
           results.put(JSONObject().apply {
             put("videoIndex", index)
             put("success", false)
@@ -793,8 +832,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun runShopeeVideoPostingFlow(video: ShopeePostingVideo, preparedVideo: PreparedShopeeVideo, postAction: String) {
-    logShopeePostStep("เปิด Shopee เพื่อโพสต์วิดีโอ")
-    if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 1_500L) && !launchPackage(TARGET_PACKAGE_SHOPEE)) {
+    logShopeePostStep("รีเซ็ต Shopee เพื่อโพสต์วิดีโอ")
+    if (!launchPackage(TARGET_PACKAGE_SHOPEE, resetTask = true)) {
       throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
     }
     if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 8_000L)) {
@@ -863,7 +902,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun selectPreparedShopeeVideoFromGallery(preparedVideo: PreparedShopeeVideo) {
     logShopeePostStep("เปิดคลังภาพ")
-    if (!clickByAnyText(listOf("คลังภาพ", "Gallery", "Albums"), exact = false)) {
+    if (
+      !clickByAnyText(
+        listOf("คลังภาพ", "Gallery", "Albums"),
+        exact = false,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      )
+    ) {
       throw IllegalStateException("ไม่พบปุ่ม คลังภาพ")
     }
     sleepStep(3000L)
@@ -878,7 +923,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun tapShopeeNext(label: String) {
     logShopeePostStep(label)
-    if (!clickByAnyText(listOf("ถัดไป", "Next"), exact = false)) {
+    if (!clickByAnyText(listOf("ถัดไป", "Next"), exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
       throw IllegalStateException("ไม่พบปุ่ม $label")
     }
     sleepStep(1500L)
@@ -898,7 +943,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     logShopeePostStep("กรอกแคปชั่น")
     val firstEditable = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
     if (firstEditable == null) {
-      clickByAnyText(listOf("แคปชั่น", "คำอธิบาย", "Caption", "Description"), exact = false)
+      clickByAnyText(
+        listOf("แคปชั่น", "คำอธิบาย", "Caption", "Description"),
+        exact = false,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      )
       sleepStep(800L)
     }
 
@@ -911,7 +960,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       throw IllegalStateException("กรอกแคปชั่นไม่สำเร็จ")
     }
     sleepStep(800L)
-    clickByAnyText(listOf("ตกลง", "Done"), exact = false)
+    clickByAnyText(listOf("ตกลง", "Done"), exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     sleepStep(800L)
   }
 
@@ -925,13 +974,26 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     try {
       logShopeePostStep("แนบสินค้า Shopee")
-      if (!clickByAnyText(listOf("แตะเพื่อเพิ่มสินค้า", "เพิ่มสินค้า", "Tap to add product"), exact = false)) {
+      if (
+        !clickByAnyText(
+          listOf("แตะเพื่อเพิ่มสินค้า", "เพิ่มสินค้า", "Tap to add product"),
+          exact = false,
+          allowedPackageName = TARGET_PACKAGE_SHOPEE
+        )
+      ) {
         logShopeePostStep("ไม่พบปุ่มเพิ่มสินค้า ข้ามการแนบสินค้า")
         return
       }
       sleepStep(1800L)
 
-      if (productUrl.isNotBlank() && clickByAnyText(listOf("ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"), exact = false)) {
+      if (
+        productUrl.isNotBlank() &&
+        clickByAnyText(
+          listOf("ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"),
+          exact = false,
+          allowedPackageName = TARGET_PACKAGE_SHOPEE
+        )
+      ) {
         sleepStep(1200L)
         val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
         if (edit != null) {
@@ -939,9 +1001,19 @@ class KubdeeAccessibilityService : AccessibilityService() {
           sleepStep(400L)
           setNodeText(edit, productUrl)
           sleepStep(800L)
-          if (clickByAnyText(listOf("เพิ่ม", "Add", "ตกลง", "OK", "ยืนยัน", "Confirm"), exact = false)) {
+          if (
+            clickByAnyText(
+              listOf("เพิ่ม", "Add", "ตกลง", "OK", "ยืนยัน", "Confirm"),
+              exact = false,
+              allowedPackageName = TARGET_PACKAGE_SHOPEE
+            )
+          ) {
             sleepStep(2000L)
-            clickByAnyText(listOf("เพิ่ม", "Add", "เลือก", "Select", "เสร็จ", "Done"), exact = false)
+            clickByAnyText(
+              listOf("เพิ่ม", "Add", "เลือก", "Select", "เสร็จ", "Done"),
+              exact = false,
+              allowedPackageName = TARGET_PACKAGE_SHOPEE
+            )
             sleepStep(1800L)
             logShopeePostStep("แนบสินค้าด้วยลิงก์แล้ว")
             return
@@ -957,7 +1029,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
           setNodeText(edit, productName)
           pressImeEnterOn(edit)
           sleepStep(2600L)
-          if (clickByAnyText(listOf("เพิ่ม", "Add", "เลือก", "Select"), exact = false)) {
+          if (
+            clickByAnyText(
+              listOf("เพิ่ม", "Add", "เลือก", "Select"),
+              exact = false,
+              allowedPackageName = TARGET_PACKAGE_SHOPEE
+            )
+          ) {
             sleepStep(1800L)
             logShopeePostStep("แนบสินค้าด้วยชื่อสินค้าแล้ว")
             return
@@ -977,7 +1055,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun tapShopeePostButton() {
     logShopeePostStep("กดโพสต์")
-    if (!clickByAnyText(listOf("โพสต์", "Post"), exact = true)) {
+    if (!clickByAnyText(listOf("โพสต์", "Post"), exact = true, allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
       throw IllegalStateException("ไม่พบปุ่มโพสต์")
     }
     logShopeePostStep("กดโพสต์แล้ว รอ Shopee รับคำสั่ง")
@@ -985,12 +1063,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun tapShopeeVideoComposerButton(): Boolean {
-    if (clickByAnyText(SHOPEE_VIDEO_COMPOSER_TEXTS, exact = false)) return true
+    if (clickByAnyText(SHOPEE_VIDEO_COMPOSER_TEXTS, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
 
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes)
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     val candidate = textNodes
       .filter { node ->
         SHOPEE_VIDEO_COMPOSER_TEXTS.any { needle -> node.text.contains(needle, ignoreCase = true) } &&
@@ -1006,7 +1084,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     repeat(3) { attempt ->
       if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 1_000L)) {
         logShopeePostStep("ดึง Shopee กลับมาหลังออกจากหน้าค้าง (${attempt + 1}/3)")
-        if (!launchPackage(TARGET_PACKAGE_SHOPEE)) {
+        if (!launchPackage(TARGET_PACKAGE_SHOPEE, resetTask = true)) {
           throw IllegalStateException("เปิด Shopee ไม่สำเร็จหลังออกจากหน้าค้าง")
         }
         if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 8_000L)) {
@@ -1036,7 +1114,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
       logShopeePostStep("ออกจากหน้า Shopee ที่ค้างก่อนเริ่มโพสต์ (${attempt + 1}/5)")
       if (!performBack()) return
       sleepStep(1200L)
-      clickByAnyText(SHOPEE_LEAVE_POST_CONFIRM_TEXTS, exact = false)
+      clickByAnyText(
+        SHOPEE_LEAVE_POST_CONFIRM_TEXTS,
+        exact = false,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      )
       sleepStep(900L)
     }
   }
@@ -1047,10 +1129,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     return roots.any { root ->
       val textNodes = mutableListOf<TextNode>()
-      collectTextNodes(root, textNodes)
-      val shopeeTextNodes = textNodes.filter { node ->
-        node.node.packageName?.toString() == TARGET_PACKAGE_SHOPEE
-      }
+      collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+      val shopeeTextNodes = textNodes
       val hasPostingText = shopeeTextNodes.any { node ->
         SHOPEE_POSTING_SURFACE_TEXTS.any { needle ->
           node.text.contains(needle, ignoreCase = true)
@@ -1088,16 +1168,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
   private fun tapShopeeAffiliateAccountTab(): Boolean {
-    if (clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false)) return true
+    if (clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
 
     for (root in shopeeWindowRoots()) {
       val screen = screenBounds(root)
       val textNodes = mutableListOf<TextNode>()
-      collectTextNodes(root, textNodes)
+      collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
       val candidates = textNodes
         .filter { candidate ->
-          candidate.node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
-            SHOPEE_ACCOUNT_TEXTS.any { needle -> candidate.text.contains(needle, ignoreCase = true) } &&
+          SHOPEE_ACCOUNT_TEXTS.any { needle -> candidate.text.contains(needle, ignoreCase = true) } &&
             candidate.bounds.top >= screen.top + (screen.height() * 0.78f).toInt()
         }
         .sortedWith(compareByDescending<TextNode> { it.bounds.left }.thenByDescending { it.bounds.top })
@@ -1141,13 +1220,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun scrollUntilTapText(texts: List<String>, maxAttempts: Int): Boolean {
     repeat(maxAttempts) {
       dismissShopeeBlockingPopups()
-      if (clickByAnyText(texts, exact = false)) return true
-      if (!scrollFirstScrollableForward()) {
+      if (clickByAnyText(texts, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
+      if (!scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
         swipeUpByScreen()
       }
       sleepStep(900L)
     }
-    return clickByAnyText(texts, exact = false)
+    return clickByAnyText(texts, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)
   }
 
   private fun tapAndroidPermissionAllow(): Boolean =
@@ -1438,13 +1517,35 @@ class KubdeeAccessibilityService : AccessibilityService() {
     )
   }
 
-  private fun launchPackage(packageName: String): Boolean {
+  private fun launchPackage(packageName: String, resetTask: Boolean = false): Boolean {
     val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    launchIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-    launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-    launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    if (resetTask) {
+      launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+      launchIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+    } else {
+      launchIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+      launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
     return startActivityOnMainThread(launchIntent)
+  }
+
+  private fun closeShopeeBeforeFreshLaunch(packageName: String) {
+    logStep("ปิด Shopee เดิมก่อนเริ่มงาน")
+    performGlobalAction(GLOBAL_ACTION_HOME)
+    sleepStep(550L)
+
+    try {
+      val activityManager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+      activityManager?.killBackgroundProcesses(packageName)
+      logStep("สั่งปิด process Shopee เดิมแล้ว")
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to kill Shopee background process", error)
+      logStep("ปิด process Shopee เดิมไม่ได้ จะเปิดแบบ reset task")
+    }
+
+    sleepStep(850L)
   }
 
   private fun launchUrl(url: String, preferredPackage: String? = null): Boolean {
@@ -3172,6 +3273,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
     productIndex: Int,
     productTotal: Int
   ) {
+    updateAutomationStats(
+      taskLabel = step?.let { "Google Flow ${it.uppercase(Locale.ROOT)}" } ?: "Google Flow",
+      unitLabel = "PRODUCT",
+      currentCount = productIndex,
+      totalCount = productTotal,
+      round = round,
+      totalRounds = totalRounds,
+      statusLabel = "RUNNING"
+    )
     val productId = product?.let { it.optString("productId", it.optString("id", "")) }
     val productName = product?.optString("name", "สินค้า")?.ifBlank { "สินค้า" }
     Log.d(TAG, "Google Flow runner: $message")
@@ -3204,6 +3314,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun logGoogleFlowStatus(message: String, status: String) {
     Log.d(TAG, "Google Flow runner: $message ($status)")
+    updateAutomationStats(
+      statusLabel = when (status) {
+        "completed" -> "DONE"
+        "stopped" -> "STOPPED"
+        "error" -> "ERROR"
+        else -> status.uppercase(Locale.ROOT)
+      }
+    )
     addAutomationLogLine(message)
     KubdeeAccessibilityModule.emitGoogleFlowLog(
       message = message,
@@ -3261,6 +3379,66 @@ class KubdeeAccessibilityService : AccessibilityService() {
     synchronized(automationLogLines) {
       automationLogLines.clear()
     }
+    synchronized(automationStatsLock) {
+      automationStartedAtMs = System.currentTimeMillis()
+      automationTaskLabel = "Automation"
+      automationUnitLabel = "STEP"
+      automationCurrentCount = 0
+      automationTotalCount = 0
+      automationSuccessCount = 0
+      automationFailedCount = 0
+      automationRound = 0
+      automationTotalRounds = 0
+      automationStatusLabel = "RUNNING"
+    }
+  }
+
+  private fun configureAutomationStats(
+    taskLabel: String,
+    unitLabel: String,
+    totalCount: Int = 0,
+    totalRounds: Int = 0
+  ) {
+    updateAutomationStats(
+      taskLabel = taskLabel,
+      unitLabel = unitLabel,
+      totalCount = totalCount,
+      totalRounds = totalRounds,
+      statusLabel = "RUNNING"
+    )
+  }
+
+  private fun updateAutomationStats(
+    taskLabel: String? = null,
+    unitLabel: String? = null,
+    currentCount: Int? = null,
+    totalCount: Int? = null,
+    successCount: Int? = null,
+    failedCount: Int? = null,
+    round: Int? = null,
+    totalRounds: Int? = null,
+    statusLabel: String? = null
+  ) {
+    synchronized(automationStatsLock) {
+      if (automationStartedAtMs == 0L) {
+        automationStartedAtMs = System.currentTimeMillis()
+      }
+      taskLabel?.let { automationTaskLabel = it }
+      unitLabel?.let { automationUnitLabel = it }
+      currentCount?.let { automationCurrentCount = it.coerceAtLeast(0) }
+      totalCount?.let { automationTotalCount = it.coerceAtLeast(0) }
+      successCount?.let { automationSuccessCount = it.coerceAtLeast(0) }
+      failedCount?.let { automationFailedCount = it.coerceAtLeast(0) }
+      round?.let { automationRound = it.coerceAtLeast(0) }
+      totalRounds?.let { automationTotalRounds = it.coerceAtLeast(0) }
+      statusLabel?.let { automationStatusLabel = it }
+    }
+  }
+
+  private fun incrementAutomationFailedCount() {
+    synchronized(automationStatsLock) {
+      automationFailedCount += 1
+    }
   }
 
   private fun addAutomationLogLine(message: String) {
@@ -3274,10 +3452,61 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun latestAutomationLogText(): String {
-    val lines = synchronized(automationLogLines) {
-      automationLogLines.takeLast(18)
+    val (lines, logCount) = synchronized(automationLogLines) {
+      automationLogLines.takeLast(14) to automationLogLines.size
     }
-    return "Kubdee AI\n" + lines.joinToString("\n")
+    return buildString {
+      append("Kubdee AI\n")
+      append(automationStatsText(logCount))
+      if (lines.isNotEmpty()) {
+        append("\n")
+        append(lines.joinToString("\n"))
+      }
+    }
+  }
+
+  private fun automationStatsText(logCount: Int): String {
+    val (
+      startedAt,
+      taskLabel,
+      unitLabel,
+      currentCount,
+      totalCount,
+      successCount,
+      failedCount,
+      round,
+      totalRounds,
+      statusLabel
+    ) = synchronized(automationStatsLock) {
+      AutomationStatsSnapshot(
+        startedAt = automationStartedAtMs,
+        taskLabel = automationTaskLabel,
+        unitLabel = automationUnitLabel,
+        currentCount = automationCurrentCount,
+        totalCount = automationTotalCount,
+        successCount = automationSuccessCount,
+        failedCount = automationFailedCount,
+        round = automationRound,
+        totalRounds = automationTotalRounds,
+        statusLabel = automationStatusLabel
+      )
+    }
+    val start = if (startedAt > 0L) startedAt else System.currentTimeMillis()
+    val elapsedSeconds = ((System.currentTimeMillis() - start) / 1000L).coerceAtLeast(0L)
+    val elapsed = "%02d:%02d".format(Locale.ROOT, elapsedSeconds / 60L, elapsedSeconds % 60L)
+    val progressText = if (totalCount > 0) {
+      "$unitLabel ${currentCount.coerceAtMost(totalCount)}/$totalCount"
+    } else {
+      "$unitLabel $currentCount"
+    }
+    val roundText = if (totalRounds > 0) "ROUND ${round.coerceAtMost(totalRounds)}/$totalRounds" else null
+    val outcomeText = if (successCount > 0 || failedCount > 0) "OK $successCount  FAIL $failedCount" else null
+
+    return listOfNotNull(
+      "$statusLabel | $elapsed | LOG ${logCount.toString().padStart(2, '0')}",
+      listOfNotNull(taskLabel, progressText, roundText).joinToString(" | "),
+      outcomeText
+    ).joinToString("\n")
   }
 
   private fun findClickableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
@@ -3482,43 +3711,164 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun goToShopeeMeTab(): Boolean {
     repeat(5) { attempt ->
-      if (isShopeeMePageVisible()) {
-        logStep("หน้า ฉัน พร้อมแล้ว")
-        return true
-      }
-
       dismissShopeeBlockingPopups()
       logStep("ไปที่เมนู ฉัน (ครั้ง ${attempt + 1}/5)")
-      val clicked = clickByAnyText(listOf("ฉัน", "Me"), exact = true) ||
-        clickByResourceHint(listOf("tab_bar_button_me", "me_tab", "tab_me"))
+      val clicked = clickShopeeBottomMeTab()
 
       if (!clicked) {
-        logStep("ไม่พบชื่อปุ่มเมนู ฉัน ในหน้า Shopee")
+        logStep("ไม่พบชื่อปุ่มเมนู ฉัน ในหน้า Shopee ใช้พิกัด fallback")
+        tapShopeeMeTabFallback()
       }
 
-      sleepStep(1800)
+      sleepStep(2200)
       if (isShopeeMePageVisible()) {
         logStep("หน้า ฉัน พร้อมแล้ว")
         return true
       }
+      logStep("ยังยืนยันหน้า ฉัน ไม่ได้")
     }
 
     return false
   }
 
-  private fun isShopeeMePageVisible(): Boolean =
-    containsAnyText(SHOPEE_LIKED_TEXTS, contains = true) ||
-      containsAnyText(listOf("ประวัติการซื้อ", "การซื้อของฉัน", "My Purchases", "My Purchase"), contains = true)
+  private fun clickShopeeBottomMeTab(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val bottomNavStart = screen.top + (screen.height() * 0.74f).toInt()
+    val candidates = mutableListOf<ShopeeBottomTabCandidate>()
+    collectShopeeMeTabNodes(root, candidates, bottomNavStart)
+
+    val sortedCandidates = candidates.sortedWith(
+      compareByDescending<ShopeeBottomTabCandidate> { it.rank }
+        .thenByDescending { it.bounds.top }
+        .thenByDescending { it.bounds.left }
+    )
+
+    for (candidate in sortedCandidates) {
+      logStep("พบปุ่ม ฉัน จาก '${candidate.label}' แล้วกดที่ตำแหน่งของปุ่ม")
+      if (tapNodeCenter(candidate.node, durationMs = 120L)) {
+        return true
+      }
+
+      val clickable = findClickableBottomTabAncestor(candidate.node, screen)
+      if (clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
+        return true
+      }
+
+      if (clickable != null && tapNodeCenter(clickable, durationMs = 120L)) {
+        return true
+      }
+
+    }
+
+    return false
+  }
+
+  private fun collectShopeeMeTabNodes(
+    node: AccessibilityNodeInfo?,
+    output: MutableList<ShopeeBottomTabCandidate>,
+    bottomNavStart: Int
+  ) {
+    if (node == null) return
+    if (node.isVisibleToUser && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) {
+      val text = cleanNodeText(readNodeText(node))
+      val resourceId = node.viewIdResourceName.orEmpty()
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val isBottomNode = bounds.top >= bottomNavStart || bounds.bottom >= bottomNavStart
+      val label = text.ifBlank { resourceId.ifBlank { "tab_bar_button_me" } }
+      val resourceLooksLikeMe = resourceId.contains("tab_bar_button_me", ignoreCase = true) ||
+        resourceId.contains("tab_me", ignoreCase = true)
+      val rank = when {
+        text.equals("ฉัน", ignoreCase = true) || text.equals("Me", ignoreCase = true) -> 3
+        text.contains("ฉัน", ignoreCase = true) || Regex("""\bme\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> 2
+        resourceLooksLikeMe -> 1
+        else -> 0
+      }
+      if (isBottomNode && rank > 0) {
+        output.add(ShopeeBottomTabCandidate(node, Rect(bounds), label, rank))
+      }
+    }
+
+    for (index in 0 until node.childCount) {
+      collectShopeeMeTabNodes(node.getChild(index), output, bottomNavStart)
+    }
+  }
+
+  private fun findClickableBottomTabAncestor(node: AccessibilityNodeInfo, screen: Rect): AccessibilityNodeInfo? {
+    var current: AccessibilityNodeInfo? = node
+    val bottomNavStart = screen.bottom - (screen.height() * 0.16f).toInt()
+    while (current != null) {
+      val bounds = Rect()
+      current.getBoundsInScreen(bounds)
+      if (
+        current.isClickable &&
+        current.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
+        bounds.top >= bottomNavStart &&
+        bounds.right > screen.left + (screen.width() * 0.78f).toInt()
+      ) {
+        return current
+      }
+      current = current.parent
+    }
+    return null
+  }
+
+  private fun isShopeeMePageVisible(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val visibleTextNodes = textNodes.filter { it.node.isVisibleToUser }
+    if (visibleTextNodes.isEmpty()) return false
+
+    val topLimit = screen.top + (screen.height() * 0.20f).toInt()
+    val midLimit = screen.top + (screen.height() * 0.40f).toInt()
+    val hasCurrentNonMeTitle = visibleTextNodes.any { node ->
+      node.bounds.top <= topLimit &&
+        listOf("การแจ้งเตือน", "Notifications", "สำหรับคุณ", "วิดีโอ", "Video", "Live").any { marker ->
+          node.text.contains(marker, ignoreCase = true)
+        }
+    }
+    if (hasCurrentNonMeTitle) {
+      return false
+    }
+
+    val purchaseSectionTop = screen.top + (screen.height() * 0.10f).toInt()
+    val hasProfileHeader = visibleTextNodes.any { node ->
+      node.bounds.top <= topLimit &&
+        listOf("กำลังติดตาม", "ผู้ติดตาม", "Following", "Followers").any { marker ->
+          node.text.contains(marker, ignoreCase = true)
+        }
+    }
+    val hasPurchaseSection = visibleTextNodes.any { node ->
+      node.bounds.top in purchaseSectionTop..midLimit &&
+        listOf("ประวัติการซื้อ", "การซื้อของฉัน", "My Purchases", "My Purchase").any { marker ->
+          node.text.contains(marker, ignoreCase = true)
+        }
+    }
+    val hasLikedMenu = visibleTextNodes.any { node ->
+      node.bounds.top > topLimit &&
+        SHOPEE_LIKED_TEXTS.any { marker -> node.text.contains(marker, ignoreCase = true) }
+    }
+
+    return hasProfileHeader && (hasPurchaseSection || hasLikedMenu)
+  }
 
   private fun openShopeeLikedList(): Boolean {
-    repeat(8) { attempt ->
+    if (isShopeeLikedListVisible()) {
+      return true
+    }
+
+    val maxAttempts = 12
+    repeat(maxAttempts) { attempt ->
       dismissShopeeBlockingPopups()
 
       if (isShopeeLikedListVisible()) {
         return true
       }
 
-      logStep("ค้นหาเมนูสิ่งที่ฉันถูกใจ ครั้ง ${attempt + 1}/8")
+      logStep("ค้นหาเมนูสิ่งที่ฉันถูกใจ ครั้ง ${attempt + 1}/$maxAttempts")
       if (clickShopeeLikedMenu()) {
         logStep("กดเมนู สิ่งที่ฉันถูกใจ")
         if (waitForShopeeLikedListVisible(5_000L)) {
@@ -3528,13 +3878,40 @@ class KubdeeAccessibilityService : AccessibilityService() {
         logStep("ยังไม่พบเมนู สิ่งที่ฉันถูกใจ")
       }
 
-      if (!scrollFirstScrollableForward()) {
-        swipeUpByScreen()
+      logStep("ขยับหน้า ฉัน หาเมนูถูกใจทีละนิด (ครั้ง ${attempt + 1}/$maxAttempts)")
+      if (!swipeUpByScreen(durationMs = 220L, startFraction = 0.66f, endFraction = 0.54f)) {
+        scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
       }
-      sleepStep(900)
+      sleepStep(450)
+      if (clickShopeeLikedMenu()) {
+        logStep("กดเมนู สิ่งที่ฉันถูกใจ หลังขยับหน้าจอ")
+        if (waitForShopeeLikedListVisible(5_000L)) {
+          return true
+        }
+      }
+      sleepStep(350)
     }
 
     return isShopeeLikedListVisible()
+  }
+
+  private fun tapShopeeMeTabFallback(): Boolean {
+    val bounds = displayBounds()
+    val x = bounds.left + bounds.width() * 0.92f
+    val y = bounds.bottom - bounds.height() * 0.085f
+    return tapBlocking(x, y, timeoutMs = 1800L, durationMs = 90L)
+  }
+
+  private fun resetShopeeMePageScrollTop() {
+    logStep("รีเซ็ตตำแหน่งหน้า ฉัน ก่อนหาเมนูถูกใจ")
+    repeat(4) {
+      checkStopRequested()
+      val moved = scrollFirstScrollableBackward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
+      if (!moved) {
+        swipeDownByScreen()
+      }
+      sleepStep(450L)
+    }
   }
 
   private fun waitForShopeeLikedListVisible(timeoutMs: Long): Boolean {
@@ -3550,7 +3927,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes)
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     if (textNodes.isEmpty()) return false
 
     val topLimit = screen.top + (screen.height() * 0.18f).toInt()
@@ -3603,16 +3980,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun scrollShopeeLikedList(): Boolean {
-    val scrolled = scrollFirstScrollableForward()
-    if (scrolled) return true
-    return swipeUpByScreen()
+    if (swipeUpByScreen(durationMs = 430L)) return true
+    return scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
   }
 
   private fun scrapeVisibleShopeeLikedProductCandidates(): Pair<List<ShopeeLikedProductCandidate>, Boolean> {
     val root = rootInActiveWindow ?: return emptyList<ShopeeLikedProductCandidate>() to false
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes)
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     if (textNodes.isEmpty()) return emptyList<ShopeeLikedProductCandidate>() to false
 
     val safeTop = likedProductSafeTop(textNodes, screen)
@@ -3758,19 +4134,28 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun isShopeeProductDetailVisible(): Boolean {
     val root = rootInActiveWindow ?: return false
-    if (findMatchingNode(root, listOf("sectionProductPrice", "imageCover_"), exact = false, includeResourceId = true) != null) {
+    if (
+      findMatchingNode(
+        root,
+        listOf("sectionProductPrice", "imageCover_"),
+        exact = false,
+        includeResourceId = true,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      ) != null
+    ) {
       return true
     }
     return containsAnyText(
       listOf("ซื้อเลย", "เพิ่มไปยังรถเข็น", "เพิ่มลงรถเข็น", "เลือกตัวเลือก", "รายละเอียดสินค้า", "คะแนนสินค้า"),
-      contains = true
+      contains = true,
+      allowedPackageName = TARGET_PACKAGE_SHOPEE
     )
   }
 
   private fun findShopeeDetailPrice(): String? {
     val root = rootInActiveWindow ?: return null
     val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes)
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     val screen = screenBounds(root)
     val candidates = textNodes.filter { node ->
       node.bounds.top in (screen.top + (screen.height() * 0.25f).toInt())..(screen.top + (screen.height() * 0.78f).toInt())
@@ -3850,7 +4235,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun isShopeeShareSheetVisible(): Boolean =
-    containsAnyText(listOf("คัดลอกลิงก์", "คัดลอกลิงค์", "Copy Link", "Copy link", "แชร์เพื่อรับ"), contains = true)
+    containsAnyText(
+      listOf("คัดลอกลิงก์", "คัดลอกลิงค์", "Copy Link", "Copy link", "แชร์เพื่อรับ"),
+      contains = true,
+      allowedPackageName = TARGET_PACKAGE_SHOPEE
+    )
 
   private fun clickTopShopeeShareButton(): Boolean {
     val root = rootInActiveWindow ?: return false
@@ -3860,12 +4249,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val named = candidates.firstOrNull { (_, node) ->
       readNodeText(node).contains("share", ignoreCase = true) || readNodeText(node).contains("แชร์", ignoreCase = true)
     }
-    val selected = named ?: candidates.sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.left }.thenBy { it.first.top }).firstOrNull()
+    val actionBarShare = candidates.firstOrNull { (_, node) ->
+      node.viewIdResourceName.orEmpty().contains("buttonActionBarView", ignoreCase = true)
+    }
+    val selected = named ?: actionBarShare ?: candidates.minByOrNull { (bounds, _) ->
+      kotlin.math.abs(bounds.centerX() - (screen.left + screen.width() * 0.82f))
+    }
     if (selected != null) {
       val bounds = selected.first
       return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
     }
-    return clickByAnyText(listOf("แชร์", "Share"), exact = false)
+    return clickByAnyText(listOf("แชร์", "Share"), exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)
   }
 
   private fun collectTopActionNodes(
@@ -3883,8 +4277,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
       bounds.left >= screen.left + screen.width() * 0.45f &&
       bounds.width() in 32..maxOf(120, (screen.width() * 0.22f).toInt()) &&
       bounds.height() in 32..maxOf(120, (screen.height() * 0.12f).toInt()) &&
-      (raw.contains("buttonactionbariconitem") || raw.contains("share") || raw.contains("แชร์"))
-    if (isTopAction) output.add(Rect(bounds) to node)
+      (
+        raw.contains("buttonactionbariconitem") ||
+          raw.contains("buttonactionbarview") ||
+          raw.contains("share") ||
+          raw.contains("แชร์")
+      )
+    if (isTopAction && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) output.add(Rect(bounds) to node)
 
     for (index in 0 until node.childCount) {
       collectTopActionNodes(node.getChild(index), screen, output)
@@ -3892,8 +4291,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun tapShopeeCopyLink(): Boolean =
-    clickByAnyText(listOf("คัดลอกลิงก์", "คัดลอกลิงค์", "Copy Link", "Copy link"), exact = false) ||
-      clickByResourceHint(listOf("copy", "clipboard", "link"))
+    clickByAnyText(
+      listOf("คัดลอกลิงก์", "คัดลอกลิงค์", "Copy Link", "Copy link"),
+      exact = false,
+      allowedPackageName = TARGET_PACKAGE_SHOPEE
+    ) || clickByResourceHint(listOf("copy", "clipboard", "link"), allowedPackageName = TARGET_PACKAGE_SHOPEE)
 
   private fun returnToShopeeLikedList(): Boolean {
     repeat(6) { attempt ->
@@ -3922,6 +4324,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val returned = isShopeeLikedListVisible()
     if (!returned) {
       logStep("ยังกลับหน้ารายการถูกใจไม่ได้")
+      logStep("ลองกลับผ่านเมนู ฉัน > สิ่งที่ฉันถูกใจ")
+      if (goToShopeeMeTab() && openShopeeLikedList()) {
+        logStep("กลับหน้ารายการถูกใจผ่านเมนู ฉัน สำเร็จ")
+        return true
+      }
     }
     return returned
   }
@@ -4097,10 +4504,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return best
   }
 
-  private fun collectTextNodes(node: AccessibilityNodeInfo?, output: MutableList<TextNode>) {
+  private fun collectTextNodes(
+    node: AccessibilityNodeInfo?,
+    output: MutableList<TextNode>,
+    allowedPackageName: String? = null
+  ) {
     if (node == null) return
     val text = cleanNodeText(readNodeText(node))
-    if (text.isNotBlank()) {
+    if (text.isNotBlank() && isAllowedPackageNode(node, allowedPackageName)) {
       val bounds = Rect()
       node.getBoundsInScreen(bounds)
       if (bounds.width() > 0 && bounds.height() > 0) {
@@ -4109,7 +4520,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     for (index in 0 until node.childCount) {
-      collectTextNodes(node.getChild(index), output)
+      collectTextNodes(node.getChild(index), output, allowedPackageName)
     }
   }
 
@@ -4143,11 +4554,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes)
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
 
     val candidates = textNodes
       .filter { node ->
-        SHOPEE_LIKED_TEXTS.any { node.text.contains(it, ignoreCase = true) } &&
+        node.node.isVisibleToUser &&
+          SHOPEE_LIKED_TEXTS.any { node.text.contains(it, ignoreCase = true) } &&
           node.bounds.top > screen.top + (screen.height() * 0.08f).toInt() &&
           node.bounds.bottom < screen.bottom - (screen.height() * 0.12f).toInt()
       }
@@ -4187,10 +4599,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return best
   }
 
-  private fun clickByAnyText(texts: List<String>, exact: Boolean): Boolean {
+  private fun clickByAnyText(
+    texts: List<String>,
+    exact: Boolean,
+    allowedPackageName: String? = null
+  ): Boolean {
     val root = rootInActiveWindow ?: return false
-    val node = findVisibleMatchingNode(root, texts, exact = exact, includeResourceId = false)
-      ?: findMatchingNode(root, texts, exact = exact, includeResourceId = false)
+    val node = findVisibleMatchingNode(root, texts, exact = exact, includeResourceId = false, allowedPackageName = allowedPackageName)
+      ?: findMatchingNode(root, texts, exact = exact, includeResourceId = false, allowedPackageName = allowedPackageName)
       ?: return false
     return clickNode(node)
   }
@@ -4227,15 +4643,31 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return false
   }
 
-  private fun clickByResourceHint(hints: List<String>): Boolean {
+  private fun clickByResourceHint(hints: List<String>, allowedPackageName: String? = null): Boolean {
     val root = rootInActiveWindow ?: return false
-    val node = findMatchingNode(root, hints, exact = false, includeResourceId = true) ?: return false
+    val node = findMatchingNode(
+      root,
+      hints,
+      exact = false,
+      includeResourceId = true,
+      allowedPackageName = allowedPackageName
+    ) ?: return false
     return clickNode(node)
   }
 
-  private fun containsAnyText(texts: List<String>, contains: Boolean): Boolean {
+  private fun containsAnyText(
+    texts: List<String>,
+    contains: Boolean,
+    allowedPackageName: String? = null
+  ): Boolean {
     val root = rootInActiveWindow ?: return false
-    return findMatchingNode(root, texts, exact = !contains, includeResourceId = false) != null
+    return findMatchingNode(
+      root,
+      texts,
+      exact = !contains,
+      includeResourceId = false,
+      allowedPackageName = allowedPackageName
+    ) != null
   }
 
   private fun containsChromeText(texts: List<String>, contains: Boolean): Boolean {
@@ -4449,27 +4881,94 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = durationMs)
   }
 
-  private fun scrollFirstScrollableForward(): Boolean {
+  private fun scrollFirstScrollableForward(allowedPackageName: String? = null): Boolean {
     val root = rootInActiveWindow ?: return false
-    val node = findScrollableNode(root) ?: return false
+    val node = findBestScrollableNode(root, allowedPackageName) ?: return false
     return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
   }
 
-  private fun findScrollableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-    if (node == null) return null
-    if (node.isScrollable) return node
-    for (index in 0 until node.childCount) {
-      val found = findScrollableNode(node.getChild(index))
-      if (found != null) return found
-    }
-    return null
+  private fun scrollFirstScrollableBackward(allowedPackageName: String? = null): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val node = findBestScrollableNode(root, allowedPackageName) ?: return false
+    return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
   }
 
-  private fun swipeUpByScreen(): Boolean {
+  private fun findBestScrollableNode(
+    node: AccessibilityNodeInfo?,
+    allowedPackageName: String? = null
+  ): AccessibilityNodeInfo? {
+    val candidates = mutableListOf<Pair<Int, AccessibilityNodeInfo>>()
+    collectScrollableNodes(node, candidates, allowedPackageName)
+    return candidates.maxByOrNull { it.first }?.second
+  }
+
+  private fun collectScrollableNodes(
+    node: AccessibilityNodeInfo?,
+    output: MutableList<Pair<Int, AccessibilityNodeInfo>>,
+    allowedPackageName: String?
+  ) {
+    if (node == null) return
+    if (node.isScrollable && isAllowedPackageNode(node, allowedPackageName)) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val screen = screenBounds(rootInActiveWindow)
+      if (bounds.width() > 0 && bounds.height() > 0 && Rect.intersects(screen, bounds)) {
+        val visibleHeight = (minOf(bounds.bottom, screen.bottom) - maxOf(bounds.top, screen.top)).coerceAtLeast(0)
+        val visibleWidth = (minOf(bounds.right, screen.right) - maxOf(bounds.left, screen.left)).coerceAtLeast(0)
+        val className = node.className?.toString().orEmpty().lowercase(Locale.ROOT)
+        val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
+        val verticalScore = (visibleHeight - visibleWidth / 2).coerceAtLeast(0)
+        val areaScore = (visibleHeight * visibleWidth) / 10_000
+        val startsNearContentTop = if (bounds.top <= screen.top + (screen.height() * 0.32f).toInt()) 600 else 0
+        val reachesBottomContent = if (bounds.bottom >= screen.bottom - (screen.height() * 0.18f).toInt()) 600 else 0
+        val avoidsBottomNavOnly = if (bounds.height() >= screen.height() * 0.35f) 900 else -900
+        val contentListReward = if (
+          className.contains("recyclerview") ||
+          className.contains("scrollview") ||
+          resourceId.contains("main_view")
+        ) 2_500 else 0
+        val horizontalPagerPenalty = if (className.contains("viewpager")) -4_000 else 0
+        val navigationPenalty = if (
+          resourceId.contains("tab") ||
+          resourceId.contains("navigation") ||
+          bounds.top >= screen.bottom - (screen.height() * 0.24f).toInt()
+        ) -4_000 else 0
+        output.add(
+          (
+            verticalScore +
+              areaScore +
+              startsNearContentTop +
+              reachesBottomContent +
+              avoidsBottomNavOnly +
+              contentListReward +
+              horizontalPagerPenalty +
+              navigationPenalty
+          ) to node
+        )
+      }
+    }
+    for (index in 0 until node.childCount) {
+      collectScrollableNodes(node.getChild(index), output, allowedPackageName)
+    }
+  }
+
+  private fun swipeUpByScreen(
+    durationMs: Long = 520L,
+    startFraction: Float = 0.78f,
+    endFraction: Float = 0.35f
+  ): Boolean {
     val bounds = screenBounds(rootInActiveWindow)
     val x = bounds.centerX().toFloat()
-    val startY = bounds.top + bounds.height() * 0.78f
-    val endY = bounds.top + bounds.height() * 0.35f
+    val startY = bounds.top + bounds.height() * startFraction
+    val endY = bounds.top + bounds.height() * endFraction
+    return swipeBlocking(x, startY, x, endY, durationMs)
+  }
+
+  private fun swipeDownByScreen(): Boolean {
+    val bounds = screenBounds(rootInActiveWindow)
+    val x = bounds.centerX().toFloat()
+    val startY = bounds.top + bounds.height() * 0.35f
+    val endY = bounds.top + bounds.height() * 0.78f
     return swipeBlocking(x, startY, x, endY, 520L)
   }
 
@@ -4850,7 +5349,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       setTextColor(Color.WHITE)
       textSize = 11f
       typeface = Typeface.MONOSPACE
-      maxLines = 19
+      maxLines = 18
       setLineSpacing(1.0f, 1.08f)
       setPadding(dp(12), dp(10), dp(12), dp(10))
       background = GradientDrawable().apply {
@@ -4872,7 +5371,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     ).apply {
       gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
       x = 0
-      y = dp(122)
+      y = dp(118)
     }
 
     try {
@@ -4918,16 +5417,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     val params = WindowManager.LayoutParams(
-      dp(106),
-      dp(40),
+      dp(92),
+      dp(32),
       WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
       WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
       PixelFormat.TRANSLUCENT
     ).apply {
       gravity = Gravity.TOP or Gravity.END
-      x = dp(14)
-      y = dp(74)
+      x = dp(28)
+      y = dp(128)
     }
 
     try {
@@ -4953,6 +5452,26 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val text: String,
     val bounds: Rect,
     val node: AccessibilityNodeInfo
+  )
+
+  private data class ShopeeBottomTabCandidate(
+    val node: AccessibilityNodeInfo,
+    val bounds: Rect,
+    val label: String,
+    val rank: Int
+  )
+
+  private data class AutomationStatsSnapshot(
+    val startedAt: Long,
+    val taskLabel: String,
+    val unitLabel: String,
+    val currentCount: Int,
+    val totalCount: Int,
+    val successCount: Int,
+    val failedCount: Int,
+    val round: Int,
+    val totalRounds: Int,
+    val statusLabel: String
   )
 
   private data class ShopeeLikedProductCandidate(

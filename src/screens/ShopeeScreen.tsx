@@ -1,10 +1,11 @@
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { CheckCircle2, Cloud, Heart, Link, ListChecks, Send, Settings, ShoppingBag, Square, Video } from 'lucide-react-native';
+import { CheckCircle2, Cloud, Heart, Link, ListChecks, Send, Settings, ShoppingBag, Video } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner-native';
 
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
+import ActivityLogCard from '@/components/ui/ActivityLogCard';
 import Text from '@/components/ui/KubdeeText';
 import NumberStepper from '@/components/ui/NumberStepper';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -472,60 +473,15 @@ export default function ShopeeScreen({
             </View>
             <Text className="text-center text-kd-caption font-bold leading-4 text-kd-text-subtle">{runMessage}</Text>
 
-            <View className="gap-1.5">
-              <View className="gap-2 rounded-kd-md border border-kd-border bg-kd-card p-2.5">
-                <View className="gap-0.5">
-                  <SectionHeader
-                    icon={Heart}
-                    theme={theme}
-                    title="Import Log"
-                    right={
-                      isImporting ? (
-                        <Pressable
-                          accessibilityRole="button"
-                          disabled={isStopping}
-                          onPress={handleStopImport}
-                          className="h-[32px] flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red px-3 active:opacity-70 disabled:opacity-70"
-                        >
-                          {isStopping ? (
-                            <ActivityIndicator color={theme.white} size="small" />
-                          ) : (
-                            <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
-                          )}
-                          <Text className="text-kd-caption font-black text-white">
-                            {isStopping ? 'กำลังหยุด' : 'หยุด'}
-                          </Text>
-                        </Pressable>
-                      ) : null
-                    }
-                  />
-                  <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle">
-                    {isImporting
-                      ? 'กำลังดึงสินค้า Shopee'
-                      : logs.length > 0
-                        ? `ล่าสุด ${logs.length} รายการ`
-                        : 'ยังไม่มีรายการทำงาน'}
-                  </Text>
-                </View>
-
-                <View className="gap-1.5 rounded-kd-md bg-kd-card-muted p-2">
-                  {logs.length > 0 ? (
-                    logs.slice(-10).map((entry, index) => (
-                      <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
-                        <Text className="w-[48px] shrink-0 text-[10px] text-kd-text-muted">
-                          {formatTime(entry.ts)}
-                        </Text>
-                        <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
-                          {entry.message}
-                        </Text>
-                      </View>
-                    ))
-                  ) : (
-                    <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มีรายการทำงาน</Text>
-                  )}
-                </View>
-              </View>
-            </View>
+            <ActivityLogCard
+              icon={Heart}
+              theme={theme}
+              logs={logs}
+              running={isImporting}
+              stopping={isStopping}
+              runningText="กำลังดึงสินค้า Shopee"
+              onStop={handleStopImport}
+            />
           </>
         ) : subMode === 'post' ? (
           <View className="gap-2">
@@ -593,6 +549,18 @@ export default function ShopeeScreen({
             </View>
             <Text className="text-center text-kd-caption font-bold leading-4 text-kd-text-subtle">{postMessage}</Text>
 
+            <ActivityLogCard
+              icon={Send}
+              theme={theme}
+              logs={postLogs}
+              running={isPosting}
+              stopping={isStoppingPost}
+              runningText="กำลังโพสต์ Shopee"
+              onStop={() => {
+                void handleStopPost();
+              }}
+            />
+
             <View className="gap-1.5">
               <SectionHeader icon={Video} theme={theme} title="Auto Pilot Videos" />
               {generatedVideos.length > 0 ? (
@@ -616,60 +584,6 @@ export default function ShopeeScreen({
               )}
             </View>
 
-            <View className="gap-2 rounded-kd-md border border-kd-border bg-kd-card p-2.5">
-              <View className="gap-0.5">
-                <SectionHeader
-                  icon={Send}
-                  theme={theme}
-                  title="Post Log"
-                  right={
-                    isPosting ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={isStoppingPost}
-                        onPress={() => {
-                          void handleStopPost();
-                        }}
-                        className="h-[32px] flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red px-3 active:opacity-70 disabled:opacity-70"
-                      >
-                        {isStoppingPost ? (
-                          <ActivityIndicator color={theme.white} size="small" />
-                        ) : (
-                          <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
-                        )}
-                        <Text className="text-kd-caption font-black text-white">
-                          {isStoppingPost ? 'กำลังหยุด' : 'หยุด'}
-                        </Text>
-                      </Pressable>
-                    ) : null
-                  }
-                />
-                <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle">
-                  {isPosting
-                    ? 'กำลังโพสต์ Shopee'
-                    : postLogs.length > 0
-                      ? `ล่าสุด ${postLogs.length} รายการ`
-                      : 'ยังไม่มีรายการทำงาน'}
-                </Text>
-              </View>
-
-              <View className="gap-1.5 rounded-kd-md bg-kd-card-muted p-2">
-                {postLogs.length > 0 ? (
-                  postLogs.slice(-10).map((entry, index) => (
-                    <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
-                      <Text className="w-[48px] shrink-0 text-[10px] text-kd-text-muted">
-                        {formatTime(entry.ts)}
-                      </Text>
-                      <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
-                        {entry.message}
-                      </Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text className="text-kd-caption text-kd-text-subtle">ยังไม่มีรายการทำงาน</Text>
-                )}
-              </View>
-            </View>
           </View>
         ) : (
           <View className="gap-1.5">

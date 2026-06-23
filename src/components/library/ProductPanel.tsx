@@ -5,7 +5,6 @@ import {
   Image as ImageIcon,
   Pencil,
   ShoppingBag,
-  Square,
   Trash2,
   Upload,
 } from 'lucide-react-native';
@@ -13,6 +12,7 @@ import {
 import { toast } from 'sonner-native';
 
 import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
+import ActivityLogCard from '@/components/ui/ActivityLogCard';
 import Text from '@/components/ui/KubdeeText';
 import { useLibrary } from '@/library/LibraryContext';
 import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from '@/library/LibraryContext';
@@ -525,11 +525,15 @@ export default function ProductPanel({
         ) : null}
 
         {isShopeeImporting || shopeeLogs.length > 0 ? (
-          <ShopeeImportLogPanel
+          <ActivityLogCard
+            icon={ShoppingBag}
             theme={theme}
             logs={shopeeLogs}
-            isRunning={isShopeeImporting}
-            isStopping={isStoppingShopee}
+            running={isShopeeImporting}
+            stopping={isStoppingShopee}
+            runningText="กำลังดึงสินค้า Shopee"
+            emptyText="รอข้อความจาก Shopee import..."
+            maxVisible={9}
             onStop={() => {
               void handleStopShopeeImport();
             }}
@@ -660,84 +664,6 @@ export default function ProductPanel({
           onDelete={handleDeleteSelected}
         />
       ) : null}
-    </View>
-  );
-}
-
-function ShopeeImportLogPanel({
-  theme,
-  logs,
-  isRunning,
-  isStopping,
-  onStop,
-  onClear,
-}: {
-  theme: KubdeeTheme;
-  logs: NativeShopeeImportLog[];
-  isRunning: boolean;
-  isStopping: boolean;
-  onStop: () => void;
-  onClear: () => void;
-}): React.JSX.Element {
-  const visibleLogs = logs.slice(-9);
-
-  return (
-    <View className="gap-2 rounded-[14px] border border-kd-emerald/25 bg-kd-panel px-3 py-2.5 dark:border-kd-emerald/20 dark:bg-kd-card">
-      <View className="flex-row items-center justify-between gap-2">
-        <View className="min-w-0 flex-1">
-          <Text className="text-[12px] font-semibold text-kd-text">Activity Log</Text>
-          <Text className="mt-0.5 text-kd-caption text-kd-text-subtle">
-            {isRunning ? 'กำลังดึงสินค้า Shopee' : `ล่าสุด ${logs.length} รายการ`}
-          </Text>
-        </View>
-
-        <View className="flex-row items-center gap-1.5">
-          {!isRunning && logs.length > 0 ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={onClear}
-              className="h-8 justify-center rounded-full border border-gray-200 px-3 dark:border-kd-border"
-            >
-              <Text className="text-kd-caption font-semibold text-kd-text-subtle">ล้าง</Text>
-            </Pressable>
-          ) : null}
-
-          {isRunning ? (
-            <DarkActionButton
-              theme={theme}
-              small
-              label={isStopping ? 'กำลังหยุด' : 'Stop'}
-              color={theme.red}
-              disabled={isStopping}
-              leading={
-                isStopping ? (
-                  <ActivityIndicator color={theme.white} size="small" />
-                ) : (
-                  <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
-                )
-              }
-              onPress={onStop}
-            />
-          ) : null}
-        </View>
-      </View>
-
-      <View className="gap-1.5 rounded-[10px] bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
-        {visibleLogs.length > 0 ? (
-          visibleLogs.map((entry, index) => (
-            <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
-              <Text className="w-[48px] shrink-0 text-[10px] text-kd-text-muted">
-                {formatSyncTime(entry.ts)}
-              </Text>
-              <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
-                {entry.message}
-              </Text>
-            </View>
-          ))
-        ) : (
-          <Text className="text-kd-caption text-kd-text-subtle">รอข้อความจาก Shopee import...</Text>
-        )}
-      </View>
     </View>
   );
 }

@@ -391,8 +391,25 @@ class KubdeeAccessibilityModule(
       Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
     ) ?: return false
 
-    val expected = component.flattenToString()
-    return enabledSetting.split(':').any { it.equals(expected, ignoreCase = true) }
+    val expectedNames = setOf(
+      component.flattenToString(),
+      component.flattenToShortString()
+    )
+
+    return enabledSetting
+      .split(':')
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .any { serviceName ->
+        if (expectedNames.any { it.equals(serviceName, ignoreCase = true) }) {
+          true
+        } else {
+          ComponentName.unflattenFromString(serviceName)?.let { enabledComponent ->
+            enabledComponent.packageName.equals(component.packageName, ignoreCase = true) &&
+              enabledComponent.className.equals(component.className, ignoreCase = true)
+          } ?: false
+        }
+      }
   }
 
   private fun sendAutomationCommand(action: String, configure: Intent.() -> Unit = {}) {

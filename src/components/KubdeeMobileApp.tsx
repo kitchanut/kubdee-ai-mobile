@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { colorScheme as nativeWindColorScheme } from 'nativewind';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useState } from 'react';
 import { useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +23,8 @@ import type { TabId } from '@/types/navigation';
 
 type ThemeMode = 'dark' | 'light';
 
+const SELECTED_PROFILE_STORAGE_KEY = 'kubdee_ai_mobile_selected_profile_id';
+
 export default function KubdeeMobileApp(): React.JSX.Element {
   const colorScheme = useColorScheme();
   const [themeMode, setThemeMode] = useState<ThemeMode>(() =>
@@ -38,6 +41,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('pipeline');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set(['local-android']));
   const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
   const auth = useAuth();
 
   const toggleThemeMode = (): void => {
@@ -57,6 +61,42 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   };
 
   const hasAttemptedProfileSync = auth.lastProfilesSyncedAt !== null || auth.profileDataError !== null;
+
+  useEffect(() => {
+    let active = true;
+
+    AsyncStorage.getItem(SELECTED_PROFILE_STORAGE_KEY)
+      .then((profileId) => {
+        if (active && profileId?.trim()) {
+          setSelectedProfileId(profileId.trim());
+        }
+      })
+      .catch(() => {
+        // Falling back to the first synced profile is handled by the validation effect below.
+      })
+      .finally(() => {
+        if (active) {
+          setHasLoadedSelectedProfile(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedSelectedProfile) {
+      return;
+    }
+
+    if (selectedProfileId) {
+      void AsyncStorage.setItem(SELECTED_PROFILE_STORAGE_KEY, selectedProfileId);
+      return;
+    }
+
+    void AsyncStorage.removeItem(SELECTED_PROFILE_STORAGE_KEY);
+  }, [hasLoadedSelectedProfile, selectedProfileId]);
 
   useEffect(() => {
     if (
@@ -82,13 +122,27 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   ]);
 
   useEffect(() => {
+    if (!hasLoadedSelectedProfile) {
+      return;
+    }
+
+    if (auth.syncedProfiles.length === 0 && (auth.isSyncingProfiles || !hasAttemptedProfileSync)) {
+      return;
+    }
+
     const hasSelectedProfile = auth.syncedProfiles.some((profile) => profile.id === selectedProfileId);
     const nextProfileId = hasSelectedProfile ? selectedProfileId : auth.syncedProfiles[0]?.id ?? '';
 
     if (nextProfileId !== selectedProfileId) {
       setSelectedProfileId(nextProfileId);
     }
-  }, [auth.syncedProfiles, selectedProfileId]);
+  }, [
+    auth.isSyncingProfiles,
+    auth.syncedProfiles,
+    hasAttemptedProfileSync,
+    hasLoadedSelectedProfile,
+    selectedProfileId,
+  ]);
 
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {

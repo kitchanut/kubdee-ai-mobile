@@ -8,6 +8,7 @@
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+  <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <queries>
     <package android:name="com.shopee.th"/>
