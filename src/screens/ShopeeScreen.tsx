@@ -18,6 +18,7 @@ import SectionHeader from '@/components/ui/SectionHeader';
 import StatusPill from '@/components/ui/StatusPill';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
+import { storePendingTab } from '@/navigation/pendingNavigation';
 import {
   getAccessibilityStatus,
   importShopeeLikedProducts,
@@ -200,6 +201,7 @@ export default function ShopeeScreen({
       }
 
       appendLog('เปิด Shopee และเข้าเมนูสิ่งที่ฉันถูกใจ');
+      await storePendingTab('library');
       const scrapedProducts = await importShopeeLikedProducts(importLimit, selectedProfileId);
       await shopeeProductSaver.waitForIdle();
       await shopeeProductSaver.savePendingProducts();

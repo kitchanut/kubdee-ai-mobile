@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { colorScheme as nativeWindColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useColorScheme, View } from 'react-native';
+import { Linking, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -14,6 +14,7 @@ import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
+import { consumePendingTab, tabFromUrl } from '@/navigation/pendingNavigation';
 import PlaceholderScreen from '@/screens/PlaceholderScreen';
 import AutoPilotScreen from '@/screens/AutoPilotScreen';
 import AuthLoadingScreen from '@/screens/AuthLoadingScreen';
@@ -66,6 +67,44 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   };
 
   const hasAttemptedProfileSync = auth.lastProfilesSyncedAt !== null || auth.profileDataError !== null;
+
+  useEffect(() => {
+    let active = true;
+
+    Linking.getInitialURL()
+      .then((url) => {
+        if (!active) return;
+        const tab = tabFromUrl(url);
+        if (tab) {
+          setActiveTab(tab);
+        }
+      })
+      .catch(() => {
+        // Pending tab fallback below covers Shopee import recovery.
+      });
+
+    consumePendingTab()
+      .then((tab) => {
+        if (active && tab) {
+          setActiveTab(tab);
+        }
+      })
+      .catch(() => {
+        // Non-critical navigation hint.
+      });
+
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      const tab = tabFromUrl(url);
+      if (tab) {
+        setActiveTab(tab);
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;

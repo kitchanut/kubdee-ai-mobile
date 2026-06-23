@@ -692,7 +692,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           profileLocalId = profileLocalId
         )
         if (shouldReturnToKubdee) {
-          mainHandler.postDelayed({ launchPackage(packageName) }, 250L)
+          mainHandler.postDelayed({ launchKubdeeLibrary() }, 250L)
         }
         if (shopeeImportThread === Thread.currentThread()) {
           shopeeImportThread = null
@@ -1649,6 +1649,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     return startActivityOnMainThread(launchIntent)
   }
+
+  private fun launchKubdeeLibrary(): Boolean =
+    startActivityOnMainThread(
+      Intent(Intent.ACTION_VIEW, Uri.parse("kubdeeai://library")).apply {
+        setPackage(packageName)
+        addCategory(Intent.CATEGORY_BROWSABLE)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+      }
+    )
 
   private fun closeShopeeBeforeFreshLaunch(packageName: String) {
     logStep("ปิด Shopee เดิมก่อนเริ่มงาน")

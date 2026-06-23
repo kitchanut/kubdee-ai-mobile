@@ -20,6 +20,7 @@ import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
+import { storePendingTab } from '@/navigation/pendingNavigation';
 import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
 import {
@@ -402,6 +403,7 @@ export default function ProductPanel({
         return;
       }
 
+      await storePendingTab('library');
       const scrapedProducts = await runNativeShopeeLikedImport(50, selectedProfileId);
       await shopeeProductSaver.waitForIdle();
       await shopeeProductSaver.savePendingProducts();
