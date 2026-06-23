@@ -674,7 +674,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           TARGET_PACKAGE_SHOPEE,
           maxItems.coerceIn(1, 120),
           profileLocalId
-        ).size
+        )
       } catch (error: Exception) {
         errorMessage = error.message ?: "Shopee import failed"
         Log.e(TAG, "Shopee import runner failed", error)
@@ -710,8 +710,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     targetPackage: String,
     maxItems: Int,
     profileLocalId: String? = null
-  ): List<ShopeeLikedProduct> {
-    val productsByKey = linkedMapOf<String, ShopeeLikedProduct>()
+  ): Int {
+    val importedKeys = mutableSetOf<String>()
     val seenCandidateKeys = mutableSetOf<String>()
     try {
       clearStopShopeeAutomation()
@@ -758,7 +758,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           checkStopRequested()
           val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
           val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
-          if (productsByKey.containsKey(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
+          if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
             logStep("ข้ามสินค้าที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
             continue
           }
@@ -770,14 +770,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
             copyProductUrl = COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT
           ) ?: continue
           val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
-          if (!productsByKey.containsKey(key)) {
+          if (importedKeys.add(key)) {
             seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
-            productsByKey[key] = product
             added += 1
-            updateAutomationStats(currentCount = productsByKey.size, successCount = productsByKey.size)
-            logStep("บันทึกสินค้าแล้ว รวม ${productsByKey.size}: ${product.name.take(34)}")
+            updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
+            logStep("บันทึกสินค้าแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
             KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
-            if (productsByKey.size >= maxItems) break
+            if (importedKeys.size >= maxItems) break
           }
           if (!isShopeeLikedListVisible()) {
             logStep("ยังไม่อยู่หน้ารายการถูกใจหลังเปิด detail")
@@ -786,7 +785,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           }
         }
 
-        logStep("หน้าถูกใจรอบ $round พบใหม่ $added รวม ${productsByKey.size}")
+        logStep("หน้าถูกใจรอบ $round พบใหม่ $added รวม ${importedKeys.size}")
         if (lostLikedList) {
           logStep("หยุดรอบนี้เพื่อไม่กดรายการจากหน้าผิด")
           break
@@ -795,7 +794,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           logStep("เจอหัวข้อ คุณอาจจะชอบสิ่งนี้ จบรายการถูกใจ")
           break
         }
-        if (productsByKey.size >= maxItems) break
+        if (importedKeys.size >= maxItems) break
 
         noNewRounds = if (added == 0) noNewRounds + 1 else 0
         if (noNewRounds >= 3) break
@@ -804,10 +803,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
         sleepStep(1700)
       }
 
-      return productsByKey.values.toList()
+      return importedKeys.size
     } catch (error: ShopeeAutomationStoppedException) {
-      logStep("หยุดดึงสินค้าแล้ว บันทึกเท่าที่พบ ${productsByKey.size} รายการ")
-      return productsByKey.values.toList()
+      logStep("หยุดดึงสินค้าแล้ว บันทึกเท่าที่พบ ${importedKeys.size} รายการ")
+      return importedKeys.size
     } finally {
       endAutomationForeground()
       hideAutomationOverlay(2500L)
