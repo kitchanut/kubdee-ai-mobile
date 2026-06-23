@@ -10,6 +10,11 @@ interface LocalProductRow {
   product_json: string;
 }
 
+interface ExistingProductSyncRow {
+  product_json: string;
+  sync_status: string | null;
+}
+
 interface SyncQueueRow {
   id: number;
   operation: ProductSyncOperation;
@@ -46,6 +51,35 @@ function normalizeText(value: string | null | undefined): string | null {
 
 function normalizePlatform(value: string | null | undefined): string | null {
   return normalizeText(value)?.toLowerCase() ?? null;
+}
+
+function isShopeeImageUrl(value: string | null | undefined): boolean {
+  const url = normalizeText(value);
+  if (!url || !url.startsWith('https://')) return false;
+  return (
+    url.includes('/file/') &&
+    (url.includes('susercontent.com') || url.includes('shopee.co.th'))
+  );
+}
+
+function mergeCloudProductWithLocalImage(
+  cloudProduct: AffiliateProduct,
+  existingProduct: AffiliateProduct | null
+): AffiliateProduct {
+  if (
+    existingProduct?.imageUrl &&
+    !cloudProduct.imageUrl &&
+    !cloudProduct.imageR2Key &&
+    normalizePlatform(cloudProduct.platform) === 'shopee' &&
+    isShopeeImageUrl(existingProduct.imageUrl)
+  ) {
+    return {
+      ...cloudProduct,
+      imageUrl: existingProduct.imageUrl,
+    };
+  }
+
+  return cloudProduct;
 }
 
 function toAffiliateProduct(product: SyncAffiliateProductInput): AffiliateProduct {
@@ -305,16 +339,19 @@ export async function upsertLocalProductsFromCloud(products: AffiliateProduct[])
 
   await db.withExclusiveTransactionAsync(async (txn) => {
     for (const product of products) {
-      const existing = await txn.getFirstAsync<{ sync_status: string | null }>(
-        'SELECT sync_status FROM affiliate_products WHERE local_id = ? LIMIT 1',
+      const existing = await txn.getFirstAsync<ExistingProductSyncRow>(
+        'SELECT product_json, sync_status FROM affiliate_products WHERE local_id = ? LIMIT 1',
         product.localId
       );
       if (existing?.sync_status?.startsWith('pending_')) {
         continue;
       }
 
+      const existingProduct = existing ? parseProduct(existing) : null;
+      const mergedProduct = mergeCloudProductWithLocalImage(product, existingProduct);
+
       await upsertProductRow(txn, {
-        ...product,
+        ...mergedProduct,
         lastSyncedAt: timestamp,
       }, 'synced');
     }

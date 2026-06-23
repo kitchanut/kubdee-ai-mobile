@@ -4198,6 +4198,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val centerY = node.bounds.centerY()
       centerY in safeTop..safeBottom && (recommendationTop == null || node.bounds.top < recommendationTop)
     }
+    val imageNodes = mutableListOf<ShopeeImageNode>()
+    collectShopeeImageNodes(root, imageNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val visibleImageNodes = imageNodes.filter { node ->
+      val centerY = node.bounds.centerY()
+      centerY in safeTop..safeBottom && (recommendationTop == null || node.bounds.top < recommendationTop)
+    }
     val priceNodes = findPriceNodes(visibleTextNodes)
       .sortedWith(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
     val productTextNodes = visibleTextNodes
@@ -4216,6 +4222,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val candidate = buildProductCandidateFromPriceNode(
         visibleTextNodes = visibleTextNodes,
         productTextNodes = productTextNodes,
+        imageNodes = visibleImageNodes,
         priceNode = priceNode,
         screen = screen,
         safeTop = safeTop
@@ -4244,6 +4251,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun buildProductCandidateFromPriceNode(
     visibleTextNodes: List<TextNode>,
     productTextNodes: List<TextNode>,
+    imageNodes: List<ShopeeImageNode>,
     priceNode: TextNode,
     screen: Rect,
     safeTop: Int
@@ -4285,6 +4293,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
       ?: fallbackShopeeProductIdFromName(name)
     val stock = relatedTexts.firstNotNullOfOrNull { extractStock(it.text) }
+    val imageUrl = findShopeeLikedProductImageUrl(
+      imageNodes = imageNodes,
+      nameBounds = nameMatch.node.bounds,
+      priceBounds = priceNode.bounds,
+      screen = screen,
+      safeTop = safeTop
+    )
 
     val product = ShopeeLikedProduct(
       name = name,
@@ -4292,7 +4307,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       stock = stock,
       productUrl = productUrl,
       externalProductId = externalProductId,
-      imageUrl = null,
+      imageUrl = imageUrl,
       status = "liked",
       scrapedAt = System.currentTimeMillis()
     )
@@ -4560,8 +4575,25 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun findShopeeDetailImageUrl(): String? {
     val root = rootInActiveWindow ?: return null
+    findShopeeDetailImageResourceUrl(root)?.let { return it }
     val imageId = findDetailImageCoverId(root) ?: return null
     return "https://down-th.img.susercontent.com/file/$imageId"
+  }
+
+  private fun findShopeeDetailImageResourceUrl(root: AccessibilityNodeInfo): String? {
+    val screen = screenBounds(root)
+    val imageNodes = mutableListOf<ShopeeImageNode>()
+    collectShopeeImageNodes(root, imageNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    return imageNodes
+      .filter { node ->
+        node.bounds.top <= screen.top + (screen.height() * 0.55f).toInt() &&
+          node.bounds.width() >= screen.width() * 0.22f &&
+          node.bounds.height() >= screen.width() * 0.22f
+      }
+      .minByOrNull { node ->
+        kotlin.math.abs(node.bounds.centerX() - screen.centerX()) + node.bounds.top
+      }
+      ?.imageUrl
   }
 
   private fun findDetailImageCoverId(node: AccessibilityNodeInfo?): String? {
@@ -5115,6 +5147,77 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private fun extractUrl(text: String): String? = URL_REGEX.find(text)?.value
 
+  private fun extractShopeeImageUrl(value: String?): String? {
+    val raw = value?.trim().orEmpty()
+    if (raw.isBlank()) return null
+
+    val matchedUrl = URL_REGEX.find(raw)?.value
+      ?: raw.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
+      ?: return null
+    val cleanUrl = matchedUrl.trim().trim('"', '\'', '<', '>', ')', ']')
+    if (!cleanUrl.contains("/file/", ignoreCase = true)) return null
+    if (
+      !cleanUrl.contains("shopee", ignoreCase = true) &&
+      !cleanUrl.contains("susercontent", ignoreCase = true)
+    ) {
+      return null
+    }
+
+    val uri = runCatching { Uri.parse(cleanUrl) }.getOrNull() ?: return null
+    val imageId = uri.encodedPath
+      ?.substringAfter("/file/", "")
+      ?.substringBefore("/")
+      ?.substringBefore("?")
+      ?.substringBefore("#")
+      ?.trim()
+      .orEmpty()
+      .replace(Regex("""(_tn(?:_[A-Za-z0-9]+)?|_resize[^/?#]*)$"""), "")
+
+    if (imageId.length < 12) return null
+
+    val host = uri.host.orEmpty()
+    val imageHost = if (host.contains("susercontent", ignoreCase = true)) {
+      host
+    } else {
+      "down-th.img.susercontent.com"
+    }
+
+    return "https://$imageHost/file/$imageId"
+  }
+
+  private fun findShopeeLikedProductImageUrl(
+    imageNodes: List<ShopeeImageNode>,
+    nameBounds: Rect,
+    priceBounds: Rect,
+    screen: Rect,
+    safeTop: Int
+  ): String? {
+    if (imageNodes.isEmpty()) return null
+
+    val columnWidth = shopeeLikedColumnWidth(screen)
+    val regionTop = (minOf(nameBounds.top, priceBounds.top) - (screen.height() * 0.34f).toInt())
+      .coerceAtLeast(safeTop)
+    val regionBottom = (priceBounds.bottom + (screen.height() * 0.10f).toInt())
+      .coerceAtMost(screen.bottom)
+
+    return imageNodes
+      .filter { image ->
+        val centerY = image.bounds.centerY()
+        centerY in regionTop..regionBottom &&
+          image.bounds.width() >= 32 &&
+          image.bounds.height() >= 32 &&
+          isSameShopeeLikedProductColumn(image.bounds, priceBounds, columnWidth)
+      }
+      .minByOrNull { image ->
+        val belowPricePenalty = if (image.bounds.top > priceBounds.bottom) 10_000 else 0
+        val belowNamePenalty = if (image.bounds.top > nameBounds.bottom) 2_000 else 0
+        val centerPenalty = kotlin.math.abs(image.bounds.centerX() - priceBounds.centerX())
+        val verticalPenalty = kotlin.math.abs(image.bounds.bottom - nameBounds.top)
+        belowPricePenalty + belowNamePenalty + centerPenalty + verticalPenalty
+      }
+      ?.imageUrl
+  }
+
   private fun extractShopeeProductIdFromUrl(url: String): String? {
     extractShopeeProductIdFromResolvedUrl(url)?.let { return it }
     val resolvedUrl = if (url.contains("s.shopee", ignoreCase = true)) resolveShopeeUrl(url) else url
@@ -5304,6 +5407,30 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     for (index in 0 until node.childCount) {
       collectTextNodes(node.getChild(index), output, allowedPackageName)
+    }
+  }
+
+  private fun collectShopeeImageNodes(
+    node: AccessibilityNodeInfo?,
+    output: MutableList<ShopeeImageNode>,
+    allowedPackageName: String? = null
+  ) {
+    if (node == null) return
+    if (isAllowedPackageNode(node, allowedPackageName) && node.isVisibleToUser) {
+      val imageUrl = extractShopeeImageUrl(node.viewIdResourceName)
+        ?: extractShopeeImageUrl(node.text?.toString())
+        ?: extractShopeeImageUrl(node.contentDescription?.toString())
+      if (imageUrl != null) {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.width() > 0 && bounds.height() > 0) {
+          output.add(ShopeeImageNode(imageUrl, bounds))
+        }
+      }
+    }
+
+    for (index in 0 until node.childCount) {
+      collectShopeeImageNodes(node.getChild(index), output, allowedPackageName)
     }
   }
 
@@ -6258,6 +6385,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val text: String,
     val bounds: Rect,
     val node: AccessibilityNodeInfo
+  )
+
+  private data class ShopeeImageNode(
+    val imageUrl: String,
+    val bounds: Rect
   )
 
   private data class ShopeeBottomTabCandidate(
