@@ -740,13 +740,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
       var noNewRounds = 0
       val maxRounds = 12
+      var detailAttemptCount = 0
 
       for (round in 1..maxRounds) {
         checkStopRequested()
         val (visibleProducts, reachedRecommendations) = scrapeVisibleShopeeLikedProductCandidates()
         var added = 0
         var lostLikedList = false
-        for ((index, candidate) in visibleProducts.withIndex()) {
+        for (candidate in visibleProducts) {
           checkStopRequested()
           val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
           val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
@@ -755,7 +756,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
             continue
           }
 
-          logStep("เปิด detail สินค้า ${index + 1}/${visibleProducts.size}: ${candidate.product.name.take(34)}")
+          detailAttemptCount += 1
+          logStep("เปิด detail สินค้า $detailAttemptCount: ${candidate.product.name.take(34)}")
           val product = enrichShopeeProductFromDetail(
             candidate,
             copyProductUrl = COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT
@@ -4083,7 +4085,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val stats = shopeeLikedProductCandidateStats()
       lastStats = stats
       if (stats.ready) {
-        logStep("สินค้าในหน้าถูกใจโหลดแล้ว (ราคา=${stats.prices}/${stats.rawPrices}, text=${stats.texts})")
+        logStep("สินค้าในหน้าถูกใจโหลดแล้ว (ราคา=${stats.prices}, rawPrice=${stats.rawPrices}, text=${stats.texts})")
         return true
       }
       if (stats.recommendation) {
@@ -4095,7 +4097,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       if (now - lastLog > 3000) {
         logStep(
           "รอสินค้าในหน้าถูกใจโหลด ${((now - start) / 1000.0).formatOneDecimal()} วิ " +
-            "(nodes=${stats.nodes}, ราคา=${stats.prices}/${stats.rawPrices}, text=${stats.texts}, safeTop=${stats.safeTop})"
+            "(nodes=${stats.nodes}, ราคา=${stats.prices}, rawPrice=${stats.rawPrices}, text=${stats.texts}, safeTop=${stats.safeTop})"
         )
         lastLog = now
       }
@@ -4105,7 +4107,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     lastStats?.let { stats ->
       logStep(
         "รอสินค้าครบ ${(timeoutMs / 1000.0).formatOneDecimal()} วิแล้วยังไม่เจอสินค้า " +
-          "(nodes=${stats.nodes}, ราคา=${stats.prices}/${stats.rawPrices}, text=${stats.texts})"
+          "(nodes=${stats.nodes}, ราคา=${stats.prices}, rawPrice=${stats.rawPrices}, text=${stats.texts})"
       )
     }
     return false
