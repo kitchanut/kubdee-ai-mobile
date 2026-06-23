@@ -30,6 +30,7 @@
       </intent-filter>
       <meta-data android:name="android.accessibilityservice" android:resource="@xml/kubdee_accessibility_service"/>
     </service>
+    <activity android:name=".automation.KubdeeClipboardBridgeActivity" android:process=":clipboard" android:theme="@style/Theme.Kubdee.ClipboardBridge" android:exported="false" android:excludeFromRecents="true" android:finishOnTaskLaunch="true" android:noHistory="true"/>
     <receiver android:name=".automation.KubdeeAutomationCommandReceiver" android:process=":automation" android:exported="false"/>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>

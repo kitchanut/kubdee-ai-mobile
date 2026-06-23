@@ -21,8 +21,8 @@ import expo.modules.ExpoReactHostFactory
 class MainApplication : Application(), ReactApplication {
 
   override val reactHost: ReactHost by lazy {
-    if (isAutomationProcess()) {
-      throw IllegalStateException("React host is not available in the automation process")
+    if (isLightweightAutomationProcess()) {
+      throw IllegalStateException("React host is not available in automation helper processes")
     }
 
     ExpoReactHostFactory.getDefaultReactHost(
@@ -38,7 +38,7 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
-    if (isAutomationProcess()) {
+    if (isLightweightAutomationProcess()) {
       return
     }
 
@@ -53,15 +53,17 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
-    if (isAutomationProcess()) {
+    if (isLightweightAutomationProcess()) {
       return
     }
 
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
   }
 
-  private fun isAutomationProcess(): Boolean =
-    currentProcessName()?.endsWith(":automation") == true
+  private fun isLightweightAutomationProcess(): Boolean {
+    val processName = currentProcessName() ?: return false
+    return processName.endsWith(":automation") || processName.endsWith(":clipboard")
+  }
 
   private fun currentProcessName(): String? {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

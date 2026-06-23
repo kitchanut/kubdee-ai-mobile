@@ -121,7 +121,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     private const val AUTOMATION_NOTIFICATION_ID = 2401
     private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
     private const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
-    private const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = false
+    private const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = true
     private const val TARGET_PACKAGE_CHROME = "com.android.chrome"
     private val SHOPEE_LIKED_TEXTS = listOf(
       "สิ่งที่ฉันถูกใจ",
@@ -4323,6 +4323,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val detailPrice = findShopeeDetailPrice() ?: product.price
       val imageUrl = findShopeeDetailImageUrl() ?: product.imageUrl
       val productUrl = if (copyProductUrl) {
+        logStep("รอหน้า detail นิ่งก่อนแชร์สินค้า")
+        sleepStep(900L)
         copyShopeeProductUrlFromDetail() ?: product.productUrl
       } else {
         logStep("ข้ามคัดลอกลิงก์สินค้าเพื่อลด memory ตอน import")
@@ -4561,35 +4563,71 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     val marker = "kubdee-empty-${System.currentTimeMillis()}"
     val previous = readClipboardText(clipboard)
+    var markerSet = false
     try {
       clipboard.setPrimaryClip(ClipData.newPlainText("kubdee-marker", marker))
+      markerSet = true
     } catch (error: Exception) {
       Log.w(TAG, "Unable to seed clipboard before Shopee share", error)
       // Clipboard write may be blocked by OEM policy; reading after copy still works on many devices.
     }
 
     try {
-      logStep("กดแชร์สินค้า")
+      logStep("กำลังเปิดแผงแชร์สินค้า")
       if (!openShopeeShareSheet()) {
         logStep("เปิดแผ่นแชร์สินค้าไม่สำเร็จ ข้ามลิงก์")
         return null
       }
 
-      logStep("กดคัดลอกลิงก์สินค้า")
-      if (!tapShopeeCopyLink()) {
-        logStep("กดคัดลอกลิงก์ไม่สำเร็จ ข้ามลิงก์")
-        return null
+      logStep("ตรวจ clipboard หลังเปิดแชร์ก่อนกดคัดลอก")
+      val sharedUrl = waitForShopeeClipboardUrl(
+        clipboard = clipboard,
+        marker = marker,
+        markerSet = markerSet,
+        previous = previous,
+        timeoutMs = 1_500L
+      )
+      if (sharedUrl != null) {
+        logStep("ได้ลิงก์จากการเปิดแชร์ ไม่ต้องกดคัดลอก")
+        return resolveShopeeUrl(sharedUrl).ifBlank { sharedUrl }
       }
+      logStep("ยังไม่เจอลิงก์จากแผงแชร์ จะกดคัดลอกลิงก์")
 
-      val start = System.currentTimeMillis()
-      while (System.currentTimeMillis() - start < 6_000L) {
+      repeat(2) { attempt ->
         checkStopRequested()
-        val text = readClipboardText(clipboard)
-        val url = extractUrl(text)
-        if (url != null && url != marker && url != previous) {
+
+        if (!isShopeeShareSheetVisible()) {
+          logStep("แผงแชร์ปิดอยู่ กำลังเปิดใหม่ก่อนคัดลอกลิงก์")
+          if (!openShopeeShareSheet()) return null
+        }
+
+        logStep("กำลังกดคัดลอกลิงก์สินค้า (${attempt + 1}/2)")
+        if (!tapShopeeCopyLink()) {
+          if (attempt == 0) {
+            logStep("ยังไม่พบปุ่มคัดลอกลิงก์ ลองค้นหาอีกครั้ง")
+            sleepStep(700L)
+            return@repeat
+          }
+          logStep("กดคัดลอกลิงก์ไม่สำเร็จ ข้ามลิงก์")
+          return null
+        }
+
+        logStep("กดคัดลอกลิงก์แล้ว รอ clipboard อัปเดต")
+        val url = waitForShopeeClipboardUrl(
+          clipboard = clipboard,
+          marker = marker,
+          markerSet = markerSet,
+          previous = previous,
+          timeoutMs = 7_000L
+        )
+        if (url != null) {
           return resolveShopeeUrl(url).ifBlank { url }
         }
-        sleepStep(300L)
+
+        if (attempt == 0) {
+          logStep("ยังอ่านลิงก์จาก clipboard ไม่ได้ ลองคัดลอกอีกครั้ง")
+          sleepStep(700L)
+        }
       }
     } catch (error: ShopeeAutomationStoppedException) {
       throw error
@@ -4597,6 +4635,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       Log.w(TAG, "Unable to copy Shopee product URL", error)
       logStep("คัดลอกลิงก์สินค้าไม่สำเร็จ ข้ามลิงก์")
     }
+    logStep("คัดลอกลิงก์แล้ว แต่อ่านลิงก์จาก clipboard ไม่ได้")
     return null
   }
 
@@ -4609,6 +4648,101 @@ class KubdeeAccessibilityService : AccessibilityService() {
       Log.w(TAG, "Unable to read clipboard", error)
       ""
     }
+  }
+
+  private fun waitForShopeeClipboardUrl(
+    clipboard: ClipboardManager,
+    marker: String,
+    markerSet: Boolean,
+    previous: String,
+    timeoutMs: Long
+  ): String? {
+    val start = System.currentTimeMillis()
+    var nextLogAt = start + 2_000L
+    var bridgeIndex = 0
+    val bridgeReadDelays = listOf(700L, 2_200L, 4_200L)
+
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkStopRequested()
+
+      val direct = readClipboardText(clipboard)
+      val directUrl = extractShopeeUrlFromClipboard(direct, marker, markerSet, previous)
+      if (directUrl != null) return directUrl
+
+      val elapsed = System.currentTimeMillis() - start
+      if (bridgeIndex < bridgeReadDelays.size && elapsed >= bridgeReadDelays[bridgeIndex]) {
+        val bridged = readClipboardTextWithForegroundBridge("shopee-copy-${start}-$bridgeIndex")
+        val bridgedUrl = extractShopeeUrlFromClipboard(bridged, marker, markerSet, previous)
+        if (bridgedUrl != null) return bridgedUrl
+        bridgeIndex += 1
+      }
+
+      val now = System.currentTimeMillis()
+      if (timeoutMs >= 2_000L && now >= nextLogAt) {
+        logStep("กำลังรอ clipboard อัปเดต ${((now - start) / 1000.0).formatOneDecimal()}/${(timeoutMs / 1000.0).formatOneDecimal()} วิ")
+        nextLogAt = now + 2_000L
+      }
+      sleepStep(250L)
+    }
+
+    if (!markerSet && previous.isNotBlank() && readClipboardText(clipboard) == previous) {
+      logStep("คัดลอกลิงก์แล้ว แต่ clipboard ยังไม่เปลี่ยน")
+    }
+    return null
+  }
+
+  private fun readClipboardTextWithForegroundBridge(requestId: String): String {
+    val resultFile = File(filesDir, KubdeeClipboardBridgeActivity.RESULT_FILE_NAME)
+    try {
+      val intent = Intent(this, KubdeeClipboardBridgeActivity::class.java).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        putExtra(KubdeeClipboardBridgeActivity.EXTRA_REQUEST_ID, requestId)
+      }
+      startActivity(intent)
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to start clipboard bridge activity", error)
+      return ""
+    }
+
+    val deadline = System.currentTimeMillis() + 1_700L
+    while (System.currentTimeMillis() < deadline) {
+      checkStopRequested()
+      val result = readClipboardBridgeResult(resultFile, requestId)
+      if (result != null) return result
+      sleepStep(120L)
+    }
+    return ""
+  }
+
+  private fun readClipboardBridgeResult(resultFile: File, requestId: String): String? {
+    return try {
+      if (!resultFile.exists()) return null
+      val payload = JSONObject(resultFile.readText())
+      if (payload.optString("requestId") != requestId) return null
+      payload.optString("text", "")
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to read clipboard bridge result", error)
+      null
+    }
+  }
+
+  private fun extractShopeeUrlFromClipboard(
+    text: String,
+    marker: String,
+    markerSet: Boolean,
+    previous: String
+  ): String? {
+    val prepared = text.replace("\\/", "/").trim()
+    if (prepared.isBlank() || prepared == marker) return null
+    if (!markerSet && previous.isNotBlank() && prepared == previous) return null
+
+    URL_REGEX.findAll(prepared).forEach { match ->
+      val url = match.value.trimEnd(')', '.', ',', ';', ']', '}', '>', '"', '\'')
+      if (url.contains("shopee.", ignoreCase = true)) {
+        return Uri.decode(url)
+      }
+    }
+    return null
   }
 
   private fun openShopeeShareSheet(): Boolean {
