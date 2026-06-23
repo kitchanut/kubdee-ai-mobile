@@ -4055,20 +4055,22 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val hasTopEditAction = textNodes.any { node ->
       node.bounds.top <= topLimit && listOf("แก้ไข", "Edit").any { node.text.equals(it, ignoreCase = true) }
     }
+    val filterLabels = setOf("ทั้งหมด", "สถานะ", "ส่วนลด", "หมวดหมู่")
+    val listFilterHits = textNodes.count { node ->
+      node.bounds.top <= screen.top + (screen.height() * 0.35f).toInt() &&
+        filterLabels.any { label -> node.text.equals(label, ignoreCase = true) }
+    }
     val hasDetailMarker = textNodes.any { node ->
       node.bounds.top < bottomNavStart && SHOPEE_PRODUCT_DETAIL_MARKERS.any { marker ->
         node.text.contains(marker, ignoreCase = true)
       }
-    }
-    val hasProductGridPrice = findPriceNodes(textNodes).any { node ->
-      node.bounds.top > topLimit && node.bounds.bottom < bottomNavStart
     }
 
     if (hasDetailMarker && !hasTopLikedTitle && !hasTopEditAction) {
       return false
     }
 
-    return !hasBottomMeTab && (hasTopLikedTitle || hasTopEditAction || hasProductGridPrice)
+    return !hasBottomMeTab && (hasTopLikedTitle || hasTopEditAction || listFilterHits >= 2)
   }
 
   private fun waitForShopeeLikedProductsReady(timeoutMs: Long): Boolean {
@@ -4488,7 +4490,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     if (noProductDialog) return ShopeeDetailScreenState.NO_PRODUCT
 
     val joined = texts.joinToString(" ")
-    if (joined.contains("มุมมองผู้ซื้อ") || listFilterHits >= 2 || isShopeeLikedListVisible()) {
+    if (joined.contains("มุมมองผู้ซื้อ") || listFilterHits >= 2) {
       return ShopeeDetailScreenState.LIST
     }
 
@@ -5030,7 +5032,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       "สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "liked", "ค้นหา", "แก้ไข", "edit",
       "โค้ดลด", "ส่วนลด", "coins", "coin", "เช็คอิน", "รับ", "ซื้อเลย",
       "ขายแล้ว", "ส่งฟรี", "วันที่", "แนะนำ", "ดูเพิ่มเติม", "ช้อปปี้ถูกชัวร์",
-      "ถูกชัวร์", "spaylater", "payday", "มีบริการติดตั้ง", "ผ่อน"
+      "ถูกชัวร์", "spaylater", "payday", "flashsale", "มีบริการติดตั้ง", "ผ่อน"
     )
     return blocked.none { compact.contains(it.lowercase(Locale.ROOT).replace(Regex("""\s+"""), "")) }
   }

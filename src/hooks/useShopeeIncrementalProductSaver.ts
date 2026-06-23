@@ -56,6 +56,7 @@ function isLikelyShopeeProduct(product: ProfileAwareShopeeProduct): boolean {
     'ถูกชัวร์',
     'spaylater',
     'payday',
+    'flashsale',
     'โค้ดลด',
     'ส่วนลด',
     'เช็คอิน',
