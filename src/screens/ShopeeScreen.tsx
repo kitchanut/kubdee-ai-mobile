@@ -10,6 +10,7 @@ import Text from '@/components/ui/KubdeeText';
 import NumberStepper from '@/components/ui/NumberStepper';
 import SectionHeader from '@/components/ui/SectionHeader';
 import StatusPill from '@/components/ui/StatusPill';
+import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
 import {
   getAccessibilityStatus,
@@ -81,6 +82,12 @@ export default function ShopeeScreen({
     setRunMessage(message);
   }, []);
 
+  const shopeeProductSaver = useShopeeIncrementalProductSaver({
+    selectedProfileId,
+    importShopeeProducts,
+    appendLog,
+  });
+
   useEffect(() => {
     const subscription = subscribeShopeeImportLogs((entry) => {
       setLogs((current) => [...current, entry].slice(-80));
@@ -124,6 +131,7 @@ export default function ShopeeScreen({
     setIsImporting(true);
     setIsStopping(false);
     setLogs([]);
+    shopeeProductSaver.startSession();
     appendLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
 
     try {
@@ -148,18 +156,21 @@ export default function ShopeeScreen({
 
       appendLog('เปิด Shopee และเข้าเมนูสิ่งที่ฉันถูกใจ');
       const scrapedProducts = await importShopeeLikedProducts(importLimit);
-      if (scrapedProducts.length === 0) {
+      await shopeeProductSaver.waitForIdle();
+
+      if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
         appendLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
         toast.warning('ไม่พบสินค้า Shopee ที่นำเข้าได้');
         return;
       }
 
-      appendLog(`ดึงจาก Shopee ได้ ${scrapedProducts.length} รายการ กำลังบันทึกเข้าคลัง`);
-      const result = await importShopeeProducts(selectedProfileId, scrapedProducts);
+      const result = await shopeeProductSaver.saveRemainingProducts(scrapedProducts);
 
       if (!result) {
-        appendLog('คลังสินค้ากำลังซิงก์อยู่ ลองใหม่อีกครั้ง');
-        toast.warning('คลังสินค้ากำลังซิงก์อยู่ ลองใหม่อีกครั้ง');
+        const savedCount = shopeeProductSaver.getSavedCount();
+        const summary = `นำเข้า Shopee สำเร็จ ${savedCount} รายการ`;
+        appendLog(summary);
+        toast.success(summary);
         return;
       }
 
@@ -169,18 +180,22 @@ export default function ShopeeScreen({
         return;
       }
 
-      const summary = `นำเข้า Shopee สำเร็จ ${result.imported} รายการ`;
+      const savedCount = shopeeProductSaver.getSavedCount();
+      const queuedText = result.queued > 0 ? ` · รอซิงก์ cloud ${result.queued}` : '';
+      const summary = `นำเข้า Shopee สำเร็จ ${savedCount > 0 ? savedCount : result.imported} รายการ${queuedText}`;
       appendLog(summary);
       toast.success(summary);
     } catch (error) {
+      await shopeeProductSaver.waitForIdle();
       const message = error instanceof Error ? error.message : String(error);
       setRunMessage(message);
       toast.error(message);
     } finally {
+      shopeeProductSaver.stopSession();
       setIsImporting(false);
       setIsStopping(false);
     }
-  }, [appendLog, importLimit, importShopeeProducts, isImporting, isPosting, isSyncing, selectedProfileId]);
+  }, [appendLog, importLimit, isImporting, isPosting, isSyncing, selectedProfileId, shopeeProductSaver]);
 
   const handleStopImport = useCallback(async (): Promise<void> => {
     if (!isImporting || isStopping) {

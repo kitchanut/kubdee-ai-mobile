@@ -210,20 +210,7 @@ class KubdeeAccessibilityModule(
         )
         val array = Arguments.createArray()
         products.forEach { product ->
-          array.pushMap(Arguments.createMap().apply {
-            putString("name", product.name)
-            if (product.price != null) putString("price", product.price) else putNull("price")
-            if (product.stock != null) putInt("stock", product.stock) else putNull("stock")
-            if (product.productUrl != null) putString("productUrl", product.productUrl) else putNull("productUrl")
-            if (product.externalProductId != null) {
-              putString("externalProductId", product.externalProductId)
-            } else {
-              putNull("externalProductId")
-            }
-            if (product.imageUrl != null) putString("imageUrl", product.imageUrl) else putNull("imageUrl")
-            putString("status", product.status)
-            putDouble("scrapedAt", product.scrapedAt.toDouble())
-          })
+          array.pushMap(product.toWritableMap())
         }
         promise.resolve(array)
       } catch (error: Exception) {
@@ -724,6 +711,20 @@ class KubdeeAccessibilityModule(
       }
     }
 
+    fun emitShopeeImportProduct(product: ShopeeLikedProduct) {
+      val context = eventContext ?: return
+      val payload = product.toWritableMap().apply {
+        putDouble("ts", System.currentTimeMillis().toDouble())
+      }
+      context.runOnUiQueueThread {
+        if (context.hasActiveReactInstance()) {
+          context
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("KubdeeShopeeImportProduct", payload)
+        }
+      }
+    }
+
     fun emitShopeePostLog(message: String) {
       val context = eventContext ?: return
       val payload = Arguments.createMap().apply {
@@ -821,6 +822,22 @@ class KubdeeAccessibilityModule(
     }
   }
 }
+
+private fun ShopeeLikedProduct.toWritableMap() =
+  Arguments.createMap().apply {
+    putString("name", name)
+    if (price != null) putString("price", price) else putNull("price")
+    if (stock != null) putInt("stock", stock) else putNull("stock")
+    if (productUrl != null) putString("productUrl", productUrl) else putNull("productUrl")
+    if (externalProductId != null) {
+      putString("externalProductId", externalProductId)
+    } else {
+      putNull("externalProductId")
+    }
+    if (imageUrl != null) putString("imageUrl", imageUrl) else putNull("imageUrl")
+    putString("status", status)
+    putDouble("scrapedAt", scrapedAt.toDouble())
+  }
 
 private data class GoogleFlowDownloadAsset(
   val uri: String,

@@ -41,6 +41,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     'expo-dev-client',
+    'expo-sqlite',
     'expo-splash-screen',
     [
       './plugins/withKubdeeAccessibility',

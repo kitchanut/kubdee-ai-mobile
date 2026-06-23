@@ -657,6 +657,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
             added += 1
             updateAutomationStats(currentCount = productsByKey.size, successCount = productsByKey.size)
             logStep("บันทึกสินค้าแล้ว รวม ${productsByKey.size}: ${product.name.take(34)}")
+            KubdeeAccessibilityModule.emitShopeeImportProduct(product)
             if (productsByKey.size >= maxItems) break
           }
           if (!isShopeeLikedListVisible()) {
@@ -5656,7 +5657,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     ).apply {
       gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
       x = 0
-      y = dp(118)
+      y = automationOverlayTopOffset()
     }
 
     try {
@@ -5711,7 +5712,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     ).apply {
       gravity = Gravity.TOP or Gravity.END
       x = dp(28)
-      y = dp(128)
+      y = automationOverlayTopOffset() + dp(10)
     }
 
     try {
@@ -5728,6 +5729,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   private val automationWindowManager: WindowManager
     get() = getSystemService(WINDOW_SERVICE) as WindowManager
+
+  private fun automationOverlayTopOffset(): Int = statusBarHeightPx() + dp(8)
+
+  private fun statusBarHeightPx(): Int {
+    val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+    return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
+  }
 
   private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 

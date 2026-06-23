@@ -14,6 +14,7 @@ import { toast } from 'sonner-native';
 import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import ActivityLogCard from '@/components/ui/ActivityLogCard';
 import Text from '@/components/ui/KubdeeText';
+import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
 import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from '@/library/LibraryContext';
 import type { AffiliateProduct } from '@/library/types';
@@ -173,6 +174,9 @@ function formatShopeeImportResult(result: ProductImportResult): string {
   if (result.skippedStale > 0) {
     parts.push(`ข้ามข้อมูลเก่า ${result.skippedStale}`);
   }
+  if (result.queued > 0) {
+    parts.push(`รอซิงก์ cloud ${result.queued}`);
+  }
 
   return `นำเข้า Shopee สำเร็จ ${parts.join(' · ')}`;
 }
@@ -217,6 +221,12 @@ export default function ProductPanel({
   const appendShopeeLog = useCallback((message: string, ts = Date.now()): void => {
     setShopeeLogs((current) => [...current, { message, ts }].slice(-80));
   }, []);
+
+  const shopeeProductSaver = useShopeeIncrementalProductSaver({
+    selectedProfileId,
+    importShopeeProducts,
+    appendLog: appendShopeeLog,
+  });
 
   useEffect(() => {
     const subscription = subscribeShopeeImportLogs((entry) => {
@@ -365,6 +375,7 @@ export default function ProductPanel({
     setIsShopeeImporting(true);
     setIsStoppingShopee(false);
     setShopeeLogs([]);
+    shopeeProductSaver.startSession();
     appendShopeeLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
 
     try {
@@ -388,22 +399,28 @@ export default function ProductPanel({
       }
 
       const scrapedProducts = await runNativeShopeeLikedImport(50);
-      if (scrapedProducts.length === 0) {
+      await shopeeProductSaver.waitForIdle();
+
+      if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
         appendShopeeLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
         toast.warning('ไม่พบสินค้าใน Shopee ถูกใจ');
         return;
       }
 
-      appendShopeeLog(`ดึงจาก Shopee ได้ ${scrapedProducts.length} รายการ กำลังซิงก์เข้าคลัง`);
-      const result = await importShopeeProducts(selectedProfileId, scrapedProducts);
+      const result = await shopeeProductSaver.saveRemainingProducts(scrapedProducts);
       if (!result) {
-        appendShopeeLog('ยังซิงก์ไม่ได้: คลังสินค้ากำลังทำงานอยู่');
-        toast.warning('คลังสินค้ากำลังซิงก์อยู่ ลองใหม่อีกครั้ง');
+        const savedCount = shopeeProductSaver.getSavedCount();
+        const message = `นำเข้า Shopee สำเร็จ ${savedCount} รายการ`;
+        appendShopeeLog(message);
+        toast.success(message);
         return;
       }
 
       if (result.success) {
-        const message = formatShopeeImportResult(result);
+        const savedCount = shopeeProductSaver.getSavedCount();
+        const message = savedCount > 0
+          ? formatShopeeImportResult({ ...result, imported: savedCount })
+          : formatShopeeImportResult(result);
         appendShopeeLog(message);
         toast.success(message);
         return;
@@ -413,14 +430,16 @@ export default function ProductPanel({
       appendShopeeLog(message);
       toast.error(message);
     } catch (error) {
+      await shopeeProductSaver.waitForIdle();
       const message = error instanceof Error ? error.message : String(error);
       appendShopeeLog(message);
       toast.error(message);
     } finally {
+      shopeeProductSaver.stopSession();
       setIsShopeeImporting(false);
       setIsStoppingShopee(false);
     }
-  }, [appendShopeeLog, importShopeeProducts, isShopeeImporting, isSyncing, selectedProfileId]);
+  }, [appendShopeeLog, isShopeeImporting, isSyncing, selectedProfileId, shopeeProductSaver]);
 
   const handleStopShopeeImport = useCallback(async (): Promise<void> => {
     if (!isShopeeImporting || isStoppingShopee) {

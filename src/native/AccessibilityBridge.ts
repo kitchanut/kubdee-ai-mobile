@@ -27,6 +27,10 @@ export interface NativeShopeeImportLog {
   ts: number;
 }
 
+export interface NativeShopeeImportProduct extends NativeShopeeLikedProduct {
+  ts: number;
+}
+
 export interface NativeShopeePostLog {
   message: string;
   ts: number;
@@ -342,6 +346,44 @@ export function subscribeShopeeImportLogs(
       message: entry.message,
       ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
     });
+  });
+}
+
+function normalizeNativeShopeeProduct(payload: unknown): NativeShopeeImportProduct | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const entry = payload as Partial<NativeShopeeImportProduct>;
+  if (typeof entry.name !== 'string' || entry.name.trim().length === 0) {
+    return null;
+  }
+
+  return {
+    name: entry.name,
+    price: typeof entry.price === 'string' ? entry.price : null,
+    stock: typeof entry.stock === 'number' ? entry.stock : null,
+    productUrl: typeof entry.productUrl === 'string' ? entry.productUrl : null,
+    externalProductId: typeof entry.externalProductId === 'string' ? entry.externalProductId : null,
+    imageUrl: typeof entry.imageUrl === 'string' ? entry.imageUrl : null,
+    status: typeof entry.status === 'string' ? entry.status : null,
+    scrapedAt: typeof entry.scrapedAt === 'number' ? entry.scrapedAt : null,
+    ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+  };
+}
+
+export function subscribeShopeeImportProducts(
+  listener: (entry: NativeShopeeImportProduct) => void
+): EmitterSubscription | null {
+  if (!nativeEventEmitter) {
+    return null;
+  }
+
+  return nativeEventEmitter.addListener('KubdeeShopeeImportProduct', (payload: unknown) => {
+    const product = normalizeNativeShopeeProduct(payload);
+    if (product) {
+      listener(product);
+    }
   });
 }
 

@@ -5,6 +5,16 @@ import { useAuth } from '@/auth/AuthContext';
 import { getOrCreateSyncDeviceId, getStoredAuthTokens } from '@/auth/storage';
 import { deleteAffiliateProducts, fetchAffiliateProducts, syncAffiliateProducts } from '@/library/api';
 import type { SyncAffiliateProductInput } from '@/library/api';
+import {
+  getDueProductSyncJobs,
+  getLocalProducts,
+  markDeleteJobsSynced,
+  markProductsDeletedForSync,
+  markSyncJobsFailed,
+  markUpsertJobsSynced,
+  upsertLocalProductsForSync,
+  upsertLocalProductsFromCloud,
+} from '@/library/localProductDb';
 import type { AffiliateProduct } from '@/library/types';
 
 export interface ProductSyncResult {
@@ -35,6 +45,18 @@ export interface ShopeeImportProductInput {
 export interface ProductImportResult {
   success: boolean;
   imported: number;
+  queued: number;
+  skippedDeleted: number;
+  skippedStale: number;
+  restoredDeleted: number;
+  error: string | null;
+}
+
+interface QueueSyncResult {
+  success: boolean;
+  status: number | null;
+  synced: number;
+  deleted: number;
   skippedDeleted: number;
   skippedStale: number;
   restoredDeleted: number;
@@ -193,17 +215,18 @@ function preserveExistingProductFields(
 
   return {
     ...payload,
+    localId: existing.localId || payload.localId,
     description: existing.description,
     caption: existing.caption,
     hashtags: existing.hashtags,
     cta: existing.cta,
-    imagePath: existing.imagePath,
-    imageR2Key: existing.imageR2Key,
-    imageUrl: existing.imageUrl,
-    imageHash: existing.imageHash,
-    imageMimeType: existing.imageMimeType,
-    imageSize: existing.imageSize,
-    imageUploadedAt: toNumber(existing.imageUploadedAt),
+    imagePath: existing.imagePath ?? payload.imagePath,
+    imageR2Key: existing.imageR2Key ?? payload.imageR2Key,
+    imageUrl: existing.imageUrl ?? payload.imageUrl,
+    imageHash: existing.imageHash ?? payload.imageHash,
+    imageMimeType: existing.imageMimeType ?? payload.imageMimeType,
+    imageSize: existing.imageSize ?? payload.imageSize,
+    imageUploadedAt: toNumber(existing.imageUploadedAt) ?? payload.imageUploadedAt,
     localCreatedAt: toNumber(existing.localCreatedAt) ?? fallbackCreatedAt,
   };
 }
@@ -280,6 +303,122 @@ function toShopeeSyncProducts(
   return syncProducts;
 }
 
+function mergeProductsByLocalId(products: AffiliateProduct[]): AffiliateProduct[] {
+  const byLocalId = new Map<string, AffiliateProduct>();
+  for (const product of products) {
+    if (!product.localId) continue;
+    byLocalId.set(product.localId, product);
+  }
+  return Array.from(byLocalId.values());
+}
+
+function dedupeQueuePayloads(products: SyncAffiliateProductInput[]): SyncAffiliateProductInput[] {
+  const byLocalId = new Map<string, SyncAffiliateProductInput>();
+  for (const product of products) {
+    byLocalId.set(product.localId, product);
+  }
+  return Array.from(byLocalId.values());
+}
+
+async function flushPendingProductSyncQueue(token: string): Promise<QueueSyncResult> {
+  const jobs = await getDueProductSyncJobs(200);
+  if (jobs.length === 0) {
+    return {
+      deleted: 0,
+      error: null,
+      restoredDeleted: 0,
+      skippedDeleted: 0,
+      skippedStale: 0,
+      status: null,
+      success: true,
+      synced: 0,
+    };
+  }
+
+  let deleted = 0;
+  let synced = 0;
+  let skippedDeleted = 0;
+  let skippedStale = 0;
+  let restoredDeleted = 0;
+
+  const deleteJobs = jobs.filter((job) => job.operation === 'delete');
+  if (deleteJobs.length > 0) {
+    const localIds = Array.from(new Set(deleteJobs.map((job) => job.localId)));
+    const result = await deleteAffiliateProducts(token, localIds);
+    if (!result.ok) {
+      const message = result.error || 'ลบสินค้าใน cloud ไม่สำเร็จ';
+      if (result.status !== 401) {
+        await markSyncJobsFailed(deleteJobs.map((job) => job.id), message);
+      }
+      return {
+        deleted,
+        error: message,
+        restoredDeleted,
+        skippedDeleted,
+        skippedStale,
+        status: result.status,
+        success: false,
+        synced,
+      };
+    }
+
+    deleted += result.data?.deleted ?? 0;
+    await markDeleteJobsSynced(deleteJobs.map((job) => job.id));
+  }
+
+  const upsertJobs = jobs.filter((job) => job.operation === 'upsert' && job.payload);
+  if (upsertJobs.length > 0) {
+    const payloadProducts = dedupeQueuePayloads(
+      upsertJobs
+        .map((job) => job.payload)
+        .filter((payload): payload is SyncAffiliateProductInput => !!payload)
+    );
+    const deviceId = await getOrCreateSyncDeviceId();
+    const result = await syncAffiliateProducts(token, {
+      deviceId,
+      products: payloadProducts,
+      restoreDeleted: true,
+    });
+
+    if (!result.ok) {
+      const message = result.error || 'ซิงก์สินค้าใน cloud ไม่สำเร็จ';
+      if (result.status !== 401) {
+        await markSyncJobsFailed(upsertJobs.map((job) => job.id), message);
+      }
+      return {
+        deleted,
+        error: message,
+        restoredDeleted,
+        skippedDeleted,
+        skippedStale,
+        status: result.status,
+        success: false,
+        synced,
+      };
+    }
+
+    synced += result.data?.products ?? payloadProducts.length;
+    skippedDeleted += result.data?.skippedDeleted ?? 0;
+    skippedStale += result.data?.skippedStale ?? 0;
+    restoredDeleted += result.data?.restoredDeleted ?? 0;
+    await markUpsertJobsSynced(
+      upsertJobs.map((job) => job.id),
+      payloadProducts.map((product) => product.localId)
+    );
+  }
+
+  return {
+    deleted,
+    error: null,
+    restoredDeleted,
+    skippedDeleted,
+    skippedStale,
+    status: null,
+    success: true,
+    synced,
+  };
+}
+
 export function LibraryProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { token, isPlanValid, recheckPlan } = useAuth();
   const [products, setProducts] = useState<AffiliateProduct[]>([]);
@@ -289,8 +428,19 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
   const isSyncingRef = useRef(false);
   const isDeletingRef = useRef(false);
 
+  const refreshLocalProducts = useCallback(async (): Promise<AffiliateProduct[]> => {
+    const localProducts = await getLocalProducts();
+    setProducts(localProducts);
+    return localProducts;
+  }, []);
+
   const syncProducts = useCallback(async (): Promise<ProductSyncResult | null> => {
-    if (!token || isSyncingRef.current) {
+    if (!token) {
+      await refreshLocalProducts();
+      return null;
+    }
+
+    if (isSyncingRef.current) {
       return null;
     }
 
@@ -298,35 +448,46 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     setIsSyncing(true);
 
     try {
-      let result = await fetchAffiliateProducts(token);
-
-      if (!result.ok && result.status === 401) {
-        // Same refresh path as the rest of the app: recheckPlan() verifies the
-        // session via verifyTokens (refreshing the access token on 401 and
-        // persisting it to secure storage, or clearing auth state when the
-        // refresh fails). Retry once with the refreshed token from storage.
+      let activeToken = token;
+      let queueResult = await flushPendingProductSyncQueue(activeToken);
+      if (!queueResult.success && queueResult.status === 401) {
         await recheckPlan();
         const refreshedTokens = await getStoredAuthTokens();
         if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
-          result = await fetchAffiliateProducts(refreshedTokens.accessToken);
+          activeToken = refreshedTokens.accessToken;
+          queueResult = await flushPendingProductSyncQueue(activeToken);
+        }
+      }
+
+      let result = await fetchAffiliateProducts(activeToken);
+
+      if (!result.ok && result.status === 401) {
+        await recheckPlan();
+        const refreshedTokens = await getStoredAuthTokens();
+        if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+          activeToken = refreshedTokens.accessToken;
+          result = await fetchAffiliateProducts(activeToken);
         }
       }
 
       if (result.ok && result.data) {
-        setProducts(result.data);
-        setSyncError(null);
+        await upsertLocalProductsFromCloud(result.data);
+        const localProducts = await refreshLocalProducts();
+        const error = queueResult.success ? null : queueResult.error;
+        setSyncError(error);
         setLastSyncedAt(Date.now());
-        return { count: result.data.length, error: null, success: true };
+        return { count: localProducts.length, error, success: queueResult.success };
       }
 
       const message = result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ';
+      await refreshLocalProducts();
       setSyncError(message);
       return { count: 0, error: message, success: false };
     } finally {
       isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [recheckPlan, token]);
+  }, [recheckPlan, refreshLocalProducts, token]);
 
   const importShopeeProducts = useCallback(
     async (
@@ -334,158 +495,160 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       importedProducts: ShopeeImportProductInput[]
     ): Promise<ProductImportResult | null> => {
       const cleanProfileLocalId = profileLocalId.trim();
-      if (!token || !cleanProfileLocalId || importedProducts.length === 0 || isSyncingRef.current) {
+      if (!cleanProfileLocalId || importedProducts.length === 0) {
         return null;
       }
 
-      isSyncingRef.current = true;
-      setIsSyncing(true);
+      const localExistingProducts = await getLocalProducts({ profileLocalId: cleanProfileLocalId });
+      const existingProducts = mergeProductsByLocalId([
+        ...localExistingProducts,
+        ...products.filter((product) => product.profileLocalId === cleanProfileLocalId),
+      ]);
+      const deviceId = await getOrCreateSyncDeviceId();
+      const syncPayloadProducts = toShopeeSyncProducts(
+        cleanProfileLocalId,
+        importedProducts,
+        deviceId,
+        existingProducts
+      );
 
-      try {
-        let activeToken = token;
-        let existingProducts = products.filter((product) => product.profileLocalId === cleanProfileLocalId);
-        let existingResult = await fetchAffiliateProducts(activeToken, { profileLocalId: cleanProfileLocalId });
-
-        if (!existingResult.ok && existingResult.status === 401) {
-          await recheckPlan();
-          const refreshedTokens = await getStoredAuthTokens();
-          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
-            activeToken = refreshedTokens.accessToken;
-            existingResult = await fetchAffiliateProducts(activeToken, { profileLocalId: cleanProfileLocalId });
-          }
-        }
-
-        if (existingResult.ok && existingResult.data) {
-          existingProducts = existingResult.data;
-        }
-
-        const deviceId = await getOrCreateSyncDeviceId();
-        const syncPayloadProducts = toShopeeSyncProducts(
-          cleanProfileLocalId,
-          importedProducts,
-          deviceId,
-          existingProducts
-        );
-
-        if (syncPayloadProducts.length === 0) {
-          return {
-            error: 'ไม่พบข้อมูลสินค้าที่นำเข้าได้',
-            imported: 0,
-            restoredDeleted: 0,
-            skippedDeleted: 0,
-            skippedStale: 0,
-            success: false,
-          };
-        }
-
-        let result = await syncAffiliateProducts(activeToken, {
-          deviceId,
-          products: syncPayloadProducts,
-          restoreDeleted: true,
-        });
-
-        if (!result.ok && result.status === 401) {
-          await recheckPlan();
-          const refreshedTokens = await getStoredAuthTokens();
-          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
-            activeToken = refreshedTokens.accessToken;
-            result = await syncAffiliateProducts(activeToken, {
-              deviceId,
-              products: syncPayloadProducts,
-              restoreDeleted: true,
-            });
-          }
-        }
-
-        if (result.ok && result.data) {
-          const pullResult = await fetchAffiliateProducts(activeToken);
-          if (pullResult.ok && pullResult.data) {
-            setProducts(pullResult.data);
-            setSyncError(null);
-            setLastSyncedAt(Date.now());
-          } else {
-            setSyncError(pullResult.error || 'นำเข้าสำเร็จ แต่โหลดคลังล่าสุดไม่สำเร็จ');
-          }
-
-          return {
-            error: null,
-            imported: result.data.products,
-            restoredDeleted: result.data.restoredDeleted,
-            skippedDeleted: result.data.skippedDeleted,
-            skippedStale: result.data.skippedStale,
-            success: true,
-          };
-        }
-
-        const message = result.error || 'นำเข้าสินค้า Shopee ไม่สำเร็จ';
-        setSyncError(message);
+      if (syncPayloadProducts.length === 0) {
         return {
-          error: message,
+          error: 'ไม่พบข้อมูลสินค้าที่นำเข้าได้',
           imported: 0,
+          queued: 0,
           restoredDeleted: 0,
           skippedDeleted: 0,
           skippedStale: 0,
           success: false,
         };
+      }
+
+      const localProducts = await upsertLocalProductsForSync(syncPayloadProducts);
+      await refreshLocalProducts();
+
+      let queueResult: QueueSyncResult = {
+        deleted: 0,
+        error: null,
+        restoredDeleted: 0,
+        skippedDeleted: 0,
+        skippedStale: 0,
+        status: null,
+        success: true,
+        synced: 0,
+      };
+
+      if (!token || isSyncingRef.current) {
+        setSyncError(token ? 'บันทึกไว้ในเครื่องแล้ว รอซิงก์ขึ้น cloud' : 'บันทึกไว้ในเครื่องแล้ว รอเข้าสู่ระบบเพื่อซิงก์ cloud');
+        return {
+          error: null,
+          imported: localProducts.length,
+          queued: syncPayloadProducts.length,
+          restoredDeleted: 0,
+          skippedDeleted: 0,
+          skippedStale: 0,
+          success: true,
+        };
+      }
+
+      isSyncingRef.current = true;
+      setIsSyncing(true);
+      try {
+        let activeToken = token;
+        queueResult = await flushPendingProductSyncQueue(activeToken);
+        if (!queueResult.success && queueResult.status === 401) {
+          await recheckPlan();
+          const refreshedTokens = await getStoredAuthTokens();
+          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+            activeToken = refreshedTokens.accessToken;
+            queueResult = await flushPendingProductSyncQueue(activeToken);
+          }
+        }
+
+        if (queueResult.success) {
+          setSyncError(null);
+          setLastSyncedAt(Date.now());
+          await refreshLocalProducts();
+        } else {
+          setSyncError(queueResult.error || 'บันทึกในเครื่องแล้ว แต่ซิงก์ cloud ยังไม่สำเร็จ');
+        }
       } finally {
         isSyncingRef.current = false;
         setIsSyncing(false);
       }
+
+      return {
+        error: null,
+        imported: localProducts.length,
+        queued: queueResult.success ? 0 : syncPayloadProducts.length,
+        restoredDeleted: queueResult.restoredDeleted,
+        skippedDeleted: queueResult.skippedDeleted,
+        skippedStale: queueResult.skippedStale,
+        success: true,
+      };
     },
-    [products, recheckPlan, token]
+    [products, recheckPlan, refreshLocalProducts, token]
   );
 
   const deleteProducts = useCallback(
     async (localIds: string[]): Promise<ProductDeleteResult | null> => {
-      if (!token || localIds.length === 0 || isDeletingRef.current) {
+      if (localIds.length === 0 || isDeletingRef.current) {
         return null;
       }
 
       isDeletingRef.current = true;
-
-      // Optimistic remove; snapshot kept so a failed request can roll back
-      // (re-fetching instead would leave the optimistic state behind offline).
-      const previousProducts = products;
-      const removedIds = new Set(localIds);
-      setProducts((current) => current.filter((product) => !removedIds.has(product.localId)));
+      let startedQueueSync = false;
 
       try {
-        let result = await deleteAffiliateProducts(token, localIds);
+        await markProductsDeletedForSync(localIds);
+        await refreshLocalProducts();
 
-        if (!result.ok && result.status === 401) {
-          // Same refresh path as syncProducts; DELETE is idempotent on the
-          // server (tombstones), so resending the full id list is safe.
-          await recheckPlan();
-          const refreshedTokens = await getStoredAuthTokens();
-          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
-            result = await deleteAffiliateProducts(refreshedTokens.accessToken, localIds);
-          }
-        }
-
-        if (result.ok && result.data) {
-          // Confirm against the server (also reconciles partial success where
-          // deleted < requested, e.g. rows already tombstoned by another app).
-          void syncProducts();
+        if (!token || isSyncingRef.current) {
+          setSyncError(token ? 'ลบในเครื่องแล้ว รอซิงก์ cloud' : 'ลบในเครื่องแล้ว รอเข้าสู่ระบบเพื่อซิงก์ cloud');
           return {
-            deleted: result.data.deleted,
+            deleted: localIds.length,
             error: null,
-            requested: result.data.requested,
+            requested: localIds.length,
             success: true,
           };
         }
 
-        setProducts(previousProducts);
+        isSyncingRef.current = true;
+        startedQueueSync = true;
+        setIsSyncing(true);
+        let queueResult = await flushPendingProductSyncQueue(token);
+        if (!queueResult.success && queueResult.status === 401) {
+          await recheckPlan();
+          const refreshedTokens = await getStoredAuthTokens();
+          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+            queueResult = await flushPendingProductSyncQueue(refreshedTokens.accessToken);
+          }
+        }
+        isSyncingRef.current = false;
+        setIsSyncing(false);
+
+        if (!queueResult.success) {
+          setSyncError(queueResult.error || 'ลบในเครื่องแล้ว แต่ซิงก์ cloud ยังไม่สำเร็จ');
+        } else {
+          setSyncError(null);
+          setLastSyncedAt(Date.now());
+        }
+
         return {
-          deleted: 0,
-          error: result.error || 'ลบสินค้าไม่สำเร็จ',
+          deleted: localIds.length,
+          error: null,
           requested: localIds.length,
-          success: false,
+          success: true,
         };
       } finally {
+        if (startedQueueSync) {
+          isSyncingRef.current = false;
+          setIsSyncing(false);
+        }
         isDeletingRef.current = false;
       }
     },
-    [products, recheckPlan, syncProducts, token]
+    [recheckPlan, refreshLocalProducts, token]
   );
 
   // Reset library state on logout (mirrors resetAuthState in AuthContext).
@@ -499,17 +662,40 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     setLastSyncedAt(null);
   }, [token]);
 
+  useEffect(() => {
+    if (!token || !isPlanValid) {
+      return;
+    }
+
+    let cancelled = false;
+    getLocalProducts()
+      .then((localProducts) => {
+        if (!cancelled) {
+          setProducts(localProducts);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProducts([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isPlanValid, token]);
+
   const hasAttemptedSync = lastSyncedAt !== null || syncError !== null;
 
   // Pull once per session when authenticated with a valid plan
   // (same bootstrap style as the initial profile sync in KubdeeMobileApp).
   useEffect(() => {
-    if (!token || !isPlanValid || isSyncing || hasAttemptedSync || products.length > 0) {
+    if (!token || !isPlanValid || isSyncing || hasAttemptedSync) {
       return;
     }
 
     void syncProducts();
-  }, [hasAttemptedSync, isPlanValid, isSyncing, products.length, syncProducts, token]);
+  }, [hasAttemptedSync, isPlanValid, isSyncing, syncProducts, token]);
 
   const value = useMemo(
     () => ({
