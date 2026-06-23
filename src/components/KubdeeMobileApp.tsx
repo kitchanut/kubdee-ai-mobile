@@ -161,6 +161,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             selectedProfileId={selectedProfileId}
             theme={theme}
             selectedCount={1}
+            onImportFinished={() => setActiveTab('library')}
           />
         );
       case 'logs':

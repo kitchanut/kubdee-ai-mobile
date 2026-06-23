@@ -679,6 +679,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
         errorMessage = error.message ?: "Shopee import failed"
         Log.e(TAG, "Shopee import runner failed", error)
       } finally {
+        val shouldReturnToKubdee = errorMessage == null
+        if (shouldReturnToKubdee) {
+          logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า")
+        }
         KubdeeAutomationIpc.sendShopeeImportFinished(
           this,
           runId,
@@ -687,6 +691,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
           stopped = stopRequested,
           profileLocalId = profileLocalId
         )
+        if (shouldReturnToKubdee) {
+          mainHandler.postDelayed({ launchPackage(packageName) }, 250L)
+        }
         if (shopeeImportThread === Thread.currentThread()) {
           shopeeImportThread = null
         }

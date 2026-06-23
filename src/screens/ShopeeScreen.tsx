@@ -21,6 +21,7 @@ import { useLibrary } from '@/library/LibraryContext';
 import {
   getAccessibilityStatus,
   importShopeeLikedProducts,
+  launchTargetApp,
   openAccessibilitySettings,
   postShopeeVideos,
   requestAndroidVideoPermission,
@@ -35,12 +36,16 @@ interface ShopeeScreenProps {
   selectedProfileId: string;
   theme: KubdeeTheme;
   selectedCount: number;
+  onImportFinished?: () => void;
 }
+
+const KUBDEE_ANDROID_PACKAGE = 'ai.kubdee.mobile';
 
 export default function ShopeeScreen({
   selectedProfileId,
   theme,
   selectedCount,
+  onImportFinished,
 }: ShopeeScreenProps): React.JSX.Element {
   const [subMode, setSubMode] = useState<'import' | 'post' | 'settings'>('import');
   const [importLimit, setImportLimit] = useState(50);
@@ -100,6 +105,16 @@ export default function ShopeeScreen({
     importShopeeProducts,
     appendLog,
   });
+
+  const returnToProductLibrary = useCallback(async (): Promise<void> => {
+    const status = await getAccessibilityStatus().catch(() => null);
+    const packageName = status?.packageName?.trim() || KUBDEE_ANDROID_PACKAGE;
+    appendLog('กลับไป Kubdee AI > คลังสินค้า');
+    setTimeout(() => {
+      onImportFinished?.();
+      void launchTargetApp(packageName).catch(() => false);
+    }, 50);
+  }, [appendLog, onImportFinished]);
 
   useEffect(() => {
     const subscription = subscribeShopeeImportLogs((entry) => {
@@ -176,6 +191,7 @@ export default function ShopeeScreen({
       if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
         appendLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
         toast.warning('ไม่พบสินค้า Shopee ที่นำเข้าได้');
+        await returnToProductLibrary();
         return;
       }
 
@@ -187,6 +203,7 @@ export default function ShopeeScreen({
         appendLog(summary);
         toast.success(summary);
         await shopeeProductSaver.clearPendingProducts();
+        await returnToProductLibrary();
         return;
       }
 
@@ -202,6 +219,7 @@ export default function ShopeeScreen({
       appendLog(summary);
       toast.success(summary);
       await shopeeProductSaver.clearPendingProducts();
+      await returnToProductLibrary();
     } catch (error) {
       await shopeeProductSaver.waitForIdle();
       const message = error instanceof Error ? error.message : String(error);
@@ -213,7 +231,16 @@ export default function ShopeeScreen({
       setIsStopping(false);
       setAutomationActivityRunning('shopee-import', false);
     }
-  }, [appendLog, importLimit, isImporting, isPosting, isSyncing, selectedProfileId, shopeeProductSaver]);
+  }, [
+    appendLog,
+    importLimit,
+    isImporting,
+    isPosting,
+    isSyncing,
+    returnToProductLibrary,
+    selectedProfileId,
+    shopeeProductSaver,
+  ]);
 
   const handleStopImport = useCallback(async (): Promise<void> => {
     if (!isImporting || isStopping) {
