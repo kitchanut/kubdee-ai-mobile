@@ -1,14 +1,19 @@
 import { StatusBar } from 'expo-status-bar';
 import { colorScheme as nativeWindColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useAutomationActivityNativeBridge } from '@/activity/automationActivityLogStore';
+import {
+  pushAutomationActivityLog,
+  useAutomationActivityNativeBridge,
+} from '@/activity/automationActivityLogStore';
 import { useAuth } from '@/auth/AuthContext';
 import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
+import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
+import { useLibrary } from '@/library/LibraryContext';
 import PlaceholderScreen from '@/screens/PlaceholderScreen';
 import AutoPilotScreen from '@/screens/AutoPilotScreen';
 import AuthLoadingScreen from '@/screens/AuthLoadingScreen';
@@ -44,6 +49,17 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
   const auth = useAuth();
+  const { importShopeeProducts } = useLibrary();
+
+  const appendRecoveredShopeeLog = useCallback((message: string, ts = Date.now()): void => {
+    pushAutomationActivityLog('shopee-import', message, ts);
+  }, []);
+
+  useShopeeIncrementalProductSaver({
+    selectedProfileId,
+    importShopeeProducts,
+    appendLog: appendRecoveredShopeeLog,
+  });
 
   const toggleThemeMode = (): void => {
     setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));

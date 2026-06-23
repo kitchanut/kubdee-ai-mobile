@@ -351,30 +351,6 @@ class KubdeeAccessibilityModule(
   @ReactMethod
   fun importShopeeLikedProducts(maxItems: Double, profileLocalId: String?, promise: Promise) {
     val cleanProfileLocalId = profileLocalId?.trim()?.takeIf { it.isNotEmpty() }
-    val service = KubdeeAccessibilityService.getInstance()
-    if (service != null) {
-      Thread {
-        try {
-          val products = service.importShopeeLikedProducts(
-            TARGET_PACKAGE_SHOPEE,
-            maxItems.toInt().coerceIn(1, 120),
-            cleanProfileLocalId
-          )
-          val array = Arguments.createArray()
-          products.forEach { product ->
-            array.pushMap(product.toWritableMap(cleanProfileLocalId))
-          }
-          promise.resolve(array)
-        } catch (error: Exception) {
-          promise.reject("SHOPEE_IMPORT_FAILED", error.message, error)
-        }
-      }.also { thread ->
-        thread.name = "KubdeeShopeeLikedImport"
-        thread.start()
-      }
-      return
-    }
-
     val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
     if (!isAccessibilityServiceEnabled(reactContext, component)) {
       promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
