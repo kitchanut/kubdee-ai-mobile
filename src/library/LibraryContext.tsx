@@ -52,6 +52,11 @@ export interface ProductImportResult {
   error: string | null;
 }
 
+export interface ProductImportOptions {
+  refresh?: boolean;
+  sync?: boolean;
+}
+
 interface QueueSyncResult {
   success: boolean;
   status: number | null;
@@ -73,7 +78,8 @@ interface LibraryContextType {
   /** Import products scraped on-device from Shopee liked items and push them to Cloud. */
   importShopeeProducts: (
     profileLocalId: string,
-    products: ShopeeImportProductInput[]
+    products: ShopeeImportProductInput[],
+    options?: ProductImportOptions
   ) => Promise<ProductImportResult | null>;
   /** Resolves with the delete outcome, or null when skipped (no token / empty / already deleting). */
   deleteProducts: (localIds: string[]) => Promise<ProductDeleteResult | null>;
@@ -613,7 +619,8 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
   const importShopeeProducts = useCallback(
     async (
       profileLocalId: string,
-      importedProducts: ShopeeImportProductInput[]
+      importedProducts: ShopeeImportProductInput[],
+      options: ProductImportOptions = {}
     ): Promise<ProductImportResult | null> => {
       const cleanProfileLocalId = profileLocalId.trim();
       if (!cleanProfileLocalId || importedProducts.length === 0) {
@@ -646,7 +653,22 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       }
 
       const localProducts = await upsertLocalProductsForSync(syncPayloadProducts);
-      await refreshLocalProducts();
+      if (options.refresh !== false) {
+        await refreshLocalProducts();
+      }
+
+      if (options.sync === false) {
+        setSyncError(token ? 'บันทึกไว้ในเครื่องแล้ว รอซิงก์ขึ้น cloud' : 'บันทึกไว้ในเครื่องแล้ว รอเข้าสู่ระบบเพื่อซิงก์ cloud');
+        return {
+          error: null,
+          imported: localProducts.length,
+          queued: syncPayloadProducts.length,
+          restoredDeleted: 0,
+          skippedDeleted: 0,
+          skippedStale: 0,
+          success: true,
+        };
+      }
 
       let queueResult: QueueSyncResult = {
         deleted: 0,

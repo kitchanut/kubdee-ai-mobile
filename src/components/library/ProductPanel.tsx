@@ -351,6 +351,21 @@ export default function ProductPanel({
     void syncProducts().then(showSyncResult);
   };
 
+  const syncShopeeImportQueue = useCallback(async (): Promise<void> => {
+    const result = await syncProducts();
+    if (!result) {
+      appendShopeeLog('บันทึกไว้ในเครื่องแล้ว รอซิงก์ cloud');
+      return;
+    }
+
+    if (result.success) {
+      appendShopeeLog(`ซิงก์ cloud แล้ว ${result.count} รายการ`);
+      return;
+    }
+
+    appendShopeeLog(result.error || 'ซิงก์ cloud ยังไม่สำเร็จ จะลองใหม่รอบถัดไป');
+  }, [appendShopeeLog, syncProducts]);
+
   const handleShopeeImport = useCallback(async (): Promise<void> => {
     if (!selectedProfileId) {
       toast.error('เลือกโปรไฟล์ก่อนนำเข้า Shopee');
@@ -389,6 +404,8 @@ export default function ProductPanel({
 
       const scrapedProducts = await runNativeShopeeLikedImport(50, selectedProfileId);
       await shopeeProductSaver.waitForIdle();
+      await shopeeProductSaver.savePendingProducts();
+      await shopeeProductSaver.waitForIdle();
 
       if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
         appendShopeeLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
@@ -403,6 +420,7 @@ export default function ProductPanel({
         appendShopeeLog(message);
         toast.success(message);
         await shopeeProductSaver.clearPendingProducts();
+        await syncShopeeImportQueue();
         return;
       }
 
@@ -414,6 +432,7 @@ export default function ProductPanel({
         appendShopeeLog(message);
         toast.success(message);
         await shopeeProductSaver.clearPendingProducts();
+        await syncShopeeImportQueue();
         return;
       }
 
@@ -430,7 +449,14 @@ export default function ProductPanel({
       setIsShopeeImporting(false);
       setAutomationActivityRunning('shopee-import', false);
     }
-  }, [appendShopeeLog, isShopeeImporting, isSyncing, selectedProfileId, shopeeProductSaver]);
+  }, [
+    appendShopeeLog,
+    isShopeeImporting,
+    isSyncing,
+    selectedProfileId,
+    shopeeProductSaver,
+    syncShopeeImportQueue,
+  ]);
 
   const handlePullRefresh = (): void => {
     if (isSyncing) {

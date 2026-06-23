@@ -89,13 +89,13 @@ export default function ShopeeScreen({
   );
 
   const appendLog = useCallback((message: string, ts = Date.now()): void => {
-    setLogs((current) => [...current, { message, ts }].slice(-80));
+    setLogs((current) => [...current, { message, ts }].slice(-100));
     setRunMessage(message);
     pushAutomationActivityLog('shopee-import', message, ts);
   }, []);
 
   const appendPostLog = useCallback((message: string, ts = Date.now()): void => {
-    setPostLogs((current) => [...current, { message, ts }].slice(-80));
+    setPostLogs((current) => [...current, { message, ts }].slice(-100));
     setPostMessage(message);
     pushAutomationActivityLog('shopee-post', message, ts);
   }, []);
@@ -105,6 +105,21 @@ export default function ShopeeScreen({
     importShopeeProducts,
     appendLog,
   });
+
+  const syncImportedProducts = useCallback(async (): Promise<void> => {
+    const result = await syncProducts();
+    if (!result) {
+      appendLog('บันทึกไว้ในเครื่องแล้ว รอซิงก์ cloud');
+      return;
+    }
+
+    if (result.success) {
+      appendLog(`ซิงก์ cloud แล้ว ${result.count} รายการ`);
+      return;
+    }
+
+    appendLog(result.error || 'ซิงก์ cloud ยังไม่สำเร็จ จะลองใหม่รอบถัดไป');
+  }, [appendLog, syncProducts]);
 
   const returnToProductLibrary = useCallback(async (): Promise<void> => {
     const status = await getAccessibilityStatus().catch(() => null);
@@ -118,7 +133,7 @@ export default function ShopeeScreen({
 
   useEffect(() => {
     const subscription = subscribeShopeeImportLogs((entry) => {
-      setLogs((current) => [...current, entry].slice(-80));
+      setLogs((current) => [...current, entry].slice(-100));
       setRunMessage(entry.message);
     });
 
@@ -129,7 +144,7 @@ export default function ShopeeScreen({
 
   useEffect(() => {
     const subscription = subscribeShopeePostLogs((entry) => {
-      setPostLogs((current) => [...current, entry].slice(-80));
+      setPostLogs((current) => [...current, entry].slice(-100));
       setPostMessage(entry.message);
     });
 
@@ -187,6 +202,8 @@ export default function ShopeeScreen({
       appendLog('เปิด Shopee และเข้าเมนูสิ่งที่ฉันถูกใจ');
       const scrapedProducts = await importShopeeLikedProducts(importLimit, selectedProfileId);
       await shopeeProductSaver.waitForIdle();
+      await shopeeProductSaver.savePendingProducts();
+      await shopeeProductSaver.waitForIdle();
 
       if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
         appendLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
@@ -203,6 +220,7 @@ export default function ShopeeScreen({
         appendLog(summary);
         toast.success(summary);
         await shopeeProductSaver.clearPendingProducts();
+        await syncImportedProducts();
         await returnToProductLibrary();
         return;
       }
@@ -219,6 +237,7 @@ export default function ShopeeScreen({
       appendLog(summary);
       toast.success(summary);
       await shopeeProductSaver.clearPendingProducts();
+      await syncImportedProducts();
       await returnToProductLibrary();
     } catch (error) {
       await shopeeProductSaver.waitForIdle();
@@ -240,6 +259,7 @@ export default function ShopeeScreen({
     returnToProductLibrary,
     selectedProfileId,
     shopeeProductSaver,
+    syncImportedProducts,
   ]);
 
   const handleStopImport = useCallback(async (): Promise<void> => {

@@ -27,7 +27,7 @@ export interface AutomationActivitySnapshot {
   runs: Record<AutomationActivityKind, AutomationActivityRun>;
 }
 
-const MAX_LOGS_PER_RUN = 80;
+const MAX_LOGS_PER_RUN = 100;
 
 const defaultTitles: Record<AutomationActivityKind, string> = {
   'shopee-import': 'Shopee import ล่าสุด',

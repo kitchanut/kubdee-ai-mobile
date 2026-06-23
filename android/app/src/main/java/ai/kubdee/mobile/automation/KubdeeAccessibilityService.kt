@@ -667,26 +667,26 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     val thread = Thread {
-      val products = mutableListOf<ShopeeLikedProduct>()
+      var importedCount = 0
       var errorMessage: String? = null
       try {
-        products += importShopeeLikedProducts(
+        importedCount = importShopeeLikedProducts(
           TARGET_PACKAGE_SHOPEE,
           maxItems.coerceIn(1, 120),
           profileLocalId
-        )
+        ).size
       } catch (error: Exception) {
         errorMessage = error.message ?: "Shopee import failed"
         Log.e(TAG, "Shopee import runner failed", error)
       } finally {
         val shouldReturnToKubdee = errorMessage == null
         if (shouldReturnToKubdee) {
-          logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า")
+          logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า (${importedCount} รายการ)")
         }
         KubdeeAutomationIpc.sendShopeeImportFinished(
           this,
           runId,
-          products,
+          emptyList(),
           error = errorMessage,
           stopped = stopRequested,
           profileLocalId = profileLocalId
