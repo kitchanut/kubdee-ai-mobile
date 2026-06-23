@@ -4244,49 +4244,63 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun clickTopShopeeShareButton(): Boolean {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
-    val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
-    collectTopActionNodes(root, screen, candidates)
-    val named = candidates.firstOrNull { (_, node) ->
-      readNodeText(node).contains("share", ignoreCase = true) || readNodeText(node).contains("แชร์", ignoreCase = true)
-    }
-    val actionBarShare = candidates.firstOrNull { (_, node) ->
-      node.viewIdResourceName.orEmpty().contains("buttonActionBarView", ignoreCase = true)
-    }
-    val selected = named ?: actionBarShare ?: candidates.minByOrNull { (bounds, _) ->
-      kotlin.math.abs(bounds.centerX() - (screen.left + screen.width() * 0.82f))
-    }
-    if (selected != null) {
-      val bounds = selected.first
+    val iconCandidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+    val namedCandidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+    collectShopeeShareActionCandidates(root, screen, iconCandidates, namedCandidates)
+
+    val icon = iconCandidates.sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.left }.thenBy { it.first.top }).firstOrNull()
+    if (icon != null) {
+      val bounds = icon.first
+      logStep("กดปุ่มแชร์จาก top action bar ที่พิกัด ${bounds.centerX()},${bounds.centerY()}")
       return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
     }
-    return clickByAnyText(listOf("แชร์", "Share"), exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+
+    val named = namedCandidates.sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.top }.thenBy { it.first.left }).firstOrNull()
+    if (named != null) {
+      val bounds = named.first
+      logStep("กดปุ่มแชร์จาก label ที่พิกัด ${bounds.centerX()},${bounds.centerY()}")
+      return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+    }
+
+    return false
   }
 
-  private fun collectTopActionNodes(
+  private fun collectShopeeShareActionCandidates(
     node: AccessibilityNodeInfo?,
     screen: Rect,
-    output: MutableList<Pair<Rect, AccessibilityNodeInfo>>
+    iconCandidates: MutableList<Pair<Rect, AccessibilityNodeInfo>>,
+    namedCandidates: MutableList<Pair<Rect, AccessibilityNodeInfo>>
   ) {
     if (node == null) return
     val bounds = Rect()
     node.getBoundsInScreen(bounds)
-    val raw = "${readNodeText(node)} ${node.viewIdResourceName.orEmpty()}".lowercase(Locale.ROOT)
-    val isTopAction = node.isClickable &&
+    val resourceId = node.viewIdResourceName.orEmpty()
+    val raw = "${readNodeText(node)} $resourceId".lowercase(Locale.ROOT)
+    val isTopActionIcon = node.isVisibleToUser &&
       bounds.top >= screen.top + screen.height() * 0.035f &&
-      bounds.bottom <= screen.top + screen.height() * 0.18f &&
+      bounds.bottom <= screen.top + screen.height() * 0.14f &&
       bounds.left >= screen.left + screen.width() * 0.45f &&
-      bounds.width() in 32..maxOf(120, (screen.width() * 0.22f).toInt()) &&
-      bounds.height() in 32..maxOf(120, (screen.height() * 0.12f).toInt()) &&
-      (
-        raw.contains("buttonactionbariconitem") ||
-          raw.contains("buttonactionbarview") ||
-          raw.contains("share") ||
-          raw.contains("แชร์")
-      )
-    if (isTopAction && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) output.add(Rect(bounds) to node)
+      bounds.width() in 36..maxOf(120, (screen.width() * 0.18f).toInt()) &&
+      bounds.height() in 36..maxOf(120, (screen.height() * 0.10f).toInt())
+
+    if (
+      node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
+      isTopActionIcon &&
+      resourceId.endsWith("buttonActionBarIconItem", ignoreCase = true)
+    ) {
+      iconCandidates.add(Rect(bounds) to node)
+    } else if (
+      node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
+      node.isVisibleToUser &&
+      (raw.contains("share") || raw.contains("แชร์")) &&
+      bounds.bottom <= screen.top + screen.height() * 0.28f &&
+      bounds.right >= screen.left + screen.width() * 0.45f
+    ) {
+      namedCandidates.add(Rect(bounds) to node)
+    }
 
     for (index in 0 until node.childCount) {
-      collectTopActionNodes(node.getChild(index), screen, output)
+      collectShopeeShareActionCandidates(node.getChild(index), screen, iconCandidates, namedCandidates)
     }
   }
 
