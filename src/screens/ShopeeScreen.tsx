@@ -131,10 +131,11 @@ export default function ShopeeScreen({
     setIsImporting(true);
     setIsStopping(false);
     setLogs([]);
-    shopeeProductSaver.startSession();
+    shopeeProductSaver.startSession(selectedProfileId);
     appendLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
 
     try {
+      await shopeeProductSaver.savePendingProducts();
       const status = await getAccessibilityStatus();
       if (!status.running) {
         setRunMessage('กรุณาเปิด Kubdee AI ใน Accessibility ก่อน');
@@ -155,7 +156,7 @@ export default function ShopeeScreen({
       }
 
       appendLog('เปิด Shopee และเข้าเมนูสิ่งที่ฉันถูกใจ');
-      const scrapedProducts = await importShopeeLikedProducts(importLimit);
+      const scrapedProducts = await importShopeeLikedProducts(importLimit, selectedProfileId);
       await shopeeProductSaver.waitForIdle();
 
       if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
@@ -171,6 +172,7 @@ export default function ShopeeScreen({
         const summary = `นำเข้า Shopee สำเร็จ ${savedCount} รายการ`;
         appendLog(summary);
         toast.success(summary);
+        await shopeeProductSaver.clearPendingProducts();
         return;
       }
 
@@ -185,6 +187,7 @@ export default function ShopeeScreen({
       const summary = `นำเข้า Shopee สำเร็จ ${savedCount > 0 ? savedCount : result.imported} รายการ${queuedText}`;
       appendLog(summary);
       toast.success(summary);
+      await shopeeProductSaver.clearPendingProducts();
     } catch (error) {
       await shopeeProductSaver.waitForIdle();
       const message = error instanceof Error ? error.message : String(error);

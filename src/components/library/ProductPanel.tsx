@@ -375,10 +375,11 @@ export default function ProductPanel({
     setIsShopeeImporting(true);
     setIsStoppingShopee(false);
     setShopeeLogs([]);
-    shopeeProductSaver.startSession();
+    shopeeProductSaver.startSession(selectedProfileId);
     appendShopeeLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
 
     try {
+      await shopeeProductSaver.savePendingProducts();
       const status = await getAccessibilityStatus();
       if (!status.running) {
         appendShopeeLog('หยุดนำเข้า: ยังไม่ได้เปิด Accessibility Service');
@@ -398,7 +399,7 @@ export default function ProductPanel({
         return;
       }
 
-      const scrapedProducts = await runNativeShopeeLikedImport(50);
+      const scrapedProducts = await runNativeShopeeLikedImport(50, selectedProfileId);
       await shopeeProductSaver.waitForIdle();
 
       if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
@@ -413,6 +414,7 @@ export default function ProductPanel({
         const message = `นำเข้า Shopee สำเร็จ ${savedCount} รายการ`;
         appendShopeeLog(message);
         toast.success(message);
+        await shopeeProductSaver.clearPendingProducts();
         return;
       }
 
@@ -423,6 +425,7 @@ export default function ProductPanel({
           : formatShopeeImportResult(result);
         appendShopeeLog(message);
         toast.success(message);
+        await shopeeProductSaver.clearPendingProducts();
         return;
       }
 

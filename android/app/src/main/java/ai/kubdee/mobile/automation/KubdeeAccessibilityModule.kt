@@ -1,10 +1,12 @@
 package ai.kubdee.mobile.automation
 
 import android.content.ComponentName
+import android.content.BroadcastReceiver
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -14,11 +16,13 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -26,17 +30,172 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 
 class KubdeeAccessibilityModule(
   private val reactContext: ReactApplicationContext
 ) : ReactContextBaseJavaModule(reactContext) {
+  private val pendingShopeeImportPromises = ConcurrentHashMap<String, Promise>()
+  private val moduleHandler = Handler(Looper.getMainLooper())
+  private val automationEventReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+      handleAutomationEvent(intent)
+    }
+  }
+
   init {
     eventContext = reactContext
+    registerAutomationEventReceiver()
   }
 
   override fun getName(): String = "KubdeeAccessibility"
+
+  override fun invalidate() {
+    try {
+      reactContext.unregisterReceiver(automationEventReceiver)
+    } catch (_: Exception) {
+      // Receiver may already be unregistered during dev reload.
+    }
+    pendingShopeeImportPromises.forEach { (_, promise) ->
+      promise.reject("MODULE_INVALIDATED", "Kubdee Accessibility module ถูกปิดก่อนงานจบ")
+    }
+    pendingShopeeImportPromises.clear()
+    if (eventContext === reactContext) {
+      eventContext = null
+    }
+    super.invalidate()
+  }
+
+  private fun registerAutomationEventReceiver() {
+    val filter = IntentFilter().apply {
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_LOG)
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_PRODUCT)
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_FINISHED)
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_LOG)
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_GOOGLE_FLOW_LOG)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      reactContext.registerReceiver(automationEventReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+    } else {
+      @Suppress("DEPRECATION")
+      reactContext.registerReceiver(automationEventReceiver, filter)
+    }
+  }
+
+  private fun handleAutomationEvent(intent: Intent) {
+    when (intent.action) {
+      KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_LOG -> {
+        val message = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_MESSAGE) ?: return
+        emitEvent("KubdeeShopeeImportLog", Arguments.createMap().apply {
+          putString("message", message)
+          putDouble("ts", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_TS, System.currentTimeMillis()).toDouble())
+        })
+      }
+
+      KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_PRODUCT -> {
+        emitEvent("KubdeeShopeeImportProduct", shopeeProductIntentToWritableMap(intent))
+      }
+
+      KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_FINISHED -> {
+        handleShopeeImportFinished(intent)
+      }
+
+      KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_LOG -> {
+        val message = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_MESSAGE) ?: return
+        emitEvent("KubdeeShopeePostLog", Arguments.createMap().apply {
+          putString("message", message)
+          putDouble("ts", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_TS, System.currentTimeMillis()).toDouble())
+        })
+      }
+
+      KubdeeAutomationIpc.ACTION_EVENT_GOOGLE_FLOW_LOG -> {
+        emitEvent("KubdeeGoogleFlowLog", googleFlowIntentToWritableMap(intent))
+      }
+    }
+  }
+
+  private fun handleShopeeImportFinished(intent: Intent) {
+    val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
+    val promise = pendingShopeeImportPromises.remove(runId) ?: return
+    val error = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_ERROR)
+    if (!error.isNullOrBlank()) {
+      promise.reject("SHOPEE_IMPORT_FAILED", error)
+      return
+    }
+
+    promise.resolve(shopeeProductsJsonToWritableArray(intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCTS_JSON).orEmpty()))
+  }
+
+  private fun shopeeProductIntentToWritableMap(intent: Intent) =
+    Arguments.createMap().apply {
+      putString("name", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_NAME).orEmpty())
+      putNullableString(KubdeeAutomationIpc.EXTRA_PRODUCT_PRICE, intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_PRICE))
+      if (intent.hasExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_STOCK)) {
+        putInt("stock", intent.getIntExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_STOCK, 0))
+      } else {
+        putNull("stock")
+      }
+      putNullableString(KubdeeAutomationIpc.EXTRA_PRODUCT_URL, intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_URL))
+      putNullableString(KubdeeAutomationIpc.EXTRA_PRODUCT_EXTERNAL_ID, intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_EXTERNAL_ID))
+      putNullableString(KubdeeAutomationIpc.EXTRA_PRODUCT_IMAGE_URL, intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_IMAGE_URL))
+      putString("status", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_STATUS) ?: "liked")
+      putDouble("scrapedAt", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_SCRAPED_AT, System.currentTimeMillis()).toDouble())
+      putNullableString(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID, intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID))
+      putDouble("ts", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_TS, System.currentTimeMillis()).toDouble())
+    }
+
+  private fun shopeeProductsJsonToWritableArray(productsJson: String) =
+    Arguments.createArray().apply {
+      if (productsJson.isBlank()) return@apply
+      val products = JSONArray(productsJson)
+      for (index in 0 until products.length()) {
+        val product = products.optJSONObject(index) ?: continue
+        pushMap(Arguments.createMap().apply {
+          putString("name", product.optString("name", ""))
+          putNullableString("price", product.optStringOrNull("price"))
+          if (product.has("stock") && !product.isNull("stock")) putInt("stock", product.optInt("stock")) else putNull("stock")
+          putNullableString("productUrl", product.optStringOrNull("productUrl"))
+          putNullableString("externalProductId", product.optStringOrNull("externalProductId"))
+          putNullableString("imageUrl", product.optStringOrNull("imageUrl"))
+          putString("status", product.optString("status", "liked"))
+          putDouble("scrapedAt", product.optLong("scrapedAt", System.currentTimeMillis()).toDouble())
+          putNullableString("profileLocalId", product.optStringOrNull("profileLocalId"))
+          if (product.has("ts") && !product.isNull("ts")) {
+            putDouble("ts", product.optLong("ts", System.currentTimeMillis()).toDouble())
+          }
+        })
+      }
+    }
+
+  private fun googleFlowIntentToWritableMap(intent: Intent) =
+    Arguments.createMap().apply {
+      putString("message", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_MESSAGE).orEmpty())
+      putDouble("ts", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_TS, System.currentTimeMillis()).toDouble())
+      putOptionalString("event", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_EVENT))
+      putOptionalString("step", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_STEP))
+      putOptionalString("stage", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_STAGE))
+      putOptionalString("productId", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_ID))
+      putOptionalString("productName", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_NAME))
+      putOptionalString("fileUri", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_FILE_URI))
+      putOptionalString("fileName", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_FILE_NAME))
+      putOptionalString("mimeType", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_MIME_TYPE))
+      putOptionalString("status", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_STATUS))
+      putOptionalString("runId", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID))
+      putOptionalInt("currentRound", intent, KubdeeAutomationIpc.EXTRA_ROUND_CURRENT)
+      putOptionalInt("totalRounds", intent, KubdeeAutomationIpc.EXTRA_ROUND_TOTAL)
+      putOptionalInt("currentProduct", intent, KubdeeAutomationIpc.EXTRA_PRODUCT_CURRENT)
+      putOptionalInt("totalProducts", intent, KubdeeAutomationIpc.EXTRA_PRODUCT_TOTAL)
+      if (intent.hasExtra(KubdeeAutomationIpc.EXTRA_SIZE_BYTES)) {
+        putDouble("sizeBytes", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_SIZE_BYTES, 0L).toDouble())
+      }
+      if (intent.hasExtra(KubdeeAutomationIpc.EXTRA_CREATED_AT)) {
+        putDouble("createdAt", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_CREATED_AT, 0L).toDouble())
+      }
+    }
 
   @ReactMethod
   fun getStatus(promise: Promise) {
@@ -46,7 +205,7 @@ class KubdeeAccessibilityModule(
       val map = Arguments.createMap().apply {
         putBoolean("available", true)
         putBoolean("enabled", enabled)
-        putBoolean("running", KubdeeAccessibilityService.isRunning())
+        putBoolean("running", enabled || KubdeeAccessibilityService.isRunning())
         putString("packageName", reactContext.packageName)
         putString("serviceComponent", component.flattenToString())
         putString("targetPackage", TARGET_PACKAGE_SHOPEE)
@@ -190,35 +349,72 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
-  fun importShopeeLikedProducts(maxItems: Double, promise: Promise) {
+  fun importShopeeLikedProducts(maxItems: Double, profileLocalId: String?, promise: Promise) {
+    val cleanProfileLocalId = profileLocalId?.trim()?.takeIf { it.isNotEmpty() }
     val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
-      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
-      return
-    }
-
-    if (!openPackageBlocking(TARGET_PACKAGE_SHOPEE)) {
-      promise.reject("APP_NOT_FOUND", "Package not found: $TARGET_PACKAGE_SHOPEE")
-      return
-    }
-
-    Thread {
-      try {
-        val products = service.importShopeeLikedProducts(
-          TARGET_PACKAGE_SHOPEE,
-          maxItems.toInt().coerceIn(1, 120)
-        )
-        val array = Arguments.createArray()
-        products.forEach { product ->
-          array.pushMap(product.toWritableMap())
+    if (service != null) {
+      Thread {
+        try {
+          val products = service.importShopeeLikedProducts(
+            TARGET_PACKAGE_SHOPEE,
+            maxItems.toInt().coerceIn(1, 120),
+            cleanProfileLocalId
+          )
+          val array = Arguments.createArray()
+          products.forEach { product ->
+            array.pushMap(product.toWritableMap(cleanProfileLocalId))
+          }
+          promise.resolve(array)
+        } catch (error: Exception) {
+          promise.reject("SHOPEE_IMPORT_FAILED", error.message, error)
         }
-        promise.resolve(array)
-      } catch (error: Exception) {
-        promise.reject("SHOPEE_IMPORT_FAILED", error.message, error)
+      }.also { thread ->
+        thread.name = "KubdeeShopeeLikedImport"
+        thread.start()
       }
-    }.also { thread ->
-      thread.name = "KubdeeShopeeLikedImport"
-      thread.start()
+      return
+    }
+
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
+      return
+    }
+
+    val runId = "shopee-import-${System.currentTimeMillis()}-${UUID.randomUUID()}"
+    pendingShopeeImportPromises[runId] = promise
+    moduleHandler.postDelayed({
+      pendingShopeeImportPromises.remove(runId)?.reject(
+        "SHOPEE_IMPORT_TIMEOUT",
+        "Shopee import ใช้เวลานานเกินไป"
+      )
+    }, 10 * 60 * 1000L)
+
+    sendAutomationCommand(KubdeeAutomationIpc.ACTION_START_SHOPEE_IMPORT) {
+      putExtra(KubdeeAutomationIpc.EXTRA_RUN_ID, runId)
+      putExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, maxItems.toInt().coerceIn(1, 120))
+      if (!cleanProfileLocalId.isNullOrBlank()) {
+        putExtra(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID, cleanProfileLocalId)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getPendingShopeeImportProducts(promise: Promise) {
+    try {
+      val productsJson = KubdeeShopeeImportQueue.readProducts(reactContext).toString()
+      promise.resolve(shopeeProductsJsonToWritableArray(productsJson))
+    } catch (error: Exception) {
+      promise.reject("SHOPEE_PENDING_PRODUCTS_FAILED", error.message, error)
+    }
+  }
+
+  @ReactMethod
+  fun clearPendingShopeeImportProducts(promise: Promise) {
+    try {
+      promise.resolve(KubdeeShopeeImportQueue.clear(reactContext))
+    } catch (error: Exception) {
+      promise.reject("SHOPEE_PENDING_PRODUCTS_CLEAR_FAILED", error.message, error)
     }
   }
 
@@ -251,12 +447,19 @@ class KubdeeAccessibilityModule(
   @ReactMethod
   fun stopShopeeAutomation(promise: Promise) {
     val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
+    if (service != null) {
+      service.requestStopShopeeAutomation()
+      promise.resolve(true)
+      return
+    }
+
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
       promise.resolve(false)
       return
     }
 
-    service.requestStopShopeeAutomation()
+    sendAutomationCommand(KubdeeAutomationIpc.ACTION_STOP_SHOPEE)
     promise.resolve(true)
   }
 
@@ -277,8 +480,8 @@ class KubdeeAccessibilityModule(
     // this short handoff delay, Samsung/Chrome can bounce back to the Kubdee task during the
     // activity transition and the accessibility runner never sees Chrome as foreground.
     Handler(Looper.getMainLooper()).postDelayed({
-      sendAutomationCommand(KubdeeAutomationCommandReceiver.ACTION_START_GOOGLE_FLOW) {
-        putExtra(KubdeeAutomationCommandReceiver.EXTRA_PAYLOAD_JSON, payloadJson)
+      sendAutomationCommand(KubdeeAutomationIpc.ACTION_START_GOOGLE_FLOW) {
+        putExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON, payloadJson)
       }
       promise.resolve(true)
     }, 1200L)
@@ -292,7 +495,7 @@ class KubdeeAccessibilityModule(
       return
     }
 
-    sendAutomationCommand(KubdeeAutomationCommandReceiver.ACTION_STOP_GOOGLE_FLOW)
+    sendAutomationCommand(KubdeeAutomationIpc.ACTION_STOP_GOOGLE_FLOW)
     promise.resolve(true)
   }
 
@@ -690,54 +893,53 @@ class KubdeeAccessibilityModule(
 
   companion object {
     const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
+    private const val TAG = "KubdeeAccessibilityModule"
     private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
     private const val GOOGLE_FLOW_CHROME_PACKAGE = "com.android.chrome"
 
     @Volatile
     private var eventContext: ReactApplicationContext? = null
 
-    fun emitShopeeImportLog(message: String) {
+    private fun emitEvent(eventName: String, payload: WritableMap) {
       val context = eventContext ?: return
+      try {
+        context.runOnUiQueueThread {
+          try {
+            if (context.hasActiveReactInstance()) {
+              context
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit(eventName, payload)
+            }
+          } catch (error: Exception) {
+            Log.w(TAG, "Unable to emit event: $eventName", error)
+          }
+        }
+      } catch (error: Exception) {
+        Log.w(TAG, "Unable to schedule event: $eventName", error)
+      }
+    }
+
+    fun emitShopeeImportLog(message: String) {
       val payload = Arguments.createMap().apply {
         putString("message", message)
         putDouble("ts", System.currentTimeMillis().toDouble())
       }
-      context.runOnUiQueueThread {
-        if (context.hasActiveReactInstance()) {
-          context
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("KubdeeShopeeImportLog", payload)
-        }
-      }
+      emitEvent("KubdeeShopeeImportLog", payload)
     }
 
     fun emitShopeeImportProduct(product: ShopeeLikedProduct) {
-      val context = eventContext ?: return
       val payload = product.toWritableMap().apply {
         putDouble("ts", System.currentTimeMillis().toDouble())
       }
-      context.runOnUiQueueThread {
-        if (context.hasActiveReactInstance()) {
-          context
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("KubdeeShopeeImportProduct", payload)
-        }
-      }
+      emitEvent("KubdeeShopeeImportProduct", payload)
     }
 
     fun emitShopeePostLog(message: String) {
-      val context = eventContext ?: return
       val payload = Arguments.createMap().apply {
         putString("message", message)
         putDouble("ts", System.currentTimeMillis().toDouble())
       }
-      context.runOnUiQueueThread {
-        if (context.hasActiveReactInstance()) {
-          context
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("KubdeeShopeePostLog", payload)
-        }
-      }
+      emitEvent("KubdeeShopeePostLog", payload)
     }
 
     fun emitGoogleFlowLog(
@@ -759,7 +961,6 @@ class KubdeeAccessibilityModule(
       createdAt: Long? = null,
       runId: String? = null
     ) {
-      val context = eventContext ?: return
       val payload = Arguments.createMap().apply {
         putString("message", message)
         putDouble("ts", System.currentTimeMillis().toDouble())
@@ -812,18 +1013,12 @@ class KubdeeAccessibilityModule(
           putDouble("createdAt", createdAt.toDouble())
         }
       }
-      context.runOnUiQueueThread {
-        if (context.hasActiveReactInstance()) {
-          context
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("KubdeeGoogleFlowLog", payload)
-        }
-      }
+      emitEvent("KubdeeGoogleFlowLog", payload)
     }
   }
 }
 
-private fun ShopeeLikedProduct.toWritableMap() =
+private fun ShopeeLikedProduct.toWritableMap(profileLocalId: String? = null) =
   Arguments.createMap().apply {
     putString("name", name)
     if (price != null) putString("price", price) else putNull("price")
@@ -837,7 +1032,27 @@ private fun ShopeeLikedProduct.toWritableMap() =
     if (imageUrl != null) putString("imageUrl", imageUrl) else putNull("imageUrl")
     putString("status", status)
     putDouble("scrapedAt", scrapedAt.toDouble())
+    if (!profileLocalId.isNullOrBlank()) putString("profileLocalId", profileLocalId) else putNull("profileLocalId")
   }
+
+private fun WritableMap.putNullableString(key: String, value: String?) {
+  if (value != null) putString(key, value) else putNull(key)
+}
+
+private fun WritableMap.putOptionalString(key: String, value: String?) {
+  if (!value.isNullOrBlank()) putString(key, value)
+}
+
+private fun WritableMap.putOptionalInt(outputKey: String, intent: Intent, intentKey: String) {
+  if (intent.hasExtra(intentKey)) {
+    putInt(outputKey, intent.getIntExtra(intentKey, 0))
+  }
+}
+
+private fun org.json.JSONObject.optStringOrNull(key: String): String? {
+  if (!has(key) || isNull(key)) return null
+  return optString(key).takeIf { it.isNotBlank() }
+}
 
 private data class GoogleFlowDownloadAsset(
   val uri: String,

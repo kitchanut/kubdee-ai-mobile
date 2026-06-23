@@ -112,12 +112,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
   @Volatile
   private var currentGoogleFlowProjectUrl: String? = null
 
+  @Volatile
+  private var shopeeImportThread: Thread? = null
+
   companion object {
     private const val TAG = "KubdeeAccessibility"
     private const val AUTOMATION_NOTIFICATION_CHANNEL_ID = "kubdee_automation"
     private const val AUTOMATION_NOTIFICATION_ID = 2401
     private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
     private const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
+    private const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = false
     private const val TARGET_PACKAGE_CHROME = "com.android.chrome"
     private val SHOPEE_LIKED_TEXTS = listOf(
       "สิ่งที่ฉันถูกใจ",
@@ -230,9 +234,39 @@ class KubdeeAccessibilityService : AccessibilityService() {
     @Volatile
     private var pendingGoogleFlowStopRequested = false
 
+    @Volatile
+    private var pendingShopeeImportCommand: PendingShopeeImportCommand? = null
+
+    @Volatile
+    private var pendingShopeeStopRequested = false
+
     fun getInstance(): KubdeeAccessibilityService? = currentService
 
     fun isRunning(): Boolean = currentService != null
+
+    fun dispatchShopeeImportStart(maxItems: Int, runId: String, profileLocalId: String?): Boolean {
+      pendingShopeeStopRequested = false
+      val service = currentService
+      if (service != null) {
+        service.startShopeeImportAsync(maxItems, runId, profileLocalId)
+        return true
+      }
+
+      pendingShopeeImportCommand = PendingShopeeImportCommand(maxItems, runId, profileLocalId)
+      return false
+    }
+
+    fun dispatchShopeeStop(): Boolean {
+      pendingShopeeImportCommand = null
+      val service = currentService
+      if (service != null) {
+        service.requestStopShopeeAutomation()
+        return true
+      }
+
+      pendingShopeeStopRequested = true
+      return false
+    }
 
     fun dispatchGoogleFlowStart(payloadJson: String): Boolean {
       pendingGoogleFlowStopRequested = false
@@ -262,6 +296,18 @@ class KubdeeAccessibilityService : AccessibilityService() {
       pendingGoogleFlowPayloadJson = null
       return payload
     }
+
+    private fun takePendingShopeeImportCommand(): PendingShopeeImportCommand? {
+      val command = pendingShopeeImportCommand
+      pendingShopeeImportCommand = null
+      return command
+    }
+
+    private data class PendingShopeeImportCommand(
+      val maxItems: Int,
+      val runId: String,
+      val profileLocalId: String?
+    )
   }
 
   override fun onServiceConnected() {
@@ -272,8 +318,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
       pendingGoogleFlowStopRequested = false
       requestStopGoogleFlowAutomation()
     }
+    if (pendingShopeeStopRequested) {
+      pendingShopeeStopRequested = false
+      requestStopShopeeAutomation()
+    }
     takePendingGoogleFlowPayload()?.let { payloadJson ->
       runGoogleFlowAutoPilot(payloadJson)
+    }
+    takePendingShopeeImportCommand()?.let { command ->
+      startShopeeImportAsync(command.maxItems, command.runId, command.profileLocalId)
     }
   }
 
@@ -420,7 +473,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
             "เริ่ม Auto Pilot Google Flow ($productCount สินค้า)"
           }
         )
-        KubdeeAccessibilityModule.emitGoogleFlowLog(
+        KubdeeAutomationIpc.sendGoogleFlowLog(
+          this,
           message = "Google Flow runner เริ่มทำงาน",
           status = "running",
           runId = currentGoogleFlowRunId
@@ -598,9 +652,59 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return true
   }
 
+  private fun startShopeeImportAsync(maxItems: Int, runId: String, profileLocalId: String?) {
+    val runningThread = shopeeImportThread
+    if (runningThread?.isAlive == true) {
+      KubdeeAutomationIpc.sendShopeeImportFinished(
+        this,
+        runId,
+        emptyList(),
+        error = "Shopee import กำลังทำงานอยู่แล้ว",
+        profileLocalId = profileLocalId
+      )
+      return
+    }
+
+    val thread = Thread {
+      val products = mutableListOf<ShopeeLikedProduct>()
+      var errorMessage: String? = null
+      try {
+        products += importShopeeLikedProducts(
+          TARGET_PACKAGE_SHOPEE,
+          maxItems.coerceIn(1, 120),
+          profileLocalId
+        )
+      } catch (error: Exception) {
+        errorMessage = error.message ?: "Shopee import failed"
+        Log.e(TAG, "Shopee import runner failed", error)
+      } finally {
+        KubdeeAutomationIpc.sendShopeeImportFinished(
+          this,
+          runId,
+          products,
+          error = errorMessage,
+          stopped = stopRequested,
+          profileLocalId = profileLocalId
+        )
+        if (shopeeImportThread === Thread.currentThread()) {
+          shopeeImportThread = null
+        }
+      }
+    }.also { worker ->
+      worker.name = "KubdeeShopeeLikedImport"
+      shopeeImportThread = worker
+      worker.start()
+    }
+  }
+
   @Synchronized
-  fun importShopeeLikedProducts(targetPackage: String, maxItems: Int): List<ShopeeLikedProduct> {
+  fun importShopeeLikedProducts(
+    targetPackage: String,
+    maxItems: Int,
+    profileLocalId: String? = null
+  ): List<ShopeeLikedProduct> {
     val productsByKey = linkedMapOf<String, ShopeeLikedProduct>()
+    val seenCandidateKeys = mutableSetOf<String>()
     try {
       clearStopShopeeAutomation()
       resetAutomationLog()
@@ -644,20 +748,25 @@ class KubdeeAccessibilityService : AccessibilityService() {
         for ((index, candidate) in visibleProducts.withIndex()) {
           checkStopRequested()
           val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
-          if (productsByKey.containsKey(candidateKey)) {
-            logStep("ข้ามสินค้าซ้ำ: ${candidate.product.name.take(34)}")
+          val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
+          if (productsByKey.containsKey(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
+            logStep("ข้ามสินค้าที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
             continue
           }
 
           logStep("เปิด detail สินค้า ${index + 1}/${visibleProducts.size}: ${candidate.product.name.take(34)}")
-          val product = enrichShopeeProductFromDetail(candidate) ?: continue
+          val product = enrichShopeeProductFromDetail(
+            candidate,
+            copyProductUrl = COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT
+          ) ?: continue
           val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
           if (!productsByKey.containsKey(key)) {
+            seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
             productsByKey[key] = product
             added += 1
             updateAutomationStats(currentCount = productsByKey.size, successCount = productsByKey.size)
             logStep("บันทึกสินค้าแล้ว รวม ${productsByKey.size}: ${product.name.take(34)}")
-            KubdeeAccessibilityModule.emitShopeeImportProduct(product)
+            KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
             if (productsByKey.size >= maxItems) break
           }
           if (!isShopeeLikedListVisible()) {
@@ -3194,7 +3303,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val message = "บันทึกผลลัพธ์${label}: ${productName.take(34)}"
     Log.d(TAG, "Google Flow runner: $message")
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitGoogleFlowLog(
+    KubdeeAutomationIpc.sendGoogleFlowLog(
+      this,
       message = message,
       event = "asset",
       step = step,
@@ -3253,14 +3363,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun logStep(message: String) {
     Log.d(TAG, "Shopee runner: $message")
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitShopeeImportLog(message)
+    KubdeeAutomationIpc.sendShopeeImportLog(this, message)
     showAutomationOverlay(message)
   }
 
   private fun logShopeePostStep(message: String) {
     Log.d(TAG, "Shopee post runner: $message")
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitShopeePostLog(message)
+    KubdeeAutomationIpc.sendShopeePostLog(this, message)
     showAutomationOverlay(message)
   }
 
@@ -3287,7 +3397,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val productName = product?.optString("name", "สินค้า")?.ifBlank { "สินค้า" }
     Log.d(TAG, "Google Flow runner: $message")
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitGoogleFlowLog(
+    KubdeeAutomationIpc.sendGoogleFlowLog(
+      this,
       message = message,
       event = "progress",
       step = step,
@@ -3306,7 +3417,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun logGoogleFlowStep(message: String) {
     Log.d(TAG, "Google Flow runner: $message")
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitGoogleFlowLog(
+    KubdeeAutomationIpc.sendGoogleFlowLog(
+      this,
       message = message,
       runId = currentGoogleFlowRunId
     )
@@ -3324,7 +3436,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       }
     )
     addAutomationLogLine(message)
-    KubdeeAccessibilityModule.emitGoogleFlowLog(
+    KubdeeAutomationIpc.sendGoogleFlowLog(
+      this,
       message = message,
       status = status,
       runId = currentGoogleFlowRunId
@@ -4035,7 +4148,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun scrollShopeeLikedList(): Boolean {
-    if (swipeUpByScreen(durationMs = 430L)) return true
+    logStep("เลื่อนหน้าถูกใจแบบสั้นเพื่อไม่ข้ามสินค้า")
+    if (swipeUpByScreen(durationMs = 360L, startFraction = 0.76f, endFraction = 0.52f)) return true
     return scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
   }
 
@@ -4063,38 +4177,91 @@ class KubdeeAccessibilityService : AccessibilityService() {
       centerY in safeTop..safeBottom && (recommendationTop == null || node.bounds.top < recommendationTop)
     }
     val priceNodes = findPriceNodes(visibleTextNodes)
+      .sortedWith(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+    val productTextNodes = visibleTextNodes
+      .filter { textNode ->
+        val text = cleanNodeText(textNode.text)
+        text.isNotBlank() &&
+          !PRICE_REGEX.containsMatchIn(text) &&
+          isProductNameCandidate(text)
+      }
     val products = linkedMapOf<String, ShopeeLikedProductCandidate>()
+    val seenCardBuckets = mutableSetOf<String>()
+    var duplicateCount = 0
+    var noNameCount = 0
 
     for (priceNode in priceNodes) {
-      val rowBounds = candidateRowBounds(priceNode.node, priceNode.bounds, safeTop, screen)
-      val rowTexts = visibleTextNodes
-        .filter { textNode -> Rect.intersects(rowBounds, textNode.bounds) }
-        .sortedWith(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
-      val candidate = buildProductCandidateFromRow(rowTexts, priceNode, rowBounds, safeTop) ?: continue
-      products[candidate.product.externalProductId ?: stableProductKey(candidate.product)] = candidate
+      val candidate = buildProductCandidateFromPriceNode(
+        visibleTextNodes = visibleTextNodes,
+        productTextNodes = productTextNodes,
+        priceNode = priceNode,
+        screen = screen,
+        safeTop = safeTop
+      )
+      if (candidate == null) {
+        noNameCount += 1
+        continue
+      }
+
+      val cardBucket = shopeeLikedCardBucket(candidate.tapBounds, priceNode.bounds, screen)
+      val productKey = candidate.product.externalProductId ?: stableProductKey(candidate.product)
+      if (!seenCardBuckets.add(cardBucket) || products.containsKey(productKey)) {
+        duplicateCount += 1
+        continue
+      }
+      products[productKey] = candidate
     }
 
+    logStep(
+      "สแกนหน้าถูกใจพบ ${products.size} รายการ " +
+        "(ราคา=${priceNodes.size}, text=${productTextNodes.size}, ซ้ำ=$duplicateCount, noName=$noNameCount)"
+    )
     return products.values.toList() to (recommendationTop != null)
   }
 
-  private fun buildProductCandidateFromRow(
-    rowTexts: List<TextNode>,
+  private fun buildProductCandidateFromPriceNode(
+    visibleTextNodes: List<TextNode>,
+    productTextNodes: List<TextNode>,
     priceNode: TextNode,
-    rowBounds: Rect,
+    screen: Rect,
     safeTop: Int
   ): ShopeeLikedProductCandidate? {
     val price = normalizePrice(priceNode.text) ?: return null
-    val nameNodes = rowTexts
-      .filter { it.bounds.top <= priceNode.bounds.bottom + 20 }
-      .filter { isProductNameCandidate(cleanNodeText(it.text)) }
-      .distinctBy { cleanNodeText(it.text) }
-    val names = nameNodes.map { cleanNodeText(it.text) }
-    val name = names.take(3).joinToString(" ").trim().take(180)
+    val columnWidth = shopeeLikedColumnWidth(screen)
+    val nameMatches = productTextNodes.mapNotNull { nameNode ->
+      val name = cleanNodeText(nameNode.text)
+      val gap = priceNode.bounds.top - nameNode.bounds.bottom
+      if (gap < -20 || gap > 340) return@mapNotNull null
+      if (!isSameShopeeLikedProductColumn(nameNode.bounds, priceNode.bounds, columnWidth)) {
+        return@mapNotNull null
+      }
+      ShopeeLikedNameMatch(
+        verticalGap = kotlin.math.abs(gap),
+        negativeBottom = -nameNode.bounds.bottom,
+        left = nameNode.bounds.left,
+        top = nameNode.bounds.top,
+        name = name,
+        node = nameNode
+      )
+    }.sortedWith(
+      compareBy<ShopeeLikedNameMatch> { it.verticalGap }
+        .thenBy { it.negativeBottom }
+        .thenBy { it.left }
+        .thenBy { it.top }
+    )
+
+    val nameMatch = nameMatches.firstOrNull() ?: return null
+    val name = nameMatch.name.take(180)
     if (name.length < 5) return null
 
-    val productUrl = rowTexts.firstNotNullOfOrNull { extractUrl(it.text) }
+    val relatedTexts = visibleTextNodes.filter { textNode ->
+      isSameShopeeLikedProductColumn(textNode.bounds, priceNode.bounds, columnWidth) &&
+        textNode.bounds.bottom >= nameMatch.node.bounds.top - 24 &&
+        textNode.bounds.top <= priceNode.bounds.bottom + (screen.height() * 0.16f).toInt()
+    }
+    val productUrl = relatedTexts.firstNotNullOfOrNull { extractUrl(it.text) }
     val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
-    val stock = rowTexts.firstNotNullOfOrNull { extractStock(it.text) }
+    val stock = relatedTexts.firstNotNullOfOrNull { extractStock(it.text) }
 
     val product = ShopeeLikedProduct(
       name = name,
@@ -4107,7 +4274,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       scrapedAt = System.currentTimeMillis()
     )
 
-    val tapBounds = nameNodes.firstOrNull()?.bounds ?: rowBounds
+    val tapBounds = nameMatch.node.bounds
+    if (!isShopeeLikedProductTapBoundsSafe(tapBounds, screen, safeTop)) return null
     return ShopeeLikedProductCandidate(product, Rect(tapBounds), safeTop)
   }
 
@@ -4121,7 +4289,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
       }
       .minOfOrNull { it.bounds.top }
 
-  private fun enrichShopeeProductFromDetail(candidate: ShopeeLikedProductCandidate): ShopeeLikedProduct? {
+  private fun enrichShopeeProductFromDetail(
+    candidate: ShopeeLikedProductCandidate,
+    copyProductUrl: Boolean
+  ): ShopeeLikedProduct? {
     val product = candidate.product
     if (!openShopeeProductDetail(candidate)) {
       logStep("เปิด detail ไม่สำเร็จ ข้าม: ${product.name.take(34)}")
@@ -4149,7 +4320,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
       val detailPrice = findShopeeDetailPrice() ?: product.price
       val imageUrl = findShopeeDetailImageUrl() ?: product.imageUrl
-      val productUrl = copyShopeeProductUrlFromDetail() ?: product.productUrl
+      val productUrl = if (copyProductUrl) {
+        copyShopeeProductUrlFromDetail() ?: product.productUrl
+      } else {
+        logStep("ข้ามคัดลอกลิงก์สินค้าเพื่อลด memory ตอน import")
+        product.productUrl
+      }
       val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) } ?: product.externalProductId
 
       if (imageUrl != null) {
@@ -4175,10 +4351,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val screen = screenBounds(rootInActiveWindow)
     val tapX = candidate.tapBounds.centerX().toFloat()
     val tapY = candidate.tapBounds.centerY().toFloat()
-    if (tapY <= candidate.safeTop || tapY >= screen.bottom - screen.height() * 0.08f) {
+    if (!isShopeeLikedProductTapBoundsSafe(candidate.tapBounds, screen, candidate.safeTop)) {
       return false
     }
-    logStep("กดสินค้าในรายการ")
+    logStep("กดสินค้าในรายการ (${tapX.toInt()},${tapY.toInt()})")
     return tapBlocking(tapX, tapY)
   }
 
@@ -4377,207 +4553,311 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun copyShopeeProductUrlFromDetail(): String? {
-    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+    val clipboard = getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager ?: run {
+      logStep("อ่าน clipboard ไม่ได้ ข้ามลิงก์สินค้า")
+      return null
+    }
     val marker = "kubdee-empty-${System.currentTimeMillis()}"
-    val previous = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+    val previous = readClipboardText(clipboard)
     try {
       clipboard.setPrimaryClip(ClipData.newPlainText("kubdee-marker", marker))
-    } catch (_: Exception) {
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to seed clipboard before Shopee share", error)
       // Clipboard write may be blocked by OEM policy; reading after copy still works on many devices.
     }
 
-    logStep("กดแชร์สินค้า")
-    if (!openShopeeShareSheet()) return null
-
-    logStep("กดคัดลอกลิงก์สินค้า")
-    if (!tapShopeeCopyLink()) return null
-
-    val start = System.currentTimeMillis()
-    while (System.currentTimeMillis() - start < 6_000L) {
-      checkStopRequested()
-      val text = try {
-        clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
-      } catch (_: Exception) {
-        ""
+    try {
+      logStep("กดแชร์สินค้า")
+      if (!openShopeeShareSheet()) {
+        logStep("เปิดแผ่นแชร์สินค้าไม่สำเร็จ ข้ามลิงก์")
+        return null
       }
-      val url = extractUrl(text)
-      if (url != null && url != marker && url != previous) {
-        return resolveShopeeUrl(url).ifBlank { url }
+
+      logStep("กดคัดลอกลิงก์สินค้า")
+      if (!tapShopeeCopyLink()) {
+        logStep("กดคัดลอกลิงก์ไม่สำเร็จ ข้ามลิงก์")
+        return null
       }
-      sleepStep(300L)
+
+      val start = System.currentTimeMillis()
+      while (System.currentTimeMillis() - start < 6_000L) {
+        checkStopRequested()
+        val text = readClipboardText(clipboard)
+        val url = extractUrl(text)
+        if (url != null && url != marker && url != previous) {
+          return resolveShopeeUrl(url).ifBlank { url }
+        }
+        sleepStep(300L)
+      }
+    } catch (error: ShopeeAutomationStoppedException) {
+      throw error
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to copy Shopee product URL", error)
+      logStep("คัดลอกลิงก์สินค้าไม่สำเร็จ ข้ามลิงก์")
     }
     return null
   }
 
-  private fun openShopeeShareSheet(): Boolean {
-    if (isShopeeShareSheetVisible()) return true
+  private fun readClipboardText(clipboard: ClipboardManager): String {
+    return try {
+      val clip = clipboard.primaryClip ?: return ""
+      if (clip.itemCount <= 0) return ""
+      clip.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to read clipboard", error)
+      ""
+    }
+  }
 
-    repeat(2) {
-      checkStopRequested()
-      if (clickTopShopeeShareButton()) {
-        val start = System.currentTimeMillis()
-        while (System.currentTimeMillis() - start < 6_000L) {
-          checkStopRequested()
-          if (isShopeeShareSheetVisible()) return true
-          sleepStep(300L)
+  private fun openShopeeShareSheet(): Boolean {
+    try {
+      if (isShopeeShareSheetVisible()) return true
+
+      repeat(2) {
+        checkStopRequested()
+        if (clickTopShopeeShareButton()) {
+          val start = System.currentTimeMillis()
+          while (System.currentTimeMillis() - start < 6_000L) {
+            checkStopRequested()
+            if (isShopeeShareSheetVisible()) return true
+            sleepStep(300L)
+          }
         }
       }
+    } catch (error: ShopeeAutomationStoppedException) {
+      throw error
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to open Shopee share sheet", error)
     }
     return false
   }
 
   private fun isShopeeShareSheetVisible(): Boolean {
-    val root = rootInActiveWindow ?: return false
-    val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes)
-    val texts = textNodes.map { it.text.lowercase(Locale.ROOT) }
-    val joined = texts.joinToString(" ")
-    if (joined.contains("แชร์เพื่อรับค่าคอมมิชชั่น") || joined.contains("แชร์เพื่อรับ")) return true
-    if (joined.contains("คัดลอกลิงก์") || joined.contains("คัดลอกลิงค์") || joined.contains("copy link")) return true
+    return try {
+      val root = rootInActiveWindow ?: return false
+      val textNodes = mutableListOf<TextNode>()
+      collectTextNodes(root, textNodes)
+      val texts = textNodes.map { it.text.lowercase(Locale.ROOT) }
+      val joined = texts.joinToString(" ")
+      if (joined.contains("แชร์เพื่อรับค่าคอมมิชชั่น") || joined.contains("แชร์เพื่อรับ")) return true
+      if (joined.contains("คัดลอกลิงก์") || joined.contains("คัดลอกลิงค์") || joined.contains("copy link")) return true
 
-    val shareTargetHits = listOf("line", "messenger", "whatsapp", "facebook", "telegram", "instagram", "twitter", "messages")
-      .count { keyword -> texts.any { text -> text.contains(keyword) } }
-    return shareTargetHits >= 2
+      val shareTargetHits = listOf("line", "messenger", "whatsapp", "facebook", "telegram", "instagram", "twitter", "messages")
+        .count { keyword -> texts.any { text -> text.contains(keyword) } }
+      shareTargetHits >= 2
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to inspect Shopee share sheet", error)
+      false
+    }
   }
 
   private fun clickTopShopeeShareButton(): Boolean {
     val root = rootInActiveWindow ?: return false
-    val screen = screenBounds(root)
-    val iconCandidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
-    val namedCandidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
-    collectShopeeShareActionCandidates(root, screen, iconCandidates, namedCandidates)
+    val screen = try {
+      screenBounds(root)
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to read Shopee screen bounds for share button", error)
+      return false
+    }
+    val iconCandidates = mutableListOf<Rect>()
+    val namedCandidates = mutableListOf<Rect>()
 
-    val icon = iconCandidates.sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.left }.thenBy { it.first.top }).firstOrNull()
+    try {
+      collectShopeeShareActionCandidates(root, screen, iconCandidates, namedCandidates)
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to collect Shopee share candidates", error)
+    }
+
+    val icon = iconCandidates.sortedWith(compareBy<Rect> { it.left }.thenBy { it.top }).firstOrNull()
     if (icon != null) {
-      val bounds = icon.first
-      logStep("กดปุ่มแชร์จาก top action bar ที่พิกัด ${bounds.centerX()},${bounds.centerY()}")
-      return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+      logStep("กดปุ่มแชร์จาก top action bar ที่พิกัด ${icon.centerX()},${icon.centerY()}")
+      return tapBlockingWithoutStopButton(icon.centerX().toFloat(), icon.centerY().toFloat())
     }
 
-    val named = namedCandidates.sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.top }.thenBy { it.first.left }).firstOrNull()
+    val named = namedCandidates.sortedWith(compareBy<Rect> { it.top }.thenBy { it.left }).firstOrNull()
     if (named != null) {
-      val bounds = named.first
-      logStep("กดปุ่มแชร์จาก label ที่พิกัด ${bounds.centerX()},${bounds.centerY()}")
-      return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+      logStep("กดปุ่มแชร์จาก label ที่พิกัด ${named.centerX()},${named.centerY()}")
+      return tapBlockingWithoutStopButton(named.centerX().toFloat(), named.centerY().toFloat())
     }
 
+    Log.w(TAG, "No Shopee share button candidate found")
     return false
+  }
+
+  private fun tapBlockingWithoutStopButton(
+    x: Float,
+    y: Float,
+    timeoutMs: Long = 2500L,
+    durationMs: Long = 80L
+  ): Boolean {
+    setAutomationStopButtonVisibleBlocking(false)
+    sleepStep(120L)
+    return try {
+      tapBlocking(x, y, timeoutMs = timeoutMs, durationMs = durationMs)
+    } finally {
+      sleepStep(260L)
+      setAutomationStopButtonVisibleBlocking(true)
+    }
   }
 
   private fun collectShopeeShareActionCandidates(
     node: AccessibilityNodeInfo?,
     screen: Rect,
-    iconCandidates: MutableList<Pair<Rect, AccessibilityNodeInfo>>,
-    namedCandidates: MutableList<Pair<Rect, AccessibilityNodeInfo>>
+    iconCandidates: MutableList<Rect>,
+    namedCandidates: MutableList<Rect>,
+    depth: Int = 0
   ) {
-    if (node == null) return
-    val bounds = Rect()
-    node.getBoundsInScreen(bounds)
-    val resourceId = node.viewIdResourceName.orEmpty()
-    val raw = "${readNodeText(node)} $resourceId".lowercase(Locale.ROOT)
-    val isTopActionIcon = node.isVisibleToUser &&
-      bounds.top >= screen.top + screen.height() * 0.035f &&
-      bounds.bottom <= screen.top + screen.height() * 0.14f &&
-      bounds.left >= screen.left + screen.width() * 0.45f &&
-      bounds.width() in 36..maxOf(120, (screen.width() * 0.18f).toInt()) &&
-      bounds.height() in 36..maxOf(120, (screen.height() * 0.10f).toInt())
-
-    if (
-      node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
-      isTopActionIcon &&
-      resourceId.endsWith("buttonActionBarIconItem", ignoreCase = true)
-    ) {
-      iconCandidates.add(Rect(bounds) to node)
-    } else if (
-      node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
-      node.isVisibleToUser &&
-      (raw.contains("share") || raw.contains("แชร์")) &&
-      bounds.bottom <= screen.top + screen.height() * 0.28f &&
-      bounds.right >= screen.left + screen.width() * 0.45f
-    ) {
-      namedCandidates.add(Rect(bounds) to node)
+    if (node == null || depth > 48) return
+    val childCount = try {
+      node.childCount
+    } catch (_: Exception) {
+      0
     }
 
-    for (index in 0 until node.childCount) {
-      collectShopeeShareActionCandidates(node.getChild(index), screen, iconCandidates, namedCandidates)
+    try {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val resourceId = node.viewIdResourceName.orEmpty()
+      val raw = "${readNodeText(node)} $resourceId".lowercase(Locale.ROOT)
+      val isShopeeNode = node.packageName?.toString() == TARGET_PACKAGE_SHOPEE
+      val visible = node.isVisibleToUser
+      val isTopActionIcon = visible &&
+        bounds.top >= screen.top + screen.height() * 0.035f &&
+        bounds.bottom <= screen.top + screen.height() * 0.14f &&
+        bounds.left >= screen.left + screen.width() * 0.45f &&
+        bounds.width() in 36..maxOf(120, (screen.width() * 0.18f).toInt()) &&
+        bounds.height() in 36..maxOf(120, (screen.height() * 0.10f).toInt())
+
+      if (
+        isShopeeNode &&
+        isTopActionIcon &&
+        resourceId.endsWith("buttonActionBarIconItem", ignoreCase = true)
+      ) {
+        iconCandidates.add(Rect(bounds))
+      } else if (
+        isShopeeNode &&
+        visible &&
+        (raw.contains("share") || raw.contains("แชร์")) &&
+        bounds.bottom <= screen.top + screen.height() * 0.28f &&
+        bounds.right >= screen.left + screen.width() * 0.45f
+      ) {
+        namedCandidates.add(Rect(bounds))
+      }
+    } catch (_: Exception) {
+      // Shopee may replace the current window while we traverse the tree.
+    }
+
+    for (index in 0 until childCount) {
+      val child = try {
+        node.getChild(index)
+      } catch (_: Exception) {
+        null
+      }
+      collectShopeeShareActionCandidates(child, screen, iconCandidates, namedCandidates, depth + 1)
     }
   }
 
   private fun findShopeeCopyLinkTapPoint(): ShopeeCopyLinkTapPoint? {
-    val root = rootInActiveWindow ?: return null
-    val screen = screenBounds(root)
-    val candidates = mutableListOf<ShopeeCopyLinkTapPoint>()
+    return try {
+      val root = rootInActiveWindow ?: return null
+      val screen = screenBounds(root)
+      val candidates = mutableListOf<ShopeeCopyLinkTapPoint>()
 
-    fun visit(node: AccessibilityNodeInfo?) {
-      if (node == null) return
-      val bounds = Rect()
-      node.getBoundsInScreen(bounds)
-      val cleanText = cleanNodeText(readNodeText(node))
-      val resourceId = node.viewIdResourceName.orEmpty()
-      val raw = "$cleanText $resourceId".lowercase(Locale.ROOT).trim()
-      val compact = raw.replace(Regex("""\s+"""), "")
-      val isCopyLink =
-        raw.contains("copy link") ||
-          compact.contains("copylink") ||
-          raw.contains("คัดลอกลิงก์") ||
-          raw.contains("คัดลอกลิงค์") ||
-          (raw.contains("คัดลอก") && (raw.contains("ลิงก์") || raw.contains("ลิงค์"))) ||
-          (raw.contains("copy") && (raw.contains("link") || raw.contains("clipboard")))
+      fun visit(node: AccessibilityNodeInfo?, depth: Int = 0) {
+        if (node == null || depth > 56) return
+        val childCount = try {
+          node.childCount
+        } catch (_: Exception) {
+          0
+        }
 
-      if (
-        isCopyLink &&
-        node.isVisibleToUser &&
-        bounds.width() > 0 &&
-        bounds.height() > 0 &&
-        bounds.top >= screen.top + screen.height() * 0.35f &&
-        Rect.intersects(displayBounds(), bounds)
-      ) {
-        val priority = if (
-          raw.contains("คัดลอกลิงก์") ||
-          raw.contains("คัดลอกลิงค์") ||
-          raw.contains("copy link")
-        ) 0 else 1
-        val source = cleanText.ifBlank { resourceId.ifBlank { "copy-link-node" } }.take(36)
-        candidates += ShopeeCopyLinkTapPoint(Rect(bounds), priority, source)
+        try {
+          val bounds = Rect()
+          node.getBoundsInScreen(bounds)
+          val cleanText = cleanNodeText(readNodeText(node))
+          val resourceId = node.viewIdResourceName.orEmpty()
+          val raw = "$cleanText $resourceId".lowercase(Locale.ROOT).trim()
+          val compact = raw.replace(Regex("""\s+"""), "")
+          val isCopyLink =
+            raw.contains("copy link") ||
+              compact.contains("copylink") ||
+              raw.contains("คัดลอกลิงก์") ||
+              raw.contains("คัดลอกลิงค์") ||
+              (raw.contains("คัดลอก") && (raw.contains("ลิงก์") || raw.contains("ลิงค์"))) ||
+              (raw.contains("copy") && (raw.contains("link") || raw.contains("clipboard")))
+
+          if (
+            isCopyLink &&
+            node.isVisibleToUser &&
+            bounds.width() > 0 &&
+            bounds.height() > 0 &&
+            bounds.top >= screen.top + screen.height() * 0.35f &&
+            Rect.intersects(displayBounds(), bounds)
+          ) {
+            val priority = if (
+              raw.contains("คัดลอกลิงก์") ||
+              raw.contains("คัดลอกลิงค์") ||
+              raw.contains("copy link")
+            ) 0 else 1
+            val source = cleanText.ifBlank { resourceId.ifBlank { "copy-link-node" } }.take(36)
+            candidates += ShopeeCopyLinkTapPoint(Rect(bounds), priority, source)
+          }
+        } catch (_: Exception) {
+          // Ignore stale nodes while Android is animating the share sheet.
+        }
+
+        for (index in 0 until childCount) {
+          val child = try {
+            node.getChild(index)
+          } catch (_: Exception) {
+            null
+          }
+          visit(child, depth + 1)
+        }
       }
 
-      for (index in 0 until node.childCount) {
-        visit(node.getChild(index))
-      }
+      visit(root)
+      candidates.sortedWith(
+        compareBy<ShopeeCopyLinkTapPoint> { it.priority }
+          .thenBy { it.bounds.top }
+          .thenBy { it.bounds.left }
+      ).firstOrNull()
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to find Shopee copy-link tap point", error)
+      null
     }
-
-    visit(root)
-    return candidates.sortedWith(
-      compareBy<ShopeeCopyLinkTapPoint> { it.priority }
-        .thenBy { it.bounds.top }
-        .thenBy { it.bounds.left }
-    ).firstOrNull()
   }
 
   private fun tapShopeeCopyLink(): Boolean {
-    if (!isShopeeShareSheetVisible()) return false
+    try {
+      if (!isShopeeShareSheetVisible()) return false
 
-    val tapPoint = findShopeeCopyLinkTapPoint()
-    if (tapPoint != null) {
-      val bounds = tapPoint.bounds
-      logStep("กดคัดลอกลิงก์จากแผงแชร์ที่พิกัด ${bounds.centerX()},${bounds.centerY()} (${tapPoint.source})")
-      return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
-    }
+      val tapPoint = findShopeeCopyLinkTapPoint()
+      if (tapPoint != null) {
+        val bounds = tapPoint.bounds
+        logStep("กดคัดลอกลิงก์จากแผงแชร์ที่พิกัด ${bounds.centerX()},${bounds.centerY()} (${tapPoint.source})")
+        return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+      }
 
-    if (
-      clickByAnyText(
-        listOf("คัดลอกลิงก์", "คัดลอกลิงค์", "Copy Link", "Copy link"),
-        exact = false,
-        allowedPackageName = TARGET_PACKAGE_SHOPEE
-      )
-    ) {
-      logStep("กดคัดลอกลิงก์ด้วย text fallback")
-      return true
-    }
+      if (
+        clickByAnyText(
+          listOf("คัดลอกลิงก์", "คัดลอกลิงค์", "Copy Link", "Copy link"),
+          exact = false,
+          allowedPackageName = TARGET_PACKAGE_SHOPEE
+        )
+      ) {
+        logStep("กดคัดลอกลิงก์ด้วย text fallback")
+        return true
+      }
 
-    if (clickByResourceHint(listOf("copy", "clipboard", "link"), allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
-      logStep("กดคัดลอกลิงก์ด้วย resource fallback")
-      return true
+      if (clickByResourceHint(listOf("copy", "clipboard", "link"), allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
+        logStep("กดคัดลอกลิงก์ด้วย resource fallback")
+        return true
+      }
+    } catch (error: ShopeeAutomationStoppedException) {
+      throw error
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to tap Shopee copy-link action", error)
     }
 
     return false
@@ -4735,21 +5015,35 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun isProductNameCandidate(text: String): Boolean {
-    if (text.length < 4) return false
+    if (text.length < 6) return false
     if (PRICE_REGEX.containsMatchIn(text)) return false
     if (text.all { it.isDigit() || it == ',' || it == '.' }) return false
     val lower = text.lowercase(Locale.ROOT)
+    val compact = lower.replace(Regex("""\s+"""), "")
+    if (Regex("""^[0-9\s.%+xX]+$""").matches(text)) return false
+    val blockedExact = listOf("ขายดี")
+    if (blockedExact.any { compact == it.lowercase(Locale.ROOT).replace(Regex("""\s+"""), "") }) {
+      return false
+    }
     val blocked = listOf(
       "หน้าแรก", "mall", "live", "video", "สำหรับคุณ", "การแจ้งเตือน", "ฉัน",
       "สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "liked", "ค้นหา", "แก้ไข", "edit",
       "โค้ดลด", "ส่วนลด", "coins", "coin", "เช็คอิน", "รับ", "ซื้อเลย",
-      "ขายแล้ว", "ส่งฟรี", "วันที่", "แนะนำ", "ดูเพิ่มเติม"
+      "ขายแล้ว", "ส่งฟรี", "วันที่", "แนะนำ", "ดูเพิ่มเติม", "ช้อปปี้ถูกชัวร์",
+      "ถูกชัวร์", "spaylater", "payday", "มีบริการติดตั้ง", "ผ่อน"
     )
-    return blocked.none { lower.contains(it.lowercase(Locale.ROOT)) }
+    return blocked.none { compact.contains(it.lowercase(Locale.ROOT).replace(Regex("""\s+"""), "")) }
   }
 
   private fun stableProductKey(product: ShopeeLikedProduct): String =
     "${product.name.trim().lowercase(Locale.ROOT)}\u0000${product.price.orEmpty()}"
+
+  private fun shopeeLikedCandidateAttemptKey(product: ShopeeLikedProduct): String =
+    product.externalProductId
+      ?: product.productUrl
+      ?: cleanNodeText(product.name)
+        .lowercase(Locale.ROOT)
+        .replace(Regex("""\s+"""), "")
 
   private fun likedProductSafeTop(textNodes: List<TextNode>, screen: Rect): Int {
     val markerBottom = textNodes
@@ -4759,6 +5053,30 @@ class KubdeeAccessibilityService : AccessibilityService() {
       .filter { it.text.contains("ค้นหา", ignoreCase = true) || it.text.contains("Search", ignoreCase = true) }
       .maxOfOrNull { it.bounds.bottom }
     return ((listOfNotNull(markerBottom, searchBottom) + (screen.top + 120)).maxOrNull() ?: (screen.top + 120)) + 12
+  }
+
+  private fun shopeeLikedColumnWidth(screen: Rect): Int =
+    if (screen.width() >= 600) maxOf(220, screen.width() / 2) else screen.width()
+
+  private fun isSameShopeeLikedProductColumn(first: Rect, second: Rect, columnWidth: Int): Boolean =
+    kotlin.math.abs(first.centerX() - second.centerX()).toFloat() <= columnWidth * 0.52f
+
+  private fun shopeeLikedCardBucket(tapBounds: Rect, priceBounds: Rect, screen: Rect): String {
+    val column = if (priceBounds.centerX() < screen.centerX()) 0 else 1
+    val yBucketSize = maxOf(180, screen.height() / 6)
+    val midY = (tapBounds.centerY() + priceBounds.centerY()) / 2
+    return "$column:${midY / yBucketSize}"
+  }
+
+  private fun isShopeeLikedProductTapBoundsSafe(tapBounds: Rect, screen: Rect, safeTop: Int): Boolean {
+    val tapX = tapBounds.centerX()
+    val tapY = tapBounds.centerY()
+    return tapBounds.width() > 0 &&
+      tapBounds.height() > 0 &&
+      tapX > screen.left &&
+      tapX < screen.right &&
+      tapY > safeTop &&
+      tapY < screen.bottom - (screen.height() * 0.08f).toInt()
   }
 
   private fun candidateRowBounds(node: AccessibilityNodeInfo, fallback: Rect, safeTop: Int, screen: Rect): Rect {
@@ -5627,6 +5945,22 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
   }
 
+  private fun setAutomationStopButtonVisibleBlocking(visible: Boolean) {
+    val latch = CountDownLatch(1)
+    try {
+      mainHandler.post {
+        try {
+          overlayStopButton?.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        } finally {
+          latch.countDown()
+        }
+      }
+      latch.await(500L, TimeUnit.MILLISECONDS)
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to update automation stop button visibility", error)
+    }
+  }
+
   private fun ensureAutomationOverlay(): TextView? {
     if (automationOverlayUnavailable) return null
     overlayView?.let { return it }
@@ -5771,6 +6105,15 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val product: ShopeeLikedProduct,
     val tapBounds: Rect,
     val safeTop: Int
+  )
+
+  private data class ShopeeLikedNameMatch(
+    val verticalGap: Int,
+    val negativeBottom: Int,
+    val left: Int,
+    val top: Int,
+    val name: String,
+    val node: TextNode
   )
 
   private data class ShopeeLikedProductReadinessStats(

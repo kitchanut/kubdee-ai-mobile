@@ -5,6 +5,8 @@ import type {
   ShopeeImportProductInput,
 } from '@/library/LibraryContext';
 import {
+  clearPendingShopeeImportProducts,
+  getPendingShopeeImportProducts,
   subscribeShopeeImportProducts,
 } from '@/native/AccessibilityBridge';
 import type { NativeShopeeImportProduct } from '@/native/AccessibilityBridge';
@@ -21,20 +23,52 @@ interface UseShopeeIncrementalProductSaverOptions {
   appendLog: AppendLog;
 }
 
+type ProfileAwareShopeeProduct = ShopeeImportProductInput & {
+  profileLocalId?: string | null;
+};
+
 function cleanText(value: string | null | undefined): string {
   return value?.trim() ?? '';
 }
 
-function productKey(product: ShopeeImportProductInput): string {
+function productKey(product: ProfileAwareShopeeProduct): string {
+  const profileLocalId = cleanText(product.profileLocalId);
   const externalProductId = cleanText(product.externalProductId);
   const productUrl = cleanText(product.productUrl);
-  if (externalProductId) return externalProductId;
-  if (productUrl) return productUrl;
-  return `${cleanText(product.name)}\u0000${cleanText(product.price)}`;
+  const identity = externalProductId || productUrl || `${cleanText(product.name)}\u0000${cleanText(product.price)}`;
+  return profileLocalId ? `${profileLocalId}\u0000${identity}` : identity;
 }
 
-function shortProductName(product: ShopeeImportProductInput): string {
+function shortProductName(product: ProfileAwareShopeeProduct): string {
   return cleanText(product.name).slice(0, 34) || 'สินค้า Shopee';
+}
+
+function isLikelyShopeeProduct(product: ProfileAwareShopeeProduct): boolean {
+  const name = cleanText(product.name);
+  if (name.length < 6) return false;
+
+  const compactName = name.replace(/\s+/g, '').toLowerCase();
+  const blockedExact = ['ขายดี'];
+  if (blockedExact.includes(compactName)) return false;
+
+  const blockedFragments = [
+    'ช้อปปี้ถูกชัวร์',
+    'ถูกชัวร์',
+    'spaylater',
+    'payday',
+    'โค้ดลด',
+    'ส่วนลด',
+    'เช็คอิน',
+    'ซื้อเลย',
+    'หน้าแรก',
+    'สิ่งที่ฉันถูกใจ',
+    'มีบริการติดตั้ง',
+  ];
+  if (blockedFragments.some((fragment) => compactName.includes(fragment.replace(/\s+/g, '').toLowerCase()))) {
+    return false;
+  }
+
+  return /[ก-๙A-Za-z]/.test(name);
 }
 
 export function useShopeeIncrementalProductSaver({
@@ -44,9 +78,11 @@ export function useShopeeIncrementalProductSaver({
 }: UseShopeeIncrementalProductSaverOptions) {
   const activeRef = useRef(false);
   const selectedProfileIdRef = useRef(selectedProfileId);
+  const sessionProfileIdRef = useRef('');
   const queuedKeysRef = useRef<Set<string>>(new Set());
   const savedKeysRef = useRef<Set<string>>(new Set());
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingRecoveryRef = useRef<Promise<number> | null>(null);
 
   useEffect(() => {
     selectedProfileIdRef.current = selectedProfileId;
@@ -56,28 +92,45 @@ export function useShopeeIncrementalProductSaver({
     await saveQueueRef.current.catch(() => undefined);
   }, []);
 
+  const resolveProductProfileId = useCallback((product: ProfileAwareShopeeProduct): string => {
+    return (
+      cleanText(product.profileLocalId) ||
+      sessionProfileIdRef.current.trim() ||
+      selectedProfileIdRef.current.trim()
+    );
+  }, []);
+
   const queueProductSave = useCallback(
-    (product: NativeShopeeImportProduct | ShopeeImportProductInput, ts?: number): void => {
-      if (!activeRef.current) return;
+    (
+      product: NativeShopeeImportProduct | ProfileAwareShopeeProduct,
+      ts?: number,
+      options: { requireActive?: boolean } = {}
+    ): void => {
+      if (options.requireActive !== false && !activeRef.current) return;
+
+      if (!isLikelyShopeeProduct(product)) {
+        appendLog(`ข้ามรายการที่ไม่ใช่ชื่อสินค้า: ${shortProductName(product)}`, ts);
+        return;
+      }
 
       const key = productKey(product);
       if (!key || queuedKeysRef.current.has(key)) return;
       queuedKeysRef.current.add(key);
 
       const productName = shortProductName(product);
+      const productProfileId = resolveProductProfileId(product);
       appendLog(`บันทึกเข้าคลังทันที: ${productName}`, ts);
 
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          const profileId = selectedProfileIdRef.current.trim();
-          if (!profileId) {
+          if (!productProfileId) {
             appendLog(`ยังไม่บันทึก ${productName}: ไม่พบโปรไฟล์`);
             return;
           }
 
           try {
-            const result = await importShopeeProducts(profileId, [product]);
+            const result = await importShopeeProducts(productProfileId, [product]);
             if (result?.success) {
               savedKeysRef.current.add(key);
               appendLog(`บันทึกเข้าคลังแล้ว: ${productName}`);
@@ -91,7 +144,7 @@ export function useShopeeIncrementalProductSaver({
           }
         });
     },
-    [appendLog, importShopeeProducts]
+    [appendLog, importShopeeProducts, resolveProductProfileId]
   );
 
   useEffect(() => {
@@ -104,8 +157,9 @@ export function useShopeeIncrementalProductSaver({
     };
   }, [queueProductSave]);
 
-  const startSession = useCallback((): void => {
+  const startSession = useCallback((profileId?: string): void => {
     activeRef.current = true;
+    sessionProfileIdRef.current = cleanText(profileId) || selectedProfileIdRef.current.trim();
     queuedKeysRef.current.clear();
     savedKeysRef.current.clear();
     saveQueueRef.current = Promise.resolve();
@@ -115,37 +169,137 @@ export function useShopeeIncrementalProductSaver({
     activeRef.current = false;
   }, []);
 
+  const savePendingProducts = useCallback(async (): Promise<number> => {
+    if (pendingRecoveryRef.current) {
+      return pendingRecoveryRef.current;
+    }
+
+    const recovery = (async (): Promise<number> => {
+      const fallbackProfileId = selectedProfileIdRef.current.trim();
+      if (!fallbackProfileId && !sessionProfileIdRef.current.trim()) {
+        return 0;
+      }
+
+      const pendingProducts = await getPendingShopeeImportProducts();
+      if (pendingProducts.length === 0) {
+        return 0;
+      }
+
+      const importablePendingProducts = pendingProducts.filter(isLikelyShopeeProduct);
+      const skippedPendingCount = pendingProducts.length - importablePendingProducts.length;
+      appendLog(`พบสินค้าค้างจาก Shopee ${pendingProducts.length} รายการ กำลังบันทึกเข้าคลัง`);
+      if (skippedPendingCount > 0) {
+        appendLog(`ข้ามรายการที่เป็น badge/ข้อความ UI ${skippedPendingCount} รายการ`);
+      }
+
+      const pendingKeys = importablePendingProducts.map(productKey).filter(Boolean);
+      importablePendingProducts.forEach((product) => {
+        queueProductSave(product, product.ts, { requireActive: false });
+      });
+
+      await waitForIdle();
+      const savedAll = pendingKeys.every((key) => savedKeysRef.current.has(key));
+      if (savedAll || importablePendingProducts.length === 0) {
+        await clearPendingShopeeImportProducts();
+      } else {
+        appendLog('ยังมีสินค้าค้างบางรายการที่ยังบันทึกไม่สำเร็จ จะลองใหม่รอบถัดไป');
+      }
+
+      return savedKeysRef.current.size;
+    })();
+
+    pendingRecoveryRef.current = recovery;
+    try {
+      return await recovery;
+    } finally {
+      pendingRecoveryRef.current = null;
+    }
+  }, [appendLog, queueProductSave, waitForIdle]);
+
   const saveRemainingProducts = useCallback(
-    async (products: ShopeeImportProductInput[]): Promise<ProductImportResult | null> => {
+    async (products: ProfileAwareShopeeProduct[]): Promise<ProductImportResult | null> => {
       await waitForIdle();
 
       const remainingProducts = products.filter((product) => {
+        if (!isLikelyShopeeProduct(product)) return false;
         const key = productKey(product);
         return key && !savedKeysRef.current.has(key);
       });
       if (remainingProducts.length === 0) return null;
 
-      const profileId = selectedProfileIdRef.current.trim();
-      if (!profileId) {
+      const productsByProfile = new Map<string, ProfileAwareShopeeProduct[]>();
+      for (const product of remainingProducts) {
+        const profileId = resolveProductProfileId(product);
+        if (!profileId) continue;
+        const group = productsByProfile.get(profileId) ?? [];
+        group.push(product);
+        productsByProfile.set(profileId, group);
+      }
+
+      if (productsByProfile.size === 0) {
         appendLog('ยังไม่บันทึกสินค้าค้าง: ไม่พบโปรไฟล์');
         return null;
       }
 
       appendLog(`บันทึกสินค้าค้างอีก ${remainingProducts.length} รายการ`);
-      const result = await importShopeeProducts(profileId, remainingProducts);
-      if (result?.success) {
-        remainingProducts.forEach((product) => {
+      const combined: ProductImportResult = {
+        error: null,
+        imported: 0,
+        queued: 0,
+        restoredDeleted: 0,
+        skippedDeleted: 0,
+        skippedStale: 0,
+        success: true,
+      };
+
+      for (const [profileId, profileProducts] of productsByProfile) {
+        const result = await importShopeeProducts(profileId, profileProducts);
+        if (!result) continue;
+
+        combined.imported += result.imported;
+        combined.queued += result.queued;
+        combined.restoredDeleted += result.restoredDeleted;
+        combined.skippedDeleted += result.skippedDeleted;
+        combined.skippedStale += result.skippedStale;
+        if (!result.success) {
+          combined.success = false;
+          combined.error = combined.error || result.error;
+          continue;
+        }
+
+        profileProducts.forEach((product) => {
           savedKeysRef.current.add(productKey(product));
         });
       }
-      return result;
+
+      return combined.imported > 0 || combined.error ? combined : null;
     },
-    [appendLog, importShopeeProducts, waitForIdle]
+    [appendLog, importShopeeProducts, resolveProductProfileId, waitForIdle]
   );
 
   const getSavedCount = useCallback((): number => savedKeysRef.current.size, []);
 
+  const clearPendingProducts = useCallback(async (): Promise<void> => {
+    await clearPendingShopeeImportProducts();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProfileId) return;
+
+    const timer = setTimeout(() => {
+      if (!activeRef.current) {
+        void savePendingProducts();
+      }
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [savePendingProducts, selectedProfileId]);
+
   return {
+    clearPendingProducts,
+    savePendingProducts,
     startSession,
     stopSession,
     waitForIdle,

@@ -20,6 +20,7 @@ export interface NativeShopeeLikedProduct {
   imageUrl?: string | null;
   status?: string | null;
   scrapedAt?: number | null;
+  profileLocalId?: string | null;
 }
 
 export interface NativeShopeeImportLog {
@@ -100,7 +101,12 @@ type NativeAccessibilityModule = {
   inputText?: (text: string) => Promise<boolean>;
   pressImeEnter?: () => Promise<boolean>;
   runShopeeSearch?: (keyword: string) => Promise<boolean>;
-  importShopeeLikedProducts?: (maxItems: number) => Promise<NativeShopeeLikedProduct[]>;
+  importShopeeLikedProducts?: (
+    maxItems: number,
+    profileLocalId?: string | null
+  ) => Promise<NativeShopeeLikedProduct[]>;
+  getPendingShopeeImportProducts?: () => Promise<NativeShopeeImportProduct[]>;
+  clearPendingShopeeImportProducts?: () => Promise<boolean>;
   postShopeeVideos?: (payloadJson: string) => Promise<string>;
   stopShopeeAutomation?: () => Promise<boolean>;
   startGoogleFlowAutoPilot?: (payloadJson: string) => Promise<boolean>;
@@ -210,12 +216,34 @@ export async function runShopeeSearch(keyword: string): Promise<boolean> {
   return false;
 }
 
-export async function importShopeeLikedProducts(maxItems = 40): Promise<NativeShopeeLikedProduct[]> {
+export async function importShopeeLikedProducts(
+  maxItems = 40,
+  profileLocalId?: string | null
+): Promise<NativeShopeeLikedProduct[]> {
   if (Platform.OS === 'android' && nativeModule?.importShopeeLikedProducts) {
-    return nativeModule.importShopeeLikedProducts(maxItems);
+    return nativeModule.importShopeeLikedProducts(maxItems, profileLocalId ?? null);
   }
 
   return [];
+}
+
+export async function getPendingShopeeImportProducts(): Promise<NativeShopeeImportProduct[]> {
+  if (Platform.OS === 'android' && nativeModule?.getPendingShopeeImportProducts) {
+    const products = await nativeModule.getPendingShopeeImportProducts();
+    return products
+      .map((product) => normalizeNativeShopeeProduct(product))
+      .filter((product): product is NativeShopeeImportProduct => !!product);
+  }
+
+  return [];
+}
+
+export async function clearPendingShopeeImportProducts(): Promise<boolean> {
+  if (Platform.OS === 'android' && nativeModule?.clearPendingShopeeImportProducts) {
+    return nativeModule.clearPendingShopeeImportProducts();
+  }
+
+  return true;
 }
 
 export async function postShopeeVideos(
@@ -368,6 +396,7 @@ function normalizeNativeShopeeProduct(payload: unknown): NativeShopeeImportProdu
     imageUrl: typeof entry.imageUrl === 'string' ? entry.imageUrl : null,
     status: typeof entry.status === 'string' ? entry.status : null,
     scrapedAt: typeof entry.scrapedAt === 'number' ? entry.scrapedAt : null,
+    profileLocalId: typeof entry.profileLocalId === 'string' ? entry.profileLocalId : null,
     ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
   };
 }
