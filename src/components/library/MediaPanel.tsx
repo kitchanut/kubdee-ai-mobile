@@ -21,7 +21,7 @@ import {
 import Text from '@/components/ui/KubdeeText';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
-import { galleryItems, type GalleryItemRecord } from '@/data/mockData';
+import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
@@ -58,22 +58,12 @@ interface MediaSubItem {
   uri?: string | null;
 }
 
-const mockMediaCounts: Record<string, number> = {
-  'img-luggage-hero': 6,
-  'img-skincare-clean': 3,
-  'vid-luggage-demo': 4,
-  'vid-skincare-promo': 2,
-};
-
-const mockItemCodes: Record<string, string> = {
-  'img-luggage-hero': '1730056701',
-  'img-skincare-clean': '1729613725',
-  'vid-luggage-demo': '1729481018',
-  'vid-skincare-promo': '1730056701',
-};
-
-const mockDates = ['10/06 14:32', '09/06 18:05', '08/06 11:20', '07/06 20:48', '05/06 09:14', '04/06 16:40'];
-const mockSizes = ['4.2 MB', '2.8 MB', '5.1 MB', '3.4 MB', '2.1 MB', '6.3 MB'];
+interface MediaGroupRecord {
+  id: string;
+  title: string;
+  code: string;
+  subtitle: string;
+}
 
 /** Accent wash/border classes per media kind (mirrors getAccentTone soft = alpha 0.1 light / 0.16 dark). */
 const accentClasses: Record<MediaKind, { soft: string; border: string }> = {
@@ -119,26 +109,8 @@ const panelCopy: Record<
   },
 };
 
-function getItemCode(item: GalleryItemRecord): string {
-  return mockItemCodes[item.id] ?? item.id;
-}
-
-function buildSubItems(item: GalleryItemRecord): MediaSubItem[] {
-  const count = mockMediaCounts[item.id] ?? 1;
-  const portrait = item.subtitle.includes('9:16');
-  const warnings = item.badges.filter((badge) => badge === 'Cap' || badge === '#' || badge === 'CTA');
-
-  return Array.from({ length: count }, (_, index) => ({
-    id: `${item.id}-${index}`,
-    parentId: item.id,
-    title: `${item.title} ${index + 1}`,
-    productName: item.title,
-    productCode: getItemCode(item),
-    date: mockDates[index % mockDates.length],
-    size: mockSizes[index % mockSizes.length],
-    portrait,
-    warnings: index === 0 ? warnings : [],
-  }));
+function getItemCode(item: MediaGroupRecord): string {
+  return item.code || item.id;
 }
 
 function formatAssetDate(timestamp: number): string {
@@ -163,10 +135,8 @@ function formatAssetSize(sizeBytes: number | null): string {
   return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
 }
 
-function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Array<{ item: GalleryItemRecord; media: MediaSubItem[] }> {
-  const groupsByProduct = new Map<string, { item: GalleryItemRecord; media: MediaSubItem[] }>();
-  const tone = kind === 'images' ? 'amber' : 'red';
-
+function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Array<{ item: MediaGroupRecord; media: MediaSubItem[] }> {
+  const groupsByProduct = new Map<string, { item: MediaGroupRecord; media: MediaSubItem[] }>();
   for (const asset of assets) {
     const groupId = `generated-${kind}-${asset.productCode || asset.productId}`;
     const existing = groupsByProduct.get(groupId);
@@ -175,13 +145,9 @@ function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Arra
       {
         item: {
           id: groupId,
-          category: kind,
           title: asset.productName,
+          code: asset.productCode,
           subtitle: 'Google Flow | Auto Pilot',
-          meta: 'สร้างจาก Auto Pilot',
-          status: 'ready',
-          tone,
-          badges: ['Flow', 'Auto'],
         },
         media: [],
       };
@@ -218,6 +184,7 @@ export default function MediaPanel({
   selectedProfileId: string;
 }): React.JSX.Element {
   const { getAssetsByKind } = useGeneratedMedia();
+  const { deleteMediaAssets } = useCreativeLibrary();
   const copy = panelCopy[kind];
   const accentColor = kind === 'images' ? theme.amber : theme.red;
   const accent = getAccentTone(theme, accentColor);
@@ -238,14 +205,7 @@ export default function MediaPanel({
 
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
   const groups = useMemo(() => {
-    const generatedGroups = toGeneratedGroups(kind, generatedAssets);
-    if (generatedGroups.length > 0) {
-      return generatedGroups;
-    }
-
-    return galleryItems
-      .filter((item) => item.category === kind)
-      .map((item) => ({ item, media: buildSubItems(item) }));
+    return toGeneratedGroups(kind, generatedAssets);
   }, [generatedAssets, kind]);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -305,6 +265,13 @@ export default function MediaPanel({
       else next.add(id);
       return next;
     });
+  };
+
+  const deleteSelected = async (): Promise<void> => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    await deleteMediaAssets(ids);
+    setSelectedIds(new Set());
   };
 
   return (
@@ -510,6 +477,7 @@ export default function MediaPanel({
           accent={accentColor}
           count={selectedIds.size}
           onClear={() => setSelectedIds(new Set())}
+          onDelete={() => void deleteSelected()}
         />
       ) : null}
     </View>
@@ -535,7 +503,7 @@ function MediaGroupCard({
   theme: KubdeeTheme;
   kind: MediaKind;
   accentColor: string;
-  item: GalleryItemRecord;
+  item: MediaGroupRecord;
   media: MediaSubItem[];
   unit: string;
   expanded: boolean;

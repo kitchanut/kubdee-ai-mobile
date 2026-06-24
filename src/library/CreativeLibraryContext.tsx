@@ -1,0 +1,156 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+
+import {
+  deleteCreativeLibraryItems,
+  deleteCreativeMediaAssets,
+  getCreativeLibraryItems,
+  getCreativeMediaAssets,
+  upsertCreativeLibraryItem,
+  upsertCreativeMediaAsset,
+} from '@/library/localCreativeLibraryDb';
+import type {
+  CreativeAssetKind,
+  CreativeLibraryItem,
+  CreativeMediaAsset,
+  CreativeMediaKind,
+  UpsertCreativeLibraryItemInput,
+  UpsertCreativeMediaAssetInput,
+} from '@/library/localCreativeLibraryDb';
+
+interface CreativeLibraryContextType {
+  mediaAssets: CreativeMediaAsset[];
+  libraryItems: CreativeLibraryItem[];
+  isLoading: boolean;
+  refreshCreativeLibrary: () => Promise<void>;
+  addMediaAsset: (input: UpsertCreativeMediaAssetInput) => Promise<CreativeMediaAsset>;
+  deleteMediaAssets: (ids: string[]) => Promise<void>;
+  getMediaAssets: (kind: CreativeMediaKind, profileLocalId?: string | null) => CreativeMediaAsset[];
+  saveLibraryItem: (input: UpsertCreativeLibraryItemInput) => Promise<CreativeLibraryItem>;
+  deleteLibraryItems: (ids: string[]) => Promise<void>;
+  getLibraryItems: (kind: CreativeAssetKind, profileLocalId?: string | null) => CreativeLibraryItem[];
+}
+
+const CreativeLibraryContext = createContext<CreativeLibraryContextType | undefined>(undefined);
+
+function matchesProfile(profileLocalId: string | null | undefined, target?: string | null): boolean {
+  const cleanTarget = target?.trim();
+  return !cleanTarget || profileLocalId === cleanTarget;
+}
+
+export function CreativeLibraryProvider({ children }: { children: ReactNode }): React.JSX.Element {
+  const [mediaAssets, setMediaAssets] = useState<CreativeMediaAsset[]>([]);
+  const [libraryItems, setLibraryItems] = useState<CreativeLibraryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refreshCreativeLibrary = useCallback(async (): Promise<void> => {
+    setIsLoading(true);
+    try {
+      const [images, videos, characters, scenes] = await Promise.all([
+        getCreativeMediaAssets('images'),
+        getCreativeMediaAssets('videos'),
+        getCreativeLibraryItems('characters'),
+        getCreativeLibraryItems('scenes'),
+      ]);
+      setMediaAssets([...images, ...videos].sort((first, second) => second.createdAt - first.createdAt));
+      setLibraryItems([...characters, ...scenes].sort((first, second) => second.createdAt - first.createdAt));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCreativeLibrary();
+  }, [refreshCreativeLibrary]);
+
+  const addMediaAsset = useCallback(async (input: UpsertCreativeMediaAssetInput): Promise<CreativeMediaAsset> => {
+    const asset = await upsertCreativeMediaAsset(input);
+    setMediaAssets((current) => {
+      const next = [asset, ...current.filter((item) => item.id !== asset.id)];
+      return next.sort((first, second) => second.createdAt - first.createdAt);
+    });
+    return asset;
+  }, []);
+
+  const deleteMediaAssets = useCallback(async (ids: string[]): Promise<void> => {
+    await deleteCreativeMediaAssets(ids);
+    const idSet = new Set(ids);
+    setMediaAssets((current) => current.filter((asset) => !idSet.has(asset.id)));
+  }, []);
+
+  const getMediaAssets = useCallback(
+    (kind: CreativeMediaKind, profileLocalId?: string | null): CreativeMediaAsset[] =>
+      mediaAssets.filter((asset) => asset.kind === kind && matchesProfile(asset.profileLocalId, profileLocalId)),
+    [mediaAssets]
+  );
+
+  const saveLibraryItem = useCallback(
+    async (input: UpsertCreativeLibraryItemInput): Promise<CreativeLibraryItem> => {
+      const item = await upsertCreativeLibraryItem(input);
+      setLibraryItems((current) => {
+        const next = [item, ...current.filter((entry) => entry.id !== item.id)];
+        return next.sort((first, second) => second.createdAt - first.createdAt);
+      });
+      return item;
+    },
+    []
+  );
+
+  const deleteLibraryItems = useCallback(async (ids: string[]): Promise<void> => {
+    await deleteCreativeLibraryItems(ids);
+    const idSet = new Set(ids);
+    setLibraryItems((current) => current.filter((item) => !idSet.has(item.id)));
+  }, []);
+
+  const getLibraryItems = useCallback(
+    (kind: CreativeAssetKind, profileLocalId?: string | null): CreativeLibraryItem[] =>
+      libraryItems.filter((item) => item.kind === kind && matchesProfile(item.profileLocalId, profileLocalId)),
+    [libraryItems]
+  );
+
+  const value = useMemo(
+    () => ({
+      addMediaAsset,
+      deleteLibraryItems,
+      deleteMediaAssets,
+      getLibraryItems,
+      getMediaAssets,
+      isLoading,
+      libraryItems,
+      mediaAssets,
+      refreshCreativeLibrary,
+      saveLibraryItem,
+    }),
+    [
+      addMediaAsset,
+      deleteLibraryItems,
+      deleteMediaAssets,
+      getLibraryItems,
+      getMediaAssets,
+      isLoading,
+      libraryItems,
+      mediaAssets,
+      refreshCreativeLibrary,
+      saveLibraryItem,
+    ]
+  );
+
+  return <CreativeLibraryContext.Provider value={value}>{children}</CreativeLibraryContext.Provider>;
+}
+
+export function useCreativeLibrary(): CreativeLibraryContextType {
+  const context = useContext(CreativeLibraryContext);
+  if (!context) {
+    throw new Error('useCreativeLibrary must be used within CreativeLibraryProvider');
+  }
+  return context;
+}
+
+export type {
+  CreativeAssetKind,
+  CreativeLibraryItem,
+  CreativeMediaAsset,
+  CreativeMediaKind,
+  UpsertCreativeLibraryItemInput,
+  UpsertCreativeMediaAssetInput,
+};

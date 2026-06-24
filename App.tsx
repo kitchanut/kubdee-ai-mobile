@@ -9,6 +9,7 @@ import { Toaster } from 'sonner-native';
 import { AuthProvider } from './src/auth/AuthContext';
 import { GeneratedMediaProvider } from './src/autopilot/generatedMediaStore';
 import KubdeeMobileApp from './src/components/KubdeeMobileApp';
+import { CreativeLibraryProvider } from './src/library/CreativeLibraryContext';
 import { LibraryProvider } from './src/library/LibraryContext';
 import AuthLoadingScreen from './src/screens/AuthLoadingScreen';
 import { darkTheme, lightTheme } from './src/theme/tokens';
@@ -28,18 +29,20 @@ export default function App(): React.JSX.Element {
       <SafeAreaProvider>
         <AuthProvider>
           <LibraryProvider>
-            <GeneratedMediaProvider>
-              <KubdeeMobileApp />
-              <PortalHost />
-              <Toaster
-                theme={colorScheme === 'light' ? 'light' : 'dark'}
-                richColors
-                toastOptions={{
-                  titleStyle: { fontFamily: 'NotoSansThai_500Medium' },
-                  descriptionStyle: { fontFamily: 'NotoSansThai_400Regular' },
-                }}
-              />
-            </GeneratedMediaProvider>
+            <CreativeLibraryProvider>
+              <GeneratedMediaProvider>
+                <KubdeeMobileApp />
+                <PortalHost />
+                <Toaster
+                  theme={colorScheme === 'light' ? 'light' : 'dark'}
+                  richColors
+                  toastOptions={{
+                    titleStyle: { fontFamily: 'NotoSansThai_500Medium' },
+                    descriptionStyle: { fontFamily: 'NotoSansThai_400Regular' },
+                  }}
+                />
+              </GeneratedMediaProvider>
+            </CreativeLibraryProvider>
           </LibraryProvider>
         </AuthProvider>
       </SafeAreaProvider>

@@ -3,6 +3,8 @@ import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
+
 export type GeneratedMediaKind = 'images' | 'videos';
 export type GeneratedMediaSource = 'auto-pilot-google-flow';
 
@@ -164,23 +166,116 @@ async function loadStoredAssets(): Promise<GeneratedMediaAsset[]> {
 }
 
 export function GeneratedMediaProvider({ children }: { children: ReactNode }): React.JSX.Element {
+  const { addMediaAsset, getMediaAssets } = useCreativeLibrary();
   const [assets, setAssets] = useState<GeneratedMediaAsset[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    void loadStoredAssets().then((storedAssets) => {
+    void loadStoredAssets().then(async (storedAssets) => {
       if (!cancelled) {
-        setAssets(storedAssets);
+        for (const storedAsset of storedAssets) {
+          await addMediaAsset({
+            id: storedAsset.id,
+            kind: storedAsset.kind,
+            runId: storedAsset.runId,
+            profileLocalId: storedAsset.profileLocalId,
+            productId: storedAsset.productId,
+            productName: storedAsset.productName,
+            productCode: storedAsset.productCode,
+            productUrl: storedAsset.productUrl,
+            caption: storedAsset.caption,
+            hashtags: storedAsset.hashtags,
+            platform: storedAsset.platform,
+            title: storedAsset.title,
+            fileUri: storedAsset.fileUri,
+            fileName: storedAsset.fileName,
+            mimeType: storedAsset.mimeType,
+            sizeBytes: storedAsset.sizeBytes,
+            width: null,
+            height: null,
+            durationMs: null,
+            source: storedAsset.source,
+            createdAt: storedAsset.createdAt,
+          });
+        }
+        const dbAssets = [...getMediaAssets('images'), ...getMediaAssets('videos')];
+        setAssets(dbAssets.map((asset) => ({
+          id: asset.id,
+          kind: asset.kind,
+          runId: asset.runId ?? '',
+          profileLocalId: asset.profileLocalId ?? '',
+          productId: asset.productId ?? '',
+          productName: asset.productName ?? 'สินค้า',
+          productCode: asset.productCode ?? asset.productId ?? 'unknown',
+          productUrl: asset.productUrl,
+          caption: asset.caption,
+          hashtags: asset.hashtags,
+          platform: asset.platform,
+          title: asset.title,
+          fileUri: asset.fileUri,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+          sizeBytes: asset.sizeBytes,
+          createdAt: asset.createdAt,
+          source: 'auto-pilot-google-flow',
+        })));
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [addMediaAsset, getMediaAssets]);
+
+  useEffect(() => {
+    const dbAssets = [...getMediaAssets('images'), ...getMediaAssets('videos')];
+    setAssets(dbAssets.map((asset) => ({
+      id: asset.id,
+      kind: asset.kind,
+      runId: asset.runId ?? '',
+      profileLocalId: asset.profileLocalId ?? '',
+      productId: asset.productId ?? '',
+      productName: asset.productName ?? 'สินค้า',
+      productCode: asset.productCode ?? asset.productId ?? 'unknown',
+      productUrl: asset.productUrl,
+      caption: asset.caption,
+      hashtags: asset.hashtags,
+      platform: asset.platform,
+      title: asset.title,
+      fileUri: asset.fileUri,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      createdAt: asset.createdAt,
+      source: 'auto-pilot-google-flow',
+    })));
+  }, [getMediaAssets]);
 
   const addGeneratedMediaAsset = useCallback(async (input: AddGeneratedMediaAssetInput): Promise<GeneratedMediaAsset> => {
     const asset = normalizeAsset(input);
+    await addMediaAsset({
+      id: asset.id,
+      kind: asset.kind,
+      runId: asset.runId,
+      profileLocalId: asset.profileLocalId,
+      productId: asset.productId,
+      productName: asset.productName,
+      productCode: asset.productCode,
+      productUrl: asset.productUrl,
+      caption: asset.caption,
+      hashtags: asset.hashtags,
+      platform: asset.platform,
+      title: asset.title,
+      fileUri: asset.fileUri,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      width: null,
+      height: null,
+      durationMs: null,
+      source: asset.source,
+      createdAt: asset.createdAt,
+    });
     setAssets((current) => {
       const duplicateKey = asset.fileUri || asset.id;
       const next = [
@@ -191,7 +286,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       return next;
     });
     return asset;
-  }, []);
+  }, [addMediaAsset]);
 
   const getAssetsByKind = useCallback(
     (kind: GeneratedMediaKind, profileLocalId?: string): GeneratedMediaAsset[] => {

@@ -82,8 +82,12 @@ export default function LibraryScreen({
       {activeTab === 'videos' ? (
         <MediaPanel selectedProfileId={selectedProfileId} theme={theme} kind="videos" />
       ) : null}
-      {activeTab === 'characters' ? <SimpleListPanel theme={theme} kind="characters" /> : null}
-      {activeTab === 'scenes' ? <SimpleListPanel theme={theme} kind="scenes" /> : null}
+      {activeTab === 'characters' ? (
+        <SimpleListPanel theme={theme} kind="characters" selectedProfileId={selectedProfileId} />
+      ) : null}
+      {activeTab === 'scenes' ? (
+        <SimpleListPanel theme={theme} kind="scenes" selectedProfileId={selectedProfileId} />
+      ) : null}
     </View>
   );
 }
