@@ -34,6 +34,8 @@ import {
 } from './autopilot/blocks/ProductSheets';
 
 interface AutoPilotScreenProps {
+  initialSelectedProductIds?: string[];
+  onSelectedProductIdsChange?: (productIds: string[], profileLocalId: string) => void;
   selectedProfileId: string;
   selectionRequest?: AutoPilotProductSelectionRequest | null;
   theme: KubdeeTheme;
@@ -41,6 +43,8 @@ interface AutoPilotScreenProps {
 }
 
 export default function AutoPilotScreen({
+  initialSelectedProductIds = [],
+  onSelectedProductIdsChange,
   selectedProfileId,
   selectionRequest,
   theme,
@@ -72,10 +76,30 @@ export default function AutoPilotScreen({
   }, [allProducts, selectedProfileId]);
 
   const controller = useAutoPilotController({
+    initialSelectedProductIds,
     profileLocalId: selectedProfileId,
     sourceProducts: profileProducts,
   });
-  const setSelectedProductsFromCatalog = controller.setSelectedProductsFromCatalog;
+  const replaceSelectedProductIds = controller.replaceSelectedProductIds;
+  const initialSelectedProductIdsKey = initialSelectedProductIds.join('\u0000');
+  const selectedProductIds = useMemo(
+    () => Array.from(controller.selectedProductIds),
+    [controller.selectedProductIds]
+  );
+  const selectedProductIdsKey = selectedProductIds.join('\u0000');
+
+  useEffect(() => {
+    replaceSelectedProductIds(initialSelectedProductIds);
+  }, [initialSelectedProductIdsKey, replaceSelectedProductIds, selectedProfileId]);
+
+  useEffect(() => {
+    onSelectedProductIdsChange?.(selectedProductIds, selectedProfileId);
+  }, [
+    onSelectedProductIdsChange,
+    selectedProductIds,
+    selectedProductIdsKey,
+    selectedProfileId,
+  ]);
 
   useEffect(() => {
     if (!selectionRequest) {
@@ -86,13 +110,13 @@ export default function AutoPilotScreen({
       return;
     }
 
-    setSelectedProductsFromCatalog(selectionRequest.productIds);
+    replaceSelectedProductIds(selectionRequest.productIds);
     onSelectionRequestHandled?.(selectionRequest.requestId);
   }, [
     onSelectionRequestHandled,
+    replaceSelectedProductIds,
     selectedProfileId,
     selectionRequest,
-    setSelectedProductsFromCatalog,
   ]);
 
   const editingProduct = editingProductId

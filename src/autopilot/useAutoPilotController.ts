@@ -87,9 +87,11 @@ function createManualSourceProduct(profileLocalId: string, localId: string): Aff
 }
 
 export function useAutoPilotController({
+  initialSelectedProductIds = [],
   profileLocalId,
   sourceProducts,
 }: {
+  initialSelectedProductIds?: string[];
   profileLocalId: string;
   sourceProducts: AffiliateProduct[];
 }) {
@@ -97,7 +99,9 @@ export function useAutoPilotController({
   const [settings, setSettings] = useState<AutoPilotSettings>(DEFAULT_AUTO_PILOT_SETTINGS);
   const [enabledSteps, setEnabledSteps] = useState<AutoPilotStepType[]>(['image', 'video']);
   const [manualProducts, setManualProducts] = useState<AffiliateProduct[]>([]);
-  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(
+    () => new Set(initialSelectedProductIds)
+  );
   const [productFieldsById, setProductFieldsById] = useState<
     Record<string, Partial<Pick<AutoPilotProduct, AutoPilotProductEditableField>>>
   >({});
@@ -326,6 +330,10 @@ export function useAutoPilotController({
 
   const selectAllVisibleProducts = useCallback((visibleProducts: AffiliateProduct[]): void => {
     setSelectedProductIds(new Set(visibleProducts.map(getAutoPilotProductId)));
+  }, []);
+
+  const replaceSelectedProductIds = useCallback((productIds: string[]): void => {
+    setSelectedProductIds(new Set(productIds.filter(Boolean)));
   }, []);
 
   const setSelectedProductsFromCatalog = useCallback(
@@ -676,6 +684,7 @@ export function useAutoPilotController({
     applyProductVideoSectionToAll,
     resetProductSettings,
     replaceProductSettings,
+    replaceSelectedProductIds,
     updateProductImageSetting,
     updateProductVideoSetting,
     updateSelectedImageSetting,

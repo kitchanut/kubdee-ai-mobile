@@ -33,6 +33,18 @@ type ThemeMode = 'dark' | 'light';
 
 const SELECTED_PROFILE_STORAGE_KEY = 'kubdee_ai_mobile_selected_profile_id';
 
+function uniqueProductIds(productIds: string[]): string[] {
+  return Array.from(new Set(productIds.map((productId) => productId.trim()).filter(Boolean)));
+}
+
+function areSameProductIds(first: string[], second: string[]): boolean {
+  if (first.length !== second.length) {
+    return false;
+  }
+
+  return first.every((productId, index) => productId === second[index]);
+}
+
 export default function KubdeeMobileApp(): React.JSX.Element {
   const colorScheme = useColorScheme();
   const [themeMode, setThemeMode] = useState<ThemeMode>(() =>
@@ -49,6 +61,8 @@ export default function KubdeeMobileApp(): React.JSX.Element {
 
   const [activeTab, setActiveTab] = useState<TabId>('pipeline');
   const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [autoPilotSelectedProductIdsByProfile, setAutoPilotSelectedProductIdsByProfile] =
+    useState<Record<string, string[]>>({});
   const [autoPilotSelectionRequest, setAutoPilotSelectionRequest] =
     useState<AutoPilotProductSelectionRequest | null>(null);
   const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
@@ -192,17 +206,48 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   ]);
 
   const sendProductsToAutoPilot = useCallback((productIds: string[], profileLocalId: string): void => {
-    if (productIds.length === 0) {
+    const cleanProductIds = uniqueProductIds(productIds);
+    if (cleanProductIds.length === 0) {
       return;
     }
 
     setSelectedProfileId(profileLocalId);
+    setAutoPilotSelectedProductIdsByProfile((current) => ({
+      ...current,
+      [profileLocalId]: cleanProductIds,
+    }));
     setAutoPilotSelectionRequest({
-      productIds,
+      productIds: cleanProductIds,
       profileLocalId,
       requestId: Date.now(),
     });
     setActiveTab('pipeline');
+  }, []);
+
+  const handleAutoPilotSelectedProductIdsChange = useCallback((productIds: string[], profileLocalId: string): void => {
+    const cleanProfileLocalId = profileLocalId.trim();
+    if (!cleanProfileLocalId) {
+      return;
+    }
+
+    const cleanProductIds = uniqueProductIds(productIds);
+    setAutoPilotSelectedProductIdsByProfile((current) => {
+      const currentProductIds = current[cleanProfileLocalId] ?? [];
+      if (areSameProductIds(currentProductIds, cleanProductIds)) {
+        return current;
+      }
+
+      if (cleanProductIds.length === 0) {
+        const next = { ...current };
+        delete next[cleanProfileLocalId];
+        return next;
+      }
+
+      return {
+        ...current,
+        [cleanProfileLocalId]: cleanProductIds,
+      };
+    });
   }, []);
 
   const handleAutoPilotSelectionHandled = useCallback((requestId: number): void => {
@@ -216,6 +261,11 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'pipeline':
         return (
           <AutoPilotScreen
+            key={selectedProfileId || 'no-profile'}
+            initialSelectedProductIds={
+              selectedProfileId ? autoPilotSelectedProductIdsByProfile[selectedProfileId] ?? [] : []
+            }
+            onSelectedProductIdsChange={handleAutoPilotSelectedProductIdsChange}
             selectedProfileId={selectedProfileId}
             selectionRequest={autoPilotSelectionRequest}
             theme={theme}
