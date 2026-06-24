@@ -389,6 +389,7 @@ export function SelectionBar({
   accent,
   count,
   showAuto = false,
+  onAuto,
   onClear,
   onDelete,
 }: {
@@ -396,6 +397,7 @@ export function SelectionBar({
   accent: string;
   count: number;
   showAuto?: boolean;
+  onAuto?: () => void;
   onClear: () => void;
   onDelete?: () => void;
 }): React.JSX.Element {
@@ -429,6 +431,8 @@ export function SelectionBar({
             <Pressable
               accessibilityLabel="ส่งไป Auto"
               accessibilityRole="button"
+              disabled={!onAuto}
+              onPress={onAuto}
               className="h-7 flex-row items-center gap-[5px] rounded-full bg-black px-3 dark:bg-white"
             >
               <Star size={11} color={inverseText} strokeWidth={2.5} />

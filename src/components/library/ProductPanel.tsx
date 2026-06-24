@@ -186,9 +186,11 @@ function formatShopeeImportResult(result: ProductImportResult): string {
 export default function ProductPanel({
   selectedProfileId,
   theme,
+  onSendProductsToAutoPilot,
 }: {
   selectedProfileId: string;
   theme: KubdeeTheme;
+  onSendProductsToAutoPilot?: (productIds: string[], profileLocalId: string) => void;
 }): React.JSX.Element {
   const accent = getAccentTone(theme, theme.emerald);
   const {
@@ -481,6 +483,24 @@ export default function ProductPanel({
     );
   };
 
+  const handleSendSelectedToAutoPilot = (): void => {
+    if (!selectedProfileId) {
+      toast.error('เลือกโปรไฟล์ก่อนส่งเข้า Auto Pilot');
+      return;
+    }
+
+    const selectedProducts = products.filter((product) => selectedIds.has(getProductKey(product)));
+    const productIds = selectedProducts.map((product) => product.localId).filter(Boolean);
+    if (productIds.length === 0) {
+      toast.error('เลือกสินค้าก่อนส่งเข้า Auto Pilot');
+      return;
+    }
+
+    onSendProductsToAutoPilot?.(productIds, selectedProfileId);
+    setSelectedIds(new Set());
+    toast.success(`ส่งสินค้า ${productIds.length} รายการไป Auto Pilot`);
+  };
+
   return (
     <View className="flex-1">
       <ScrollView
@@ -665,6 +685,7 @@ export default function ProductPanel({
           accent={theme.emerald}
           count={selectedIds.size}
           showAuto
+          onAuto={handleSendSelectedToAutoPilot}
           onClear={() => setSelectedIds(new Set())}
           onDelete={handleDeleteSelected}
         />

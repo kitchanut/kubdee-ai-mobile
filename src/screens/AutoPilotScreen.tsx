@@ -15,6 +15,7 @@ import {
 } from '@/autopilot/settingsPresetStore';
 import { useAutoPilotController } from '@/autopilot/useAutoPilotController';
 import GoogleFlowWebViewRunnerHost from '@/autopilot/GoogleFlowWebViewRunnerHost';
+import type { AutoPilotProductSelectionRequest } from '@/autopilot/selectionRequest';
 import type { AutoPilotProductSettings } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
@@ -34,12 +35,16 @@ import {
 
 interface AutoPilotScreenProps {
   selectedProfileId: string;
+  selectionRequest?: AutoPilotProductSelectionRequest | null;
   theme: KubdeeTheme;
+  onSelectionRequestHandled?: (requestId: number) => void;
 }
 
 export default function AutoPilotScreen({
   selectedProfileId,
+  selectionRequest,
   theme,
+  onSelectionRequestHandled,
 }: AutoPilotScreenProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { products: allProducts, isSyncing, syncProducts } = useLibrary();
@@ -70,6 +75,25 @@ export default function AutoPilotScreen({
     profileLocalId: selectedProfileId,
     sourceProducts: profileProducts,
   });
+  const setSelectedProductsFromCatalog = controller.setSelectedProductsFromCatalog;
+
+  useEffect(() => {
+    if (!selectionRequest) {
+      return;
+    }
+
+    if (selectionRequest.profileLocalId && selectionRequest.profileLocalId !== selectedProfileId) {
+      return;
+    }
+
+    setSelectedProductsFromCatalog(selectionRequest.productIds);
+    onSelectionRequestHandled?.(selectionRequest.requestId);
+  }, [
+    onSelectionRequestHandled,
+    selectedProfileId,
+    selectionRequest,
+    setSelectedProductsFromCatalog,
+  ]);
 
   const editingProduct = editingProductId
     ? controller.products.find((product) => product.id === editingProductId)

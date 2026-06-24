@@ -15,6 +15,7 @@ import TopIconTabs from '@/components/TopIconTabs';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
 import { consumePendingTab, tabFromUrl } from '@/navigation/pendingNavigation';
+import type { AutoPilotProductSelectionRequest } from '@/autopilot/selectionRequest';
 import PlaceholderScreen from '@/screens/PlaceholderScreen';
 import AutoPilotScreen from '@/screens/AutoPilotScreen';
 import AuthLoadingScreen from '@/screens/AuthLoadingScreen';
@@ -48,6 +49,8 @@ export default function KubdeeMobileApp(): React.JSX.Element {
 
   const [activeTab, setActiveTab] = useState<TabId>('pipeline');
   const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [autoPilotSelectionRequest, setAutoPilotSelectionRequest] =
+    useState<AutoPilotProductSelectionRequest | null>(null);
   const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
   const auth = useAuth();
   const { importShopeeProducts } = useLibrary();
@@ -188,10 +191,37 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     selectedProfileId,
   ]);
 
+  const sendProductsToAutoPilot = useCallback((productIds: string[], profileLocalId: string): void => {
+    if (productIds.length === 0) {
+      return;
+    }
+
+    setSelectedProfileId(profileLocalId);
+    setAutoPilotSelectionRequest({
+      productIds,
+      profileLocalId,
+      requestId: Date.now(),
+    });
+    setActiveTab('pipeline');
+  }, []);
+
+  const handleAutoPilotSelectionHandled = useCallback((requestId: number): void => {
+    setAutoPilotSelectionRequest((current) =>
+      current?.requestId === requestId ? null : current
+    );
+  }, []);
+
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
       case 'pipeline':
-        return <AutoPilotScreen selectedProfileId={selectedProfileId} theme={theme} />;
+        return (
+          <AutoPilotScreen
+            selectedProfileId={selectedProfileId}
+            selectionRequest={autoPilotSelectionRequest}
+            theme={theme}
+            onSelectionRequestHandled={handleAutoPilotSelectionHandled}
+          />
+        );
       case 'mobile':
         return <MobileDevicesScreen theme={theme} />;
       case 'shopee':
@@ -220,7 +250,13 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'facebook':
         return <PlaceholderScreen theme={theme} title="Facebook" accent="blue" />;
       case 'library':
-        return <LibraryScreen selectedProfileId={selectedProfileId} theme={theme} />;
+        return (
+          <LibraryScreen
+            selectedProfileId={selectedProfileId}
+            theme={theme}
+            onSendProductsToAutoPilot={sendProductsToAutoPilot}
+          />
+        );
       default:
         return <MobileDevicesScreen theme={theme} />;
     }
