@@ -16,6 +16,7 @@ export type AutoPilotPromptMode = 'auto' | 'ai' | 'custom';
 export type AutoPilotImageStyleMode = 'preset' | 'custom' | 'viral';
 
 export interface AutoPilotImageSettings {
+  imageModel: string;
   aspectRatio: string;
   outputCount: string;
   // ตัวละคร (auto | gallery | upload | description | none)
@@ -58,6 +59,8 @@ export interface AutoPilotImageSettings {
 }
 
 export interface AutoPilotVideoSettings {
+  videoModel: string;
+  videoDuration: number;
   aspectRatio: string;
   outputCount: string;
   characterMode: string;

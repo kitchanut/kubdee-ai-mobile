@@ -9,7 +9,7 @@ export type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' 
 // Section grouping mirrors the kubdee-ai-extension settings modal:
 // ตั้งค่าพื้นฐาน → ตัวละคร → การสร้าง Prompt → สไตล์รูปภาพ → ฉาก → คำสั่งเพิ่มเติม
 export const IMAGE_SECTION_KEYS = {
-  basic: ['aspectRatio', 'outputCount'],
+  basic: ['imageModel', 'aspectRatio', 'outputCount'],
   character: [
     'characterMode',
     'selectedCharacterId',
@@ -48,7 +48,7 @@ export const IMAGE_SECTION_KEYS = {
 
 // วิดีโอ — แยกหมวดละเอียดให้ตรงปุ่ม "นำไปใช้ทั้งหมด" รายแถวแบบ extension
 export const VIDEO_SECTION_KEYS = {
-  basic: ['aspectRatio', 'outputCount', 'sceneCount'],
+  basic: ['videoModel', 'videoDuration', 'aspectRatio', 'outputCount', 'sceneCount'],
   character: ['characterMode'],
   prompt: ['promptMode', 'customPrompt'],
   style: ['presetStyle', 'presetStyleCustom'],

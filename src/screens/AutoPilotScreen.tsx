@@ -262,23 +262,12 @@ export default function AutoPilotScreen({
             settings={controller.settings}
             theme={theme}
             onDelayChange={(value) => controller.updateSetting('delayPreset', value as typeof controller.settings.delayPreset)}
-            onDurationChange={(value) => controller.updateSetting('flowVideoDuration', value)}
             onHashtagCountChange={(value) => controller.updateSetting('aiHashtagCount', value)}
-            onImageModelChange={(value) => controller.updateSetting('flowImageModel', String(value))}
             onRoundChange={(value) => controller.updateSetting('totalRounds', Number(value))}
             onToggleCaption={(value) => controller.updateSetting('aiGenerateCaption', value)}
             onToggleCta={(value) => controller.updateSetting('aiGenerateCta', value)}
             onToggleRewrite={(value) => controller.updateSetting('aiRewritePromptOnAudioFailure', value)}
             onToggleSendImage={(value) => controller.updateSetting('aiSendImageToAi', value)}
-            onVideoModelChange={(value) => {
-              const nextModel = String(value);
-              controller.updateSetting('flowVideoModel', nextModel);
-              if (nextModel === 'omni_flash') {
-                controller.updateSetting('flowVideoDuration', 10);
-              } else if (controller.settings.flowVideoDuration === 10) {
-                controller.updateSetting('flowVideoDuration', 8);
-              }
-            }}
           />
 
           <PipelineStepsBlock

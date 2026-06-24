@@ -21,6 +21,7 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
 };
 
 export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
+  imageModel: 'nano_banana_pro',
   aspectRatio: '9:16',
   outputCount: '1',
   characterMode: 'auto',
@@ -58,6 +59,8 @@ export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
 };
 
 export const DEFAULT_AUTO_PILOT_VIDEO_SETTINGS: AutoPilotVideoSettings = {
+  videoModel: 'veo_31_lite_lower',
+  videoDuration: 8,
   aspectRatio: '9:16',
   outputCount: '1',
   characterMode: 'fromImage',

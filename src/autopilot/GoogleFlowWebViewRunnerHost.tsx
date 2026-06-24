@@ -8,6 +8,7 @@ import {
   registerGoogleFlowWebViewRunnerHost,
 } from '@/autopilot/googleFlowRunnerBridge';
 import type {
+  AutoPilotSettings,
   AutoPilotStepType,
   GoogleFlowRunnerLogEntry,
   GoogleFlowRunnerPayload,
@@ -77,6 +78,21 @@ function outputCountForStep(product: GoogleFlowRunnerProduct, step: AutoPilotSte
   const raw = product.settings[step]?.outputCount;
   const value = Number.parseInt(String(raw ?? '1'), 10);
   return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function imageModelForProduct(product: GoogleFlowRunnerProduct, settings: AutoPilotSettings): string {
+  return product.settings.image.imageModel || settings.flowImageModel || 'nano_banana_pro';
+}
+
+function videoModelForProduct(product: GoogleFlowRunnerProduct, settings: AutoPilotSettings): string {
+  return product.settings.video.videoModel || settings.flowVideoModel || 'veo_31_lite_lower';
+}
+
+function videoDurationForProduct(product: GoogleFlowRunnerProduct, settings: AutoPilotSettings): number {
+  const model = videoModelForProduct(product, settings);
+  const raw = Number(product.settings.video.videoDuration || settings.flowVideoDuration || 8);
+  const configured = Number.isFinite(raw) && raw > 0 ? raw : 8;
+  return model === 'omni_flash' ? configured : Math.min(configured, 8);
 }
 
 function promptForStep(product: GoogleFlowRunnerProduct, step: AutoPilotStepType): string {
@@ -390,14 +406,14 @@ export default function GoogleFlowWebViewRunnerHost({
               targetMode: 'image',
               aspectRatio: product.settings.image.aspectRatio,
               outputCount: count,
-              imageModel: payload.settings.flowImageModel,
+              imageModel: imageModelForProduct(product, payload.settings),
             }
           : {
               targetMode: 'video',
               aspectRatio: product.settings.video.aspectRatio,
               outputCount: count,
-              videoDuration: payload.settings.flowVideoDuration,
-              videoModel: payload.settings.flowVideoModel,
+              videoDuration: videoDurationForProduct(product, payload.settings),
+              videoModel: videoModelForProduct(product, payload.settings),
             };
       const config = (await runActionOrThrow(handle, 'configurePopper', configArgs, 70_000)) as {
         success?: boolean;

@@ -12,29 +12,28 @@ export interface BuildProduct {
   hasReference?: boolean;
 }
 
-export type BuildSettings = Record<string, string | string[] | null | undefined>;
+export type BuildSettings = Record<string, string | string[] | number | null | undefined>;
 
 const CUSTOM_TOKENS = new Set(['custom', '__custom__']);
 const EMPTY_TOKENS = new Set(['', 'auto']);
 
 function resolveCategory(category: Category, settings: BuildSettings): string {
-  const rawValue = settings[category.settingsKey];
-  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue ?? '';
+  const value = settingValue(settings[category.settingsKey]);
   if (EMPTY_TOKENS.has(value)) {
     return '';
   }
 
   if (CUSTOM_TOKENS.has(value)) {
-    const customValue = settings[`${category.settingsKey}Custom`];
-    return (Array.isArray(customValue) ? customValue[0] : customValue) ?? '';
+    return settingValue(settings[`${category.settingsKey}Custom`]);
   }
 
   const option = categoryOptions(category).find((item) => item.value === value);
   return option ? option.prompt || option.value : value;
 }
 
-function settingValue(value: string | string[] | null | undefined): string {
-  return (Array.isArray(value) ? value[0] : value) ?? '';
+function settingValue(value: string | string[] | number | null | undefined): string {
+  const resolved = Array.isArray(value) ? value[0] : value;
+  return resolved == null ? '' : String(resolved);
 }
 
 export function buildPrompt(

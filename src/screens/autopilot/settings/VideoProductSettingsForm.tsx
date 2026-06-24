@@ -3,6 +3,7 @@ import { Ban, Bot, Plus, Settings2, SlidersHorizontal, Sparkles, Star, X } from 
 
 import Text from '@/components/ui/KubdeeText';
 import { Input } from '@/components/ui/input';
+import { FLOW_VIDEO_MODELS, VIDEO_DURATION_OPTIONS } from '@/autopilot/defaults';
 import type { AutoPilotPromptMode, AutoPilotVideoSettings } from '@/autopilot/types';
 import {
   ASPECT_RATIO_OPTIONS,
@@ -29,6 +30,7 @@ import { UserPresetGridLite } from './UserPresetGridLite';
 
 const COUNT_OPTIONS = OUTPUT_COUNT_VALUES.map((count) => ({ label: count, value: count }));
 const SCENE_OPTIONS = SCENE_COUNT_VALUES.map((count) => ({ label: count, value: count }));
+const VIDEO_MODEL_OPTIONS = FLOW_VIDEO_MODELS.map((model) => ({ label: model.label, value: model.value }));
 
 export function VideoProductSettingsForm({
   settings,
@@ -43,6 +45,11 @@ export function VideoProductSettingsForm({
 }): React.JSX.Element {
   const accent = theme.red;
   const multiScene = parseInt(settings.sceneCount || '1', 10) > 1;
+  const selectedVideoModel = settings.videoModel || 'veo_31_lite_lower';
+  const selectedVideoDuration = settings.videoDuration || 8;
+  const durationOptions = VIDEO_DURATION_OPTIONS.filter(
+    (duration) => selectedVideoModel === 'omni_flash' || duration !== 10
+  ).map((duration) => ({ label: `${duration}s`, value: duration }));
 
   // ───── บทพูด: dialogue list ─────
   const dialogueList =
@@ -68,6 +75,32 @@ export function VideoProductSettingsForm({
         onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.basic)}
       >
         <View className="gap-2">
+          <OptionGroup
+            label="โมเดลวิดีโอ"
+            options={VIDEO_MODEL_OPTIONS}
+            theme={theme}
+            accent={accent}
+            value={selectedVideoModel}
+            onChange={(value) => {
+              const nextModel = String(value);
+              onChange('videoModel', nextModel);
+              if (nextModel === 'omni_flash') {
+                onChange('videoDuration', 10);
+              } else if (selectedVideoDuration === 10) {
+                onChange('videoDuration', 8);
+              }
+            }}
+          />
+          <OptionGroup
+            columns={4}
+            compact
+            label="ความยาววิดีโอ"
+            options={durationOptions}
+            theme={theme}
+            accent={accent}
+            value={selectedVideoDuration}
+            onChange={(value) => onChange('videoDuration', Number(value))}
+          />
           <View className="flex-row gap-3">
             <OptionGroup
               columns={2}

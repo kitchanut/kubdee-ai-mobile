@@ -2,7 +2,7 @@ import {
   DEFAULT_AUTO_PILOT_IMAGE_SETTINGS,
   DEFAULT_AUTO_PILOT_VIDEO_SETTINGS,
 } from '@/autopilot/defaults';
-import type { AutoPilotProduct, GoogleFlowRunnerProduct } from '@/autopilot/types';
+import type { AutoPilotProduct, AutoPilotProductSettings, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import type { AffiliateProduct } from '@/library/types';
 
 function cleanText(value: string | null | undefined): string {
@@ -32,6 +32,21 @@ export function toAutoPilotProduct(product: AffiliateProduct): AutoPilotProduct 
     settings: {
       image: { ...DEFAULT_AUTO_PILOT_IMAGE_SETTINGS },
       video: { ...DEFAULT_AUTO_PILOT_VIDEO_SETTINGS },
+    },
+  };
+}
+
+export function normalizeAutoPilotProductSettings(
+  settings: Partial<AutoPilotProductSettings> | null | undefined
+): AutoPilotProductSettings {
+  return {
+    image: {
+      ...DEFAULT_AUTO_PILOT_IMAGE_SETTINGS,
+      ...(settings?.image ?? {}),
+    },
+    video: {
+      ...DEFAULT_AUTO_PILOT_VIDEO_SETTINGS,
+      ...(settings?.video ?? {}),
     },
   };
 }

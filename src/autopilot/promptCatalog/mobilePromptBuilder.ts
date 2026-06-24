@@ -28,24 +28,45 @@ function resolveDialogue(product: AutoPilotProduct, settings: AutoPilotProduct['
   return compactText(product.caption) || 'พูดแนะนำจุดเด่นสินค้าแบบกระชับ เป็นภาษาไทย ฟังเป็นธรรมชาติ';
 }
 
+function resolveImageModel(product: AutoPilotProduct, settings: AutoPilotSettings): string {
+  return product.settings.image.imageModel || settings.flowImageModel || 'nano_banana_pro';
+}
+
+function resolveVideoModel(product: AutoPilotProduct, settings: AutoPilotSettings): string {
+  return product.settings.video.videoModel || settings.flowVideoModel || 'veo_31_lite_lower';
+}
+
+function resolveVideoDuration(product: AutoPilotProduct, settings: AutoPilotSettings): number {
+  const videoModel = resolveVideoModel(product, settings);
+  const raw = Number(product.settings.video.videoDuration || settings.flowVideoDuration || 8);
+  const configured = Number.isFinite(raw) && raw > 0 ? raw : 8;
+  return videoModel === 'omni_flash' ? configured : Math.min(configured, 8);
+}
+
 function createImageBuildSettings(product: AutoPilotProduct, settings: AutoPilotSettings): BuildSettings {
   const imageSettings = product.settings.image;
+  const videoDuration = resolveVideoDuration(product, settings);
   return {
     ...imageSettings,
     customStyleCustom: imageSettings.customStyle === '__custom__' ? imageSettings.presetStyleCustom : undefined,
-    duration: String(settings.flowVideoDuration),
-    flowVideoDuration: String(settings.flowVideoDuration),
+    imageModel: resolveImageModel(product, settings),
+    duration: String(videoDuration),
+    flowVideoDuration: String(videoDuration),
   };
 }
 
 function createVideoBuildSettings(product: AutoPilotProduct, settings: AutoPilotSettings): BuildSettings {
   const videoSettings = product.settings.video;
   const sceneCount = Number.parseInt(videoSettings.sceneCount || '1', 10);
+  const videoModel = resolveVideoModel(product, settings);
+  const videoDuration = resolveVideoDuration(product, settings);
 
   return {
     ...videoSettings,
-    duration: String(settings.flowVideoDuration),
-    flowVideoDuration: String(settings.flowVideoDuration),
+    videoModel,
+    videoDuration,
+    duration: String(videoDuration),
+    flowVideoDuration: String(videoDuration),
     outputCount: sceneCount > 1 ? '1' : videoSettings.outputCount,
     dialogue: resolveDialogue(product, videoSettings),
   };

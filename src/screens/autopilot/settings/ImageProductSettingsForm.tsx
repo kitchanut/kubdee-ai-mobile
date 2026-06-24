@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { Bot, Camera, Image as ImageIcon, Settings2, SlidersHorizontal, Sparkles, Star, Sun, Type } from 'lucide-react-native';
 
+import { FLOW_IMAGE_MODELS } from '@/autopilot/defaults';
 import type { AutoPilotImageSettings, AutoPilotImageStyleMode, AutoPilotPromptMode } from '@/autopilot/types';
 import {
   ASPECT_RATIO_OPTIONS,
@@ -29,6 +30,7 @@ import { ManualPromptInput } from './ManualPromptInput';
 import { UserPresetGridLite } from './UserPresetGridLite';
 
 const COUNT_OPTIONS = OUTPUT_COUNT_VALUES.map((count) => ({ label: count, value: count }));
+const IMAGE_MODEL_OPTIONS = FLOW_IMAGE_MODELS.map((model) => ({ label: model.label, value: model.value }));
 
 export function ImageProductSettingsForm({
   settings,
@@ -98,25 +100,35 @@ export function ImageProductSettingsForm({
         title="ตั้งค่าพื้นฐาน"
         onApplyAll={() => onApplySection(IMAGE_SECTION_KEYS.basic)}
       >
-        <View className="flex-row gap-3">
+        <View className="gap-2">
           <OptionGroup
-            columns={2}
-            label="สัดส่วนภาพ"
-            options={ASPECT_RATIO_OPTIONS}
+            label="โมเดลรูปภาพ"
+            options={IMAGE_MODEL_OPTIONS}
             theme={theme}
             accent={accent}
-            value={settings.aspectRatio}
-            onChange={(value) => onChange('aspectRatio', String(value))}
+            value={settings.imageModel || 'nano_banana_pro'}
+            onChange={(value) => onChange('imageModel', String(value))}
           />
-          <OptionGroup
-            columns={4}
-            label="จำนวน"
-            options={COUNT_OPTIONS}
-            theme={theme}
-            accent={accent}
-            value={settings.outputCount}
-            onChange={(value) => onChange('outputCount', String(value))}
-          />
+          <View className="flex-row gap-3">
+            <OptionGroup
+              columns={2}
+              label="สัดส่วนภาพ"
+              options={ASPECT_RATIO_OPTIONS}
+              theme={theme}
+              accent={accent}
+              value={settings.aspectRatio}
+              onChange={(value) => onChange('aspectRatio', String(value))}
+            />
+            <OptionGroup
+              columns={4}
+              label="จำนวน"
+              options={COUNT_OPTIONS}
+              theme={theme}
+              accent={accent}
+              value={settings.outputCount}
+              onChange={(value) => onChange('outputCount', String(value))}
+            />
+          </View>
         </View>
       </SettingsSection>
 

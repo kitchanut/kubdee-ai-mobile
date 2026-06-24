@@ -9,7 +9,11 @@ import {
   subscribeGoogleFlowRunnerLogs,
 } from '@/autopilot/googleFlowRunnerBridge';
 import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
-import { getAutoPilotProductId, toAutoPilotProduct } from '@/autopilot/productAdapter';
+import {
+  getAutoPilotProductId,
+  normalizeAutoPilotProductSettings,
+  toAutoPilotProduct,
+} from '@/autopilot/productAdapter';
 import type {
   AutoPilotImageSettings,
   AutoPilotLogLevel,
@@ -118,7 +122,7 @@ export function useAutoPilotController({
         return {
           ...product,
           ...fieldOverride,
-          settings: override ? { image: { ...override.image }, video: { ...override.video } } : product.settings,
+          settings: override ? normalizeAutoPilotProductSettings(override) : product.settings,
         };
       }),
     [manualProducts, productFieldsById, productSettingsById, sourceProducts]
@@ -480,8 +484,7 @@ export function useAutoPilotController({
       setProductSettingsById((current) => ({
         ...current,
         [product.id]: {
-          image: { ...nextSettings.image },
-          video: { ...nextSettings.video },
+          ...normalizeAutoPilotProductSettings(nextSettings),
         },
       }));
     },

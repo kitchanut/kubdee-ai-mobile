@@ -1,6 +1,6 @@
 import { Pressable, View } from 'react-native';
-import { Clock3, Copy, Sparkles, Star } from 'lucide-react-native';
-import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_ROUND_OPTIONS, FLOW_IMAGE_MODELS, FLOW_VIDEO_MODELS, VIDEO_DURATION_OPTIONS } from '@/autopilot/defaults';
+import { Copy, Sparkles, Star } from 'lucide-react-native';
+import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -12,33 +12,23 @@ export function ExtensionBasicSettingsBlock({
   settings,
   theme,
   onDelayChange,
-  onDurationChange,
   onHashtagCountChange,
-  onImageModelChange,
   onRoundChange,
   onToggleCaption,
   onToggleCta,
   onToggleRewrite,
   onToggleSendImage,
-  onVideoModelChange,
 }: {
   settings: AutoPilotSettings;
   theme: KubdeeTheme;
   onDelayChange: (value: OptionValue) => void;
-  onDurationChange: (value: number) => void;
   onHashtagCountChange: (value: number) => void;
-  onImageModelChange: (value: OptionValue) => void;
   onRoundChange: (value: OptionValue) => void;
   onToggleCaption: (value: boolean) => void;
   onToggleCta: (value: boolean) => void;
   onToggleRewrite: (value: boolean) => void;
   onToggleSendImage: (value: boolean) => void;
-  onVideoModelChange: (value: OptionValue) => void;
 }): React.JSX.Element {
-  const durationOptions = VIDEO_DURATION_OPTIONS.filter(
-    (duration) => settings.flowVideoModel === 'omni_flash' || duration !== 10
-  );
-
   return (
     <View className="gap-2">
       <ExtensionSectionTitle icon={Star} title="ตั้งค่าพื้นฐาน" theme={theme} />
@@ -69,30 +59,7 @@ export function ExtensionBasicSettingsBlock({
           />
         </View>
 
-        <View className="flex-row gap-2.5">
-          <SelectField
-            label="Model รูป"
-            options={FLOW_IMAGE_MODELS.map((model) => ({ label: model.label, value: model.value }))}
-            theme={theme}
-            value={settings.flowImageModel}
-            onChange={onImageModelChange}
-          />
-          <SelectField
-            label="Model วิดีโอ"
-            options={FLOW_VIDEO_MODELS.map((model) => ({ label: model.label, value: model.value }))}
-            theme={theme}
-            value={settings.flowVideoModel}
-            onChange={onVideoModelChange}
-          />
-        </View>
       </View>
-
-      <DurationSegment
-        options={durationOptions}
-        theme={theme}
-        value={settings.flowVideoDuration}
-        onChange={onDurationChange}
-      />
 
       <View className="gap-1.5">
         <View className="gap-1">
@@ -140,48 +107,6 @@ export function ExtensionBasicSettingsBlock({
           value={settings.aiRewritePromptOnAudioFailure}
           onValueChange={onToggleRewrite}
         />
-      </View>
-    </View>
-  );
-}
-
-function DurationSegment({
-  options,
-  theme,
-  value,
-  onChange,
-}: {
-  options: readonly number[];
-  theme: KubdeeTheme;
-  value: number;
-  onChange: (value: number) => void;
-}): React.JSX.Element {
-  return (
-    <View className="flex-row items-center justify-between gap-3">
-      <View className="min-w-0 flex-1 flex-row items-center gap-2">
-        <Clock3 size={15} color={theme.textMuted} strokeWidth={2.1} />
-        <Text className="text-kd-caption font-medium text-kd-text-muted">ความยาวคลิป</Text>
-      </View>
-      <View className="flex-row gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted">
-        {options.map((duration) => {
-          const active = duration === value;
-          return (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              key={duration}
-              onPress={() => onChange(duration)}
-              className={`h-[22px] items-center justify-center rounded-kd-md px-2.5 ${
-                active ? 'bg-white dark:bg-kd-input' : ''
-              }`}
-              style={active ? { shadowColor: theme.shadow, shadowOpacity: 0.08, shadowRadius: 4 } : undefined}
-            >
-              <Text className={`text-kd-micro font-semibold ${active ? 'text-kd-amber' : 'text-kd-text-subtle'}`}>
-                {duration}s
-              </Text>
-            </Pressable>
-          );
-        })}
       </View>
     </View>
   );
