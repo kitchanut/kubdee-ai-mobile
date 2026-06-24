@@ -39,6 +39,7 @@ const DATABASE_NAME = 'kubdee-products.db';
 const SCHEMA_VERSION = 1;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+let dbQueue: Promise<void> = Promise.resolve();
 
 function nowMs(): number {
   return Date.now();
@@ -161,6 +162,7 @@ async function openDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = SQLite.openDatabaseAsync(DATABASE_NAME).then(async (db) => {
       await db.execAsync(`
+        PRAGMA busy_timeout = 5000;
         PRAGMA journal_mode = WAL;
         PRAGMA foreign_keys = ON;
 
@@ -215,6 +217,21 @@ async function openDb(): Promise<SQLite.SQLiteDatabase> {
   }
 
   return dbPromise;
+}
+
+async function runDbTask<T>(task: (db: SQLite.SQLiteDatabase) => Promise<T>): Promise<T> {
+  const previousTask = dbQueue.catch(() => undefined);
+  const resultPromise = previousTask.then(async () => {
+    const db = await openDb();
+    return task(db);
+  });
+
+  dbQueue = resultPromise.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return resultPromise;
 }
 
 async function upsertProductRow(
@@ -308,101 +325,104 @@ async function upsertProductRow(
 }
 
 export async function getLocalProducts(options: { profileLocalId?: string } = {}): Promise<AffiliateProduct[]> {
-  const db = await openDb();
-  const profileLocalId = normalizeText(options.profileLocalId);
-  const rows = profileLocalId
-    ? await db.getAllAsync<LocalProductRow>(
-      `
-        SELECT product_json
-        FROM affiliate_products
-        WHERE deleted_at IS NULL AND profile_local_id = ?
-        ORDER BY updated_at DESC
-      `,
-      profileLocalId
-    )
-    : await db.getAllAsync<LocalProductRow>(
-      `
-        SELECT product_json
-        FROM affiliate_products
-        WHERE deleted_at IS NULL
-        ORDER BY updated_at DESC
-      `
-    );
+  return runDbTask(async (db) => {
+    const profileLocalId = normalizeText(options.profileLocalId);
+    const rows = profileLocalId
+      ? await db.getAllAsync<LocalProductRow>(
+        `
+          SELECT product_json
+          FROM affiliate_products
+          WHERE deleted_at IS NULL AND profile_local_id = ?
+          ORDER BY updated_at DESC
+        `,
+        profileLocalId
+      )
+      : await db.getAllAsync<LocalProductRow>(
+        `
+          SELECT product_json
+          FROM affiliate_products
+          WHERE deleted_at IS NULL
+          ORDER BY updated_at DESC
+        `
+      );
 
-  return rows.map(parseProduct).filter((product): product is AffiliateProduct => !!product);
+    return rows.map(parseProduct).filter((product): product is AffiliateProduct => !!product);
+  });
 }
 
 export async function upsertLocalProductsFromCloud(products: AffiliateProduct[]): Promise<void> {
-  const db = await openDb();
-  const timestamp = nowMs();
-  const remoteIds = new Set(products.map((product) => product.localId).filter(Boolean));
+  await runDbTask(async (db) => {
+    const timestamp = nowMs();
+    const remoteIds = new Set(products.map((product) => product.localId).filter(Boolean));
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    for (const product of products) {
-      const existing = await txn.getFirstAsync<ExistingProductSyncRow>(
-        'SELECT product_json, sync_status FROM affiliate_products WHERE local_id = ? LIMIT 1',
-        product.localId
-      );
-      if (existing?.sync_status?.startsWith('pending_')) {
-        continue;
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const product of products) {
+        const existing = await txn.getFirstAsync<ExistingProductSyncRow>(
+          'SELECT product_json, sync_status FROM affiliate_products WHERE local_id = ? LIMIT 1',
+          product.localId
+        );
+        if (existing?.sync_status?.startsWith('pending_')) {
+          continue;
+        }
+
+        const existingProduct = existing ? parseProduct(existing) : null;
+        const mergedProduct = mergeCloudProductWithLocalImage(product, existingProduct);
+
+        await upsertProductRow(txn, {
+          ...mergedProduct,
+          lastSyncedAt: timestamp,
+        }, 'synced');
       }
 
-      const existingProduct = existing ? parseProduct(existing) : null;
-      const mergedProduct = mergeCloudProductWithLocalImage(product, existingProduct);
+      if (remoteIds.size === 0) {
+        await txn.runAsync(
+          `
+            UPDATE affiliate_products
+            SET deleted_at = ?, updated_at = ?
+            WHERE deleted_at IS NULL AND sync_status = 'synced'
+          `,
+          timestamp,
+          timestamp
+        );
+        return;
+      }
 
-      await upsertProductRow(txn, {
-        ...mergedProduct,
-        lastSyncedAt: timestamp,
-      }, 'synced');
-    }
-
-    if (remoteIds.size === 0) {
-      await txn.runAsync(
+      const cleanRows = await txn.getAllAsync<{ local_id: string }>(
         `
-          UPDATE affiliate_products
-          SET deleted_at = ?, updated_at = ?
+          SELECT local_id
+          FROM affiliate_products
           WHERE deleted_at IS NULL AND sync_status = 'synced'
-        `,
-        timestamp,
-        timestamp
-      );
-      return;
-    }
-
-    const cleanRows = await txn.getAllAsync<{ local_id: string }>(
-      `
-        SELECT local_id
-        FROM affiliate_products
-        WHERE deleted_at IS NULL AND sync_status = 'synced'
-      `
-    );
-
-    for (const row of cleanRows) {
-      if (remoteIds.has(row.local_id)) continue;
-      await txn.runAsync(
         `
-          UPDATE affiliate_products
-          SET deleted_at = ?, updated_at = ?
-          WHERE local_id = ? AND sync_status = 'synced'
-        `,
-        timestamp,
-        timestamp,
-        row.local_id
       );
-    }
+
+      for (const row of cleanRows) {
+        if (remoteIds.has(row.local_id)) continue;
+        await txn.runAsync(
+          `
+            UPDATE affiliate_products
+            SET deleted_at = ?, updated_at = ?
+            WHERE local_id = ? AND sync_status = 'synced'
+          `,
+          timestamp,
+          timestamp,
+          row.local_id
+        );
+      }
+    });
   });
 }
 
 export async function upsertLocalProductsForSync(products: SyncAffiliateProductInput[]): Promise<AffiliateProduct[]> {
   if (products.length === 0) return [];
 
-  const db = await openDb();
   const localProducts = products.map(toAffiliateProduct);
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    for (let index = 0; index < products.length; index += 1) {
-      await upsertProductRow(txn, localProducts[index], 'pending_upsert', products[index]);
-    }
+  await runDbTask(async (db) => {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (let index = 0; index < products.length; index += 1) {
+        await upsertProductRow(txn, localProducts[index], 'pending_upsert', products[index]);
+      }
+    });
   });
 
   return localProducts;
@@ -411,142 +431,147 @@ export async function upsertLocalProductsForSync(products: SyncAffiliateProductI
 export async function markProductsDeletedForSync(localIds: string[]): Promise<void> {
   if (localIds.length === 0) return;
 
-  const db = await openDb();
-  const timestamp = nowMs();
+  await runDbTask(async (db) => {
+    const timestamp = nowMs();
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    for (const localId of localIds) {
-      const row = await txn.getFirstAsync<{
-        profile_local_id: string | null;
-        platform: string | null;
-      }>(
-        'SELECT profile_local_id, platform FROM affiliate_products WHERE local_id = ? LIMIT 1',
-        localId
-      );
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const localId of localIds) {
+        const row = await txn.getFirstAsync<{
+          profile_local_id: string | null;
+          platform: string | null;
+        }>(
+          'SELECT profile_local_id, platform FROM affiliate_products WHERE local_id = ? LIMIT 1',
+          localId
+        );
 
-      await txn.runAsync(
-        `
-          UPDATE affiliate_products
-          SET sync_status = 'pending_delete',
-              deleted_at = ?,
-              updated_at = ?
-          WHERE local_id = ?
-        `,
-        timestamp,
-        timestamp,
-        localId
-      );
+        await txn.runAsync(
+          `
+            UPDATE affiliate_products
+            SET sync_status = 'pending_delete',
+                deleted_at = ?,
+                updated_at = ?
+            WHERE local_id = ?
+          `,
+          timestamp,
+          timestamp,
+          localId
+        );
 
-      await txn.runAsync(
-        `
-          INSERT INTO product_sync_queue (
-            operation,
-            local_id,
-            profile_local_id,
-            platform,
-            payload_json,
-            attempts,
-            last_error,
-            next_attempt_at,
-            created_at,
-            updated_at
-          )
-          VALUES ('delete', ?, ?, ?, NULL, 0, NULL, 0, ?, ?)
-          ON CONFLICT(operation, local_id) DO UPDATE SET
-            profile_local_id = excluded.profile_local_id,
-            platform = excluded.platform,
-            attempts = 0,
-            last_error = NULL,
-            next_attempt_at = 0,
-            updated_at = excluded.updated_at
-        `,
-        localId,
-        row?.profile_local_id ?? null,
-        row?.platform ?? null,
-        timestamp,
-        timestamp
-      );
-    }
+        await txn.runAsync(
+          `
+            INSERT INTO product_sync_queue (
+              operation,
+              local_id,
+              profile_local_id,
+              platform,
+              payload_json,
+              attempts,
+              last_error,
+              next_attempt_at,
+              created_at,
+              updated_at
+            )
+            VALUES ('delete', ?, ?, ?, NULL, 0, NULL, 0, ?, ?)
+            ON CONFLICT(operation, local_id) DO UPDATE SET
+              profile_local_id = excluded.profile_local_id,
+              platform = excluded.platform,
+              attempts = 0,
+              last_error = NULL,
+              next_attempt_at = 0,
+              updated_at = excluded.updated_at
+          `,
+          localId,
+          row?.profile_local_id ?? null,
+          row?.platform ?? null,
+          timestamp,
+          timestamp
+        );
+      }
+    });
   });
 }
 
 export async function getDueProductSyncJobs(limit = 100): Promise<ProductSyncQueueJob[]> {
-  const db = await openDb();
-  const rows = await db.getAllAsync<SyncQueueRow>(
-    `
-      SELECT id, operation, local_id, profile_local_id, platform, payload_json, attempts
-      FROM product_sync_queue
-      WHERE next_attempt_at <= ?
-      ORDER BY created_at ASC
-      LIMIT ?
-    `,
-    nowMs(),
-    limit
-  );
+  return runDbTask(async (db) => {
+    const rows = await db.getAllAsync<SyncQueueRow>(
+      `
+        SELECT id, operation, local_id, profile_local_id, platform, payload_json, attempts
+        FROM product_sync_queue
+        WHERE next_attempt_at <= ?
+        ORDER BY created_at ASC
+        LIMIT ?
+      `,
+      nowMs(),
+      limit
+    );
 
-  return rows.map(parseQueueJob).filter((job): job is ProductSyncQueueJob => !!job);
+    return rows.map(parseQueueJob).filter((job): job is ProductSyncQueueJob => !!job);
+  });
 }
 
 export async function markUpsertJobsSynced(jobIds: number[], localIds: string[]): Promise<void> {
   if (jobIds.length === 0) return;
 
-  const db = await openDb();
-  const timestamp = nowMs();
+  await runDbTask(async (db) => {
+    const timestamp = nowMs();
 
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    for (const localId of localIds) {
-      await txn.runAsync(
-        `
-          UPDATE affiliate_products
-          SET sync_status = 'synced',
-              last_synced_at = ?,
-              updated_at = ?
-          WHERE local_id = ? AND sync_status = 'pending_upsert'
-        `,
-        timestamp,
-        timestamp,
-        localId
-      );
-    }
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const localId of localIds) {
+        await txn.runAsync(
+          `
+            UPDATE affiliate_products
+            SET sync_status = 'synced',
+                last_synced_at = ?,
+                updated_at = ?
+            WHERE local_id = ? AND sync_status = 'pending_upsert'
+          `,
+          timestamp,
+          timestamp,
+          localId
+        );
+      }
 
-    for (const jobId of jobIds) {
-      await txn.runAsync('DELETE FROM product_sync_queue WHERE id = ?', jobId);
-    }
+      for (const jobId of jobIds) {
+        await txn.runAsync('DELETE FROM product_sync_queue WHERE id = ?', jobId);
+      }
+    });
   });
 }
 
 export async function markDeleteJobsSynced(jobIds: number[]): Promise<void> {
   if (jobIds.length === 0) return;
 
-  const db = await openDb();
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    for (const jobId of jobIds) {
-      await txn.runAsync('DELETE FROM product_sync_queue WHERE id = ?', jobId);
-    }
+  await runDbTask(async (db) => {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const jobId of jobIds) {
+        await txn.runAsync('DELETE FROM product_sync_queue WHERE id = ?', jobId);
+      }
+    });
   });
 }
 
 export async function markSyncJobsFailed(jobIds: number[], error: string): Promise<void> {
   if (jobIds.length === 0) return;
 
-  const db = await openDb();
-  const timestamp = nowMs();
-  await db.withExclusiveTransactionAsync(async (txn) => {
-    for (const jobId of jobIds) {
-      await txn.runAsync(
-        `
-          UPDATE product_sync_queue
-          SET attempts = attempts + 1,
-              last_error = ?,
-              next_attempt_at = ?,
-              updated_at = ?
-          WHERE id = ?
-        `,
-        error,
-        timestamp + 30_000,
-        timestamp,
-        jobId
-      );
-    }
+  await runDbTask(async (db) => {
+    const timestamp = nowMs();
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const jobId of jobIds) {
+        await txn.runAsync(
+          `
+            UPDATE product_sync_queue
+            SET attempts = attempts + 1,
+                last_error = ?,
+                next_attempt_at = ?,
+                updated_at = ?
+            WHERE id = ?
+          `,
+          error,
+          timestamp + 30_000,
+          timestamp,
+          jobId
+        );
+      }
+    });
   });
 }
