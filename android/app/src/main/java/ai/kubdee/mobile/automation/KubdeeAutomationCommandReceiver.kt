@@ -8,25 +8,6 @@ import android.util.Log
 class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     when (intent.action) {
-      KubdeeAutomationIpc.ACTION_START_GOOGLE_FLOW -> {
-        val payloadJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON)
-        if (payloadJson.isNullOrBlank()) {
-          Log.w(TAG, "Missing Google Flow payload")
-          return
-        }
-        val started = KubdeeAccessibilityService.dispatchGoogleFlowStart(payloadJson)
-        if (!started) {
-          Log.w(TAG, "Accessibility service is not connected yet; queued Google Flow start")
-        }
-      }
-
-      KubdeeAutomationIpc.ACTION_STOP_GOOGLE_FLOW -> {
-        val stopped = KubdeeAccessibilityService.dispatchGoogleFlowStop()
-        if (!stopped) {
-          Log.w(TAG, "Accessibility service is not connected yet; queued Google Flow stop")
-        }
-      }
-
       KubdeeAutomationIpc.ACTION_START_SHOPEE_IMPORT -> {
         val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
         val maxItems = intent.getIntExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, 40).coerceIn(1, 120)

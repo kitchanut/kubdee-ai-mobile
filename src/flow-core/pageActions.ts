@@ -24,6 +24,8 @@ import { FLOW_SELECTORS } from './selectors';
 export type FlowActionName =
   | 'newProject'
   | 'configurePopper'
+  | 'selectRecentImage'
+  | 'uploadReferenceImage'
   | 'fillPrompt'
   | 'submit'
   | 'videoSnapshot'
@@ -241,6 +243,253 @@ const SUBMIT_BODY = `
   return { method: method, clearedPrompt: clearedPrompt, lenBefore: lenBefore, lenAfter: lenAfter };
 `;
 
+const IMAGE_DIALOG_HELPERS_BODY = `
+  function isVisible(el){
+    if (!el || !el.isConnected) return false;
+    var r = el.getBoundingClientRect();
+    var st = window.getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && st.display !== 'none' && st.visibility !== 'hidden';
+  }
+  function showRipple(el){
+    if (!el || !el.getBoundingClientRect) return;
+    var rect = el.getBoundingClientRect();
+    var ripple = document.createElement('div');
+    Object.assign(ripple.style, {
+      position:'fixed', left:(rect.left+rect.width/2)+'px', top:(rect.top+rect.height/2)+'px',
+      width:'0', height:'0', borderRadius:'50%', background:'rgba(255,0,0,0.4)',
+      transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:'999999',
+      transition:'all 0.6s ease-out'
+    });
+    document.body.appendChild(ripple);
+    requestAnimationFrame(function(){ Object.assign(ripple.style, {width:'60px',height:'60px',opacity:'0'}); });
+    setTimeout(function(){ try { ripple.remove(); } catch (e) {} }, 800);
+  }
+  async function openImageDialog(){
+    for (var attempt = 0; attempt < 10; attempt++) {
+      var triggers = Array.prototype.slice.call(document.querySelectorAll('button[aria-haspopup="dialog"], [aria-haspopup="dialog"]'));
+      for (var i = 0; i < triggers.length; i++) {
+        var btn = triggers[i];
+        if (!isVisible(btn) && !btn.closest('[data-state="open"]')) continue;
+        var txt = (btn.textContent || '').trim().toLowerCase();
+        var icons = Array.prototype.slice.call(btn.querySelectorAll('i')).map(function(icon){ return (icon.textContent || '').trim().toLowerCase(); });
+        if (icons.indexOf('add_2') !== -1 || txt === 'start' || txt === 'create' || txt === 'เริ่ม') {
+          showRipple(btn);
+          btn.click();
+          await wait(1200);
+          var dialog = getOpenDialog();
+          if (dialog) return dialog;
+        }
+      }
+      await wait(800);
+    }
+    throw new Error('หาปุ่ม Start/Create สำหรับแนบรูปไม่เจอ');
+  }
+  function getOpenDialog(){
+    var dialogs = Array.prototype.slice.call(document.querySelectorAll('[role="dialog"][data-state="open"]'));
+    for (var i = 0; i < dialogs.length; i++) { if (isVisible(dialogs[i])) return dialogs[i]; }
+    var popover = document.querySelector('[data-radix-popper-content-wrapper] [data-state="open"]');
+    return isVisible(popover) ? popover : null;
+  }
+  async function handleAgreeDialog(){
+    for (var i = 0; i < 4; i++) {
+      var buttons = Array.prototype.slice.call(document.querySelectorAll('button'));
+      for (var b = 0; b < buttons.length; b++) {
+        var txt = (buttons[b].textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        if ((txt === 'i agree' || txt === 'agree' || txt.indexOf('ยอมรับ') !== -1) && isVisible(buttons[b])) {
+          showRipple(buttons[b]);
+          buttons[b].click();
+          await wait(800);
+          return true;
+        }
+      }
+      await wait(300);
+    }
+    return false;
+  }
+  function imageItems(scope){
+    var root = scope || document;
+    var indexed = Array.prototype.slice.call(root.querySelectorAll('[data-testid="virtuoso-item-list"] [data-index], [data-index]'))
+      .filter(function(item){ return isVisible(item) && item.querySelector('img'); });
+    if (indexed.length) return indexed;
+    return Array.prototype.slice.call(root.querySelectorAll('[role="option"], [role="gridcell"], [role="button"]'))
+      .filter(function(item){ return isVisible(item) && item.querySelector('img'); });
+  }
+  function readyImageItem(item){
+    if (!item || !isVisible(item)) return false;
+    var img = item.querySelector('img') || (item.tagName === 'IMG' ? item : null);
+    if (!img || !isVisible(img)) return false;
+    if (img.complete === false) return false;
+    return (img.naturalWidth || 0) > 20 && (img.naturalHeight || 0) > 20;
+  }
+  function itemSignature(item){
+    var img = item && (item.querySelector('img') || (item.tagName === 'IMG' ? item : null));
+    if (!img) return '';
+    return [img.currentSrc || img.src || img.getAttribute('src') || '', img.getAttribute('alt') || '', item.getAttribute('data-index') || ''].join('|');
+  }
+  function clickImageItem(item){
+    var target = item.querySelector('[role="option"]') || item.querySelector('img') || item;
+    target.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' });
+    showRipple(target);
+    target.click();
+  }
+  async function clickAddToPrompt(dialog){
+    var scope = dialog && dialog.isConnected ? dialog : getOpenDialog();
+    if (!scope) return false;
+    var buttons = Array.prototype.slice.call(scope.querySelectorAll('button'));
+    for (var i = 0; i < buttons.length; i++) {
+      var txt = (buttons[i].textContent || '').replace(/\\s+/g, ' ').trim();
+      if (/^(add to prompt|select|done|use image|เลือก|เพิ่ม)$/i.test(txt) && isVisible(buttons[i]) && !buttons[i].disabled) {
+        showRipple(buttons[i]);
+        buttons[i].click();
+        await wait(700);
+        return true;
+      }
+    }
+    return false;
+  }
+  async function waitForDialogClosed(dialog, timeoutMs){
+    var started = Date.now();
+    while (Date.now() - started < (timeoutMs || 7000)) {
+      await wait(400);
+      if (!dialog || !dialog.isConnected || !isVisible(dialog) || !getOpenDialog()) return true;
+    }
+    return false;
+  }
+`;
+
+const SELECT_RECENT_IMAGE_BODY = `
+  ${IMAGE_DIALOG_HELPERS_BODY}
+  var indexOffset = Math.max(0, Number(args.indexOffset || 0) || 0);
+  var dialog = await openImageDialog();
+  await handleAgreeDialog();
+  dialog = getOpenDialog() || dialog;
+  var scroller = dialog.querySelector('[data-testid="virtuoso-scroller"]') || document.querySelector('[data-testid="virtuoso-scroller"]');
+  if (scroller) {
+    for (var s = 0; s < 3; s++) { scroller.scrollTop = 0; await wait(200); }
+  }
+  await wait(1200);
+  var picked = null;
+  for (var attempt = 0; attempt < 12 && !picked; attempt++) {
+    var items = imageItems(dialog)
+      .filter(readyImageItem)
+      .sort(function(a, b){
+        var ai = parseInt(a.getAttribute('data-index') || '', 10);
+        var bi = parseInt(b.getAttribute('data-index') || '', 10);
+        var safeA = Number.isFinite(ai) ? ai : Number.MAX_SAFE_INTEGER;
+        var safeB = Number.isFinite(bi) ? bi : Number.MAX_SAFE_INTEGER;
+        return safeA - safeB || a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+      });
+    picked = items[Math.min(indexOffset, Math.max(0, items.length - 1))] || null;
+    if (!picked) await wait(500);
+  }
+  if (!picked) throw new Error('ไม่พบรูปในรายการล่าสุดสำหรับแนบ reference');
+  var dataIndex = picked.getAttribute('data-index');
+  clickImageItem(picked);
+  await wait(1000);
+  if (!(await waitForDialogClosed(dialog, 4500))) {
+    await clickAddToPrompt(dialog);
+    await waitForDialogClosed(dialog, 4500);
+  }
+  return { success: true, dataIndex: dataIndex };
+`;
+
+const UPLOAD_REFERENCE_IMAGE_BODY = `
+  ${IMAGE_DIALOG_HELPERS_BODY}
+  var dataUrl = String(args.dataUrl || '');
+  var imageUrl = String(args.imageUrl || '');
+  var fileName = String(args.fileName || 'kubdee-reference.png');
+  function blobToDataUrl(blob){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onloadend = function(){ resolve(String(reader.result || '')); };
+      reader.onerror = function(){ reject(new Error('อ่านรูปเป็น data URL ไม่สำเร็จ')); };
+      reader.readAsDataURL(blob);
+    });
+  }
+  async function resolveDataUrl(){
+    if (dataUrl.indexOf('data:image/') === 0) return dataUrl;
+    if (!imageUrl) throw new Error('ไม่มีรูป reference');
+    var response = await fetch(imageUrl);
+    if (!response.ok) throw new Error('โหลดรูป reference ไม่สำเร็จ HTTP ' + response.status);
+    var blob = await response.blob();
+    if (!blob || !blob.size) throw new Error('รูป reference ว่าง');
+    return await blobToDataUrl(blob);
+  }
+  function dataUrlToFile(value, name){
+    var comma = value.indexOf(',');
+    if (comma === -1) throw new Error('data URL รูปไม่ถูกต้อง');
+    var header = value.slice(0, comma);
+    var payload = value.slice(comma + 1);
+    var mime = (header.match(/^data:([^;]+)/) || [])[1] || 'image/png';
+    var binary = header.indexOf(';base64') !== -1 ? atob(payload) : decodeURIComponent(payload);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    var ext = mime.indexOf('jpeg') !== -1 ? '.jpg' : mime.indexOf('webp') !== -1 ? '.webp' : '.png';
+    var safeName = /\\.[a-z0-9]+$/i.test(name) ? name : name + ext;
+    return new File([bytes], safeName, { type: mime });
+  }
+  function findUploadButton(dialog){
+    var buttons = Array.prototype.slice.call(dialog.querySelectorAll('button, [role="button"]'));
+    for (var i = 0; i < buttons.length; i++) {
+      var txt = (buttons[i].textContent || '').replace(/\\s+/g, ' ').trim();
+      var icon = buttons[i].querySelector('i');
+      var iconText = icon ? (icon.textContent || '').trim().toLowerCase() : '';
+      if ((/upload image|upload|อัปโหลดรูปภาพ|อัพโหลดรูปภาพ/i.test(txt) || iconText === 'upload') && isVisible(buttons[i])) {
+        return buttons[i];
+      }
+    }
+    return null;
+  }
+  var resolvedDataUrl = await resolveDataUrl();
+  var dialog = await openImageDialog();
+  await handleAgreeDialog();
+  dialog = getOpenDialog() || dialog;
+  var known = imageItems(dialog).filter(readyImageItem).map(itemSignature).filter(Boolean);
+  var uploadButton = findUploadButton(dialog);
+  if (uploadButton) {
+    showRipple(uploadButton);
+    uploadButton.click();
+    await wait(600);
+  }
+  var input = null;
+  for (var f = 0; f < 20 && !input; f++) {
+    input = document.querySelector('input[type="file"]');
+    if (!input) await wait(300);
+  }
+  if (!input) throw new Error('ไม่พบ input upload รูปใน Google Flow');
+  var dt = new DataTransfer();
+  dt.items.add(dataUrlToFile(resolvedDataUrl, fileName));
+  input.files = dt.files;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  var picked = null;
+  for (var attempt = 0; attempt < 90 && !picked; attempt++) {
+    await wait(1000);
+    var items = imageItems(getOpenDialog() || dialog).filter(readyImageItem);
+    for (var i = 0; i < items.length; i++) {
+      var sig = itemSignature(items[i]);
+      if (sig && known.indexOf(sig) === -1) { picked = items[i]; break; }
+    }
+    if (!picked && attempt > 6 && items.length > 0) {
+      items.sort(function(a, b){
+        var ai = parseInt(a.getAttribute('data-index') || '', 10);
+        var bi = parseInt(b.getAttribute('data-index') || '', 10);
+        return (Number.isFinite(ai) ? ai : 999999) - (Number.isFinite(bi) ? bi : 999999);
+      });
+      picked = items[0];
+    }
+  }
+  if (!picked) throw new Error('อัปโหลดรูปแล้วแต่ไม่พบ thumbnail พร้อมเลือก');
+  var dataIndex = picked.getAttribute('data-index');
+  clickImageItem(picked);
+  await wait(1000);
+  if (!(await waitForDialogClosed(dialog, 5000))) {
+    await clickAddToPrompt(dialog);
+    await waitForDialogClosed(dialog, 5000);
+  }
+  return { success: true, dataIndex: dataIndex };
+`;
+
 // --- downloadVideo: read the ready video through the page session and return it as data URL ---
 const DOWNLOAD_VIDEO_BODY = `
   var targetUrl = String(args.url || '').trim();
@@ -405,6 +654,8 @@ const DOWNLOAD_VIDEO_BODY = `
 const ACTION_BODIES: Record<FlowActionName, string> = {
   newProject: NEW_PROJECT_BODY,
   configurePopper: CONFIGURE_POPPER_BODY,
+  selectRecentImage: SELECT_RECENT_IMAGE_BODY,
+  uploadReferenceImage: UPLOAD_REFERENCE_IMAGE_BODY,
   fillPrompt: FILL_PROMPT_BODY,
   submit: SUBMIT_BODY,
   videoSnapshot: VIDEO_SNAPSHOT_BODY,

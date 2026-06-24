@@ -76,6 +76,44 @@ function promptForStep(product: GoogleFlowRunnerProduct, step: AutoPilotStepType
   return [productName, description].filter(Boolean).join('\n');
 }
 
+function getReferenceFileName(product: GoogleFlowRunnerProduct): string {
+  const code = product.productId || product.catalogId || product.id || 'product';
+  return `kubdee-reference-${code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 48)}.png`;
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('อ่านรูป reference ไม่สำเร็จ'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function loadImageReferenceDataUrl(uri: string): Promise<string | null> {
+  const cleanUri = uri.trim();
+  if (!cleanUri) {
+    return null;
+  }
+  if (cleanUri.startsWith('data:image/')) {
+    return cleanUri;
+  }
+
+  try {
+    const response = await fetch(cleanUri);
+    if (!response.ok) {
+      return null;
+    }
+    const blob = await response.blob();
+    if (!blob.size) {
+      return null;
+    }
+    return await blobToDataUrl(blob);
+  } catch {
+    return null;
+  }
+}
+
 export default function GoogleFlowWebViewRunnerHost({
   theme,
 }: GoogleFlowWebViewRunnerHostProps): React.JSX.Element {
@@ -362,6 +400,51 @@ export default function GoogleFlowWebViewRunnerHost({
         throw new Error(`ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'}`);
       } else {
         emit({ runId: payload.runId, status: 'running', message: `ตั้งค่าโหมด${label}แล้ว` });
+      }
+
+      const shouldUsePreviousImage = step === 'video' && payload.enabledSteps.includes('image');
+      if (shouldUsePreviousImage) {
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'attach_reference',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
+        });
+        await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+      } else if (product.preview) {
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'attach_reference',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `แนบรูปสินค้า reference สำหรับ${label}`,
+        });
+        const dataUrl = await loadImageReferenceDataUrl(product.preview);
+        await runActionOrThrow(
+          handle,
+          'uploadReferenceImage',
+          {
+            dataUrl: dataUrl ?? undefined,
+            fileName: getReferenceFileName(product),
+            imageUrl: dataUrl ? undefined : product.preview,
+          },
+          120_000
+        );
       }
 
       let baselineVideoUrls: string[] = [];

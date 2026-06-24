@@ -1,6 +1,5 @@
 import { Linking, NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import type { EmitterSubscription } from 'react-native';
-import type { Permission } from 'react-native';
 
 export interface AccessibilityStatus {
   available: boolean;
@@ -62,27 +61,6 @@ export interface NativeShopeePostingResult {
   }>;
 }
 
-export interface NativeGoogleFlowLog {
-  message: string;
-  ts: number;
-  runId?: string;
-  status?: 'running' | 'completed' | 'stopped' | 'error';
-  event?: 'asset' | 'progress';
-  step?: 'image' | 'video';
-  stage?: string;
-  productId?: string;
-  productName?: string;
-  currentRound?: number;
-  totalRounds?: number;
-  currentProduct?: number;
-  totalProducts?: number;
-  fileUri?: string;
-  fileName?: string;
-  mimeType?: string;
-  sizeBytes?: number;
-  createdAt?: number;
-}
-
 export interface NativeGoogleFlowDownloadedAsset {
   uri: string;
   fileName: string;
@@ -109,8 +87,6 @@ type NativeAccessibilityModule = {
   clearPendingShopeeImportProducts?: () => Promise<boolean>;
   postShopeeVideos?: (payloadJson: string) => Promise<string>;
   stopShopeeAutomation?: () => Promise<boolean>;
-  startGoogleFlowAutoPilot?: (payloadJson: string) => Promise<boolean>;
-  stopGoogleFlowAutoPilot?: () => Promise<boolean>;
   waitForGoogleFlowDownload?: (
     step: 'image' | 'video',
     sinceMs: number,
@@ -273,22 +249,6 @@ export async function stopShopeeAutomation(): Promise<boolean> {
   return false;
 }
 
-export async function startGoogleFlowAutoPilot(payload: unknown): Promise<boolean> {
-  if (Platform.OS === 'android' && nativeModule?.startGoogleFlowAutoPilot) {
-    return nativeModule.startGoogleFlowAutoPilot(JSON.stringify(payload));
-  }
-
-  return false;
-}
-
-export async function stopGoogleFlowAutoPilot(): Promise<boolean> {
-  if (Platform.OS === 'android' && nativeModule?.stopGoogleFlowAutoPilot) {
-    return nativeModule.stopGoogleFlowAutoPilot();
-  }
-
-  return false;
-}
-
 export async function waitForGoogleFlowDownload(
   step: 'image' | 'video',
   sinceMs: number,
@@ -311,26 +271,6 @@ export async function saveGoogleFlowDataUrlAsset(
   }
 
   return null;
-}
-
-export async function requestGoogleFlowMediaPermissions(): Promise<boolean> {
-  if (Platform.OS !== 'android') {
-    return true;
-  }
-
-  const platformVersion =
-    typeof Platform.Version === 'number' ? Platform.Version : Number.parseInt(String(Platform.Version), 10);
-  const permissions: Permission[] =
-    platformVersion >= 33
-      ? ['android.permission.READ_MEDIA_IMAGES', 'android.permission.READ_MEDIA_VIDEO']
-      : [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE];
-
-  try {
-    const results = await PermissionsAndroid.requestMultiple(permissions);
-    return permissions.every((permission) => results[permission] === PermissionsAndroid.RESULTS.GRANTED);
-  } catch {
-    return false;
-  }
 }
 
 export async function requestAndroidVideoPermission(): Promise<boolean> {
@@ -436,52 +376,6 @@ export function subscribeShopeePostLogs(
     listener({
       message: entry.message,
       ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
-    });
-  });
-}
-
-export function subscribeGoogleFlowLogs(
-  listener: (entry: NativeGoogleFlowLog) => void
-): EmitterSubscription | null {
-  if (!nativeEventEmitter) {
-    return null;
-  }
-
-  return nativeEventEmitter.addListener('KubdeeGoogleFlowLog', (payload: unknown) => {
-    if (!payload || typeof payload !== 'object') {
-      return;
-    }
-
-    const entry = payload as Partial<NativeGoogleFlowLog>;
-    if (typeof entry.message !== 'string') {
-      return;
-    }
-
-    listener({
-      message: entry.message,
-      ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
-      runId: typeof entry.runId === 'string' ? entry.runId : undefined,
-      status:
-        entry.status === 'running' ||
-        entry.status === 'completed' ||
-        entry.status === 'stopped' ||
-        entry.status === 'error'
-          ? entry.status
-          : undefined,
-      event: entry.event === 'asset' || entry.event === 'progress' ? entry.event : undefined,
-      step: entry.step === 'image' || entry.step === 'video' ? entry.step : undefined,
-      stage: typeof entry.stage === 'string' ? entry.stage : undefined,
-      productId: typeof entry.productId === 'string' ? entry.productId : undefined,
-      productName: typeof entry.productName === 'string' ? entry.productName : undefined,
-      currentRound: typeof entry.currentRound === 'number' ? entry.currentRound : undefined,
-      totalRounds: typeof entry.totalRounds === 'number' ? entry.totalRounds : undefined,
-      currentProduct: typeof entry.currentProduct === 'number' ? entry.currentProduct : undefined,
-      totalProducts: typeof entry.totalProducts === 'number' ? entry.totalProducts : undefined,
-      fileUri: typeof entry.fileUri === 'string' ? entry.fileUri : undefined,
-      fileName: typeof entry.fileName === 'string' ? entry.fileName : undefined,
-      mimeType: typeof entry.mimeType === 'string' ? entry.mimeType : undefined,
-      sizeBytes: typeof entry.sizeBytes === 'number' ? entry.sizeBytes : undefined,
-      createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : undefined,
     });
   });
 }

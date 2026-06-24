@@ -76,7 +76,6 @@ class KubdeeAccessibilityModule(
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_PRODUCT)
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_FINISHED)
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_LOG)
-      addAction(KubdeeAutomationIpc.ACTION_EVENT_GOOGLE_FLOW_LOG)
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       reactContext.registerReceiver(automationEventReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -112,9 +111,6 @@ class KubdeeAccessibilityModule(
         })
       }
 
-      KubdeeAutomationIpc.ACTION_EVENT_GOOGLE_FLOW_LOG -> {
-        emitEvent("KubdeeGoogleFlowLog", googleFlowIntentToWritableMap(intent))
-      }
     }
   }
 
@@ -168,32 +164,6 @@ class KubdeeAccessibilityModule(
             putDouble("ts", product.optLong("ts", System.currentTimeMillis()).toDouble())
           }
         })
-      }
-    }
-
-  private fun googleFlowIntentToWritableMap(intent: Intent) =
-    Arguments.createMap().apply {
-      putString("message", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_MESSAGE).orEmpty())
-      putDouble("ts", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_TS, System.currentTimeMillis()).toDouble())
-      putOptionalString("event", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_EVENT))
-      putOptionalString("step", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_STEP))
-      putOptionalString("stage", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_STAGE))
-      putOptionalString("productId", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_ID))
-      putOptionalString("productName", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCT_NAME))
-      putOptionalString("fileUri", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_FILE_URI))
-      putOptionalString("fileName", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_FILE_NAME))
-      putOptionalString("mimeType", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_MIME_TYPE))
-      putOptionalString("status", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_STATUS))
-      putOptionalString("runId", intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID))
-      putOptionalInt("currentRound", intent, KubdeeAutomationIpc.EXTRA_ROUND_CURRENT)
-      putOptionalInt("totalRounds", intent, KubdeeAutomationIpc.EXTRA_ROUND_TOTAL)
-      putOptionalInt("currentProduct", intent, KubdeeAutomationIpc.EXTRA_PRODUCT_CURRENT)
-      putOptionalInt("totalProducts", intent, KubdeeAutomationIpc.EXTRA_PRODUCT_TOTAL)
-      if (intent.hasExtra(KubdeeAutomationIpc.EXTRA_SIZE_BYTES)) {
-        putDouble("sizeBytes", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_SIZE_BYTES, 0L).toDouble())
-      }
-      if (intent.hasExtra(KubdeeAutomationIpc.EXTRA_CREATED_AT)) {
-        putDouble("createdAt", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_CREATED_AT, 0L).toDouble())
       }
     }
 
@@ -440,42 +410,6 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
-  fun startGoogleFlowAutoPilot(payloadJson: String, promise: Promise) {
-    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
-    if (!isAccessibilityServiceEnabled(reactContext, component)) {
-      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
-      return
-    }
-
-    if (!openGoogleFlowInChromeBlocking()) {
-      promise.reject("OPEN_FLOW_FAILED", "เปิด Google Flow ใน Chrome ไม่สำเร็จ")
-      return
-    }
-
-    // Let the Chrome task win foreground before the app process broadcasts the payload. Without
-    // this short handoff delay, Samsung/Chrome can bounce back to the Kubdee task during the
-    // activity transition and the accessibility runner never sees Chrome as foreground.
-    Handler(Looper.getMainLooper()).postDelayed({
-      sendAutomationCommand(KubdeeAutomationIpc.ACTION_START_GOOGLE_FLOW) {
-        putExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON, payloadJson)
-      }
-      promise.resolve(true)
-    }, 1200L)
-  }
-
-  @ReactMethod
-  fun stopGoogleFlowAutoPilot(promise: Promise) {
-    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
-    if (!isAccessibilityServiceEnabled(reactContext, component)) {
-      promise.resolve(false)
-      return
-    }
-
-    sendAutomationCommand(KubdeeAutomationIpc.ACTION_STOP_GOOGLE_FLOW)
-    promise.resolve(true)
-  }
-
-  @ReactMethod
   fun waitForGoogleFlowDownload(step: String, sinceMs: Double, timeoutMs: Double, promise: Promise) {
     Thread {
       try {
@@ -622,51 +556,6 @@ class KubdeeAccessibilityModule(
     } catch (_: Exception) {
       false
     }
-  }
-
-  private fun openGoogleFlowInChromeBlocking(): Boolean {
-    if (Looper.myLooper() == Looper.getMainLooper()) {
-      return openGoogleFlowInChromeOnUiThread()
-    }
-
-    var opened = false
-    val latch = CountDownLatch(1)
-    reactContext.runOnUiQueueThread {
-      opened = openGoogleFlowInChromeOnUiThread()
-      latch.countDown()
-    }
-    return latch.await(2_000L, TimeUnit.MILLISECONDS) && opened
-  }
-
-  private fun openGoogleFlowInChromeOnUiThread(): Boolean {
-      val uri = Uri.parse(GOOGLE_FLOW_URL)
-      val launcher = reactContext.currentActivity ?: reactContext
-      // Try Chrome explicitly. Don't gate on resolveActivity(): under Android package-visibility
-      // it can return null even when Chrome is installed, which would silently fall back to the
-      // default browser (e.g. Samsung Internet). Just attempt the launch and catch failures.
-      try {
-        launcher.startActivity(
-          Intent(Intent.ACTION_VIEW, uri).apply {
-            setPackage(GOOGLE_FLOW_CHROME_PACKAGE)
-            addCategory(Intent.CATEGORY_BROWSABLE)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-          }
-        )
-        return true
-      } catch (_: Exception) {
-      }
-      // Fallback: let the system's default browser open it.
-      try {
-        launcher.startActivity(
-          Intent(Intent.ACTION_VIEW, uri).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-          }
-        )
-        return true
-      } catch (_: Exception) {
-      }
-    return false
   }
 
   private fun findLatestGoogleFlowDownload(step: String, sinceMs: Long): GoogleFlowDownloadAsset? {
@@ -870,8 +759,6 @@ class KubdeeAccessibilityModule(
   companion object {
     const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
     private const val TAG = "KubdeeAccessibilityModule"
-    private const val GOOGLE_FLOW_URL = "https://labs.google/fx/tools/flow"
-    private const val GOOGLE_FLOW_CHROME_PACKAGE = "com.android.chrome"
 
     @Volatile
     private var eventContext: ReactApplicationContext? = null
@@ -918,79 +805,6 @@ class KubdeeAccessibilityModule(
       emitEvent("KubdeeShopeePostLog", payload)
     }
 
-    fun emitGoogleFlowLog(
-      message: String,
-      status: String? = null,
-      event: String? = null,
-      step: String? = null,
-      stage: String? = null,
-      productId: String? = null,
-      productName: String? = null,
-      currentRound: Int? = null,
-      totalRounds: Int? = null,
-      currentProduct: Int? = null,
-      totalProducts: Int? = null,
-      fileUri: String? = null,
-      fileName: String? = null,
-      mimeType: String? = null,
-      sizeBytes: Long? = null,
-      createdAt: Long? = null,
-      runId: String? = null
-    ) {
-      val payload = Arguments.createMap().apply {
-        putString("message", message)
-        putDouble("ts", System.currentTimeMillis().toDouble())
-        if (runId != null) {
-          putString("runId", runId)
-        }
-        if (status != null) {
-          putString("status", status)
-        }
-        if (event != null) {
-          putString("event", event)
-        }
-        if (step != null) {
-          putString("step", step)
-        }
-        if (stage != null) {
-          putString("stage", stage)
-        }
-        if (productId != null) {
-          putString("productId", productId)
-        }
-        if (productName != null) {
-          putString("productName", productName)
-        }
-        if (currentRound != null) {
-          putInt("currentRound", currentRound)
-        }
-        if (totalRounds != null) {
-          putInt("totalRounds", totalRounds)
-        }
-        if (currentProduct != null) {
-          putInt("currentProduct", currentProduct)
-        }
-        if (totalProducts != null) {
-          putInt("totalProducts", totalProducts)
-        }
-        if (fileUri != null) {
-          putString("fileUri", fileUri)
-        }
-        if (fileName != null) {
-          putString("fileName", fileName)
-        }
-        if (mimeType != null) {
-          putString("mimeType", mimeType)
-        }
-        if (sizeBytes != null) {
-          putDouble("sizeBytes", sizeBytes.toDouble())
-        }
-        if (createdAt != null) {
-          putDouble("createdAt", createdAt.toDouble())
-        }
-      }
-      emitEvent("KubdeeGoogleFlowLog", payload)
-    }
   }
 }
 
@@ -1013,16 +827,6 @@ private fun ShopeeLikedProduct.toWritableMap(profileLocalId: String? = null) =
 
 private fun WritableMap.putNullableString(key: String, value: String?) {
   if (value != null) putString(key, value) else putNull(key)
-}
-
-private fun WritableMap.putOptionalString(key: String, value: String?) {
-  if (!value.isNullOrBlank()) putString(key, value)
-}
-
-private fun WritableMap.putOptionalInt(outputKey: String, intent: Intent, intentKey: String) {
-  if (intent.hasExtra(intentKey)) {
-    putInt(outputKey, intent.getIntExtra(intentKey, 0))
-  }
 }
 
 private fun org.json.JSONObject.optStringOrNull(key: String): String? {
