@@ -336,8 +336,19 @@ export default function GoogleFlowWebViewRunnerHost({
 
       const configArgs =
         step === 'image'
-          ? { targetMode: 'image', imageModel: payload.settings.flowImageModel }
-          : { targetMode: 'video', videoModel: payload.settings.flowVideoModel };
+          ? {
+              targetMode: 'image',
+              aspectRatio: product.settings.image.aspectRatio,
+              outputCount: count,
+              imageModel: payload.settings.flowImageModel,
+            }
+          : {
+              targetMode: 'video',
+              aspectRatio: product.settings.video.aspectRatio,
+              outputCount: count,
+              videoDuration: payload.settings.flowVideoDuration,
+              videoModel: payload.settings.flowVideoModel,
+            };
       const config = (await runActionOrThrow(handle, 'configurePopper', configArgs, 70_000)) as {
         success?: boolean;
         error?: string;
@@ -346,8 +357,9 @@ export default function GoogleFlowWebViewRunnerHost({
         emit({
           runId: payload.runId,
           status: 'running',
-          message: `ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'} จะทำต่อ`,
+          message: `ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'}`,
         });
+        throw new Error(`ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'}`);
       } else {
         emit({ runId: payload.runId, status: 'running', message: `ตั้งค่าโหมด${label}แล้ว` });
       }

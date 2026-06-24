@@ -2,7 +2,7 @@
  * configurePopper (video core) — open the Flow config popper, switch to VIDEO
  * mode, pick the sub-mode (Frames for Veo / Ingredients for Omni) and select
  * the video model. Ported from the desktop configurePopper.ts page.evaluate
- * body; aspect-ratio / output-count / duration settings are a follow-up (2b).
+ * body; includes mode, model, aspect-ratio, output-count and duration settings.
  *
  * Authored as a plain-JS STRING (not a function) on purpose: React Native's
  * Hermes engine does not return real source from Function.prototype.toString(),
@@ -10,7 +10,7 @@
  * be a string. Template literals are written as string concatenation so the
  * whole body lives inside an outer template literal without escaping.
  *
- * Reads `args`: { targetMode: 'video' | 'image', videoModel?, imageModel?, skipTab? }.
+ * Reads `args`: { targetMode: 'video' | 'image', videoModel?, imageModel?, aspectRatio?, outputCount?, videoDuration?, skipTab? }.
  * Returns `{ success, error?, logs }` (logical failures return success:false,
  * they do not throw).
  */
@@ -18,7 +18,12 @@ export const CONFIGURE_POPPER_BODY = `
   var mode = args.targetMode;
   var skip = args.skipTab || false;
   var vidModel = args.videoModel;
+  var imgModel = args.imageModel;
+  var ratio = args.aspectRatio ? String(args.aspectRatio) : '';
+  var count = Number.parseInt(String(args.outputCount || ''), 10);
+  var duration = Number.parseInt(String(args.videoDuration || ''), 10);
   var hMode = !!mode;
+  var hSettings = !!(ratio || count || duration);
   var isImageMode = hMode && (mode === 'image');
   var logs = [];
   function sendLog(message, level){ logs.push({ level: level || 'info', message: message }); }
@@ -102,6 +107,151 @@ export const CONFIGURE_POPPER_BODY = `
   }
   function refetchPopper(fallback){
     return document.querySelector('[data-radix-menu-content][data-state="open"]') || document.querySelector('[role="menu"][data-state="open"]') || fallback;
+  }
+
+  var RATIO_MAP = {
+    '16:9': 'crop_16_9',
+    'landscape': 'crop_16_9',
+    '4:3': 'crop_landscape',
+    '1:1': 'crop_square',
+    '3:4': 'crop_portrait',
+    '9:16': 'crop_9_16',
+    'portrait': 'crop_9_16'
+  };
+  var RATIO_LABEL_MAP = {
+    'crop_16_9': 'LANDSCAPE',
+    'crop_landscape': 'LANDSCAPE_4_3',
+    'crop_square': 'SQUARE',
+    'crop_portrait': 'PORTRAIT_3_4',
+    'crop_9_16': 'PORTRAIT'
+  };
+  function resolveRatioIcon(aspectRatio){
+    var lower = String(aspectRatio || '').toLowerCase();
+    if (RATIO_MAP[lower]) return RATIO_MAP[lower];
+    var match = lower.match(/(\\d+:\\d+)/);
+    if (match && RATIO_MAP[match[1]]) return RATIO_MAP[match[1]];
+    return null;
+  }
+  function isTargetRatio(aspectRatio, iconText){
+    var targetIcon = resolveRatioIcon(aspectRatio);
+    return !!targetIcon && iconText === targetIcon;
+  }
+  function checkCurrentValuesFromTrigger(aspectRatio, outputCount){
+    var result = { ratioOk: !aspectRatio, countOk: !outputCount };
+    var triggerBtn = findConfigTriggerButton();
+    if (!triggerBtn) return result;
+    if (aspectRatio) {
+      var icons = triggerBtn.querySelectorAll('i');
+      for (var i = 0; i < icons.length; i++) {
+        var iconText = (icons[i].textContent || '').trim().toLowerCase();
+        if (isTargetRatio(aspectRatio, iconText)) { result.ratioOk = true; break; }
+      }
+    }
+    if (outputCount) {
+      var cleaned = triggerBtn.textContent || '';
+      var iconEls = triggerBtn.querySelectorAll('i');
+      for (var j = 0; j < iconEls.length; j++) {
+        var t = iconEls[j].textContent || '';
+        if (t) cleaned = cleaned.replace(t, ' ');
+      }
+      cleaned = cleaned.trim().toLowerCase();
+      var countRe = new RegExp('(?:^|[^0-9])(?:x' + outputCount + '|' + outputCount + 'x)(?:$|[^0-9])');
+      if (countRe.test(cleaned)) result.countOk = true;
+    }
+    return result;
+  }
+  async function selectAspectRatioTab(popper, aspectRatio){
+    var targetIcon = resolveRatioIcon(aspectRatio);
+    if (!targetIcon) { sendLog('aspectRatio "' + aspectRatio + '" ไม่รองรับ', 'error'); return false; }
+    var targetLabel = RATIO_LABEL_MAP[targetIcon] || targetIcon;
+    sendLog('ตั้งค่า Ratio: ' + targetLabel + ' (' + aspectRatio + ')', 'info');
+    var tabs = popper.querySelectorAll('button[role="tab"]');
+    for (var i = 0; i < tabs.length; i++) {
+      var icon = tabs[i].querySelector('i');
+      if (!icon) continue;
+      var iconText = (icon.textContent || '').trim().toLowerCase();
+      if (iconText !== targetIcon) continue;
+      var active = tabs[i].getAttribute('data-state') === 'active' || tabs[i].getAttribute('aria-selected') === 'true';
+      if (active) { sendLog('Ratio ' + targetLabel + ' ถูกเลือกอยู่แล้ว', 'success'); return true; }
+      await clickRadixTab(tabs[i]); await wait(500);
+      active = tabs[i].getAttribute('data-state') === 'active' || tabs[i].getAttribute('aria-selected') === 'true';
+      if (active) { sendLog('เลือก Ratio ' + targetLabel + ' สำเร็จ', 'success'); return true; }
+      sendLog('Ratio อาจไม่เปลี่ยน (state: ' + tabs[i].getAttribute('data-state') + ')', 'warning');
+      return false;
+    }
+    sendLog('หา tab ' + targetLabel + ' ไม่เจอ', 'error');
+    return false;
+  }
+  function findCountTablist(popper){
+    var tablists = popper.querySelectorAll('[role="tablist"]');
+    var pattern = /^x?\\d+x?$/;
+    for (var i = 0; i < tablists.length; i++) {
+      var tabs = tablists[i].querySelectorAll('button[role="tab"]');
+      if (!tabs.length) continue;
+      var allMatch = true;
+      for (var j = 0; j < tabs.length; j++) {
+        var txt = (tabs[j].textContent || '').trim().toLowerCase();
+        if (!pattern.test(txt)) { allMatch = false; break; }
+      }
+      if (allMatch) return tablists[i];
+    }
+    return null;
+  }
+  function findDurationTablist(popper){
+    var tablists = popper.querySelectorAll('[role="tablist"]');
+    var pattern = /^\\d+s$/;
+    for (var i = 0; i < tablists.length; i++) {
+      var tabs = tablists[i].querySelectorAll('button[role="tab"]');
+      if (!tabs.length) continue;
+      var allMatch = true;
+      for (var j = 0; j < tabs.length; j++) {
+        var txt = (tabs[j].textContent || '').trim().toLowerCase();
+        if (!pattern.test(txt)) { allMatch = false; break; }
+      }
+      if (allMatch) return tablists[i];
+    }
+    return null;
+  }
+  async function selectOutputCountTab(popper, outputCount){
+    var targetText = 'x' + outputCount;
+    var altText = outputCount + 'x';
+    sendLog('ตั้งค่าจำนวน: ' + targetText, 'info');
+    var countTablist = findCountTablist(popper);
+    if (!countTablist) { sendLog('ไม่พบ count tablist (Nx/xN) ใน popper', 'error'); return false; }
+    var tabs = countTablist.querySelectorAll('button[role="tab"]');
+    for (var i = 0; i < tabs.length; i++) {
+      var txt = (tabs[i].textContent || '').trim().toLowerCase();
+      if (txt !== targetText && txt !== altText && txt !== String(outputCount)) continue;
+      var active = tabs[i].getAttribute('data-state') === 'active' || tabs[i].getAttribute('aria-selected') === 'true';
+      if (active) { sendLog('จำนวน ' + targetText + ' ถูกเลือกอยู่แล้ว', 'success'); return true; }
+      await clickRadixTab(tabs[i]); await wait(500);
+      active = tabs[i].getAttribute('data-state') === 'active' || tabs[i].getAttribute('aria-selected') === 'true';
+      if (active) { sendLog('เลือกจำนวน ' + targetText + ' สำเร็จ', 'success'); return true; }
+      sendLog('จำนวนอาจไม่เปลี่ยน (state: ' + tabs[i].getAttribute('data-state') + ')', 'warning');
+      return false;
+    }
+    sendLog('หา tab จำนวน ' + targetText + ' ไม่เจอ', 'error');
+    return false;
+  }
+  async function selectDurationTab(popper, videoDuration){
+    var targetText = videoDuration + 's';
+    sendLog('ตั้งค่า Duration: ' + targetText, 'info');
+    var durationTablist = findDurationTablist(popper);
+    if (!durationTablist) { sendLog('ไม่พบ duration tablist ใน popper', 'error'); return false; }
+    var tabs = durationTablist.querySelectorAll('button[role="tab"]');
+    for (var i = 0; i < tabs.length; i++) {
+      var txt = (tabs[i].textContent || '').trim().toLowerCase();
+      if (txt !== targetText) continue;
+      var active = tabs[i].getAttribute('data-state') === 'active' || tabs[i].getAttribute('aria-selected') === 'true';
+      if (active) { sendLog('Duration ' + targetText + ' ถูกเลือกอยู่แล้ว', 'success'); return true; }
+      await clickRadixTab(tabs[i]); await wait(500);
+      active = tabs[i].getAttribute('data-state') === 'active' || tabs[i].getAttribute('aria-selected') === 'true';
+      if (active) { sendLog('เลือก Duration ' + targetText + ' สำเร็จ', 'success'); return true; }
+      sendLog('Duration อาจไม่เปลี่ยน (state: ' + tabs[i].getAttribute('data-state') + ')', 'warning');
+      return false;
+    }
+    sendLog('หา tab Duration ' + targetText + ' ไม่เจอ', 'error');
+    return false;
   }
 
   var MODEL_MAP = {
@@ -225,7 +375,7 @@ export const CONFIGURE_POPPER_BODY = `
   }
   if (modelDropdown) {
     var currentModelText = (modelDropdown.textContent || '').trim().toLowerCase().replace('arrow_drop_down', '').replace('arrow_drop_up', '').trim();
-    var selectedModelKey = isImageMode ? (args.imageModel || 'nano_banana_pro') : (vidModel || 'veo_31_fast');
+    var selectedModelKey = isImageMode ? (imgModel || 'nano_banana_pro') : (vidModel || 'veo_31_fast');
     var selectedModel = MODEL_MAP[selectedModelKey];
     if (!selectedModel) { await closeConfigPopper(); return { success: false, error: 'unknown model key: ' + selectedModelKey, logs: logs }; }
     var currentModelKey = null, longestMatch = 0;
@@ -276,7 +426,29 @@ export const CONFIGURE_POPPER_BODY = `
     sendLog('ไม่พบปุ่ม model dropdown ใน popper', 'info');
   }
 
+  if (hSettings) {
+    var check = checkCurrentValuesFromTrigger(ratio, count);
+    popper = refetchPopper(popper);
+    if (ratio && !check.ratioOk) {
+      var ratioOk = await selectAspectRatioTab(popper, ratio);
+      if (!ratioOk) { await closeConfigPopper(); return { success: false, error: 'ตั้งค่า aspect ratio ไม่สำเร็จ: ' + ratio, logs: logs }; }
+      await wait(500);
+    }
+    if (count && !check.countOk) {
+      popper = refetchPopper(popper);
+      var countOk = await selectOutputCountTab(popper, count);
+      if (!countOk) { await closeConfigPopper(); return { success: false, error: 'ตั้งค่า output count ไม่สำเร็จ: ' + count, logs: logs }; }
+      await wait(500);
+    }
+    if (!isImageMode && duration) {
+      popper = refetchPopper(popper);
+      var durationOk = await selectDurationTab(popper, duration);
+      if (!durationOk) { await closeConfigPopper(); return { success: false, error: 'ตั้งค่า video duration ไม่สำเร็จ: ' + duration + 's', logs: logs }; }
+      await wait(500);
+    }
+  }
+
   await closeConfigPopper(); await wait(500);
-  sendLog('ตั้งค่า Popper (video) สำเร็จ!', 'success');
+  sendLog('ตั้งค่า Popper สำเร็จ!', 'success');
   return { success: true, logs: logs };
 `;
