@@ -49,6 +49,18 @@ interface FlowDownloadPayload {
   error?: string;
 }
 
+interface FlowImageDownloadPayload {
+  images?: Array<{
+    url?: string;
+    dataUrl?: string;
+    fileName?: string;
+    mimeType?: string;
+    sizeBytes?: number | null;
+  }>;
+  found?: number;
+  errors?: string[];
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 class GoogleFlowWebViewRunnerStopped extends Error {
@@ -578,20 +590,59 @@ export default function GoogleFlowWebViewRunnerHost({
           });
         }
       } else {
+        const imageCount = Math.max(1, Number(result.images ?? count) || count);
         emit({
           event: 'progress',
           runId: payload.runId,
           status: 'running',
           step,
-          stage: 'generated',
+          stage: 'downloading_result',
           productId: product.id,
           productName: product.name,
           currentRound: round,
           totalRounds: payload.settings.totalRounds,
           currentProduct: productIndex + 1,
           totalProducts: payload.products.length,
-          message: `Flow สร้างรูปภาพแล้ว (${result.images ?? 1})`,
+          message: `Flow สร้างรูปภาพแล้ว กำลังบันทึกลงคลัง (${imageCount})`,
         });
+
+        const imagePayload = (await runActionOrThrow(
+          handle,
+          'downloadImages',
+          { count: imageCount },
+          90_000
+        )) as FlowImageDownloadPayload;
+        const images = imagePayload.images ?? [];
+        if (images.length === 0) {
+          throw new Error(
+            imagePayload.errors?.[0] || 'สร้างรูปภาพแล้ว แต่ดึงไฟล์รูปจาก Google Flow ไม่สำเร็จ'
+          );
+        }
+
+        for (const [index, image] of images.entries()) {
+          if (!image.dataUrl) {
+            continue;
+          }
+          const downloaded = await saveGoogleFlowDataUrlAsset('image', image.dataUrl, image.fileName);
+          if (!downloaded?.uri) {
+            throw new Error('บันทึกรูปภาพลงมือถือไม่สำเร็จ');
+          }
+          emit({
+            event: 'asset',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'generated',
+            productId: product.id,
+            productName: product.name,
+            fileUri: downloaded.uri,
+            fileName: downloaded.fileName,
+            mimeType: downloaded.mimeType || image.mimeType || 'image/png',
+            sizeBytes: downloaded.sizeBytes || image.sizeBytes || undefined,
+            createdAt: downloaded.createdAt || Date.now(),
+            message: `ได้รูปภาพจาก Google Flow แล้ว (${index + 1}/${images.length})`,
+          });
+        }
       }
     },
     [emit, openGoogleFlowProject, runActionOrThrow, waitForStepResult]

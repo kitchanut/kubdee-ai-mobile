@@ -30,6 +30,7 @@ export type FlowActionName =
   | 'submit'
   | 'videoSnapshot'
   | 'videoResults'
+  | 'downloadImages'
   | 'downloadVideo';
 
 export interface FlowActionResult {
@@ -491,6 +492,105 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 `;
 
 // --- downloadVideo: read the ready video through the page session and return it as data URL ---
+const DOWNLOAD_IMAGES_BODY = `
+  var n = Math.max(1, Number(args.count || 1) || 1);
+  function normalizeMediaUrl(value){
+    var src = (value || '').trim();
+    if (!src) return '';
+    if (src.indexOf('http') === 0 || src.indexOf('blob:') === 0 || src.indexOf('data:image/') === 0) return src;
+    if (src.indexOf('/fx/') === 0) { try { return new URL(src, window.location.origin).href; } catch (e) { return ''; } }
+    return '';
+  }
+  function isVisible(el){
+    if (!el || !el.isConnected) return false;
+    var r = el.getBoundingClientRect();
+    var st = window.getComputedStyle(el);
+    return r.width > 40 && r.height > 40 && st.display !== 'none' && st.visibility !== 'hidden';
+  }
+  function looksGeneratedImage(img){
+    if (!img || !isVisible(img)) return false;
+    var src = normalizeMediaUrl(img.currentSrc || img.src || img.getAttribute('src') || '');
+    if (!src) return false;
+    var alt = (img.getAttribute('alt') || '').toLowerCase();
+    if (alt === 'generated image' || alt === 'รูปภาพที่สร้างขึ้น' || alt.indexOf('flow image:') === 0) return true;
+    var r = img.getBoundingClientRect();
+    if (r.width < 160 || r.height < 160) return false;
+    if (/avatar|profile|logo|icon|googleusercontent/i.test(src)) return false;
+    return !!img.closest('[data-tile-id], [data-testid="virtuoso-item-list"], main');
+  }
+  function collectImageUrls(){
+    var seen = {};
+    var urls = [];
+    var selectors = [
+      'img[alt="Generated image"]',
+      'img[alt="รูปภาพที่สร้างขึ้น"]',
+      'img[alt^="Flow Image:"]',
+      '[data-testid="virtuoso-item-list"] img',
+      '[data-tile-id] img'
+    ];
+    for (var s = 0; s < selectors.length; s++) {
+      var images = Array.prototype.slice.call(document.querySelectorAll(selectors[s]));
+      for (var i = 0; i < images.length; i++) {
+        if (!looksGeneratedImage(images[i])) continue;
+        var src = normalizeMediaUrl(images[i].currentSrc || images[i].src || images[i].getAttribute('src') || '');
+        if (!src || seen[src]) continue;
+        seen[src] = true;
+        urls.push(src);
+      }
+      if (urls.length >= n) break;
+    }
+    return urls.slice(0, n);
+  }
+  function blobToDataUrl(blob){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onloadend = function(){ resolve(String(reader.result || '')); };
+      reader.onerror = function(){ reject(new Error('อ่านรูปจาก blob ไม่สำเร็จ')); };
+      reader.readAsDataURL(blob);
+    });
+  }
+  function fileNameFor(mimeType, index){
+    var ext = 'png';
+    var mime = String(mimeType || '').toLowerCase();
+    if (mime.indexOf('jpeg') !== -1 || mime.indexOf('jpg') !== -1) ext = 'jpg';
+    else if (mime.indexOf('webp') !== -1) ext = 'webp';
+    return 'kubdee-flow-image-' + Date.now() + '-' + (index + 1) + '.' + ext;
+  }
+  async function fetchImageDataUrl(url, index){
+    if (url.indexOf('data:image/') === 0) {
+      var mime = (url.match(/^data:([^;]+)/) || [])[1] || 'image/png';
+      return { url: url, dataUrl: url, fileName: fileNameFor(mime, index), mimeType: mime, sizeBytes: null };
+    }
+    var response = await fetch(url);
+    if (!response.ok) throw new Error('fetch image HTTP ' + response.status);
+    var blob = await response.blob();
+    if (!blob || !blob.size) throw new Error('image blob ว่าง');
+    var mimeType = blob.type || response.headers.get('content-type') || 'image/png';
+    var dataUrl = await blobToDataUrl(blob);
+    if (!dataUrl || dataUrl.indexOf('data:image/') !== 0) throw new Error('แปลงรูปเป็น data URL ไม่สำเร็จ');
+    return {
+      url: url,
+      dataUrl: dataUrl,
+      fileName: fileNameFor(mimeType, index),
+      mimeType: mimeType,
+      sizeBytes: blob.size
+    };
+  }
+
+  var urls = collectImageUrls();
+  var images = [];
+  var errors = [];
+  for (var i = 0; i < urls.length; i++) {
+    try {
+      images.push(await fetchImageDataUrl(urls[i], i));
+    } catch (error) {
+      errors.push(String((error && error.message) || error));
+    }
+  }
+  return { images: images, found: urls.length, errors: errors };
+`;
+
+// --- downloadVideo: read the ready video through the page session and return it as data URL ---
 const DOWNLOAD_VIDEO_BODY = `
   var targetUrl = String(args.url || '').trim();
   var targetIndex = Number.isFinite(Number(args.index)) ? Number(args.index) : 0;
@@ -660,6 +760,7 @@ const ACTION_BODIES: Record<FlowActionName, string> = {
   submit: SUBMIT_BODY,
   videoSnapshot: VIDEO_SNAPSHOT_BODY,
   videoResults: VIDEO_RESULTS_BODY,
+  downloadImages: DOWNLOAD_IMAGES_BODY,
   downloadVideo: DOWNLOAD_VIDEO_BODY,
 };
 
