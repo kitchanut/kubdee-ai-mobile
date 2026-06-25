@@ -68,6 +68,13 @@ interface FlowImageDownloadPayload {
   errors?: string[];
 }
 
+interface PreparedMultiScenePromptResult {
+  prompts: string[];
+  scenes: Array<{ sceneNumber: number; dialogue: string }>;
+  voiceStyleInstruction: string;
+  voiceoverScript: string;
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 class GoogleFlowWebViewRunnerStopped extends Error {
@@ -126,28 +133,29 @@ function getAutoMultiSceneImageVariationInstruction(sceneNumber: number, totalSc
   const shotPlans: Record<number, string[]> = {
     2: [
       'ฉากที่ 1 ให้เป็นภาพเปิดแบบ medium shot หรือ three-quarter shot เห็นสินค้าและบริบทชัดเจน เหมาะเป็นภาพตั้งต้นของชุดวิดีโอ',
-      'ฉากที่ 2 ให้เป็น product hero หรือ close-up/detail shot เห็นสินค้า แพ็กเกจ โลโก้ รายละเอียด หรือมือที่กำลังถือ/ใช้สินค้าเด่นมากขึ้น',
+      'ฉากที่ 2 ให้เป็น product hero หรือ close-up/detail shot เห็นสินค้า แพ็กเกจ โลโก้ รายละเอียด หรือมือที่กำลังถือ/ใช้สินค้าเด่นมากขึ้น อนุญาตให้เห็นตัวละครแค่บางส่วนถ้าเหมาะ',
     ],
     3: [
-      'ฉากที่ 1 ให้เป็น hook shot เปิดเรื่อง เห็นสินค้าและปัญหาที่สินค้าแก้ได้ชัดเจน',
-      'ฉากที่ 2 ให้เป็น usage/demo shot เห็นการใช้งานจริงหรือผลลัพธ์ที่ต่างจากฉากแรก',
-      'ฉากที่ 3 ให้เป็น hero/CTA shot เห็นสินค้าเด่น ชัด พร้อมอารมณ์ปิดการขาย',
+      'ฉากที่ 1 ให้เป็นภาพเปิดแบบ medium shot หรือ three-quarter shot เห็นสินค้าและบริบทชัดเจน เหมาะเป็นภาพตั้งต้นของชุดวิดีโอ',
+      'ฉากที่ 2 ต้องเปลี่ยนเป็น action/use-case shot เช่น มุมเฉียง 45 องศา มุมข้ามไหล่ มุมโต๊ะ หรือมุมกำลังหยิบ/ใช้งานสินค้า ไม่ใช้ crop และตำแหน่งกล้องเดิม',
+      'ฉากที่ 3 ให้เป็น product hero หรือ close-up/detail shot เห็นสินค้า แพ็กเกจ โลโก้ รายละเอียด หรือมือที่กำลังถือ/ใช้สินค้าเด่นมากขึ้น อนุญาตให้เห็นตัวละครแค่บางส่วนถ้าเหมาะ',
     ],
     4: [
-      'ฉากที่ 1 ให้เป็น hook shot เปิดเรื่อง',
-      'ฉากที่ 2 ให้เป็น usage/demo shot',
-      'ฉากที่ 3 ให้เป็น benefit/proof shot เห็นรายละเอียดหรือผลลัพธ์',
-      'ฉากที่ 4 ให้เป็น hero/CTA shot ปิดท้าย',
+      'ฉากที่ 1 ให้เป็นภาพเปิดแบบ medium shot หรือ three-quarter shot เห็นสินค้าและบริบทชัดเจน เหมาะเป็นภาพตั้งต้นของชุดวิดีโอ',
+      'ฉากที่ 2 ต้องเปลี่ยนเป็นมุมกล้องใหม่อย่างชัดเจน เช่น มุมเฉียง 45 องศา หรือมุมกำลังหยิบ/ใช้งานสินค้า ไม่ใช้ crop และตำแหน่งกล้องเดิม',
+      'ฉากที่ 3 ให้เป็น close-up หรือ product focus เห็นสินค้า แพ็กเกจ โลโก้ รายละเอียด หรือมือที่กำลังถือ/ใช้สินค้าเด่นมากขึ้น อนุญาตให้เห็นตัวละครแค่บางส่วนถ้าเหมาะ',
+      'ฉากที่ 4 ให้เป็น hero/detail shot ของสินค้า เช่น มุมต่ำ มุม macro มุมวางสินค้าในฉาก หรือมุม beauty shot ที่ต่างจากทุกฉากก่อนหน้า',
     ],
     5: [
-      'ฉากที่ 1 ให้เป็น hook shot เปิดเรื่อง',
-      'ฉากที่ 2 ให้เป็น problem/usage shot',
-      'ฉากที่ 3 ให้เป็น close-up/detail shot',
-      'ฉากที่ 4 ให้เป็น benefit/proof shot',
-      'ฉากที่ 5 ให้เป็น hero/CTA shot ปิดท้าย',
+      'ฉากที่ 1 ให้เป็นภาพเปิดแบบ medium shot หรือ three-quarter shot เห็นสินค้าและบริบทชัดเจน เหมาะเป็นภาพตั้งต้นของชุดวิดีโอ',
+      'ฉากที่ 2 ต้องเปลี่ยนเป็นมุมกล้องใหม่อย่างชัดเจน เช่น มุมเฉียง 45 องศา หรือมุมกำลังหยิบ/ใช้งานสินค้า ไม่ใช้ crop และตำแหน่งกล้องเดิม',
+      'ฉากที่ 3 ให้เป็น close-up หรือ product focus เห็นสินค้า แพ็กเกจ โลโก้ รายละเอียด หรือมือที่กำลังถือ/ใช้สินค้าเด่นมากขึ้น อนุญาตให้เห็นตัวละครแค่บางส่วนถ้าเหมาะ',
+      'ฉากที่ 4 ให้เป็น action/use-case shot เช่น มุมข้ามไหล่ มุมโต๊ะ มุมด้านข้าง หรือมุมที่แสดงสถานการณ์ใช้งานจริง โดยสินค้าเป็นจุดสนใจหลัก',
+      'ฉากที่ 5 ให้เป็น hero/detail shot ของสินค้า เช่น มุมต่ำ มุม macro มุมวางสินค้าในฉาก หรือมุม beauty shot ที่ต่างจากทุกฉากก่อนหน้า',
     ],
   };
-  return (shotPlans[clampedTotal] ?? shotPlans[3])[clampedScene - 1] ?? '';
+  const shot = (shotPlans[clampedTotal] ?? shotPlans[3])[clampedScene - 1] ?? '';
+  return `วิดีโอชุดนี้มีทั้งหมด ${clampedTotal} ฉาก ${shot} ต้องมี shot variety ระหว่างฉาก: เปลี่ยนระยะภาพ มุมกล้อง ตำแหน่งสินค้า หรือจุดโฟกัสให้แตกต่างจากรูปก่อนหน้าอย่างเห็นได้ชัด ห้ามคัดลอก composition เดิมซ้ำ ถ้าเป็นมุม zoom หรือ focus สินค้า ไม่ต้องบังคับให้กล้องถอยออกมาเห็นตัวละครเต็มตัว ถ้าในภาพมีใบหน้าคน ต้องเห็นใบหน้าชัดเจน เปิดโล่ง ไม่ถูกสินค้า มือ ผม หมวก หน้ากาก แว่น เงา ขอบภาพ หรือวัตถุใดๆ บดบัง และไม่เบลอหรือบิดเบี้ยว ถ้าฉากตั้งใจเป็น product-only, hands-only, close-up รายละเอียดสินค้า หรือมุมที่ไม่เห็นหน้า ก็ห้ามถอยกล้องหรือเปลี่ยน framing เพื่อ reveal หน้า ให้ไม่เห็นหน้าไปเลย`;
 }
 
 function dialogueForScene(product: GoogleFlowRunnerProduct, sceneNumber: number): string {
@@ -194,6 +202,221 @@ function multiSceneVideoPrompt(product: GoogleFlowRunnerProduct, basePrompt: str
     .join('\n');
 }
 
+function dataUrlToAiImage(dataUrl: string): { base64: string; mimeType: string } | null {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) {
+    return null;
+  }
+  return { mimeType: match[1] || 'image/jpeg', base64: match[2] || '' };
+}
+
+function cleanAiJsonText(text: string): string {
+  return text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/g, '')
+    .trim();
+}
+
+function normalizeDialogueText(text: string): string {
+  return text
+    .replace(/[!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSceneDialoguePrompt(product: GoogleFlowRunnerProduct, sceneCount: number, voiceover: boolean): string {
+  const video = product.settings.video;
+  const customDialogue = (() => {
+    if (video.dialogueMode !== 'custom') return '';
+    const list = (video.dialogueList ?? []).map((line) => line.trim()).filter(Boolean);
+    if (list.length > 0) {
+      return list.map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`).join('\n');
+    }
+    if (video.dialogue.trim()) {
+      return video.dialogue
+        .split('|')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`)
+        .join('\n');
+    }
+    return '';
+  })();
+
+  return `
+คุณคือผู้กำกับวิดีโอโฆษณาสินค้าแบบสั้นบนมือถือ
+
+สินค้า:
+- ชื่อ: ${product.name || 'สินค้า'}
+- รายละเอียด: ${product.description || ''}
+- Caption: ${product.caption || ''}
+- Hashtags: ${product.hashtags || ''}
+- CTA: ${product.cta || ''}
+
+มีรูปแนบ ${sceneCount} รูป เรียงตามฉากที่ 1 ถึงฉากที่ ${sceneCount}
+ให้วิเคราะห์รูปแต่ละฉาก แล้วเขียนบทพูดภาษาไทยให้สัมพันธ์กับภาพนั้นจริง ๆ
+
+การตั้งค่า:
+- จำนวนฉาก: ${sceneCount}
+- โหมด: ${voiceover ? 'เสียงพากษ์รวมภายหลัง วิดีโอแต่ละฉากต้องเป็นภาพล้วน' : 'หลายมุมพร้อมเสียงพูดในวิดีโอแต่ละฉาก'}
+- สไตล์บทพูด: ${video.scriptStyleCustom || video.scriptStyle || 'รีวิวเป็นกันเอง'}
+- เสียง: ${video.voiceCharacterCustom || video.voiceCharacter || 'auto'}
+- โหมดบทพูด: ${video.dialogueMode}
+${customDialogue ? `\nบทพูดที่ผู้ใช้กำหนด:\n${customDialogue}` : ''}
+
+กฎสำคัญ:
+- ต้องมี scenes ครบ ${sceneCount} ฉากเท่านั้น
+- dialogue แต่ละฉากต้องยาวพอพูดได้ประมาณ 6.5 วินาที ประมาณ 65 ถึง 90 ตัวอักษรไทย
+- ให้ต่อเนื่องแบบ hook, demo/benefit/proof, CTA ตามจำนวนฉาก
+- ถ้าโหมดเสียงพากษ์ ให้เขียน voiceoverScript รวมทั้งคลิป ยาวพอสำหรับวิดีโอรวม และ dialogue รายฉากยังต้องมีไว้เป็นแผนเนื้อหา
+- ห้ามใส่ emoji, hashtag, subtitle, timestamp, หมายเลขฉาก หรือคำอธิบายใน dialogue
+- ห้ามใช้อักขระพิเศษ ตัวเลขดิบ หรือสัญลักษณ์ที่ TTS อ่านยาก ให้เขียนเป็นคำไทยธรรมชาติ
+- ถ้าภาพเป็นสินค้าอย่างเดียวหรือมืออย่างเดียว ห้ามแต่งบทเหมือนมีคนพูดอยู่ในภาพ ให้เป็นเสียงบรรยายขายสินค้าแทน
+
+ตอบกลับเป็น JSON เท่านั้น:
+{
+  "voiceStyleInstruction": "English voice style instruction here",
+  "voiceoverScript": "${voiceover ? 'บทพากษ์รวมทั้งคลิป' : ''}",
+  "scenes": [
+    { "sceneNumber": 1, "dialogue": "บทพูดภาษาไทยของฉากนี้" }
+  ]
+}
+`.trim();
+}
+
+function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMultiScenePromptResult, 'scenes' | 'voiceStyleInstruction' | 'voiceoverScript'> {
+  const parsed = JSON.parse(cleanAiJsonText(text)) as {
+    scenes?: Array<{ sceneNumber?: number; dialogue?: string; script?: string; text?: string }>;
+    voiceStyleInstruction?: string;
+    voiceoverScript?: string;
+  };
+  const sourceScenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
+  const scenes = Array.from({ length: sceneCount }, (_, index) => {
+    const source = sourceScenes[index] ?? {};
+    return {
+      sceneNumber: Number(source.sceneNumber || index + 1),
+      dialogue: normalizeDialogueText(String(source.dialogue || source.script || source.text || '')),
+    };
+  });
+  return {
+    scenes,
+    voiceStyleInstruction: String(parsed.voiceStyleInstruction || '').trim(),
+    voiceoverScript: normalizeDialogueText(String(parsed.voiceoverScript || '')),
+  };
+}
+
+function buildDesktopLikeVideoPrompts({
+  product,
+  scenes,
+  voiceStyleInstruction,
+  voiceover,
+}: {
+  product: GoogleFlowRunnerProduct;
+  scenes: Array<{ sceneNumber: number; dialogue: string }>;
+  voiceStyleInstruction: string;
+  voiceover: boolean;
+}): string[] {
+  const video = product.settings.video;
+  const style = video.presetStyleCustom || video.presetStyle || 'natural product review footage with clear product-first composition';
+  const cameraMotion = video.cameraMotionCustom || video.cameraMotion;
+
+  return scenes.map((scene) => {
+    if (voiceover) {
+      return [
+        `Create vertical product footage for scene ${scene.sceneNumber} using the attached reference image as the exact visual source.`,
+        'Strictly preserve the scene, background, location, lighting direction, framing, visible product, visible character or hands from the reference image. Do not create a new scene, new location, new person, or new product.',
+        product.name ? `Keep the product "${product.name}" clearly visible in the main frame throughout the clip.` : 'Keep the product clearly visible in the main frame throughout the clip.',
+        'Use only the character, hands, pose direction, and product interaction implied by the reference image. If only hands are visible, show only hands. If the shot is product-only, keep it product-only.',
+        'Face rule: if a face is visible in the reference image, keep the full face clear, sharp, natural, and unobstructed. If the reference image does not show a face, do not reveal a new face.',
+        `Visual style: ${style}.`,
+        cameraMotion ? `Camera motion: ${cameraMotion}. Keep movement subtle and keep the product visible.` : '',
+        'Audio rule: no speech, narration, dialogue, lip sync, subtitles, or on-screen text. External voiceover will be added later.',
+        'Output must be full screen with no black bars.',
+        video.systemPrompt ? `Additional user instructions: ${video.systemPrompt}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+
+    return [
+      'สร้างวิดีโอโฆษณาสินค้าภาษาไทย ต้องใช้ฉากและตัวละครหรือมือจากภาพที่แนบมาเท่านั้น ห้ามสร้างฉากใหม่ ห้ามเปลี่ยนสถานที่ตลอดทั้งวิดีโอ;',
+      'ฉาก: ใช้ฉากจากภาพที่แนบมาเท่านั้น พื้นหลังและสถานที่ต้องเหมือนกับในภาพทุกประการ;',
+      'ตัวละคร: ใช้ตัวละครหรือมือจากภาพที่แนบมา คงลักษณะเดิมทุกประการตลอดทั้งวิดีโอ ถ้าในภาพเห็นแค่มือก็ให้เห็นแค่มือ;',
+      'ใบหน้าคน: ถ้าในภาพ reference เห็นใบหน้า ต้องรักษาให้ใบหน้าชัดเจน ไม่ถูกสินค้า มือ ผม หมวก หน้ากาก แว่น เงา ขอบภาพ หรือวัตถุใดๆ บดบัง และไม่เบลอ ถ้าภาพ reference ไม่เห็นหน้า ห้าม reveal หน้าใหม่;',
+      'ตำแหน่งสินค้าและการโต้ตอบต้องเป็นไปตามภาพที่แนบมา;',
+      `สไตล์วิดีโอ: ${style};`,
+      cameraMotion ? `การเคลื่อนกล้อง: ${cameraMotion};` : '',
+      video.voiceCharacter === 'none' || video.dialogueMode === 'none'
+        ? 'บทพูด: ไม่มีบทพูด ห้ามมีเสียงพูดใดๆ ในวิดีโอ;'
+        : [
+            voiceStyleInstruction ? `สไตล์เสียง: ${voiceStyleInstruction};` : '',
+            video.voiceCharacterCustom ? `เสียงพากย์: ${video.voiceCharacterCustom};` : '',
+            `สไตล์บทพูด: ${video.scriptStyleCustom || video.scriptStyle || 'รีวิวเป็นกันเอง'};`,
+            scene.dialogue ? `บทพูด: ${scene.dialogue};` : '',
+          ].filter(Boolean).join('\n'),
+      video.musicSfxMode === 'none' ? 'เสียงดนตรีและเอฟเฟค: ห้ามมีเสียงดนตรีหรือเสียงเอฟเฟคใดๆ ทั้งสิ้น;' : '',
+      video.musicSfxMode === 'custom' && video.musicSfxCustom ? `เสียงดนตรีและเอฟเฟค: ${video.musicSfxCustom};` : '',
+      'ความต่อเนื่อง: ห้ามเปลี่ยนฉาก ห้ามเปลี่ยนสถานที่ ห้ามเปลี่ยนพื้นหลัง วิดีโอทั้งหมดต้องอยู่ในที่เดียวตั้งแต่ต้นจนจบ;',
+      'ข้อห้าม: ห้ามมี subtitle ห้ามมีข้อความบนจอ ทุกบทพูดต้องเป็นเสียงเท่านั้น ห้ามมีขอบดำ วิดีโอต้องเต็มจอ;',
+      video.systemPrompt ? `คำสั่งเพิ่มเติม: ${video.systemPrompt}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  });
+}
+
+async function prepareAutoMultiScenePrompts({
+  product,
+  sceneCount,
+  sceneImageDataUrls,
+  voiceover,
+}: {
+  product: GoogleFlowRunnerProduct;
+  sceneCount: number;
+  sceneImageDataUrls: string[];
+  voiceover: boolean;
+}): Promise<PreparedMultiScenePromptResult> {
+  const tokens = await getStoredAuthTokens();
+  if (!tokens?.accessToken) {
+    throw new Error('กรุณาเข้าสู่ระบบก่อนให้ AI คิดบทพูดหลายฉาก');
+  }
+
+  const images = sceneImageDataUrls.map(dataUrlToAiImage).filter((image): image is { base64: string; mimeType: string } => !!image?.base64);
+  if (images.length < sceneCount) {
+    throw new Error(`รูปฉากไม่ครบสำหรับให้ AI วิเคราะห์ (${images.length}/${sceneCount})`);
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/v1/ai/generate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tokens.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+      prompt: buildSceneDialoguePrompt(product, sceneCount, voiceover),
+      images,
+    }),
+  });
+  const data = (await response.json().catch(() => ({}))) as { text?: string; message?: string; error?: string };
+  if (!response.ok) {
+    throw new Error(data.message || data.error || 'AI คิดบทพูดหลายฉากไม่สำเร็จ');
+  }
+  if (!data.text?.trim()) {
+    throw new Error('AI ไม่ส่งบทพูดหลายฉากกลับมา');
+  }
+
+  const prepared = parsePreparedScenes(data.text, sceneCount);
+  const prompts = buildDesktopLikeVideoPrompts({
+    product,
+    scenes: prepared.scenes,
+    voiceStyleInstruction: prepared.voiceStyleInstruction,
+    voiceover,
+  });
+  return { ...prepared, prompts };
+}
+
 function resolveGeminiTtsVoice(voiceCharacter?: string): string {
   const directVoice = voiceCharacter?.startsWith('tts_') ? voiceCharacter.replace(/^tts_/, '') : '';
   if (directVoice) {
@@ -220,16 +443,20 @@ async function generateVoiceoverAudioDataUrl({
   durationSeconds,
   product,
   sceneCount,
+  voiceStyleInstruction,
+  voiceoverScript,
 }: {
   durationSeconds: number;
   product: GoogleFlowRunnerProduct;
   sceneCount: number;
+  voiceStyleInstruction?: string;
+  voiceoverScript?: string;
 }): Promise<string | null> {
-  const voiceoverScript = Array.from({ length: sceneCount }, (_, index) => dialogueForScene(product, index + 1))
+  const script = voiceoverScript?.trim() || Array.from({ length: sceneCount }, (_, index) => dialogueForScene(product, index + 1))
     .map((line) => line.trim())
     .filter(Boolean)
     .join(' ');
-  if (!voiceoverScript) {
+  if (!script) {
     return null;
   }
   const tokens = await getStoredAuthTokens();
@@ -243,9 +470,10 @@ async function generateVoiceoverAudioDataUrl({
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      voiceoverScript,
+      voiceoverScript: script,
       sceneCount,
       durationSeconds,
+      voiceStyleInstruction,
       voice: resolveGeminiTtsVoice(product.settings.video.voiceCharacter),
     }),
   });
@@ -581,6 +809,22 @@ export default function GoogleFlowWebViewRunnerHost({
         const hasPriorImageStep = payload.enabledSteps.includes('image');
         const neededSceneImages = useSameAngle ? (hasPriorImageStep ? 0 : 1) : hasPriorImageStep ? sceneCount - 1 : sceneCount;
         const firstGeneratedSceneNumber = !useSameAngle && hasPriorImageStep ? 2 : 1;
+        const sceneImageDataUrls: string[] = [];
+
+        if (hasPriorImageStep) {
+          await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+          const priorImagePayload = (await runActionOrThrow(
+            handle,
+            'downloadImages',
+            { count: 1 },
+            90_000
+          )) as FlowImageDownloadPayload;
+          const priorImageDataUrl = priorImagePayload.images?.find((image) => image.dataUrl)?.dataUrl;
+          if (priorImageDataUrl) {
+            sceneImageDataUrls.push(priorImageDataUrl);
+          }
+        }
+
         for (let sceneIndex = 0; sceneIndex < neededSceneImages; sceneIndex += 1) {
           checkStop();
           const sceneNumber = firstGeneratedSceneNumber + sceneIndex;
@@ -658,6 +902,7 @@ export default function GoogleFlowWebViewRunnerHost({
           )) as FlowImageDownloadPayload;
           const firstImage = imagePayload.images?.find((image) => image.dataUrl);
           if (firstImage?.dataUrl) {
+            sceneImageDataUrls.push(firstImage.dataUrl);
             const downloaded = await saveGoogleFlowDataUrlAsset('image', firstImage.dataUrl, firstImage.fileName);
             if (downloaded?.uri) {
               emit({
@@ -677,6 +922,49 @@ export default function GoogleFlowWebViewRunnerHost({
               });
             }
           }
+        }
+
+        const promptImageDataUrls = useSameAngle
+          ? Array.from({ length: sceneCount }, () => sceneImageDataUrls[0]).filter(Boolean)
+          : sceneImageDataUrls.slice(0, sceneCount);
+
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'multi_scene_prepare_prompts',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: useVoiceover ? `เตรียมส่งรูป ${sceneCount} ฉากให้ AI คิดบทพากษ์รวม` : `เตรียมส่งรูป ${sceneCount} ฉากให้ AI คิดบทพูด`,
+        });
+
+        const promptResult = await prepareAutoMultiScenePrompts({
+          product,
+          sceneCount,
+          sceneImageDataUrls: promptImageDataUrls,
+          voiceover: useVoiceover,
+        });
+
+        for (const scene of promptResult.scenes) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'multi_scene_dialogue_ready',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `บทฉาก ${scene.sceneNumber}: ${scene.dialogue.slice(0, 80)}`,
+          });
         }
 
         const sceneVideoUris: string[] = [];
@@ -736,7 +1024,7 @@ export default function GoogleFlowWebViewRunnerHost({
           await runActionOrThrow(
             handle,
             'fillPrompt',
-            { prompt: multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover) },
+            { prompt: promptResult.prompts[sceneIndex] || multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover) },
             45_000
           );
           await runActionOrThrow(handle, 'submit', {}, 45_000);
@@ -808,6 +1096,8 @@ export default function GoogleFlowWebViewRunnerHost({
             durationSeconds: Math.max(1, Math.round(sceneCount * Math.max(1, videoDuration - 0.5) - 1)),
             product,
             sceneCount,
+            voiceStyleInstruction: promptResult.voiceStyleInstruction,
+            voiceoverScript: promptResult.voiceoverScript,
           });
         }
 
