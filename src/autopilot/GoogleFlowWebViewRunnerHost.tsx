@@ -95,6 +95,99 @@ function videoDurationForProduct(product: GoogleFlowRunnerProduct, settings: Aut
   return model === 'omni_flash' ? configured : Math.min(configured, 8);
 }
 
+function clampAutoSceneCount(value: string | number | null | undefined): number {
+  const parsed = Number.parseInt(String(value ?? '1'), 10);
+  return Number.isFinite(parsed) ? Math.min(5, Math.max(1, parsed)) : 1;
+}
+
+function isAutoMultiSceneVideo(product: GoogleFlowRunnerProduct): boolean {
+  const video = product.settings.video;
+  return (video.videoMethod || 'extend') === 'multi' && clampAutoSceneCount(video.sceneCount) > 1;
+}
+
+function autoMultiSceneMode(product: GoogleFlowRunnerProduct): string {
+  return product.settings.video.multiSceneAngleMode || 'same_angle';
+}
+
+const FACE_VISIBILITY_IMAGE_INSTRUCTION =
+  'ถ้าเห็นใบหน้าคนต้องเห็นชัดเจนเต็มหน้าและไม่ถูกอะไรบัง ถ้าฉากนี้ไม่ควรเห็นหน้าก็ไม่ต้อง reveal หน้าเลย ห้ามใช้มุมที่เห็นหน้าครึ่ง ๆ กลาง ๆ หรือมีวัตถุบังหน้า';
+const SAME_ANGLE_PRESENTER_IMAGE_INSTRUCTION =
+  'สำหรับวิดีโอหลายฉากแบบมุมเดียว ให้จัดตัวละครหันหน้ามองกล้องโดยตรง สีหน้าเป็นธรรมชาติ ท่าทางพร้อมพูดหรือพรีเซนต์สินค้า มือถือหรือใช้งานสินค้าในตำแหน่งที่เห็นชัด เหมาะสำหรับนำรูปเดียวไปสร้างวิดีโอหลายฉากที่บทพูดเปลี่ยนไปเรื่อย ๆ';
+
+function getAutoMultiSceneImageVariationInstruction(sceneNumber: number, totalScenes: number): string {
+  const clampedTotal = Math.min(5, Math.max(2, totalScenes));
+  const clampedScene = Math.min(Math.max(sceneNumber, 1), clampedTotal);
+  const shotPlans: Record<number, string[]> = {
+    2: [
+      'ฉากที่ 1 ให้เป็นภาพเปิดแบบ medium shot หรือ three-quarter shot เห็นสินค้าและบริบทชัดเจน เหมาะเป็นภาพตั้งต้นของชุดวิดีโอ',
+      'ฉากที่ 2 ให้เป็น product hero หรือ close-up/detail shot เห็นสินค้า แพ็กเกจ โลโก้ รายละเอียด หรือมือที่กำลังถือ/ใช้สินค้าเด่นมากขึ้น',
+    ],
+    3: [
+      'ฉากที่ 1 ให้เป็น hook shot เปิดเรื่อง เห็นสินค้าและปัญหาที่สินค้าแก้ได้ชัดเจน',
+      'ฉากที่ 2 ให้เป็น usage/demo shot เห็นการใช้งานจริงหรือผลลัพธ์ที่ต่างจากฉากแรก',
+      'ฉากที่ 3 ให้เป็น hero/CTA shot เห็นสินค้าเด่น ชัด พร้อมอารมณ์ปิดการขาย',
+    ],
+    4: [
+      'ฉากที่ 1 ให้เป็น hook shot เปิดเรื่อง',
+      'ฉากที่ 2 ให้เป็น usage/demo shot',
+      'ฉากที่ 3 ให้เป็น benefit/proof shot เห็นรายละเอียดหรือผลลัพธ์',
+      'ฉากที่ 4 ให้เป็น hero/CTA shot ปิดท้าย',
+    ],
+    5: [
+      'ฉากที่ 1 ให้เป็น hook shot เปิดเรื่อง',
+      'ฉากที่ 2 ให้เป็น problem/usage shot',
+      'ฉากที่ 3 ให้เป็น close-up/detail shot',
+      'ฉากที่ 4 ให้เป็น benefit/proof shot',
+      'ฉากที่ 5 ให้เป็น hero/CTA shot ปิดท้าย',
+    ],
+  };
+  return (shotPlans[clampedTotal] ?? shotPlans[3])[clampedScene - 1] ?? '';
+}
+
+function dialogueForScene(product: GoogleFlowRunnerProduct, sceneNumber: number): string {
+  const video = product.settings.video;
+  if (video.dialogueMode === 'none') {
+    return 'ไม่มีบทพูด ให้เป็นวิดีโอเงียบหรือมีเสียงบรรยากาศเท่านั้น';
+  }
+  if (video.dialogueMode === 'custom') {
+    const lines = (video.dialogueList ?? []).map((line) => line.trim()).filter(Boolean);
+    if (lines.length > 0) {
+      return lines[(sceneNumber - 1) % lines.length];
+    }
+    if (video.dialogue.trim()) {
+      return video.dialogue.trim();
+    }
+  }
+  return product.caption?.trim() || 'พูดแนะนำจุดเด่นสินค้าแบบกระชับ เป็นภาษาไทย ฟังเป็นธรรมชาติ';
+}
+
+function multiSceneImagePrompt(product: GoogleFlowRunnerProduct, sceneNumber: number, totalScenes: number, sameAngle: boolean): string {
+  return [
+    `สร้างภาพฉากที่ ${sceneNumber}/${totalScenes} สำหรับวิดีโอหลายฉากของสินค้า "${product.name || 'สินค้า'}"`,
+    getAutoMultiSceneImageVariationInstruction(sceneNumber, totalScenes),
+    sameAngle ? SAME_ANGLE_PRESENTER_IMAGE_INSTRUCTION : 'คงตัวละครเดิม ใบหน้าเดิม สินค้าเดิม แพ็กเกจเดิม และแบรนด์เดิม แต่เปลี่ยนมุมกล้อง ระยะภาพ การกระทำ หรือบริบทให้ต่างจากฉากก่อนหน้าอย่างชัดเจน',
+    FACE_VISIBILITY_IMAGE_INSTRUCTION,
+    'ห้ามใส่ subtitle หรือข้อความบนภาพเองถ้าไม่ได้ตั้งค่าไว้',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function multiSceneVideoPrompt(product: GoogleFlowRunnerProduct, basePrompt: string, sceneNumber: number, totalScenes: number, voiceover: boolean): string {
+  const dialogue = dialogueForScene(product, sceneNumber);
+  return [
+    basePrompt,
+    `สร้างวิดีโอฉากที่ ${sceneNumber}/${totalScenes} จากรูป reference นี้ โดยรักษาสินค้า ตัวละคร และแบรนด์ให้เหมือนภาพอ้างอิง`,
+    getAutoMultiSceneImageVariationInstruction(sceneNumber, totalScenes),
+    voiceover
+      ? 'โหมดเสียงพากษ์: วิดีโอนี้ต้องเป็นภาพล้วน ไม่มีคนพูด ไม่มี lip sync ไม่มี subtitle ไม่มีข้อความบนจอ และไม่มีเสียงพูด เพราะเสียงพากษ์จะถูกประกอบภายหลัง'
+      : `บทพูดภาษาไทยสำหรับฉากนี้: ${dialogue}`,
+    'วิดีโอต้องเต็มจอ ไม่มีขอบดำ ไม่มี subtitle และเหมาะกับคลิปขายสินค้าสั้นบนมือถือ',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 function promptForStep(product: GoogleFlowRunnerProduct, step: AutoPilotStepType): string {
   const prompt = product.prompts?.[step]?.trim();
   if (prompt) return prompt;
@@ -370,6 +463,273 @@ export default function GoogleFlowWebViewRunnerHost({
       const prompt = promptForStep(product, step);
       if (!prompt.trim()) {
         throw new Error(`prompt ${label} ว่าง`);
+      }
+
+      if (step === 'video' && isAutoMultiSceneVideo(product)) {
+        const sceneCount = clampAutoSceneCount(product.settings.video.sceneCount);
+        const sceneMode = autoMultiSceneMode(product);
+        const useSameAngle = sceneMode === 'same_angle';
+        const useVoiceover = sceneMode === 'voiceover';
+        const imageModel = imageModelForProduct(product, payload.settings);
+        const videoModel = videoModelForProduct(product, payload.settings);
+        const videoDuration = videoDurationForProduct(product, payload.settings);
+
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'multi_scene_start',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `เริ่มวิดีโอหลายฉาก ${sceneCount} ฉาก (${useSameAngle ? 'มุมเดียว' : useVoiceover ? 'เสียงพากษ์' : 'หลายมุม'})`,
+        });
+
+        if (useVoiceover) {
+          emit({
+            runId: payload.runId,
+            status: 'running',
+            message: 'หมายเหตุ: mobile ยังไม่มีตัวรวมวิดีโอ/เสียงพากษ์แบบ desktop จึงสร้างเป็นคลิปฉากแยกแบบ visual-only ก่อน',
+          });
+        }
+
+        await openGoogleFlowProject({
+          handle,
+          payload,
+          product,
+          productIndex,
+          round,
+          step,
+        });
+
+        const hasPriorImageStep = payload.enabledSteps.includes('image');
+        const neededSceneImages = useSameAngle ? (hasPriorImageStep ? 0 : 1) : hasPriorImageStep ? sceneCount - 1 : sceneCount;
+        const firstGeneratedSceneNumber = !useSameAngle && hasPriorImageStep ? 2 : 1;
+        for (let sceneIndex = 0; sceneIndex < neededSceneImages; sceneIndex += 1) {
+          checkStop();
+          const sceneNumber = firstGeneratedSceneNumber + sceneIndex;
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step: 'image',
+            stage: 'multi_scene_image',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `หลายฉาก: สร้างรูปฉาก ${sceneNumber}/${sceneCount}`,
+          });
+
+          const config = (await runActionOrThrow(
+            handle,
+            'configurePopper',
+            {
+              targetMode: 'image',
+              aspectRatio: product.settings.image.aspectRatio,
+              outputCount: 1,
+              imageModel,
+            },
+            70_000
+          )) as { success?: boolean; error?: string };
+          if (config.success === false) {
+            throw new Error(`ตั้งค่า Flow รูปฉากไม่ครบ: ${config.error ?? 'unknown'}`);
+          }
+
+          if (sceneNumber > 1 || hasPriorImageStep) {
+            await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+          } else if (product.preview) {
+            const dataUrl = await loadImageReferenceDataUrl(product.preview);
+            await runActionOrThrow(
+              handle,
+              'uploadReferenceImage',
+              {
+                dataUrl: dataUrl ?? undefined,
+                fileName: getReferenceFileName(product),
+                imageUrl: dataUrl ? undefined : product.preview,
+              },
+              120_000
+            );
+          }
+
+          await runActionOrThrow(
+            handle,
+            'fillPrompt',
+            {
+              prompt: multiSceneImagePrompt(product, sceneNumber, sceneCount, useSameAngle),
+            },
+            45_000
+          );
+          await runActionOrThrow(handle, 'submit', {}, 45_000);
+          const imageResult = await waitForStepResult({
+            baselineVideoUrls: [],
+            count: 1,
+            handle,
+            payload,
+            product,
+            productIndex,
+            round,
+            step: 'image',
+          });
+          const imageCount = Math.max(1, Number(imageResult.images ?? 1) || 1);
+          const imagePayload = (await runActionOrThrow(
+            handle,
+            'downloadImages',
+            { count: imageCount },
+            90_000
+          )) as FlowImageDownloadPayload;
+          const firstImage = imagePayload.images?.find((image) => image.dataUrl);
+          if (firstImage?.dataUrl) {
+            const downloaded = await saveGoogleFlowDataUrlAsset('image', firstImage.dataUrl, firstImage.fileName);
+            if (downloaded?.uri) {
+              emit({
+                event: 'asset',
+                runId: payload.runId,
+                status: 'running',
+                step: 'image',
+                stage: 'generated',
+                productId: product.id,
+                productName: product.name,
+                fileUri: downloaded.uri,
+                fileName: downloaded.fileName,
+                mimeType: downloaded.mimeType || firstImage.mimeType || 'image/png',
+                sizeBytes: downloaded.sizeBytes || firstImage.sizeBytes || undefined,
+                createdAt: downloaded.createdAt || Date.now(),
+                message: `ได้รูปฉาก ${sceneNumber}/${sceneCount} แล้ว`,
+              });
+            }
+          }
+        }
+
+        for (let sceneIndex = 0; sceneIndex < sceneCount; sceneIndex += 1) {
+          checkStop();
+          const sceneNumber = sceneIndex + 1;
+          const referenceOffset = useSameAngle ? 0 : Math.max(0, sceneCount - sceneNumber);
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'multi_scene_video',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `หลายฉาก: สร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
+          });
+
+          const config = (await runActionOrThrow(
+            handle,
+            'configurePopper',
+            {
+              targetMode: 'video',
+              aspectRatio: product.settings.video.aspectRatio,
+              outputCount: 1,
+              videoDuration,
+              videoModel,
+            },
+            70_000
+          )) as { success?: boolean; error?: string };
+          if (config.success === false) {
+            throw new Error(`ตั้งค่า Flow วิดีโอฉากไม่ครบ: ${config.error ?? 'unknown'}`);
+          }
+
+          if (neededSceneImages > 0 || payload.enabledSteps.includes('image')) {
+            await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: referenceOffset }, 45_000);
+          } else if (product.preview) {
+            const dataUrl = await loadImageReferenceDataUrl(product.preview);
+            await runActionOrThrow(
+              handle,
+              'uploadReferenceImage',
+              {
+                dataUrl: dataUrl ?? undefined,
+                fileName: getReferenceFileName(product),
+                imageUrl: dataUrl ? undefined : product.preview,
+              },
+              120_000
+            );
+          }
+
+          const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
+          const baselineVideoUrls = snapshot.videoUrls ?? [];
+          await runActionOrThrow(
+            handle,
+            'fillPrompt',
+            { prompt: multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover) },
+            45_000
+          );
+          await runActionOrThrow(handle, 'submit', {}, 45_000);
+          const videoResult = await waitForStepResult({
+            baselineVideoUrls,
+            count: 1,
+            handle,
+            payload,
+            product,
+            productIndex,
+            round,
+            step,
+          });
+
+          const [url] = videoResult.videos ?? [];
+          if (!url) {
+            throw new Error(`สร้างวิดีโอฉาก ${sceneNumber} แล้วแต่ไม่พบ URL สำหรับดาวน์โหลด`);
+          }
+          const downloadStartedAt = Date.now();
+          const downloadPayload = (await runActionOrThrow(
+            handle,
+            'downloadVideo',
+            { url, index: 0 },
+            120_000
+          )) as FlowDownloadPayload;
+          let downloaded = downloadPayload.dataUrl
+            ? await saveGoogleFlowDataUrlAsset('video', downloadPayload.dataUrl, downloadPayload.fileName)
+            : null;
+          if (!downloaded?.uri) {
+            downloaded = await waitForGoogleFlowDownload('video', downloadStartedAt, 15_000);
+          }
+          if (!downloaded?.uri) {
+            throw new Error(`ดาวน์โหลดวิดีโอฉาก ${sceneNumber} ลงมือถือไม่สำเร็จ`);
+          }
+          emit({
+            event: 'asset',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'generated',
+            productId: product.id,
+            productName: product.name,
+            fileUri: downloaded.uri,
+            fileName: downloaded.fileName,
+            mimeType: downloaded.mimeType || 'video/mp4',
+            sizeBytes: downloaded.sizeBytes,
+            createdAt: downloaded.createdAt || Date.now(),
+            message: `ได้วิดีโอฉาก ${sceneNumber}/${sceneCount} แล้ว`,
+          });
+        }
+
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'multi_scene_done',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `วิดีโอหลายฉากสร้างครบ ${sceneCount} ฉากแล้ว`,
+        });
+        return;
       }
 
       emit({

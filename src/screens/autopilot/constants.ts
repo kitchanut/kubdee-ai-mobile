@@ -49,6 +49,7 @@ export const IMAGE_SECTION_KEYS = {
 // วิดีโอ — แยกหมวดละเอียดให้ตรงปุ่ม "นำไปใช้ทั้งหมด" รายแถวแบบ extension
 export const VIDEO_SECTION_KEYS = {
   basic: ['videoModel', 'videoDuration', 'aspectRatio', 'outputCount', 'sceneCount'],
+  sceneCount: ['videoMethod', 'multiSceneAngleMode', 'sceneCount'],
   character: ['characterMode'],
   prompt: ['promptMode', 'customPrompt'],
   style: ['presetStyle', 'presetStyleCustom'],

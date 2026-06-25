@@ -3,7 +3,12 @@ import { Ban, Bot, Plus, Settings2, SlidersHorizontal, Sparkles, Star, X } from 
 
 import Text from '@/components/ui/KubdeeText';
 import { Input } from '@/components/ui/input';
-import { FLOW_VIDEO_MODELS, VIDEO_DURATION_OPTIONS } from '@/autopilot/defaults';
+import {
+  FLOW_VIDEO_MODELS,
+  VIDEO_DURATION_OPTIONS,
+  VIDEO_METHOD_OPTIONS,
+  VIDEO_MULTI_SCENE_ANGLE_OPTIONS,
+} from '@/autopilot/defaults';
 import type { AutoPilotPromptMode, AutoPilotVideoSettings } from '@/autopilot/types';
 import {
   ASPECT_RATIO_OPTIONS,
@@ -31,6 +36,14 @@ import { UserPresetGridLite } from './UserPresetGridLite';
 const COUNT_OPTIONS = OUTPUT_COUNT_VALUES.map((count) => ({ label: count, value: count }));
 const SCENE_OPTIONS = SCENE_COUNT_VALUES.map((count) => ({ label: count, value: count }));
 const VIDEO_MODEL_OPTIONS = FLOW_VIDEO_MODELS.map((model) => ({ label: model.label, value: model.value }));
+const VIDEO_METHOD_SELECT_OPTIONS = VIDEO_METHOD_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.value,
+}));
+const VIDEO_MULTI_SCENE_ANGLE_SELECT_OPTIONS = VIDEO_MULTI_SCENE_ANGLE_OPTIONS.map((option) => ({
+  label: option.label,
+  value: option.value,
+}));
 
 export function VideoProductSettingsForm({
   settings,
@@ -45,6 +58,8 @@ export function VideoProductSettingsForm({
 }): React.JSX.Element {
   const accent = theme.red;
   const multiScene = parseInt(settings.sceneCount || '1', 10) > 1;
+  const selectedVideoMethod = settings.videoMethod || 'extend';
+  const selectedMultiSceneAngleMode = settings.multiSceneAngleMode || 'same_angle';
   const selectedVideoModel = settings.videoModel || 'veo_31_lite_lower';
   const selectedVideoDuration = settings.videoDuration || 8;
   const durationOptions = VIDEO_DURATION_OPTIONS.filter(
@@ -134,9 +149,42 @@ export function VideoProductSettingsForm({
             value={settings.sceneCount}
             onChange={(value) => {
               onChange('sceneCount', String(value));
-              if (parseInt(String(value), 10) > 1) onChange('outputCount', '1');
+              if (parseInt(String(value), 10) > 1) {
+                onChange('outputCount', '1');
+                onChange('videoMethod', 'multi');
+                if (!settings.multiSceneAngleMode) onChange('multiSceneAngleMode', 'same_angle');
+              }
             }}
           />
+          <OptionGroup
+            columns={2}
+            label="วิธีสร้างวิดีโอ"
+            options={VIDEO_METHOD_SELECT_OPTIONS}
+            theme={theme}
+            accent={accent}
+            value={selectedVideoMethod}
+            onChange={(value) => {
+              const nextMethod = String(value);
+              onChange('videoMethod', nextMethod);
+              if (nextMethod === 'multi' && !settings.multiSceneAngleMode) {
+                onChange('multiSceneAngleMode', 'same_angle');
+              }
+              if (nextMethod === 'extend' && multiScene) {
+                onChange('sceneCount', '1');
+              }
+            }}
+          />
+          {multiScene && selectedVideoMethod === 'multi' ? (
+            <OptionGroup
+              columns={3}
+              label="รูปแบบหลายฉาก"
+              options={VIDEO_MULTI_SCENE_ANGLE_SELECT_OPTIONS}
+              theme={theme}
+              accent={accent}
+              value={selectedMultiSceneAngleMode}
+              onChange={(value) => onChange('multiSceneAngleMode', String(value))}
+            />
+          ) : null}
         </View>
       </SettingsSection>
 

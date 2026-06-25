@@ -63,6 +63,8 @@ export interface AutoPilotVideoSettings {
   videoDuration: number;
   aspectRatio: string;
   outputCount: string;
+  videoMethod: string;
+  multiSceneAngleMode: string;
   characterMode: string;
   promptMode: AutoPilotPromptMode;
   customPrompt: string;

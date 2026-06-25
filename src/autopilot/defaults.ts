@@ -63,6 +63,8 @@ export const DEFAULT_AUTO_PILOT_VIDEO_SETTINGS: AutoPilotVideoSettings = {
   videoDuration: 8,
   aspectRatio: '9:16',
   outputCount: '1',
+  videoMethod: 'extend',
+  multiSceneAngleMode: 'same_angle',
   characterMode: 'fromImage',
   promptMode: 'auto',
   customPrompt: '',
@@ -181,3 +183,14 @@ export const VIDEO_CHARACTER_MODE_OPTIONS = [
 ] as const;
 
 export const VIDEO_SCENE_OPTIONS = ['1', '2', '3'] as const;
+
+export const VIDEO_METHOD_OPTIONS = [
+  { value: 'extend', label: 'ต่อจากรูป' },
+  { value: 'multi', label: 'หลายฉาก' },
+] as const;
+
+export const VIDEO_MULTI_SCENE_ANGLE_OPTIONS = [
+  { value: 'same_angle', label: 'มุมเดียว' },
+  { value: 'multi_angle', label: 'หลายมุม' },
+  { value: 'voiceover', label: 'เสียงพากษ์' },
+] as const;
