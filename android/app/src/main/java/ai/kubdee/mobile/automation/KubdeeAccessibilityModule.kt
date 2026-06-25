@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -809,8 +810,22 @@ class KubdeeAccessibilityModule(
   private fun exportGoogleFlowComposition(videoUris: List<Uri>, audioUri: Uri?, outputFile: File): String? {
     var errorMessage: String? = null
     val latch = CountDownLatch(1)
+    val trimEndMs = 500L
     val videoItems = videoUris.map { uri ->
-      EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
+      val durationMs = getMediaDurationMs(uri)
+      val clippedMediaItem = if (durationMs != null && durationMs > trimEndMs + 500L) {
+        MediaItem.Builder()
+          .setUri(uri)
+          .setClippingConfiguration(
+            MediaItem.ClippingConfiguration.Builder()
+              .setEndPositionMs(durationMs - trimEndMs)
+              .build()
+          )
+          .build()
+      } else {
+        MediaItem.fromUri(uri)
+      }
+      EditedMediaItem.Builder(clippedMediaItem).build()
     }
     val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(ImmutableList.copyOf(videoItems))
     val composition = if (audioUri != null) {
@@ -848,6 +863,24 @@ class KubdeeAccessibilityModule(
       return "รวมวิดีโอใช้เวลานานเกินไป"
     }
     return errorMessage
+  }
+
+  private fun getMediaDurationMs(uri: Uri): Long? {
+    val retriever = MediaMetadataRetriever()
+    return try {
+      retriever.setDataSource(reactContext, uri)
+      retriever
+        .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+        ?.toLongOrNull()
+    } catch (_: Exception) {
+      null
+    } finally {
+      try {
+        retriever.release()
+      } catch (_: Exception) {
+        // Ignore cleanup errors.
+      }
+    }
   }
 
   private fun normalizeGoogleFlowAssetMimeType(step: String, value: String?): String {
