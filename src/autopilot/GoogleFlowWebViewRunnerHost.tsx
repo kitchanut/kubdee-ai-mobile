@@ -73,6 +73,7 @@ interface PreparedMultiScenePromptResult {
   scenes: Array<{ sceneNumber: number; dialogue: string }>;
   voiceStyleInstruction: string;
   voiceoverScript: string;
+  voiceGender?: 'female' | 'male' | 'neutral';
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -224,73 +225,221 @@ function normalizeDialogueText(text: string): string {
     .trim();
 }
 
+function normalizeVoiceoverScript(text: string): string {
+  const allowedTags = new Set([
+    'very fast',
+    'excited',
+    'curious',
+    'serious',
+    'amazed',
+    'whispers',
+    'shouting',
+    'laughs',
+    'sighs',
+  ]);
+  return text
+    .replace(/\[([^\]]+)\]/g, (_match, rawTag: string) => {
+      const tag = String(rawTag || '').trim().toLowerCase();
+      return allowedTags.has(tag) ? `[${tag}]` : ' ';
+    })
+    .replace(/[!"#$%&'()*+,./:;<=>?@\\^_`{|}~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const SCRIPT_STYLE_PRESETS: Record<string, string> = {
+  '': 'รีวิวเป็นกันเอง พูดอย่างเป็นธรรมชาติ',
+  normal: 'ปกติ รีวิวเป็นกันเอง เหมือนเพื่อนบอกต่อ',
+  playful: 'กวนตีน ตลก มุกเบาๆ เฮฮา สนุกสนาน',
+  polite: 'ผู้ดี สุภาพ น่าเชื่อถือ พูดจาดี มีมารยาท',
+  hardsell: 'ขายแรงๆ กระตุ้นซื้อ เร่งด่วน รีบเลย ของมีจำกัด',
+  isan: 'อีสานบ้านๆ ใส่คำอีสาน สำเนียงอีสาน',
+  northern: 'คำเมืองเหนือ อ่อนหวานนุ่มนวล สำเนียงเหนือ',
+  cute: 'น่ารักมุ้งมิ้ง สดใส ใช้คำน่ารักๆ',
+  confident: 'มั่นใจจัด รู้จริง เชี่ยวชาญ พูดหนักแน่น',
+  excited: 'ตื่นเต้นสุดๆ พลังเยอะ ร้องว้าว',
+  peaceful: 'สงบสุข ผ่อนคลาย เสียงนุ่มนวล',
+  romantic: 'หวานโรแมนติก อ่อนโยน เสียงหวาน',
+};
+
+const VOICE_CHARACTER_PRESETS: Record<string, string | null> = {
+  '': '',
+  female: 'เสียงผู้หญิงไทย',
+  male: 'เสียงผู้ชายไทย',
+  none: null,
+  teen_girl: 'เสียงสาววัยรุ่นไทย อายุประมาณ 18-22 ปี พูดสดใส ร่าเริง',
+  teen_boy: 'เสียงหนุ่มวัยรุ่นไทย อายุประมาณ 18-22 ปี พูดเท่ๆ คูลๆ',
+  vendor_female: 'เสียงแม่ค้าไทย พูดเชียร์ขายของ กระตุ้นให้ซื้อ',
+  vendor_male: 'เสียงพ่อค้าไทย พูดเชียร์ขายของ กระตุ้นให้ซื้อ',
+  office_female: 'เสียงพี่สาวออฟฟิศ พูดสุภาพ มืออาชีพ น่าเชื่อถือ',
+  office_male: 'เสียงพี่ชายออฟฟิศ พูดสุภาพ มืออาชีพ น่าเชื่อถือ',
+  aunt: 'เสียงป้าไทย อายุประมาณ 40-50 ปี พูดเป็นกันเอง อบอุ่น',
+  uncle: 'เสียงลุงไทย อายุประมาณ 40-50 ปี พูดเป็นกันเอง ใจดี',
+};
+
 function buildSceneDialoguePrompt(product: GoogleFlowRunnerProduct, sceneCount: number, voiceover: boolean): string {
   const video = product.settings.video;
+  const styleDesc = video.scriptStyleCustom || SCRIPT_STYLE_PRESETS[video.scriptStyle || ''] || SCRIPT_STYLE_PRESETS[''];
+  const isNoVoice = video.voiceCharacter === 'none';
+  const isAutoVoice = !video.voiceCharacter;
+  const voiceDesc = video.voiceCharacterCustom || VOICE_CHARACTER_PRESETS[video.voiceCharacter || ''];
+  const voiceSection = (() => {
+    if (isNoVoice) {
+      return 'เสียง: ไม่มีเสียงพูด วิดีโอเงียบมีแค่เพลงประกอบ';
+    }
+    if (isAutoVoice) {
+      return [
+        'เสียงพากย์: ออโต้จากรูปฉาก ถ้าเห็นตัวละครหรือใบหน้าคน ให้เลือกเสียงพูดภาษาไทยที่เหมาะกับเพศและวัยของตัวละครในรูป เช่น ผู้หญิงใช้เสียงผู้หญิงไทย ผู้ชายใช้เสียงผู้ชายไทย ถ้าเห็นแค่มือหรือสินค้าและไม่เห็นคน ให้ใช้เสียงบรรยายไทยกลางที่เหมาะกับสินค้า',
+        `สไตล์บทพูด: ${styleDesc}`,
+      ].join('\n');
+    }
+    return [`เสียงพากย์: ${voiceDesc || 'เสียงพูดภาษาไทย'}`, `สไตล์บทพูด: ${styleDesc}`].join('\n');
+  })();
+  const voiceStyleGuidance = (() => {
+    if (isNoVoice) {
+      return '- ไม่ต้องสร้าง voiceStyleInstruction (ใส่ค่าว่าง "")';
+    }
+    if (isAutoVoice) {
+      return '- voiceStyleInstruction ต้องเลือกเพศและวัยของเสียงให้เหมาะกับตัวละครที่เห็นในรูปฉาก ถ้าไม่เห็นตัวละครหรือไม่เห็นหน้า ให้ใช้เสียงผู้บรรยายไทยกลางที่เหมาะกับสินค้า';
+    }
+    if (voiceDesc) {
+      return `- voiceStyleInstruction ต้องสอดคล้องกับเสียงที่เลือก: "${voiceDesc}" ห้ามขัดกัน`;
+    }
+    return '';
+  })();
+  const voiceoverTotalMinChars = sceneCount * 100;
+  const voiceoverTotalMaxChars = sceneCount * 125;
+  const voiceoverPerSceneRule = voiceover
+    ? `- โหมดเสียงพากษ์ต้องเขียนบทให้แน่นขึ้น เพราะเสียงจะพูดเร็วแบบ TikTok: แต่ละช่วงควรยาวประมาณ 100 ถึง 125 ตัวอักษรไทย และบทพากษ์รวมทั้งคลิปควรยาวประมาณ ${voiceoverTotalMinChars} ถึง ${voiceoverTotalMaxChars} ตัวอักษรไทย`
+    : '- เป้าหมายความยาวต่อฉากประมาณ 65 ถึง 90 ตัวอักษรไทย หรือ 1 ถึง 2 ช่วงความคิดที่พูดต่อเนื่องกัน';
+  const voiceoverConsistencyRule = voiceover
+    ? '- บทพากษ์รวมต้องมีเนื้อหามากพอให้เสียงเร็วอ่านได้ใกล้ความยาววิดีโอหลังรวม ห้ามสั้นแบบสรุป ต้องมี hook, รายละเอียดสินค้า, benefit, proof หรือวิธีใช้ และ CTA ครบในคลิปเดียว'
+    : '- บทพูดแต่ละฉากต้องพูดได้ประมาณ 6.5 วินาที โดยไม่เร่งจนฟังไม่รู้เรื่อง และเหลือช่วงภาพเงียบท้ายฉากให้น้อยที่สุด';
+  const ttsTagGuidance = voiceover
+    ? `
+Gemini TTS audio tags สำหรับโหมดเสียงพากษ์:
+- อนุญาตให้ใส่ tag ควบคุมเสียงใน voiceoverScript ได้ เฉพาะ tag เหล่านี้เท่านั้น: [very fast], [excited], [curious], [serious], [amazed], [whispers], [shouting], [laughs], [sighs]
+- ต้องใส่ [very fast] ที่ต้น voiceoverScript เสมอ เพื่อให้เหมาะกับคลิป TikTok
+- เลือก tag อารมณ์เพิ่มได้ตามบริบทสินค้า แต่ใช้เท่าที่จำเป็น ไม่เกิน 3 ถึง 5 tag ต่อบทพากษ์รวม
+- ห้ามสร้าง tag เอง ห้ามใช้ tag ที่ไม่อยู่ในรายการ และห้ามใส่ tag ติดกันหลายอัน
+- ห้ามใส่ tag ใน dialogue รายฉาก ให้ใส่เฉพาะ voiceoverScript เท่านั้น
+- ตัวอย่าง voiceoverScript: "[very fast] หยุดก่อนถ้ายังหาหมวกที่ใส่ง่ายทุกวัน [curious] รุ่นนี้ทรงสวย แมตช์ง่าย และระบายอากาศดี [excited] กดตะกร้าได้เลย"
+`
+    : '';
   const customDialogue = (() => {
     if (video.dialogueMode !== 'custom') return '';
     const list = (video.dialogueList ?? []).map((line) => line.trim()).filter(Boolean);
     if (list.length > 0) {
-      return list.map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`).join('\n');
+      return list.length >= sceneCount
+        ? ['บทพูดที่กำหนดให้แต่ละฉาก (ห้ามเปลี่ยน ใช้ตามนี้เท่านั้น):', ...list.slice(0, sceneCount).map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`)].join('\n')
+        : ['บทพูดที่กำหนดบางฉาก:', ...list.map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`), '- ฉากที่เหลือ: ให้ AI คิดบทพูดเอง'].join('\n');
     }
     if (video.dialogue.trim()) {
-      return video.dialogue
-        .split('|')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`)
-        .join('\n');
+      const parts = video.dialogue.split('|').map((line) => line.trim()).filter(Boolean);
+      if (parts.length >= sceneCount) {
+        return ['บทพูดที่กำหนดให้แต่ละฉาก (ห้ามเปลี่ยน ใช้ตามนี้เท่านั้น):', ...parts.slice(0, sceneCount).map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`)].join('\n');
+      }
+      if (parts.length === 1) {
+        return `บทพูดที่กำหนด (ใช้เป็นแนวทางทุกฉาก): "${parts[0]}"`;
+      }
+      return ['บทพูดที่กำหนดบางฉาก:', ...parts.map((line, index) => `- ฉากที่ ${index + 1}: "${line}"`), '- ฉากที่เหลือ: ให้ AI คิดบทพูดเอง'].join('\n');
     }
     return '';
   })();
 
   return `
-คุณคือผู้กำกับวิดีโอโฆษณาสินค้าแบบสั้นบนมือถือ
+คุณคือผู้เชี่ยวชาญด้านการเขียนบทโฆษณาสินค้าบน TikTok
 
-สินค้า:
+${voiceover
+  ? `คิดบทพากษ์ภาษาไทยแบบต่อเนื่องสำหรับวิดีโอ ${sceneCount} ฉาก โดยแบ่งเนื้อหาเป็น ${sceneCount} ช่วงตามภาพแต่ละฉาก แต่เสียงจริงจะถูกนำไปอ่านต่อเนื่องเป็นไฟล์เดียว ไม่ใช่ให้ตัวละครในวิดีโอพูด`
+  : `คิดบทพูดภาษาไทยสำหรับวิดีโอ ${sceneCount} ฉาก (แต่ละฉากยาว 8 วินาที แต่เสียงพูดควรยาวประมาณ 6.5 วินาที)`}
+
+ข้อมูลสินค้า:
 - ชื่อ: ${product.name || 'สินค้า'}
 - รายละเอียด: ${product.description || ''}
 - Caption: ${product.caption || ''}
 - Hashtags: ${product.hashtags || ''}
 - CTA: ${product.cta || ''}
 
-มีรูปแนบ ${sceneCount} รูป เรียงตามฉากที่ 1 ถึงฉากที่ ${sceneCount}
-ให้วิเคราะห์รูปแต่ละฉาก แล้วเขียนบทพูดภาษาไทยให้สัมพันธ์กับภาพนั้นจริง ๆ
+รูปภาพฉาก:
+- มีรูปแนบ ${sceneCount} รูป เรียงตามฉากที่ 1 ถึงฉากที่ ${sceneCount}
+- ต้องคิดบทให้สัมพันธ์กับสิ่งที่เห็นในรูปแต่ละฉาก เช่น การถือสินค้า การใช้งานสินค้า มุมกล้อง หรือบริบทของฉากนั้น
+- ห้ามพูดสิ่งที่ขัดกับภาพ เช่น บอกว่ากำลังใช้งานถ้าในภาพเป็นแค่ packshot หรือพูดว่าถือสินค้าอยู่ถ้าในภาพไม่มีคนถือ
+- ให้บทแต่ละฉากต่อกันเป็นคลิปขายสินค้าเรื่องเดียว ไม่ใช่บทแยกหลายคลิป
 
-การตั้งค่า:
-- จำนวนฉาก: ${sceneCount}
-- โหมด: ${voiceover ? 'เสียงพากษ์รวมภายหลัง วิดีโอแต่ละฉากต้องเป็นภาพล้วน' : 'หลายมุมพร้อมเสียงพูดในวิดีโอแต่ละฉาก'}
-- สไตล์บทพูด: ${video.scriptStyleCustom || video.scriptStyle || 'รีวิวเป็นกันเอง'}
-- เสียง: ${video.voiceCharacterCustom || video.voiceCharacter || 'auto'}
-- โหมดบทพูด: ${video.dialogueMode}
-${customDialogue ? `\nบทพูดที่ผู้ใช้กำหนด:\n${customDialogue}` : ''}
+เป้าหมายบทพูดแบบ TikTok Direct Response:
+- โฟกัสขายบน TikTok อย่างเดียว ต้องเร็ว แรง เข้าใจทันที ไม่ใช่บทโฆษณานุ่มแบบทีวี
+- ฉากแรกต้องเป็น hook ภายในสามวินาทีแรก เช่น ปัญหาแรง ผลลัพธ์ที่อยากได้ คำเตือน ความคุ้ม หรือเหตุผลที่ต้องหยุดดู
+- ห้ามเริ่มด้วยประโยคทั่วไป เช่น สวัสดีค่ะ วันนี้ หรือ มาแนะนำสินค้า
+- ทุกฉากต้องพาคนดูเข้าใกล้การซื้อเร็วขึ้น ด้วยลำดับ Hook, Solution, Benefit, Proof, CTA
+- CTA ฉากสุดท้ายต้องชัดแบบ TikTok Shop เช่น กดตะกร้า สั่งเลย ลิงก์อยู่ในตะกร้า
+
+${voiceSection}
+${video.dialogueMode === 'none' ? '\nบทพูด: ไม่มีบทพูด' : customDialogue ? `\n${customDialogue}` : ''}
+${video.systemPrompt ? `\nคำสั่งเพิ่มเติม: ${video.systemPrompt}` : ''}
 
 กฎสำคัญ:
-- ต้องมี scenes ครบ ${sceneCount} ฉากเท่านั้น
-- dialogue แต่ละฉากต้องยาวพอพูดได้ประมาณ 6.5 วินาที ประมาณ 65 ถึง 90 ตัวอักษรไทย
-- ให้ต่อเนื่องแบบ hook, demo/benefit/proof, CTA ตามจำนวนฉาก
-- ถ้าโหมดเสียงพากษ์ ให้เขียน voiceoverScript รวมทั้งคลิป ยาวพอสำหรับวิดีโอรวม และ dialogue รายฉากยังต้องมีไว้เป็นแผนเนื้อหา
-- ห้ามใส่ emoji, hashtag, subtitle, timestamp, หมายเลขฉาก หรือคำอธิบายใน dialogue
-- ห้ามใช้อักขระพิเศษ ตัวเลขดิบ หรือสัญลักษณ์ที่ TTS อ่านยาก ให้เขียนเป็นคำไทยธรรมชาติ
-- ถ้าภาพเป็นสินค้าอย่างเดียวหรือมืออย่างเดียว ห้ามแต่งบทเหมือนมีคนพูดอยู่ในภาพ ให้เป็นเสียงบรรยายขายสินค้าแทน
+- ตอบเป็น JSON เท่านั้น
+- ต้องมีบทพูดครบ ${sceneCount} ฉากเท่านั้น ห้ามมากกว่าหรือน้อยกว่า
+- บทพูดเป็นภาษาไทย
+- ฉากที่ 1 ต้องเป็น Hook ที่หยุดนิ้วภายในสามวินาทีแรก
+- ฉากสุดท้ายต้องเป็น CTA กระตุ้นให้ซื้อแบบตรงและสั้น
+- ${voiceover ? 'แต่ละฉากคือช่วงของเสียงพากษ์รวม ต้องอ่านต่อเนื่องกันได้ลื่นไหลเหมือนคลิปเดียว ห้ามเขียนเหมือนตัวละครพูดในฉาก และห้ามมีคำบรรยายท่าทาง' : 'บทพูดแต่ละฉากต้องเหมาะกับตัวละครหรือผู้บรรยายในฉากนั้น'}
+- ถ้าฉากมีเสียงพูด ให้บทพูดยาวพอสำหรับเสียงประมาณ 6.3 ถึง 7.0 วินาที โดยเป้าหมายหลักคือ 6.5 วินาที ห้ามเป็นวลีสั้นคำเดียว
+${voiceoverPerSceneRule}
+
+${ttsTagGuidance}
+
+ข้อห้ามเรื่อง TTS:
+- ห้ามใช้อักขระพิเศษทุกชนิด เช่น ๆ ! ? " " ( ) * # ... - ~ ฯ ห้ามหมด ถ้าต้องการพูดซ้ำให้พิมพ์ข้อความนั้นซ้ำแทนการใช้ ๆ${voiceover ? ' ยกเว้นวงเล็บเหลี่ยมที่อยู่ใน Gemini TTS audio tags ที่อนุญาตเท่านั้น' : ''}
+- ห้ามใช้ emoji ทุกชนิดในบทพูด
+- ห้ามลากเสียงหรือเพิ่มตัวอักษรซ้ำ เช่น กรี๊ดดด ทุกคนนน ให้เขียนคำปกติเท่านั้น
+- ห้ามใช้คำแสลงหรือคำที่ TTS อ่านไม่ได้ ให้ใช้คำเต็มที่อ่านออกเสียงได้ชัดเจน
+- ห้ามใช้ตัวเลขดิบ ให้เขียนเป็นตัวอักษรเสมอ เช่น 199 เขียนเป็น หนึ่งร้อยเก้าสิบเก้า
+- ถ้าชื่อสินค้าเป็นภาษาอังกฤษ ให้เขียนทับศัพท์เป็นภาษาไทยที่ TTS อ่านได้
+
+กฎความสม่ำเสมอ:
+${voiceoverConsistencyRule}
+- โทนเสียงและลักษณะการพูดต้องเหมือนกันทุกฉาก ห้ามเปลี่ยนกลางคัน
+- ห้ามมีฉากที่พูดยาวกว่าฉากอื่นมาก
+
+voiceStyleInstruction:
+- คิด voiceStyleInstruction เป็นภาษาอังกฤษ 1 ประโยค สำหรับกำกับโทนเสียงพากย์ทุกฉาก
+- ต้องระบุ: เพศ, อายุโดยประมาณ, ภาษา (Thai), อารมณ์/โทน, ความเร็วในการพูด
+- ต้องสั่งให้พูดเร็วขึ้นเล็กน้อยแบบ TikTok short-form ad pace ห้ามเว้น pause ยาว และต้องจบก่อนเวลาภาพเล็กน้อย
+- ตัวอย่าง: "Read aloud in a warm, cheerful young Thai female voice, energetic and friendly like a social media influencer, brisk slightly fast Thai short-form ad pace with no long pauses"
+${voiceStyleGuidance}
+
+voiceGender:
+- ถ้าเห็นตัวละครหรือใบหน้าชัดในรูปฉาก ให้เลือก "female" หรือ "male" ตามตัวละครหลักที่ควรเป็นเสียงพากษ์
+- ถ้าเห็นหลายคน ให้เลือกตามตัวละครหลักหรือคนที่ถือสินค้าเด่นที่สุด
+- ถ้าเป็นมือเท่านั้น สินค้าเท่านั้น ไม่เห็นหน้า หรือระบุเพศไม่ได้ ให้ใช้ "neutral"
+- ค่า voiceGender ต้องเป็นหนึ่งใน: "female", "male", "neutral"
 
 ตอบกลับเป็น JSON เท่านั้น:
 {
   "voiceStyleInstruction": "English voice style instruction here",
+  "voiceGender": "${voiceover ? 'female | male | neutral' : 'neutral'}",
   "voiceoverScript": "${voiceover ? 'บทพากษ์รวมทั้งคลิป' : ''}",
   "scenes": [
-    { "sceneNumber": 1, "dialogue": "บทพูดภาษาไทยของฉากนี้" }
+    { "sceneNumber": 1, "dialogue": "หยุดก่อนถ้ายังเจอปัญหานี้อยู่ วิธีนี้ช่วยให้เห็นทางแก้ไวขึ้นและทำตามได้ง่ายมาก" }
   ]
 }
 `.trim();
 }
 
-function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMultiScenePromptResult, 'scenes' | 'voiceStyleInstruction' | 'voiceoverScript'> {
+function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMultiScenePromptResult, 'scenes' | 'voiceStyleInstruction' | 'voiceoverScript' | 'voiceGender'> {
   const parsed = JSON.parse(cleanAiJsonText(text)) as {
     scenes?: Array<{ sceneNumber?: number; dialogue?: string; script?: string; text?: string }>;
     voiceStyleInstruction?: string;
     voiceoverScript?: string;
+    voiceGender?: string;
   };
   const sourceScenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
+  const rawVoiceGender = String(parsed.voiceGender || '').trim().toLowerCase();
+  const voiceGender = rawVoiceGender === 'female' || rawVoiceGender === 'male' || rawVoiceGender === 'neutral'
+    ? rawVoiceGender
+    : undefined;
   const scenes = Array.from({ length: sceneCount }, (_, index) => {
     const source = sourceScenes[index] ?? {};
     return {
@@ -301,7 +450,8 @@ function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMul
   return {
     scenes,
     voiceStyleInstruction: String(parsed.voiceStyleInstruction || '').trim(),
-    voiceoverScript: normalizeDialogueText(String(parsed.voiceoverScript || '')),
+    voiceoverScript: normalizeVoiceoverScript(String(parsed.voiceoverScript || '')),
+    voiceGender,
   };
 }
 
@@ -329,8 +479,9 @@ function buildDesktopLikeVideoPrompts({
         'Use only the character, hands, pose direction, and product interaction implied by the reference image. If only hands are visible, show only hands. If the shot is product-only, keep it product-only.',
         'Face rule: if a face is visible in the reference image, keep the full face clear, sharp, natural, and unobstructed. If the reference image does not show a face, do not reveal a new face.',
         `Visual style: ${style}.`,
+        'The character or hands may smile, pose, hold, point to, wear, use, or demonstrate the product naturally, but must not speak, mouth words, or perform lip sync.',
         cameraMotion ? `Camera motion: ${cameraMotion}. Keep movement subtle and keep the product visible.` : '',
-        'Audio rule: no speech, narration, dialogue, lip sync, subtitles, or on-screen text. External voiceover will be added later.',
+        'Audio rule: no speech, narration, dialogue, lip sync, subtitles, or on-screen text. Add only subtle instrumental background music that fits the product, image mood, and scene. No vocals, no lyrics, no loud beats, no distracting sound effects. External voiceover will be added later.',
         'Output must be full screen with no black bars.',
         video.systemPrompt ? `Additional user instructions: ${video.systemPrompt}` : '',
       ]
@@ -417,7 +568,7 @@ async function prepareAutoMultiScenePrompts({
   return { ...prepared, prompts };
 }
 
-function resolveGeminiTtsVoice(voiceCharacter?: string): string {
+function resolveGeminiTtsVoice(voiceCharacter?: string, voiceGender?: string): string {
   const directVoice = voiceCharacter?.startsWith('tts_') ? voiceCharacter.replace(/^tts_/, '') : '';
   if (directVoice) {
     return directVoice.charAt(0).toUpperCase() + directVoice.slice(1).toLowerCase();
@@ -434,7 +585,7 @@ function resolveGeminiTtsVoice(voiceCharacter?: string): string {
     aunt: 'Sulafat',
     uncle: 'Orus',
     __custom__: 'Kore',
-    '': 'Kore',
+    '': voiceGender === 'female' ? 'Aoede' : voiceGender === 'male' ? 'Puck' : 'Kore',
   };
   return voiceMap[voiceCharacter || ''] || 'Kore';
 }
@@ -445,12 +596,14 @@ async function generateVoiceoverAudioDataUrl({
   sceneCount,
   voiceStyleInstruction,
   voiceoverScript,
+  voiceGender,
 }: {
   durationSeconds: number;
   product: GoogleFlowRunnerProduct;
   sceneCount: number;
   voiceStyleInstruction?: string;
   voiceoverScript?: string;
+  voiceGender?: string;
 }): Promise<string | null> {
   const script = voiceoverScript?.trim() || Array.from({ length: sceneCount }, (_, index) => dialogueForScene(product, index + 1))
     .map((line) => line.trim())
@@ -474,7 +627,7 @@ async function generateVoiceoverAudioDataUrl({
       sceneCount,
       durationSeconds,
       voiceStyleInstruction,
-      voice: resolveGeminiTtsVoice(product.settings.video.voiceCharacter),
+      voice: resolveGeminiTtsVoice(product.settings.video.voiceCharacter, voiceGender),
     }),
   });
   const data = (await response.json().catch(() => ({}))) as {
@@ -1078,6 +1231,8 @@ export default function GoogleFlowWebViewRunnerHost({
 
         let voiceoverDataUrl: string | null = null;
         if (useVoiceover) {
+          const voiceoverTargetDuration = Math.max(1, Math.round(sceneCount * Math.max(1, videoDuration - 0.5) - 1));
+          const voiceoverVoice = resolveGeminiTtsVoice(product.settings.video.voiceCharacter, promptResult.voiceGender);
           emit({
             event: 'progress',
             runId: payload.runId,
@@ -1090,14 +1245,15 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: 'กำลังสร้างเสียงพากษ์รวมสำหรับวิดีโอหลายฉาก',
+            message: `กำลังสร้างเสียงพากษ์รวม เป้าหมายประมาณ ${voiceoverTargetDuration} วิ เสียง ${voiceoverVoice}${promptResult.voiceGender ? ` (${promptResult.voiceGender})` : ''}`,
           });
           voiceoverDataUrl = await generateVoiceoverAudioDataUrl({
-            durationSeconds: Math.max(1, Math.round(sceneCount * Math.max(1, videoDuration - 0.5) - 1)),
+            durationSeconds: voiceoverTargetDuration,
             product,
             sceneCount,
             voiceStyleInstruction: promptResult.voiceStyleInstruction,
             voiceoverScript: promptResult.voiceoverScript,
+            voiceGender: promptResult.voiceGender,
           });
         }
 
