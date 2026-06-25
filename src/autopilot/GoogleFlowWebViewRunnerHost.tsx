@@ -21,6 +21,7 @@ import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 import {
   mergeGoogleFlowVideos,
+  probeGoogleFlowVideos,
   saveGoogleFlowDataUrlAsset,
   waitForGoogleFlowDownload,
 } from '@/native/AccessibilityBridge';
@@ -77,6 +78,8 @@ interface PreparedMultiScenePromptResult {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const AUTO_MULTI_SCENE_TRIM_END_SECONDS = 0.5;
+const VOICEOVER_END_BUFFER_SECONDS = 1;
 
 class GoogleFlowWebViewRunnerStopped extends Error {
   constructor() {
@@ -1231,7 +1234,62 @@ export default function GoogleFlowWebViewRunnerHost({
 
         let voiceoverDataUrl: string | null = null;
         if (useVoiceover) {
-          const voiceoverTargetDuration = Math.max(1, Math.round(sceneCount * Math.max(1, videoDuration - 0.5) - 1));
+          const fallbackMergedDuration = sceneCount * Math.max(1, videoDuration - AUTO_MULTI_SCENE_TRIM_END_SECONDS);
+          let totalEffectiveDuration = fallbackMergedDuration;
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'voiceover_probe_videos',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `กำลังตรวจความยาววิดีโอจริง ${sceneCount} ฉาก เพื่อคำนวณเสียงพากษ์`,
+          });
+          const probeResult = await probeGoogleFlowVideos(sceneVideoUris, AUTO_MULTI_SCENE_TRIM_END_SECONDS);
+          if (probeResult.success && probeResult.totalEffectiveDuration) {
+            totalEffectiveDuration = probeResult.totalEffectiveDuration;
+            const durationText = (probeResult.videos ?? [])
+              .map((video, index) => `ฉาก ${index + 1}: ${video.duration.toFixed(1)} วิ`)
+              .join(', ');
+            if (durationText) {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step,
+                stage: 'voiceover_probe_videos',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `ความยาววิดีโอจริง: ${durationText}`,
+              });
+            }
+          } else if (probeResult.error) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: 'voiceover_probe_videos',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `ตรวจความยาววิดีโอจริงไม่สำเร็จ: ${probeResult.error} ใช้ค่าจาก settings แทน`,
+            });
+          }
+
+          const voiceoverTargetDuration = Math.max(1, Math.round(totalEffectiveDuration - VOICEOVER_END_BUFFER_SECONDS));
           const voiceoverVoice = resolveGeminiTtsVoice(product.settings.video.voiceCharacter, promptResult.voiceGender);
           emit({
             event: 'progress',
@@ -1245,7 +1303,7 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: `กำลังสร้างเสียงพากษ์รวม เป้าหมายประมาณ ${voiceoverTargetDuration} วิ เสียง ${voiceoverVoice}${promptResult.voiceGender ? ` (${promptResult.voiceGender})` : ''}`,
+            message: `กำลังสร้างเสียงพากษ์รวม เป้าหมายประมาณ ${voiceoverTargetDuration} วิ จากวิดีโอจริงหลังตัดท้าย ${AUTO_MULTI_SCENE_TRIM_END_SECONDS} วิ/ฉาก เสียง ${voiceoverVoice}${promptResult.voiceGender ? ` (${promptResult.voiceGender})` : ''}`,
           });
           voiceoverDataUrl = await generateVoiceoverAudioDataUrl({
             durationSeconds: voiceoverTargetDuration,

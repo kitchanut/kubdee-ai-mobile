@@ -529,6 +529,57 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
+  fun probeGoogleFlowVideos(videoUris: ReadableArray, trimEndSeconds: Double, promise: Promise) {
+    Thread {
+      try {
+        val uris = mutableListOf<Uri>()
+        for (index in 0 until videoUris.size()) {
+          val value = videoUris.getString(index)?.trim().orEmpty()
+          if (value.isNotBlank()) {
+            uris.add(Uri.parse(value))
+          }
+        }
+        if (uris.isEmpty()) {
+          val result = Arguments.createMap()
+          result.putBoolean("success", false)
+          result.putString("error", "ไม่มีวิดีโอฉากให้ตรวจสอบ")
+          promise.resolve(result)
+          return@Thread
+        }
+
+        val trimEndMs = (trimEndSeconds * 1000.0).toLong().coerceAtLeast(0L)
+        val videos = Arguments.createArray()
+        var totalEffectiveMs = 0L
+        uris.forEach { uri ->
+          val durationMs = getMediaDurationMs(uri) ?: 0L
+          val effectiveMs = (durationMs - trimEndMs).coerceAtLeast(500L)
+          totalEffectiveMs += effectiveMs
+          val item = Arguments.createMap()
+          item.putString("uri", uri.toString())
+          item.putDouble("duration", durationMs / 1000.0)
+          item.putDouble("effectiveDuration", effectiveMs / 1000.0)
+          item.putBoolean("hasAudio", true)
+          videos.pushMap(item)
+        }
+
+        val result = Arguments.createMap()
+        result.putBoolean("success", true)
+        result.putDouble("totalEffectiveDuration", totalEffectiveMs / 1000.0)
+        result.putArray("videos", videos)
+        promise.resolve(result)
+      } catch (error: Exception) {
+        val result = Arguments.createMap()
+        result.putBoolean("success", false)
+        result.putString("error", error.message ?: "ตรวจความยาววิดีโอไม่สำเร็จ")
+        promise.resolve(result)
+      }
+    }.also { thread ->
+      thread.name = "KubdeeFlowVideoProbe"
+      thread.start()
+    }
+  }
+
+  @ReactMethod
   fun addListener(eventName: String) {
     // Required by React Native NativeEventEmitter.
   }
@@ -811,25 +862,68 @@ class KubdeeAccessibilityModule(
     var errorMessage: String? = null
     val latch = CountDownLatch(1)
     val trimEndMs = 500L
-    val videoItems = videoUris.map { uri ->
-      val durationMs = getMediaDurationMs(uri)
-      val clippedMediaItem = if (durationMs != null && durationMs > trimEndMs + 500L) {
+    val rawVideoDurations = videoUris.map { uri -> getMediaDurationMs(uri) ?: 0L }
+    val rawEffectiveDurations = rawVideoDurations.map { durationMs ->
+      (durationMs - trimEndMs).coerceAtLeast(500L)
+    }
+    val rawTotalEffectiveMs = rawEffectiveDurations.sum()
+    val voiceoverDurationMs = audioUri?.let { getMediaDurationMs(it) } ?: 0L
+    val targetVideoDurationMs = if (audioUri != null && voiceoverDurationMs > 0L) {
+      minOf(rawTotalEffectiveMs, voiceoverDurationMs + 1000L)
+    } else {
+      rawTotalEffectiveMs
+    }
+    var accumulatedVideoMs = 0L
+    val videoItems = mutableListOf<EditedMediaItem>()
+    for (index in videoUris.indices) {
+      val uri = videoUris[index]
+      val sourceDurationMs = rawVideoDurations[index]
+      val rawEffectiveMs = rawEffectiveDurations[index]
+      val remainingMs = targetVideoDurationMs - accumulatedVideoMs
+      val effectiveMs = if (audioUri != null) {
+        minOf(rawEffectiveMs, remainingMs.coerceAtLeast(0L))
+      } else {
+        rawEffectiveMs
+      }
+      if (effectiveMs <= 10L) break
+      accumulatedVideoMs += effectiveMs
+      val clippedMediaItem = if (sourceDurationMs > effectiveMs + 10L) {
         MediaItem.Builder()
           .setUri(uri)
           .setClippingConfiguration(
             MediaItem.ClippingConfiguration.Builder()
-              .setEndPositionMs(durationMs - trimEndMs)
+              .setEndPositionMs(effectiveMs)
               .build()
           )
           .build()
       } else {
         MediaItem.fromUri(uri)
       }
-      EditedMediaItem.Builder(clippedMediaItem).build()
+      videoItems.add(EditedMediaItem.Builder(clippedMediaItem).build())
+    }
+    if (videoItems.isEmpty()) {
+      return "ไม่มีวิดีโอฉากให้รวมหลังปรับความยาว"
     }
     val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(ImmutableList.copyOf(videoItems))
     val composition = if (audioUri != null) {
-      val audioItem = EditedMediaItem.Builder(MediaItem.fromUri(audioUri)).build()
+      val voiceAudioTrimMs = if (voiceoverDurationMs > 0L) {
+        maxOf(accumulatedVideoMs, voiceoverDurationMs)
+      } else {
+        accumulatedVideoMs
+      }
+      val audioMediaItem = if (voiceAudioTrimMs > 0L && voiceoverDurationMs > voiceAudioTrimMs + 10L) {
+        MediaItem.Builder()
+          .setUri(audioUri)
+          .setClippingConfiguration(
+            MediaItem.ClippingConfiguration.Builder()
+              .setEndPositionMs(voiceAudioTrimMs)
+              .build()
+          )
+          .build()
+      } else {
+        MediaItem.fromUri(audioUri)
+      }
+      val audioItem = EditedMediaItem.Builder(audioMediaItem).build()
       val audioSequence = EditedMediaItemSequence.withAudioFrom(ImmutableList.of(audioItem))
         .buildUpon()
         .setIsLooping(false)

@@ -69,6 +69,18 @@ export interface NativeGoogleFlowDownloadedAsset {
   createdAt: number;
 }
 
+export interface NativeGoogleFlowVideoProbe {
+  success: boolean;
+  error?: string;
+  totalEffectiveDuration?: number;
+  videos?: Array<{
+    uri: string;
+    duration: number;
+    effectiveDuration: number;
+    hasAudio?: boolean;
+  }>;
+}
+
 type NativeAccessibilityModule = {
   openAccessibilitySettings?: () => Promise<boolean> | boolean;
   getStatus?: () => Promise<AccessibilityStatus>;
@@ -101,6 +113,10 @@ type NativeAccessibilityModule = {
     videoUris: string[],
     voiceoverDataUrl?: string | null
   ) => Promise<NativeGoogleFlowDownloadedAsset | null>;
+  probeGoogleFlowVideos?: (
+    videoUris: string[],
+    trimEndSeconds?: number
+  ) => Promise<NativeGoogleFlowVideoProbe>;
   performBack?: () => Promise<boolean>;
   addListener?: (eventName: string) => void;
   removeListeners?: (count: number) => void;
@@ -286,6 +302,17 @@ export async function mergeGoogleFlowVideos(
   }
 
   return null;
+}
+
+export async function probeGoogleFlowVideos(
+  videoUris: string[],
+  trimEndSeconds = 0.5
+): Promise<NativeGoogleFlowVideoProbe> {
+  if (Platform.OS === 'android' && nativeModule?.probeGoogleFlowVideos) {
+    return nativeModule.probeGoogleFlowVideos(videoUris, trimEndSeconds);
+  }
+
+  return { success: false, error: 'native probeGoogleFlowVideos ไม่พร้อม' };
 }
 
 export async function requestAndroidVideoPermission(): Promise<boolean> {
