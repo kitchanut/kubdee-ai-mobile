@@ -3,6 +3,7 @@ const path = require('path');
 const {
   AndroidConfig,
   createRunOncePlugin,
+  withAppBuildGradle,
   withAndroidManifest,
   withDangerousMod,
   withStringsXml,
@@ -115,6 +116,21 @@ function withKubdeeAccessibility(config, props = {}) {
       config.modResults
     );
 
+    return config;
+  });
+
+  config = withAppBuildGradle(config, (config) => {
+    const media3Block = [
+      '    def media3_version = "1.10.1"',
+      '    implementation("androidx.media3:media3-transformer:$media3_version")',
+      '    implementation("androidx.media3:media3-effect:$media3_version")',
+    ].join('\n');
+    if (!config.modResults.contents.includes('androidx.media3:media3-transformer')) {
+      config.modResults.contents = config.modResults.contents.replace(
+        '    implementation("com.facebook.react:react-android")',
+        `    implementation("com.facebook.react:react-android")\n${media3Block}`
+      );
+    }
     return config;
   });
 

@@ -97,6 +97,10 @@ type NativeAccessibilityModule = {
     dataUrl: string,
     fileName?: string | null
   ) => Promise<NativeGoogleFlowDownloadedAsset | null>;
+  mergeGoogleFlowVideos?: (
+    videoUris: string[],
+    voiceoverDataUrl?: string | null
+  ) => Promise<NativeGoogleFlowDownloadedAsset | null>;
   performBack?: () => Promise<boolean>;
   addListener?: (eventName: string) => void;
   removeListeners?: (count: number) => void;
@@ -268,6 +272,17 @@ export async function saveGoogleFlowDataUrlAsset(
 ): Promise<NativeGoogleFlowDownloadedAsset | null> {
   if (Platform.OS === 'android' && nativeModule?.saveGoogleFlowDataUrlAsset) {
     return nativeModule.saveGoogleFlowDataUrlAsset(step, dataUrl, fileName ?? null);
+  }
+
+  return null;
+}
+
+export async function mergeGoogleFlowVideos(
+  videoUris: string[],
+  voiceoverDataUrl?: string | null
+): Promise<NativeGoogleFlowDownloadedAsset | null> {
+  if (Platform.OS === 'android' && nativeModule?.mergeGoogleFlowVideos) {
+    return nativeModule.mergeGoogleFlowVideos(videoUris, voiceoverDataUrl ?? null);
   }
 
   return null;

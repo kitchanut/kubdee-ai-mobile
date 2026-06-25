@@ -7,6 +7,8 @@ import {
   emitGoogleFlowRunnerLog,
   registerGoogleFlowWebViewRunnerHost,
 } from '@/autopilot/googleFlowRunnerBridge';
+import { BACKEND_URL } from '@/auth/constants';
+import { getStoredAuthTokens } from '@/auth/storage';
 import type {
   AutoPilotSettings,
   AutoPilotStepType,
@@ -17,7 +19,11 @@ import type {
 import FlowWebView, { type FlowConnectionState, type FlowWebViewHandle } from '@/flow/FlowWebView';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { saveGoogleFlowDataUrlAsset, waitForGoogleFlowDownload } from '@/native/AccessibilityBridge';
+import {
+  mergeGoogleFlowVideos,
+  saveGoogleFlowDataUrlAsset,
+  waitForGoogleFlowDownload,
+} from '@/native/AccessibilityBridge';
 
 interface GoogleFlowWebViewRunnerHostProps {
   theme: KubdeeTheme;
@@ -186,6 +192,80 @@ function multiSceneVideoPrompt(product: GoogleFlowRunnerProduct, basePrompt: str
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+function resolveGeminiTtsVoice(voiceCharacter?: string): string {
+  const directVoice = voiceCharacter?.startsWith('tts_') ? voiceCharacter.replace(/^tts_/, '') : '';
+  if (directVoice) {
+    return directVoice.charAt(0).toUpperCase() + directVoice.slice(1).toLowerCase();
+  }
+  const voiceMap: Record<string, string> = {
+    female: 'Aoede',
+    male: 'Puck',
+    teen_girl: 'Leda',
+    teen_boy: 'Fenrir',
+    vendor_female: 'Kore',
+    vendor_male: 'Charon',
+    office_female: 'Callirrhoe',
+    office_male: 'Iapetus',
+    aunt: 'Sulafat',
+    uncle: 'Orus',
+    __custom__: 'Kore',
+    '': 'Kore',
+  };
+  return voiceMap[voiceCharacter || ''] || 'Kore';
+}
+
+async function generateVoiceoverAudioDataUrl({
+  durationSeconds,
+  product,
+  sceneCount,
+}: {
+  durationSeconds: number;
+  product: GoogleFlowRunnerProduct;
+  sceneCount: number;
+}): Promise<string | null> {
+  const voiceoverScript = Array.from({ length: sceneCount }, (_, index) => dialogueForScene(product, index + 1))
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' ');
+  if (!voiceoverScript) {
+    return null;
+  }
+  const tokens = await getStoredAuthTokens();
+  if (!tokens?.accessToken) {
+    throw new Error('กรุณาเข้าสู่ระบบก่อนสร้างเสียงพากษ์');
+  }
+  const response = await fetch(`${BACKEND_URL}/api/v1/ai/voiceover`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tokens.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      voiceoverScript,
+      sceneCount,
+      durationSeconds,
+      voice: resolveGeminiTtsVoice(product.settings.video.voiceCharacter),
+    }),
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    audioBase64?: string;
+    mimeType?: string;
+    error?: string;
+    message?: string;
+  };
+  if (!response.ok) {
+    throw new Error(data.message || data.error || 'สร้างเสียงพากษ์ไม่สำเร็จ');
+  }
+  const audioBase64 = data.audioBase64?.trim();
+  if (!audioBase64) {
+    throw new Error('API ไม่ส่งไฟล์เสียงพากษ์กลับมา');
+  }
+  if (audioBase64.startsWith('data:')) {
+    return audioBase64;
+  }
+  return `data:${data.mimeType || 'audio/wav'};base64,${audioBase64}`;
 }
 
 function promptForStep(product: GoogleFlowRunnerProduct, step: AutoPilotStepType): string {
@@ -489,14 +569,6 @@ export default function GoogleFlowWebViewRunnerHost({
           message: `เริ่มวิดีโอหลายฉาก ${sceneCount} ฉาก (${useSameAngle ? 'มุมเดียว' : useVoiceover ? 'เสียงพากษ์' : 'หลายมุม'})`,
         });
 
-        if (useVoiceover) {
-          emit({
-            runId: payload.runId,
-            status: 'running',
-            message: 'หมายเหตุ: mobile ยังไม่มีตัวรวมวิดีโอ/เสียงพากษ์แบบ desktop จึงสร้างเป็นคลิปฉากแยกแบบ visual-only ก่อน',
-          });
-        }
-
         await openGoogleFlowProject({
           handle,
           payload,
@@ -607,6 +679,7 @@ export default function GoogleFlowWebViewRunnerHost({
           }
         }
 
+        const sceneVideoUris: string[] = [];
         for (let sceneIndex = 0; sceneIndex < sceneCount; sceneIndex += 1) {
           checkStop();
           const sceneNumber = sceneIndex + 1;
@@ -698,22 +771,79 @@ export default function GoogleFlowWebViewRunnerHost({
           if (!downloaded?.uri) {
             throw new Error(`ดาวน์โหลดวิดีโอฉาก ${sceneNumber} ลงมือถือไม่สำเร็จ`);
           }
+          sceneVideoUris.push(downloaded.uri);
           emit({
-            event: 'asset',
+            event: 'progress',
             runId: payload.runId,
             status: 'running',
             step,
-            stage: 'generated',
+            stage: 'scene_video_ready',
             productId: product.id,
             productName: product.name,
-            fileUri: downloaded.uri,
-            fileName: downloaded.fileName,
-            mimeType: downloaded.mimeType || 'video/mp4',
-            sizeBytes: downloaded.sizeBytes,
-            createdAt: downloaded.createdAt || Date.now(),
-            message: `ได้วิดีโอฉาก ${sceneNumber}/${sceneCount} แล้ว`,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `ได้วิดีโอฉาก ${sceneNumber}/${sceneCount} แล้ว เตรียมรวมไฟล์`,
           });
         }
+
+        let voiceoverDataUrl: string | null = null;
+        if (useVoiceover) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'voiceover',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: 'กำลังสร้างเสียงพากษ์รวมสำหรับวิดีโอหลายฉาก',
+          });
+          voiceoverDataUrl = await generateVoiceoverAudioDataUrl({
+            durationSeconds: Math.max(1, Math.round(sceneCount * Math.max(1, videoDuration - 0.5) - 1)),
+            product,
+            sceneCount,
+          });
+        }
+
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'merge_video',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: useVoiceover ? 'กำลังรวมวิดีโอหลายฉากพร้อมเสียงพากษ์' : 'กำลังรวมวิดีโอหลายฉาก',
+        });
+        const merged = await mergeGoogleFlowVideos(sceneVideoUris, voiceoverDataUrl);
+        if (!merged?.uri) {
+          throw new Error('รวมวิดีโอหลายฉากบนมือถือไม่สำเร็จ');
+        }
+        emit({
+          event: 'asset',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'generated',
+          productId: product.id,
+          productName: product.name,
+          fileUri: merged.uri,
+          fileName: merged.fileName,
+          mimeType: merged.mimeType || 'video/mp4',
+          sizeBytes: merged.sizeBytes,
+          createdAt: merged.createdAt || Date.now(),
+          message: useVoiceover ? 'ได้วิดีโอรวมพร้อมเสียงพากษ์แล้ว' : `ได้วิดีโอรวม ${sceneCount} ฉากแล้ว`,
+        });
 
         emit({
           event: 'progress',

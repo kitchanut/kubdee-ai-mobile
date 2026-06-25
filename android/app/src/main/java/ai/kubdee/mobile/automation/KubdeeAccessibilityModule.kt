@@ -17,15 +17,27 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
+import androidx.annotation.OptIn
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.google.common.collect.ImmutableList
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
@@ -465,6 +477,57 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
+  fun mergeGoogleFlowVideos(videoUris: ReadableArray, voiceoverDataUrl: String?, promise: Promise) {
+    Thread {
+      try {
+        val uris = mutableListOf<Uri>()
+        for (index in 0 until videoUris.size()) {
+          val value = videoUris.getString(index)?.trim().orEmpty()
+          if (value.isNotBlank()) {
+            uris.add(Uri.parse(value))
+          }
+        }
+        if (uris.isEmpty()) {
+          promise.reject("FLOW_VIDEO_MERGE_EMPTY", "ไม่มีวิดีโอฉากให้รวม")
+          return@Thread
+        }
+
+        val audioFile = voiceoverDataUrl
+          ?.takeIf { it.isNotBlank() }
+          ?.let { saveDataUrlToCacheFile(it, "kubdee-flow-voiceover", "wav") }
+        val outputFile = File(reactContext.cacheDir, "kubdee-flow-merged-${UUID.randomUUID()}.mp4")
+        val exportError = exportGoogleFlowComposition(uris, audioFile?.let { Uri.fromFile(it) }, outputFile)
+        if (exportError != null) {
+          promise.reject("FLOW_VIDEO_MERGE_FAILED", exportError)
+          return@Thread
+        }
+
+        val asset = FileInputStream(outputFile).use { input ->
+          saveGoogleFlowAssetStream(
+            "video",
+            input,
+            "kubdee-flow-merged-${System.currentTimeMillis()}.mp4",
+            "video/mp4"
+          )
+        }
+        try { outputFile.delete() } catch (_: Exception) {}
+        try { audioFile?.delete() } catch (_: Exception) {}
+
+        if (asset == null) {
+          promise.resolve(null)
+        } else {
+          promise.resolve(asset.toWritableMap())
+        }
+      } catch (error: Exception) {
+        promise.reject("FLOW_VIDEO_MERGE_FAILED", error.message, error)
+      }
+    }.also { thread ->
+      thread.name = "KubdeeFlowVideoMerge"
+      thread.start()
+    }
+  }
+
+  @ReactMethod
   fun addListener(eventName: String) {
     // Required by React Native NativeEventEmitter.
   }
@@ -716,6 +779,75 @@ class KubdeeAccessibilityModule(
     }
     output.flush()
     return total
+  }
+
+  private fun saveDataUrlToCacheFile(dataUrl: String, prefix: String, fallbackExtension: String): File {
+    val commaIndex = dataUrl.indexOf(',')
+    if (commaIndex <= 0) {
+      throw IllegalArgumentException("data URL เสียงไม่ถูกต้อง")
+    }
+    val header = dataUrl.substring(0, commaIndex)
+    val payload = dataUrl.substring(commaIndex + 1)
+    val mime = header.substringAfter("data:", "audio/wav").substringBefore(';').lowercase(Locale.ROOT)
+    val extension = when {
+      mime.contains("mpeg") || mime.contains("mp3") -> "mp3"
+      mime.contains("aac") || mime.contains("mp4") -> "m4a"
+      mime.contains("ogg") -> "ogg"
+      else -> fallbackExtension
+    }
+    val bytes = if (header.contains(";base64", ignoreCase = true)) {
+      Base64.decode(payload, Base64.DEFAULT)
+    } else {
+      Uri.decode(payload).toByteArray(Charsets.UTF_8)
+    }
+    val file = File(reactContext.cacheDir, "$prefix-${UUID.randomUUID()}.$extension")
+    FileOutputStream(file).use { it.write(bytes) }
+    return file
+  }
+
+  @OptIn(UnstableApi::class)
+  private fun exportGoogleFlowComposition(videoUris: List<Uri>, audioUri: Uri?, outputFile: File): String? {
+    var errorMessage: String? = null
+    val latch = CountDownLatch(1)
+    val videoItems = videoUris.map { uri ->
+      EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
+    }
+    val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(ImmutableList.copyOf(videoItems))
+    val composition = if (audioUri != null) {
+      val audioItem = EditedMediaItem.Builder(MediaItem.fromUri(audioUri)).build()
+      val audioSequence = EditedMediaItemSequence.withAudioFrom(ImmutableList.of(audioItem))
+        .buildUpon()
+        .setIsLooping(false)
+        .build()
+      Composition.Builder(videoSequence, audioSequence).build()
+    } else {
+      Composition.Builder(videoSequence).build()
+    }
+
+    val transformer = Transformer.Builder(reactContext)
+      .addListener(object : Transformer.Listener {
+        override fun onCompleted(composition: Composition, result: ExportResult) {
+          latch.countDown()
+        }
+
+        override fun onError(
+          composition: Composition,
+          result: ExportResult,
+          exception: ExportException
+        ) {
+          errorMessage = exception.message ?: exception.errorCodeName
+          latch.countDown()
+        }
+      })
+      .build()
+
+    transformer.start(composition, outputFile.absolutePath)
+    val completed = latch.await(20, TimeUnit.MINUTES)
+    if (!completed) {
+      transformer.cancel()
+      return "รวมวิดีโอใช้เวลานานเกินไป"
+    }
+    return errorMessage
   }
 
   private fun normalizeGoogleFlowAssetMimeType(step: String, value: String?): String {
