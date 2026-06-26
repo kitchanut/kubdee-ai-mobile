@@ -30,6 +30,7 @@ export function tabFromUrl(url: string | null | undefined): TabId | null {
 function isTabId(value: string | null | undefined): value is TabId {
   return (
     value === 'pipeline' ||
+    value === 'image-create' ||
     value === 'tiktok' ||
     value === 'shopee' ||
     value === 'youtube' ||

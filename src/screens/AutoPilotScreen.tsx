@@ -14,7 +14,6 @@ import {
   type AutoPilotSettingsPreset,
 } from '@/autopilot/settingsPresetStore';
 import { useAutoPilotController } from '@/autopilot/useAutoPilotController';
-import GoogleFlowWebViewRunnerHost from '@/autopilot/GoogleFlowWebViewRunnerHost';
 import type { AutoPilotProductSelectionRequest } from '@/autopilot/selectionRequest';
 import type { AutoPilotProductSettings } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
@@ -421,8 +420,6 @@ export default function AutoPilotScreen({
           </Button>
         </View>
       ) : null}
-
-      <GoogleFlowWebViewRunnerHost theme={theme} />
     </View>
   );
 }

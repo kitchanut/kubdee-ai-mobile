@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import {
   FolderOpen,
+  ImagePlus,
   Smartphone,
   Star,
   UserCircle,
@@ -26,6 +27,7 @@ const tabs: Array<{
   brandIcon?: boolean;
 }> = [
   { id: 'pipeline', label: 'Auto Pipeline', icon: Star },
+  { id: 'image-create', label: 'สร้างภาพ', icon: ImagePlus },
   { id: 'library', label: 'คลัง', icon: FolderOpen },
   { id: 'tiktok', label: 'TikTok', icon: TikTokLogo, brandIcon: true },
   { id: 'shopee', label: 'Shopee', icon: ShopeeLogo, brandIcon: true },

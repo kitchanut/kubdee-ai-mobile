@@ -1,18 +1,22 @@
 import { useMemo, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import {
   Eye,
   EyeOff,
   Pencil,
   Plus,
   Presentation,
+  Sparkles,
   Trash2,
   User,
 } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 
+import { startGoogleFlowRunner } from '@/autopilot/googleFlowRunnerBridge';
 import Text from '@/components/ui/KubdeeText';
+import { createCreativeImageRunnerPayload } from '@/creative/creativeImageRunner';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type { CreativeAssetKind, CreativeLibraryItem } from '@/library/CreativeLibraryContext';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -85,7 +89,9 @@ export default function SimpleListPanel({
   const accent = getAccentTone(theme, accentColor);
   const HeaderIcon = kind === 'characters' ? User : Presentation;
   const { deleteLibraryItems, getLibraryItems, saveLibraryItem } = useCreativeLibrary();
+  const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [isStartingFlow, setIsStartingFlow] = useState(false);
 
   const items = useMemo(
     () => getLibraryItems(kind, selectedProfileId),
@@ -112,11 +118,11 @@ export default function SimpleListPanel({
 
   const closeDraft = (): void => setDraft(null);
 
-  const saveDraft = async (): Promise<void> => {
-    if (!draft) return;
+  const saveDraft = async (): Promise<CreativeLibraryItem | null> => {
+    if (!draft) return null;
     const name = cleanText(draft.name) ?? copy.defaultName;
     const now = Date.now();
-    await saveLibraryItem({
+    const item = await saveLibraryItem({
       id: draft.id ?? createId(kind),
       kind,
       profileLocalId: selectedProfileId,
@@ -128,7 +134,46 @@ export default function SimpleListPanel({
       createdAt: draft.id ? items.find((item) => item.id === draft.id)?.createdAt ?? now : now,
     });
     toast.success(draft.id ? 'บันทึกแล้ว' : 'เพิ่มเข้าคลังแล้ว');
-    closeDraft();
+    return item;
+  };
+
+  const saveAndCloseDraft = async (): Promise<void> => {
+    const item = await saveDraft();
+    if (item) {
+      closeDraft();
+    }
+  };
+
+  const generateDraftWithFlow = async (): Promise<void> => {
+    if (!draft || isStartingFlow) return;
+    if (!selectedProfileId.trim()) {
+      toast.error('กรุณาเลือกโปรไฟล์ก่อน');
+      return;
+    }
+
+    setIsStartingFlow(true);
+    try {
+      const item = await saveDraft();
+      if (!item) return;
+      const result = await startGoogleFlowRunner(
+        createCreativeImageRunnerPayload({
+          description: item.description,
+          imageUri: item.imageUri,
+          itemId: item.id,
+          kind,
+          name: item.name,
+          profileLocalId: selectedProfileId,
+        })
+      );
+      if (!result.success) {
+        toast.error(result.error || 'เริ่ม Google Flow ไม่สำเร็จ');
+        return;
+      }
+      toast.success(`เริ่มสร้าง${kind === 'characters' ? 'ตัวละคร' : 'ฉาก'}ด้วย Google Flow แล้ว`);
+      closeDraft();
+    } finally {
+      setIsStartingFlow(false);
+    }
   };
 
   const toggleEnabled = async (item: CreativeLibraryItem): Promise<void> => {
@@ -192,7 +237,10 @@ export default function SimpleListPanel({
 
       <Modal animationType="fade" transparent visible={!!draft} onRequestClose={closeDraft}>
         <View className="flex-1 justify-end bg-black/45">
-          <View className="gap-3 rounded-t-[20px] border border-kd-border bg-kd-panel p-4">
+          <View
+            className="gap-3 rounded-t-[20px] border border-kd-border bg-kd-panel p-4"
+            style={{ paddingBottom: Math.max(16, insets.bottom + 12) }}
+          >
             <Text className="text-kd-title font-semibold text-kd-text">
               {draft?.id ? 'แก้ไข' : 'เพิ่ม'}{kind === 'characters' ? 'ตัวละคร' : 'ฉาก'}
             </Text>
@@ -230,15 +278,30 @@ export default function SimpleListPanel({
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => void saveDraft()}
+                onPress={() => void saveAndCloseDraft()}
                 className="h-11 flex-1 items-center justify-center rounded-kd-lg bg-kd-text"
               >
                 <Text className="text-kd-body font-semibold text-kd-panel">บันทึก</Text>
               </Pressable>
             </View>
-          </View>
+            <Pressable
+              accessibilityRole="button"
+              disabled={isStartingFlow}
+              onPress={() => void generateDraftWithFlow()}
+              className="h-11 flex-row items-center justify-center gap-2 rounded-kd-lg bg-kd-amber disabled:opacity-60"
+            >
+              {isStartingFlow ? (
+                <ActivityIndicator size="small" color="#111827" />
+              ) : (
+                <Sparkles size={15} color="#111827" strokeWidth={2.4} />
+              )}
+            <Text className="text-kd-body font-extrabold text-[#111827]">
+              สร้างด้วย Google Flow
+            </Text>
+          </Pressable>
         </View>
-      </Modal>
+      </View>
+    </Modal>
     </View>
   );
 }

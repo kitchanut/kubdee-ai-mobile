@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { subscribeGoogleFlowRunnerLogs } from '@/autopilot/googleFlowRunnerBridge';
 import {
   deleteCreativeLibraryItems,
   deleteCreativeMediaAssets,
@@ -101,6 +102,36 @@ export function CreativeLibraryProvider({ children }: { children: ReactNode }): 
     const idSet = new Set(ids);
     setLibraryItems((current) => current.filter((item) => !idSet.has(item.id)));
   }, []);
+
+  useEffect(() => {
+    const subscription = subscribeGoogleFlowRunnerLogs((entry) => {
+      if (
+        entry.event !== 'asset' ||
+        entry.step !== 'image' ||
+        !entry.fileUri ||
+        !entry.creativeAssetKind ||
+        !entry.creativeItemId
+      ) {
+        return;
+      }
+
+      void saveLibraryItem({
+        id: entry.creativeItemId,
+        kind: entry.creativeAssetKind,
+        profileLocalId: entry.profileLocalId ?? null,
+        name: entry.creativeItemName || (entry.creativeAssetKind === 'characters' ? 'ตัวละครใหม่' : 'ฉากใหม่'),
+        description: entry.creativeItemDescription ?? null,
+        imageUri: entry.fileUri,
+        tags: entry.creativeItemTags ?? null,
+        source: 'mobile-google-flow',
+        createdAt: entry.createdAt ?? Date.now(),
+      });
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [saveLibraryItem]);
 
   const getLibraryItems = useCallback(
     (kind: CreativeAssetKind, profileLocalId?: string | null): CreativeLibraryItem[] =>

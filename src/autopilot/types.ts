@@ -169,6 +169,11 @@ export interface GoogleFlowRunnerProduct {
   platform: string;
   settings: AutoPilotProductSettings;
   prompts?: GoogleFlowRunnerPromptBundle;
+  creativeAssetKind?: 'characters' | 'scenes';
+  creativeItemId?: string;
+  creativeItemName?: string;
+  creativeItemDescription?: string | null;
+  creativeItemTags?: string | null;
 }
 
 export interface GoogleFlowRunnerPayload {
@@ -200,6 +205,7 @@ export interface GoogleFlowRunnerLogEntry {
   event?: 'asset' | 'progress';
   step?: AutoPilotStepType;
   stage?: string;
+  profileLocalId?: string;
   productId?: string;
   productName?: string;
   currentRound?: number;
@@ -211,4 +217,9 @@ export interface GoogleFlowRunnerLogEntry {
   mimeType?: string;
   sizeBytes?: number;
   createdAt?: number;
+  creativeAssetKind?: 'characters' | 'scenes';
+  creativeItemId?: string;
+  creativeItemName?: string;
+  creativeItemDescription?: string | null;
+  creativeItemTags?: string | null;
 }

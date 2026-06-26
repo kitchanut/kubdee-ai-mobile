@@ -1605,6 +1605,7 @@ export default function GoogleFlowWebViewRunnerHost({
             status: 'running',
             step,
             stage: 'generated',
+            profileLocalId: payload.profileLocalId,
             productId: product.id,
             productName: product.name,
             fileUri: downloaded.uri,
@@ -1666,6 +1667,11 @@ export default function GoogleFlowWebViewRunnerHost({
             mimeType: downloaded.mimeType || image.mimeType || 'image/png',
             sizeBytes: downloaded.sizeBytes || image.sizeBytes || undefined,
             createdAt: downloaded.createdAt || Date.now(),
+            creativeAssetKind: product.creativeAssetKind,
+            creativeItemId: product.creativeItemId,
+            creativeItemName: product.creativeItemName,
+            creativeItemDescription: product.creativeItemDescription,
+            creativeItemTags: product.creativeItemTags,
             message: `ได้รูปภาพจาก Google Flow แล้ว (${index + 1}/${images.length})`,
           });
         }

@@ -9,6 +9,7 @@ import {
   pushAutomationActivityLog,
   useAutomationActivityNativeBridge,
 } from '@/activity/automationActivityLogStore';
+import GoogleFlowWebViewRunnerHost from '@/autopilot/GoogleFlowWebViewRunnerHost';
 import { useAuth } from '@/auth/AuthContext';
 import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
@@ -19,6 +20,7 @@ import type { AutoPilotProductSelectionRequest } from '@/autopilot/selectionRequ
 import PlaceholderScreen from '@/screens/PlaceholderScreen';
 import AutoPilotScreen from '@/screens/AutoPilotScreen';
 import AuthLoadingScreen from '@/screens/AuthLoadingScreen';
+import ImageCreateScreen from '@/screens/ImageWorkspaceLibraryStyleScreen';
 import LibraryScreen from '@/screens/LibraryScreen';
 import LoginScreen from '@/screens/LoginScreen';
 import LogsScreen from '@/screens/LogsScreen';
@@ -272,6 +274,8 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             onSelectionRequestHandled={handleAutoPilotSelectionHandled}
           />
         );
+      case 'image-create':
+        return <ImageCreateScreen selectedProfileId={selectedProfileId} theme={theme} />;
       case 'mobile':
         return <MobileDevicesScreen theme={theme} />;
       case 'shopee':
@@ -352,6 +356,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
               />
               <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />
               <View className="min-h-0 flex-1">{renderScreen()}</View>
+              <GoogleFlowWebViewRunnerHost theme={theme} />
             </>
           )}
         </View>
