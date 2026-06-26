@@ -3,6 +3,7 @@ import { Ban, Bot, Plus, Settings2, SlidersHorizontal, Sparkles, Star, X } from 
 
 import Text from '@/components/ui/KubdeeText';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
   FLOW_VIDEO_MODELS,
   VIDEO_DURATION_OPTIONS,
@@ -60,6 +61,9 @@ export function VideoProductSettingsForm({
   const multiScene = parseInt(settings.sceneCount || '1', 10) > 1;
   const selectedVideoMethod = settings.videoMethod || 'extend';
   const selectedMultiSceneAngleMode = settings.multiSceneAngleMode || 'same_angle';
+  const isVoiceoverMode = selectedMultiSceneAngleMode === 'voiceover';
+  const multiSceneAiScriptEnabled = isVoiceoverMode || settings.multiSceneAiScriptEnabled !== false;
+  const multiSceneSendImagesToAi = multiSceneAiScriptEnabled && settings.multiSceneSendImagesToAi === true;
   const selectedVideoModel = settings.videoModel || 'veo_31_lite_lower';
   const selectedVideoDuration = settings.videoDuration || 8;
   const durationOptions = VIDEO_DURATION_OPTIONS.filter(
@@ -182,8 +186,38 @@ export function VideoProductSettingsForm({
               theme={theme}
               accent={accent}
               value={selectedMultiSceneAngleMode}
-              onChange={(value) => onChange('multiSceneAngleMode', String(value))}
+              onChange={(value) => {
+                const nextMode = String(value);
+                onChange('multiSceneAngleMode', nextMode);
+                if (nextMode === 'voiceover') {
+                  onChange('multiSceneAiScriptEnabled', true);
+                }
+              }}
             />
+          ) : null}
+          {multiScene && selectedVideoMethod === 'multi' ? (
+            <View className="gap-1 rounded-kd-lg bg-kd-panel-muted px-2 py-1.5 dark:bg-kd-card-muted">
+              <MultiSceneToggleRow
+                disabled={isVoiceoverMode}
+                label={isVoiceoverMode ? 'AI คิดบท (จำเป็นสำหรับเสียงพากย์)' : 'AI คิดบท (เรียก AI เขียนบท)'}
+                theme={theme}
+                value={multiSceneAiScriptEnabled}
+                onValueChange={(value) => {
+                  if (isVoiceoverMode) return;
+                  onChange('multiSceneAiScriptEnabled', value);
+                  if (!value) {
+                    onChange('multiSceneSendImagesToAi', false);
+                  }
+                }}
+              />
+              <MultiSceneToggleRow
+                disabled={!multiSceneAiScriptEnabled}
+                label="ส่งรูปให้ AI คิดบท (วิเคราะห์รูปฉาก)"
+                theme={theme}
+                value={multiSceneSendImagesToAi}
+                onValueChange={(value) => onChange('multiSceneSendImagesToAi', value)}
+              />
+            </View>
           ) : null}
         </View>
       </SettingsSection>
@@ -463,6 +497,35 @@ export function VideoProductSettingsForm({
           </SettingsSection>
         </>
       ) : null}
+    </View>
+  );
+}
+
+function MultiSceneToggleRow({
+  disabled = false,
+  label,
+  theme,
+  value,
+  onValueChange,
+}: {
+  disabled?: boolean;
+  label: string;
+  theme: KubdeeTheme;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}): React.JSX.Element {
+  return (
+    <View className={`min-h-7 flex-row items-center gap-3 ${disabled ? 'opacity-60' : ''}`}>
+      <Text className="min-w-0 flex-1 text-kd-caption font-medium text-kd-text-muted" numberOfLines={1}>
+        {label}
+      </Text>
+      <Switch
+        size="sm"
+        checked={value}
+        disabled={disabled}
+        onCheckedChange={onValueChange}
+        className={value ? 'bg-black dark:bg-zinc-200' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
+      />
     </View>
   );
 }

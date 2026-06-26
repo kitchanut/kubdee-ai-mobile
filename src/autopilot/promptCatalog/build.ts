@@ -12,7 +12,7 @@ export interface BuildProduct {
   hasReference?: boolean;
 }
 
-export type BuildSettings = Record<string, string | string[] | number | null | undefined>;
+export type BuildSettings = Record<string, string | string[] | number | boolean | null | undefined>;
 
 const CUSTOM_TOKENS = new Set(['custom', '__custom__']);
 const EMPTY_TOKENS = new Set(['', 'auto']);
@@ -31,7 +31,7 @@ function resolveCategory(category: Category, settings: BuildSettings): string {
   return option ? option.prompt || option.value : value;
 }
 
-function settingValue(value: string | string[] | number | null | undefined): string {
+function settingValue(value: string | string[] | number | boolean | null | undefined): string {
   const resolved = Array.isArray(value) ? value[0] : value;
   return resolved == null ? '' : String(resolved);
 }

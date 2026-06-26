@@ -65,6 +65,8 @@ export interface AutoPilotVideoSettings {
   outputCount: string;
   videoMethod: string;
   multiSceneAngleMode: string;
+  multiSceneAiScriptEnabled: boolean;
+  multiSceneSendImagesToAi: boolean;
   characterMode: string;
   promptMode: AutoPilotPromptMode;
   customPrompt: string;

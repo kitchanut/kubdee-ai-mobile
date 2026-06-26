@@ -30,6 +30,7 @@ export const PRESET_OPTIONS: Record<string, AutoPilotOption[]> = {
   core: [
     { value: 'auto', label: 'ออโต้' },
     { value: 'คนธรรมดารีวิว', label: 'คนธรรมดา' },
+    { value: 'ภาพถ่ายด้วยมือถือ iPhone รายละเอียดชัดสมจริง', label: 'มือถือ' },
     { value: 'มืออาชีพ', label: 'มืออาชีพ' },
     { value: 'สวมใส่เสื้อผ้า', label: 'สวมใส่' },
     { value: 'ถือสินค้ารีวิว', label: 'ถือสินค้า' },
@@ -108,6 +109,7 @@ export const PRESET_OPTIONS: Record<string, AutoPilotOption[]> = {
 export const CUSTOM_STYLE_OPTIONS: AutoPilotOption[] = [
   { value: 'auto', label: 'ออโต้' },
   { value: 'คนธรรมดา', label: 'คนธรรมดา' },
+  { value: 'ภาพถ่ายด้วยมือถือ iPhone รายละเอียดชัดสมจริง', label: 'มือถือ' },
   { value: 'มืออาชีพ', label: 'มืออาชีพ' },
   { value: 'สวมใส่', label: 'สวมใส่' },
   { value: 'ถือสินค้า', label: 'ถือสินค้า' },

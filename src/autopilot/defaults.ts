@@ -65,6 +65,8 @@ export const DEFAULT_AUTO_PILOT_VIDEO_SETTINGS: AutoPilotVideoSettings = {
   outputCount: '1',
   videoMethod: 'extend',
   multiSceneAngleMode: 'same_angle',
+  multiSceneAiScriptEnabled: true,
+  multiSceneSendImagesToAi: false,
   characterMode: 'fromImage',
   promptMode: 'auto',
   customPrompt: '',
