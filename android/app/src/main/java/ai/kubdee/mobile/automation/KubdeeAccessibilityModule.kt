@@ -47,6 +47,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 
 class KubdeeAccessibilityModule(
@@ -859,9 +860,10 @@ class KubdeeAccessibilityModule(
 
   @OptIn(UnstableApi::class)
   private fun exportGoogleFlowComposition(videoUris: List<Uri>, audioUri: Uri?, outputFile: File): String? {
-    var errorMessage: String? = null
+    val errorMessage = AtomicReference<String?>(null)
+    val transformerRef = AtomicReference<Transformer?>(null)
     val latch = CountDownLatch(1)
-    val trimEndMs = 500L
+    val trimEndMs = 300L
     val rawVideoDurations = videoUris.map { uri -> getMediaDurationMs(uri) ?: 0L }
     val rawEffectiveDurations = rawVideoDurations.map { durationMs ->
       (durationMs - trimEndMs).coerceAtLeast(500L)
@@ -933,30 +935,44 @@ class KubdeeAccessibilityModule(
       Composition.Builder(videoSequence).build()
     }
 
-    val transformer = Transformer.Builder(reactContext)
-      .addListener(object : Transformer.Listener {
-        override fun onCompleted(composition: Composition, result: ExportResult) {
-          latch.countDown()
-        }
+    moduleHandler.post {
+      try {
+        val transformer = Transformer.Builder(reactContext)
+          .addListener(object : Transformer.Listener {
+            override fun onCompleted(composition: Composition, result: ExportResult) {
+              latch.countDown()
+            }
 
-        override fun onError(
-          composition: Composition,
-          result: ExportResult,
-          exception: ExportException
-        ) {
-          errorMessage = exception.message ?: exception.errorCodeName
-          latch.countDown()
-        }
-      })
-      .build()
+            override fun onError(
+              composition: Composition,
+              result: ExportResult,
+              exception: ExportException
+            ) {
+              errorMessage.set(exception.message ?: exception.errorCodeName)
+              latch.countDown()
+            }
+          })
+          .build()
+        transformerRef.set(transformer)
+        transformer.start(composition, outputFile.absolutePath)
+      } catch (error: Exception) {
+        errorMessage.set(error.message ?: "เริ่มรวมวิดีโอไม่สำเร็จ")
+        latch.countDown()
+      }
+    }
 
-    transformer.start(composition, outputFile.absolutePath)
     val completed = latch.await(20, TimeUnit.MINUTES)
     if (!completed) {
-      transformer.cancel()
+      moduleHandler.post {
+        try {
+          transformerRef.get()?.cancel()
+        } catch (_: Exception) {
+          // Ignore cancellation cleanup errors.
+        }
+      }
       return "รวมวิดีโอใช้เวลานานเกินไป"
     }
-    return errorMessage
+    return errorMessage.get()
   }
 
   private fun getMediaDurationMs(uri: Uri): Long? {

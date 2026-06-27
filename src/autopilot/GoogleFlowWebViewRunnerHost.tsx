@@ -69,6 +69,8 @@ interface FlowImageDownloadPayload {
   errors?: string[];
 }
 
+type FlowImageDownloadItem = NonNullable<FlowImageDownloadPayload['images']>[number];
+
 interface PreparedMultiScenePromptResult {
   prompts: string[];
   scenes: Array<{ sceneNumber: number; dialogue: string }>;
@@ -505,6 +507,23 @@ function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMul
   };
 }
 
+const VOICEOVER_VIDEO_AUDIO_RULE_WITH_MUSIC =
+  'Audio rule: no speech, narration, dialogue, lip sync, subtitles, or on-screen text. Add only subtle instrumental background music that fits the product, image mood, and scene. No vocals, no lyrics, no loud beats, no distracting sound effects. External voiceover will be added later.';
+
+const VOICEOVER_VIDEO_SILENT_RETRY_RULE =
+  'Retry audio rule: create silent visual-only product footage. No speech, narration, dialogue, lip sync, subtitles, on-screen text, background music, sound effects, vocals, or lyrics. External voiceover will be added later.';
+
+function toVoiceoverSilentRetryPrompt(prompt: string): string {
+  if (prompt.includes(VOICEOVER_VIDEO_AUDIO_RULE_WITH_MUSIC)) {
+    return prompt.replace(VOICEOVER_VIDEO_AUDIO_RULE_WITH_MUSIC, VOICEOVER_VIDEO_SILENT_RETRY_RULE);
+  }
+
+  return [
+    prompt,
+    VOICEOVER_VIDEO_SILENT_RETRY_RULE,
+  ].join('\n');
+}
+
 function buildDesktopLikeVideoPrompts({
   product,
   scenes,
@@ -531,7 +550,7 @@ function buildDesktopLikeVideoPrompts({
         `Visual style: ${style}.`,
         'The character or hands may smile, pose, hold, point to, wear, use, or demonstrate the product naturally, but must not speak, mouth words, or perform lip sync.',
         cameraMotion ? `Camera motion: ${cameraMotion}. Keep movement subtle and keep the product visible.` : '',
-        'Audio rule: no speech, narration, dialogue, lip sync, subtitles, or on-screen text. Add only subtle instrumental background music that fits the product, image mood, and scene. No vocals, no lyrics, no loud beats, no distracting sound effects. External voiceover will be added later.',
+        VOICEOVER_VIDEO_AUDIO_RULE_WITH_MUSIC,
         'Output must be full screen with no black bars.',
         video.systemPrompt ? `Additional user instructions: ${video.systemPrompt}` : '',
       ]
@@ -834,6 +853,34 @@ export default function GoogleFlowWebViewRunnerHost({
     [checkStop]
   );
 
+  const downloadLatestFlowImage = useCallback(
+    async (handle: FlowWebViewHandle, count = 1): Promise<FlowImageDownloadItem | null> => {
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        checkStop();
+        try {
+          const imagePayload = (await runActionOrThrow(
+            handle,
+            'downloadImages',
+            { count },
+            90_000
+          )) as FlowImageDownloadPayload;
+          const image = imagePayload.images?.find((item) => item.dataUrl);
+          if (image?.dataUrl) {
+            return image;
+          }
+        } catch {
+          // Retry below. Flow sometimes exposes the completed tile before its image URL is fetchable.
+        }
+
+        if (attempt < 3) {
+          await sleep(1500);
+        }
+      }
+      return null;
+    },
+    [checkStop, runActionOrThrow]
+  );
+
   const openGoogleFlowProject = useCallback(
     async ({
       handle,
@@ -885,6 +932,56 @@ export default function GoogleFlowWebViewRunnerHost({
       throw new Error(lastError || 'รอ Google Flow WebView พร้อมไม่สำเร็จ');
     },
     [checkStop, emit, runActionOrThrow]
+  );
+
+  const refreshGoogleFlowProject = useCallback(
+    async ({
+      handle,
+      payload,
+      product,
+      productIndex,
+      round,
+      step,
+      stage,
+      message,
+    }: {
+      handle: FlowWebViewHandle;
+      payload: GoogleFlowRunnerPayload;
+      product: GoogleFlowRunnerProduct;
+      productIndex: number;
+      round: number;
+      step: AutoPilotStepType;
+      stage: string;
+      message: string;
+    }): Promise<Record<string, unknown>> => {
+      checkStop();
+      emit({
+        event: 'progress',
+        runId: payload.runId,
+        status: 'running',
+        step,
+        stage,
+        productId: product.id,
+        productName: product.name,
+        currentRound: round,
+        totalRounds: payload.settings.totalRounds,
+        currentProduct: productIndex + 1,
+        totalProducts: payload.products.length,
+        message,
+      });
+      handle.reload();
+      await sleep(3500);
+      checkStop();
+      return openGoogleFlowProject({
+        handle,
+        payload,
+        product,
+        productIndex,
+        round,
+        step,
+      });
+    },
+    [checkStop, emit, openGoogleFlowProject]
   );
 
   const waitForStepResult = useCallback(
@@ -987,6 +1084,74 @@ export default function GoogleFlowWebViewRunnerHost({
     [checkStop, emit, runActionOrThrow]
   );
 
+  const fillPromptAndSubmit = useCallback(
+    async ({
+      baselineVideoUrls,
+      count,
+      handle,
+      payload,
+      product,
+      productIndex,
+      prompt,
+      round,
+      step,
+    }: {
+      baselineVideoUrls: string[];
+      count: number;
+      handle: FlowWebViewHandle;
+      payload: GoogleFlowRunnerPayload;
+      product: GoogleFlowRunnerProduct;
+      productIndex: number;
+      prompt: string;
+      round: number;
+      step: AutoPilotStepType;
+    }): Promise<void> => {
+      checkStop();
+      await runActionOrThrow(handle, 'fillPrompt', { prompt }, 45_000);
+      await runActionOrThrow(handle, 'submit', {}, 45_000);
+      await sleep(step === 'video' ? 10_000 : 8_000);
+
+      const startChecks = step === 'video' ? 8 : 7;
+      for (let startCheck = 1; startCheck <= startChecks; startCheck += 1) {
+        checkStop();
+        const result = (await runActionOrThrow(
+          handle,
+          'videoResults',
+          { count, ignoreUrls: baselineVideoUrls },
+          20_000
+        )) as FlowResultPoll;
+
+        const generating = result.generatingCount ?? 0;
+        const queued = result.queuedCount ?? 0;
+        const progress = result.progress;
+        const hasOutput = step === 'video' ? (result.videos ?? []).length > 0 : (result.images ?? 0) > 0;
+        if (generating > 0 || queued > 0 || progress != null || hasOutput) {
+          return;
+        }
+
+        if (startCheck < startChecks) {
+          await sleep(step === 'video' ? 5_000 : 4_000);
+        }
+      }
+
+      emit({
+        event: 'progress',
+        runId: payload.runId,
+        status: 'running',
+        step,
+        stage: 'submit_wait_without_retry',
+        productId: product.id,
+        productName: product.name,
+        currentRound: round,
+        totalRounds: payload.settings.totalRounds,
+        currentProduct: productIndex + 1,
+        totalProducts: payload.products.length,
+        message: `ยังไม่เห็น Flow เริ่มสร้าง${stepLabel(step)}หลัง submit จะรอผลต่อโดยไม่กดสร้างซ้ำ`,
+      });
+    },
+    [checkStop, emit, runActionOrThrow]
+  );
+
   const runProductStep = useCallback(
     async ({
       handle,
@@ -1049,17 +1214,25 @@ export default function GoogleFlowWebViewRunnerHost({
         const sceneImageDataUrls: string[] = [];
 
         if (hasPriorImageStep) {
-          await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
-          const priorImagePayload = (await runActionOrThrow(
-            handle,
-            'downloadImages',
-            { count: 1 },
-            90_000
-          )) as FlowImageDownloadPayload;
-          const priorImageDataUrl = priorImagePayload.images?.find((image) => image.dataUrl)?.dataUrl;
-          if (priorImageDataUrl) {
-            sceneImageDataUrls.push(priorImageDataUrl);
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step: 'image',
+            stage: 'multi_scene_capture_prior_image',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: 'ดึงรูปที่เพิ่งสร้างจากหน้า Flow เพื่อใช้ต่อในวิดีโอหลายฉาก',
+          });
+          const priorImage = await downloadLatestFlowImage(handle, 1);
+          if (!priorImage?.dataUrl) {
+            throw new Error('ดึงรูปที่เพิ่งสร้างจากหน้า Flow ไม่สำเร็จ');
           }
+          sceneImageDataUrls.push(priorImage.dataUrl);
         }
 
         for (let sceneIndex = 0; sceneIndex < neededSceneImages; sceneIndex += 1) {
@@ -1080,6 +1253,17 @@ export default function GoogleFlowWebViewRunnerHost({
             message: `หลายฉาก: สร้างรูปฉาก ${sceneNumber}/${sceneCount}`,
           });
 
+          await refreshGoogleFlowProject({
+            handle,
+            payload,
+            product,
+            productIndex,
+            round,
+            step: 'image',
+            stage: 'multi_scene_refresh_image',
+            message: `รีเฟรชหน้า Flow ก่อนสร้างรูปฉาก ${sceneNumber}/${sceneCount}`,
+          });
+
           const config = (await runActionOrThrow(
             handle,
             'configurePopper',
@@ -1095,8 +1279,33 @@ export default function GoogleFlowWebViewRunnerHost({
             throw new Error(`ตั้งค่า Flow รูปฉากไม่ครบ: ${config.error ?? 'unknown'}`);
           }
 
-          if (sceneNumber > 1 || hasPriorImageStep) {
-            await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+          const previousSceneImageDataUrl = sceneImageDataUrls[sceneImageDataUrls.length - 1];
+          if ((sceneNumber > 1 || hasPriorImageStep) && previousSceneImageDataUrl) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step: 'image',
+              stage: 'multi_scene_attach_previous_image',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `แนบรูปฉากก่อนหน้าที่บันทึกไว้เป็น reference รูปฉาก ${sceneNumber}`,
+            });
+            await runActionOrThrow(
+              handle,
+              'uploadReferenceImage',
+              {
+                dataUrl: previousSceneImageDataUrl,
+                fileName: `kubdee-scene-reference-${sceneNumber}.png`,
+              },
+              120_000
+            );
+          } else if (sceneNumber > 1 || hasPriorImageStep) {
+            throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
           } else if (product.preview) {
             const dataUrl = await loadImageReferenceDataUrl(product.preview);
             await runActionOrThrow(
@@ -1111,15 +1320,17 @@ export default function GoogleFlowWebViewRunnerHost({
             );
           }
 
-          await runActionOrThrow(
+          await fillPromptAndSubmit({
+            baselineVideoUrls: [],
+            count: 1,
             handle,
-            'fillPrompt',
-            {
-              prompt: multiSceneImagePrompt(product, sceneNumber, sceneCount, useSameAngle),
-            },
-            45_000
-          );
-          await runActionOrThrow(handle, 'submit', {}, 45_000);
+            payload,
+            product,
+            productIndex,
+            prompt: multiSceneImagePrompt(product, sceneNumber, sceneCount, useSameAngle),
+            round,
+            step: 'image',
+          });
           const imageResult = await waitForStepResult({
             baselineVideoUrls: [],
             count: 1,
@@ -1131,13 +1342,10 @@ export default function GoogleFlowWebViewRunnerHost({
             step: 'image',
           });
           const imageCount = Math.max(1, Number(imageResult.images ?? 1) || 1);
-          const imagePayload = (await runActionOrThrow(
-            handle,
-            'downloadImages',
-            { count: imageCount },
-            90_000
-          )) as FlowImageDownloadPayload;
-          const firstImage = imagePayload.images?.find((image) => image.dataUrl);
+          const firstImage = await downloadLatestFlowImage(handle, imageCount);
+          if (!firstImage?.dataUrl) {
+            throw new Error(`ดึงรูปฉาก ${sceneNumber} จากหน้า Flow ไม่สำเร็จ`);
+          }
           if (firstImage?.dataUrl) {
             sceneImageDataUrls.push(firstImage.dataUrl);
             const downloaded = await saveGoogleFlowDataUrlAsset('image', firstImage.dataUrl, firstImage.fileName);
@@ -1225,7 +1433,6 @@ export default function GoogleFlowWebViewRunnerHost({
         for (let sceneIndex = 0; sceneIndex < sceneCount; sceneIndex += 1) {
           checkStop();
           const sceneNumber = sceneIndex + 1;
-          const referenceOffset = useSameAngle ? 0 : Math.max(0, sceneCount - sceneNumber);
           emit({
             event: 'progress',
             runId: payload.runId,
@@ -1239,6 +1446,17 @@ export default function GoogleFlowWebViewRunnerHost({
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
             message: `หลายฉาก: สร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
+          });
+
+          await refreshGoogleFlowProject({
+            handle,
+            payload,
+            product,
+            productIndex,
+            round,
+            step,
+            stage: 'multi_scene_refresh_video',
+            message: `รีเฟรชหน้า Flow ก่อนสร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
           });
 
           const config = (await runActionOrThrow(
@@ -1257,41 +1475,178 @@ export default function GoogleFlowWebViewRunnerHost({
             throw new Error(`ตั้งค่า Flow วิดีโอฉากไม่ครบ: ${config.error ?? 'unknown'}`);
           }
 
-          if (neededSceneImages > 0 || payload.enabledSteps.includes('image')) {
-            await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: referenceOffset }, 45_000);
-          } else if (product.preview) {
-            const dataUrl = await loadImageReferenceDataUrl(product.preview);
-            await runActionOrThrow(
-              handle,
-              'uploadReferenceImage',
-              {
-                dataUrl: dataUrl ?? undefined,
-                fileName: getReferenceFileName(product),
-                imageUrl: dataUrl ? undefined : product.preview,
-              },
-              120_000
-            );
-          }
+          const sceneReferenceDataUrl = useSameAngle
+            ? sceneImageDataUrls[0]
+            : sceneImageDataUrls[sceneIndex];
+          const attachSceneReference = async (): Promise<void> => {
+            if (useSameAngle && sceneReferenceDataUrl && sceneNumber === 1) {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step,
+                stage: 'multi_scene_select_recent_reference',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `เลือกรูปบนสุดจาก Flow เป็น reference วิดีโอฉาก ${sceneNumber}`,
+              });
+              try {
+                await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+              } catch (error) {
+                const fallbackMessage = error instanceof Error ? error.message : String(error);
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  step,
+                  stage: 'multi_scene_upload_reference_fallback',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: `เลือกรูปบนสุดไม่สำเร็จ จะอัปโหลดรูปแรกแทน: ${fallbackMessage}`,
+                });
+                await runActionOrThrow(
+                  handle,
+                  'uploadReferenceImage',
+                  {
+                    dataUrl: sceneReferenceDataUrl,
+                    fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
+                  },
+                  120_000
+                );
+              }
+            } else if (sceneReferenceDataUrl) {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step,
+                stage: 'multi_scene_attach_reference',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: useSameAngle
+                  ? `แนบรูปแรกที่บันทึกไว้เป็น reference วิดีโอฉาก ${sceneNumber}`
+                  : `แนบรูปฉาก ${sceneNumber} ที่บันทึกไว้เป็น reference วิดีโอ`,
+              });
+              await runActionOrThrow(
+                handle,
+                'uploadReferenceImage',
+                {
+                  dataUrl: sceneReferenceDataUrl,
+                  fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
+                },
+                120_000
+              );
+            } else if (neededSceneImages > 0 || payload.enabledSteps.includes('image')) {
+              throw new Error(`ไม่มีรูป reference สำหรับวิดีโอฉาก ${sceneNumber}`);
+            } else if (product.preview) {
+              const dataUrl = await loadImageReferenceDataUrl(product.preview);
+              await runActionOrThrow(
+                handle,
+                'uploadReferenceImage',
+                {
+                  dataUrl: dataUrl ?? undefined,
+                  fileName: getReferenceFileName(product),
+                  imageUrl: dataUrl ? undefined : product.preview,
+                },
+                120_000
+              );
+            }
+          };
 
-          const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
-          const baselineVideoUrls = snapshot.videoUrls ?? [];
-          await runActionOrThrow(
-            handle,
-            'fillPrompt',
-            { prompt: promptResult.prompts[sceneIndex] || multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover) },
-            45_000
-          );
-          await runActionOrThrow(handle, 'submit', {}, 45_000);
-          const videoResult = await waitForStepResult({
-            baselineVideoUrls,
-            count: 1,
-            handle,
-            payload,
-            product,
-            productIndex,
-            round,
-            step,
-          });
+          await attachSceneReference();
+
+          const scenePrompt = promptResult.prompts[sceneIndex] || multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover);
+          const runSceneVideo = async (nextPrompt: string): Promise<FlowResultPoll> => {
+            const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
+            const baselineVideoUrls = snapshot.videoUrls ?? [];
+            await fillPromptAndSubmit({
+              baselineVideoUrls,
+              count: 1,
+              handle,
+              payload,
+              product,
+              productIndex,
+              prompt: nextPrompt,
+              round,
+              step,
+            });
+            return waitForStepResult({
+              baselineVideoUrls,
+              count: 1,
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+            });
+          };
+
+          let videoResult: FlowResultPoll;
+          try {
+            videoResult = await runSceneVideo(scenePrompt);
+          } catch (error) {
+            if (!useVoiceover) {
+              throw error;
+            }
+            const retryReason = error instanceof Error ? error.message : String(error);
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: 'voiceover_video_retry',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `วิดีโอฉาก ${sceneNumber} ล้มเหลว จะลองใหม่แบบภาพล้วนไม่มีเสียง: ${retryReason}`,
+            });
+
+            await refreshGoogleFlowProject({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              stage: 'voiceover_video_retry_refresh',
+              message: `รีเฟรชหน้า Flow ก่อน retry วิดีโอฉาก ${sceneNumber}/${sceneCount} แบบไม่มีเสียง`,
+            });
+
+            const retryConfig = (await runActionOrThrow(
+              handle,
+              'configurePopper',
+              {
+                targetMode: 'video',
+                aspectRatio: product.settings.video.aspectRatio,
+                outputCount: 1,
+                videoDuration,
+                videoModel,
+              },
+              70_000
+            )) as { success?: boolean; error?: string };
+            if (retryConfig.success === false) {
+              throw new Error(`ตั้งค่า Flow วิดีโอฉากก่อน retry ไม่ครบ: ${retryConfig.error ?? 'unknown'}`);
+            }
+
+            await attachSceneReference();
+            videoResult = await runSceneVideo(toVoiceoverSilentRetryPrompt(scenePrompt));
+          }
 
           const [url] = videoResult.videos ?? [];
           if (!url) {
@@ -1492,6 +1847,17 @@ export default function GoogleFlowWebViewRunnerHost({
         message: newProject.already ? 'อยู่ใน Google Flow project อยู่แล้ว' : 'เข้า Google Flow project แล้ว',
       });
 
+      await refreshGoogleFlowProject({
+        handle,
+        payload,
+        product,
+        productIndex,
+        round,
+        step,
+        stage: 'refresh_before_config',
+        message: `รีเฟรชหน้า Flow ก่อนตั้งค่า${label}`,
+      });
+
       const configArgs =
         step === 'image'
           ? {
@@ -1587,8 +1953,17 @@ export default function GoogleFlowWebViewRunnerHost({
         totalProducts: payload.products.length,
         message: `กรอก prompt ${label}: ${(product.name || 'สินค้า').slice(0, 34)}`,
       });
-      await runActionOrThrow(handle, 'fillPrompt', { prompt }, 45_000);
-      await runActionOrThrow(handle, 'submit', {}, 45_000);
+      await fillPromptAndSubmit({
+        baselineVideoUrls,
+        count,
+        handle,
+        payload,
+        product,
+        productIndex,
+        prompt,
+        round,
+        step,
+      });
       emit({
         event: 'progress',
         runId: payload.runId,
@@ -1759,7 +2134,7 @@ export default function GoogleFlowWebViewRunnerHost({
         }
       }
     },
-    [emit, openGoogleFlowProject, runActionOrThrow, waitForStepResult]
+    [downloadLatestFlowImage, emit, fillPromptAndSubmit, openGoogleFlowProject, refreshGoogleFlowProject, runActionOrThrow, waitForStepResult]
   );
 
   const runPayload = useCallback(

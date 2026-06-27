@@ -29,7 +29,6 @@ export const VIDEO_RESULTS_BODY = `
   var n = args.count || 1;
   var ignore = args.ignoreUrls || [];
   var itemList = document.querySelector('[data-testid="virtuoso-item-list"]');
-  if (!itemList) return { videos: [], images: 0, failedCount: 0, successCount: 0, generatingCount: 0, queuedCount: 0, tilesFound: 0, progress: null };
 
   function normalizeMediaUrl(value){
     var src = (value || '').trim();
@@ -47,6 +46,57 @@ export const VIDEO_RESULTS_BODY = `
   function isVisible(el){
     var r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
+  }
+  function composerTop(){
+    var candidates = Array.prototype.slice.call(document.querySelectorAll('[contenteditable="true"], textarea, [role="textbox"]'));
+    var best = null;
+    for (var i = 0; i < candidates.length; i++) {
+      if (!isVisible(candidates[i])) continue;
+      var r = candidates[i].getBoundingClientRect();
+      if (r.top > window.innerHeight * 0.45 && (!best || r.top > best)) best = r.top;
+    }
+    return best;
+  }
+  function looksReadyImage(img){
+    if (!img || !isVisible(img)) return false;
+    var src = normalizeMediaUrl(img.currentSrc || img.src || img.getAttribute('src'));
+    if (!src) return false;
+    if (/avatar|profile|logo|icon|googleusercontent/i.test(src)) return false;
+    var r = img.getBoundingClientRect();
+    var alt = (img.getAttribute('alt') || '').toLowerCase();
+    if (alt === 'generated image' || alt === 'รูปภาพที่สร้างขึ้น' || alt.indexOf('flow image:') === 0) return true;
+    if (r.width < 120 || r.height < 120) return false;
+    if (img.closest('button, [role="button"][aria-label], [data-testid*="prompt"], [data-testid*="composer"]')) return false;
+    var top = composerTop();
+    if (top != null && r.top > top - 180) return false;
+    return !!img.closest('[data-tile-id], [data-index], [data-testid="virtuoso-item-list"], main');
+  }
+  function collectReadyImages(scope){
+    var root = scope || document;
+    var seen = {};
+    var images = [];
+    var selectors = [
+      'img[alt="Generated image"]',
+      'img[alt="รูปภาพที่สร้างขึ้น"]',
+      'img[alt^="Flow Image:"]',
+      '[data-tile-id] img',
+      '[data-index] img',
+      '[data-testid="virtuoso-item-list"] img',
+      'main img',
+      'img'
+    ];
+    for (var s = 0; s < selectors.length; s++) {
+      var list = Array.prototype.slice.call(root.querySelectorAll(selectors[s]));
+      for (var i = 0; i < list.length; i++) {
+        if (!looksReadyImage(list[i])) continue;
+        var src = normalizeMediaUrl(list[i].currentSrc || list[i].src || list[i].getAttribute('src'));
+        if (!src || seen[src]) continue;
+        seen[src] = true;
+        images.push(src);
+      }
+      if (images.length >= n) break;
+    }
+    return images.slice(0, n);
   }
   // Walk ancestors up to the tile; any opacity:0 inline style means this node is
   // part of a hidden overlay (the generating tile's hidden "Failed" state).
@@ -91,13 +141,16 @@ export const VIDEO_RESULTS_BODY = `
   }
 
   var tiles = [];
-  for (var idx = 0; tiles.length < n; idx++) {
-    var row = itemList.querySelector('[data-index="' + idx + '"]');
-    if (!row) break;
-    var allTileEls = Array.prototype.slice.call(row.querySelectorAll('[data-tile-id]'));
-    var rowTiles = allTileEls.filter(function(el){ return !(el.parentElement && el.parentElement.closest('[data-tile-id]')); });
-    if (rowTiles.length === 0) break;
-    for (var t = 0; t < rowTiles.length; t++) tiles.push(rowTiles[t]);
+  if (itemList) {
+    for (var idx = 0; tiles.length < n; idx++) {
+      var row = itemList.querySelector('[data-index="' + idx + '"]');
+      if (!row) break;
+      var allTileEls = Array.prototype.slice.call(row.querySelectorAll('[data-tile-id]'));
+      var rowTiles = allTileEls.filter(function(el){ return !(el.parentElement && el.parentElement.closest('[data-tile-id]')); });
+      if (rowTiles.length === 0 && row.querySelector('img, video')) rowTiles = [row];
+      if (rowTiles.length === 0) break;
+      for (var t = 0; t < rowTiles.length; t++) tiles.push(rowTiles[t]);
+    }
   }
 
   var result = { videos: [], images: 0, failedCount: 0, successCount: 0, generatingCount: 0, queuedCount: 0, tilesFound: tiles.length, progress: null };
@@ -129,7 +182,11 @@ export const VIDEO_RESULTS_BODY = `
       result.successCount++;
       continue;
     }
-    var img = tile.querySelector('img[alt="Generated image"], img[alt="รูปภาพที่สร้างขึ้น"]');
+    var img = tile.querySelector('img[alt="Generated image"], img[alt="รูปภาพที่สร้างขึ้น"], img[alt^="Flow Image:"]');
+    if (!img) {
+      var tileImages = collectReadyImages(tile);
+      if (tileImages.length > 0) img = tile.querySelector('img');
+    }
     if (img) { result.images++; result.successCount++; continue; }
     // Anything else (tile still rendering, no clear state) — treat as still working
     // so the poller waits instead of declaring failure prematurely.
@@ -146,11 +203,32 @@ export const VIDEO_RESULTS_BODY = `
       if (r2.width > 0 && r2.height > 0) progressVals.push(parseInt(dt, 10));
     }
   }
+  // Mobile WebView/Flow sometimes exposes the progress only through the
+  // accessible label of the card, e.g. "play_circle 27% ... Reuse prompt".
+  // Read attributes as a fallback so the submit-start guard does not resubmit.
+  var attrEls = document.querySelectorAll('[aria-label], [title]');
+  for (var a = 0; a < attrEls.length; a++) {
+    if (!isVisible(attrEls[a])) continue;
+    var attrText = [
+      attrEls[a].getAttribute('aria-label') || '',
+      attrEls[a].getAttribute('title') || '',
+      attrEls[a].textContent || '',
+    ].join(' ');
+    var am = attrText.match(/(?:^|\\D)(\\d{1,3})\\s?%(?:\\D|$)/);
+    if (am) progressVals.push(parseInt(am[1], 10));
+  }
   // Lowest percentage (the slowest output) — matches desktop minProgress.
   if (progressVals.length > 0) {
     var minP = progressVals[0];
     for (var pIdx = 1; pIdx < progressVals.length; pIdx++) { if (progressVals[pIdx] < minP) minP = progressVals[pIdx]; }
     result.progress = minP;
+  }
+  if (result.images === 0 && result.videos.length === 0 && result.failedCount === 0 && result.generatingCount === 0 && result.queuedCount === 0 && result.progress == null) {
+    var fallbackImages = collectReadyImages(document);
+    if (fallbackImages.length > 0) {
+      result.images = fallbackImages.length;
+      result.successCount = Math.max(result.successCount, fallbackImages.length);
+    }
   }
   return result;
 `;

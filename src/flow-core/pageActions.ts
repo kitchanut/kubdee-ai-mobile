@@ -73,21 +73,145 @@ const FILL_PROMPT_BODY = `
   var promptText = String(args.prompt || '');
   if (!promptText) throw new Error('prompt ว่าง');
 
-  function getVisibleSlate() {
-    var eds = document.querySelectorAll('${SLATE}');
-    for (var i = 0; i < eds.length; i++) {
-      var el = eds[i];
-      var rect = el.getBoundingClientRect();
-      var st = window.getComputedStyle(el);
-      if (rect.width > 0 && rect.height > 0 && st.visibility !== 'hidden' && st.display !== 'none') return el;
+  function isVisiblePromptEl(el) {
+    if (!el || !el.isConnected) return false;
+    var rect = el.getBoundingClientRect();
+    var st = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+  }
+  function sortBottomMost(a, b) {
+    var ar = a.getBoundingClientRect();
+    var br = b.getBoundingClientRect();
+    return (br.bottom - ar.bottom) || (br.left - ar.left);
+  }
+  function isLikelyComposer(el) {
+    var rect = el.getBoundingClientRect();
+    var expandedPrompt = rect.height > 90 && rect.bottom > (window.innerHeight * 0.55);
+    return rect.top > (window.innerHeight * 0.5) || expandedPrompt;
+  }
+  function findSubmitButton(includeDisabled) {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button'));
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      if (btn.closest('[role="menu"]') || btn.closest('nav')) continue;
+      var icon = btn.querySelector('i');
+      var iconText = icon ? (icon.textContent || '').trim().toLowerCase() : '';
+      var buttonText = (btn.textContent || '').trim().toLowerCase();
+      var disabled = btn.disabled || btn.getAttribute('aria-disabled') === 'true' ||
+        btn.hasAttribute('data-disabled') || btn.getAttribute('data-state') === 'disabled';
+      if ((iconText.indexOf(${SUBMIT_ICON}) !== -1 || buttonText.indexOf(${SUBMIT_ICON}) !== -1) &&
+          (includeDisabled || !disabled)) return btn;
     }
     return null;
+  }
+  function getComposerRoot() {
+    var btn = findSubmitButton(true);
+    if (!btn) return null;
+    var node = btn.parentElement;
+    for (var depth = 0; depth < 10 && node; depth++) {
+      var rect = node.getBoundingClientRect();
+      var hasPrompt = node.querySelector('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"], textarea, input[type="text"]');
+      if (hasPrompt && rect.width > 180 && rect.height > 60 && rect.bottom > (window.innerHeight * 0.55)) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function sortBySubmitProximity(items) {
+    var btn = findSubmitButton(true);
+    if (!btn) {
+      items.sort(sortBottomMost);
+      return items;
+    }
+    var br = btn.getBoundingClientRect();
+    items.sort(function(a, b) {
+      var ar = a.getBoundingClientRect();
+      var cr = b.getBoundingClientRect();
+      var aGap = Math.abs(ar.bottom - br.top) + Math.max(0, br.left - ar.right) * 0.15;
+      var bGap = Math.abs(cr.bottom - br.top) + Math.max(0, br.left - cr.right) * 0.15;
+      return (aGap - bGap) || (cr.bottom - ar.bottom);
+    });
+    return items;
+  }
+  function getVisibleSlate() {
+    var eds = Array.prototype.slice.call(document.querySelectorAll('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"]'));
+    var root = getComposerRoot();
+    var visible = [];
+    var rootVisible = [];
+    for (var i = 0; i < eds.length; i++) {
+      var el = eds[i];
+      if (!isVisiblePromptEl(el)) continue;
+      if (root && root.contains(el)) rootVisible.push(el);
+      else if (isLikelyComposer(el)) visible.push(el);
+    }
+    if (rootVisible.length) visible = rootVisible;
+    sortBySubmitProximity(visible);
+    return visible[0] || null;
+  }
+  function getVisibleTextarea() {
+    var root = getComposerRoot();
+    var allFields = Array.prototype.slice.call(document.querySelectorAll('textarea, input[type="text"]'));
+    var rootFields = root ? allFields.filter(function(field){
+      return root.contains(field) && isVisiblePromptEl(field) && !field.disabled && !field.readOnly;
+    }) : [];
+    var fields = rootFields.length ? rootFields : allFields.filter(function(field){
+      return isVisiblePromptEl(field) && isLikelyComposer(field) && !field.disabled && !field.readOnly;
+    });
+    sortBySubmitProximity(fields);
+    return fields[0] || null;
   }
   function wasInserted() {
     var exp = promptText.trim().slice(0, Math.min(24, promptText.trim().length));
     if (!exp) return true;
+    var f2 = getVisibleTextarea();
+    if (((f2 && f2.value) || '').trim().indexOf(exp) !== -1) return true;
     var e2 = getVisibleSlate();
     return ((e2 && e2.textContent) || '').trim().indexOf(exp) !== -1;
+  }
+  function hasEnabledSubmitButton() {
+    return !!findSubmitButton(false);
+  }
+  function fillTextField(field) {
+    field.scrollIntoView({ behavior: 'instant', block: 'center' });
+    field.focus();
+    field.click();
+    var setter = Object.getOwnPropertyDescriptor(field.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype, 'value');
+    if (setter && setter.set) setter.set.call(field, promptText);
+    else field.value = promptText;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function findSlateEditorIn(value, seen, depth) {
+    if (!value || typeof value !== 'object' || depth > 5) return null;
+    if (seen.indexOf(value) !== -1) return null;
+    seen.push(value);
+    if (!Array.isArray(value) &&
+        typeof value.insertText === 'function' &&
+        typeof value.deleteBackward === 'function' &&
+        Array.isArray(value.children)) {
+      return value;
+    }
+    var vals = [];
+    try { vals = Object.values(value); } catch (e) { vals = []; }
+    for (var i = 0; i < vals.length; i++) {
+      var found = findSlateEditorIn(vals[i], seen, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  var preferredField = null;
+  for (var pfw = 0; pfw < 6; pfw++) {
+    preferredField = getVisibleTextarea();
+    if (preferredField && preferredField.offsetParent) break;
+    await wait(300);
+  }
+  if (preferredField && preferredField.offsetParent) {
+    fillTextField(preferredField);
+    await wait(500);
+    if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+    return { type: 'textarea-preferred' };
   }
 
   var el = null;
@@ -96,7 +220,19 @@ const FILL_PROMPT_BODY = `
     if (el && el.offsetParent) break;
     await wait(1000);
   }
-  if (!el || !el.offsetParent) throw new Error('ไม่พบช่อง Prompt (Slate editor)');
+  if (!el || !el.offsetParent) {
+    var field = null;
+    for (var fw = 0; fw < 8; fw++) {
+      field = getVisibleTextarea();
+      if (field && field.offsetParent) break;
+      await wait(500);
+    }
+    if (!field || !field.offsetParent) throw new Error('ไม่พบช่อง Prompt (Slate editor)');
+    fillTextField(field);
+    await wait(500);
+    if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+    return { type: 'textarea' };
+  }
 
   el.scrollIntoView({ behavior: 'instant', block: 'center' });
   await wait(200);
@@ -145,6 +281,33 @@ const FILL_PROMPT_BODY = `
       if (!wasInserted()) throw new Error('Slate insertText ไม่ติด');
       return { type: 'slate-fiber' };
     }
+    var deepFiber = el[fiberKey];
+    for (var d = 0; d < 50 && deepFiber; d++) {
+      slateEditor = findSlateEditorIn(deepFiber.memoizedProps, [], 0) ||
+        findSlateEditorIn(deepFiber.pendingProps, [], 0) ||
+        findSlateEditorIn(deepFiber.memoizedState, [], 0) ||
+        findSlateEditorIn(deepFiber.stateNode, [], 0);
+      if (slateEditor) break;
+      deepFiber = deepFiber.return;
+    }
+    if (slateEditor) {
+      if (slateEditor.children && slateEditor.children.length > 0) {
+        var deepLastBlockIdx = slateEditor.children.length - 1;
+        var deepLastBlock = slateEditor.children[deepLastBlockIdx];
+        var deepLastInlineIdx = ((deepLastBlock.children || []).length) - 1;
+        var deepLastInline = (deepLastBlock.children || [])[Math.max(0, deepLastInlineIdx)];
+        var deepEndOffset = ((deepLastInline && deepLastInline.text) || '').length;
+        slateEditor.selection = {
+          anchor: { path: [0, 0], offset: 0 },
+          focus: { path: [deepLastBlockIdx, Math.max(0, deepLastInlineIdx)], offset: deepEndOffset }
+        };
+        if (deepEndOffset > 0 || slateEditor.children.length > 1) slateEditor.deleteFragment();
+      }
+      slateEditor.insertText(promptText);
+      await wait(500);
+      if (!wasInserted()) throw new Error('Slate deep insertText ไม่ติด');
+      return { type: 'slate-fiber-deep' };
+    }
   }
 
   // Fallback: execCommand insertText
@@ -159,8 +322,20 @@ const FILL_PROMPT_BODY = `
     sel.addRange(range);
   }
   await wait(100);
+  try {
+    el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: promptText }));
+  } catch (e) {}
   document.execCommand('insertText', false, promptText);
   await wait(500);
+  if (!wasInserted()) {
+    try {
+      el.textContent = promptText;
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: promptText }));
+    } catch (e) {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await wait(500);
+  }
   if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
   return { type: 'slate-execCommand' };
 `;
@@ -169,39 +344,148 @@ const FILL_PROMPT_BODY = `
 // Ported from desktop submitGenerate.ts (PRIMARY: reactProps/fiber onClick; the
 // CDP-mouse fallback is desktop-only, native click() is the last resort here).
 const SUBMIT_BODY = `
+  function isVisiblePromptEl(el) {
+    if (!el || !el.isConnected) return false;
+    var rect = el.getBoundingClientRect();
+    var st = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+  }
+  function sortBottomMost(a, b) {
+    var ar = a.getBoundingClientRect();
+    var br = b.getBoundingClientRect();
+    return (br.bottom - ar.bottom) || (br.left - ar.left);
+  }
+  function isLikelyComposer(el) {
+    var rect = el.getBoundingClientRect();
+    var expandedPrompt = rect.height > 90 && rect.bottom > (window.innerHeight * 0.55);
+    return rect.top > (window.innerHeight * 0.5) || expandedPrompt;
+  }
+  function findSubmitButtonAny() {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button'));
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      if (btn.closest('[role="menu"]') || btn.closest('nav')) continue;
+      var icon = btn.querySelector('i');
+      var iconText = icon ? (icon.textContent || '').trim().toLowerCase() : '';
+      var buttonText = (btn.textContent || '').trim().toLowerCase();
+      if (iconText.indexOf(${SUBMIT_ICON}) !== -1 || buttonText.indexOf(${SUBMIT_ICON}) !== -1) return btn;
+    }
+    return null;
+  }
+  function getComposerRoot() {
+    var btn = findSubmitButtonAny();
+    if (!btn) return null;
+    var node = btn.parentElement;
+    for (var depth = 0; depth < 10 && node; depth++) {
+      var rect = node.getBoundingClientRect();
+      var hasPrompt = node.querySelector('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"], textarea, input[type="text"]');
+      if (hasPrompt && rect.width > 180 && rect.height > 60 && rect.bottom > (window.innerHeight * 0.55)) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function sortBySubmitProximity(items) {
+    var btn = findSubmitButtonAny();
+    if (!btn) {
+      items.sort(sortBottomMost);
+      return items;
+    }
+    var br = btn.getBoundingClientRect();
+    items.sort(function(a, b) {
+      var ar = a.getBoundingClientRect();
+      var cr = b.getBoundingClientRect();
+      var aGap = Math.abs(ar.bottom - br.top) + Math.max(0, br.left - ar.right) * 0.15;
+      var bGap = Math.abs(cr.bottom - br.top) + Math.max(0, br.left - cr.right) * 0.15;
+      return (aGap - bGap) || (cr.bottom - ar.bottom);
+    });
+    return items;
+  }
+  function getPromptElement() {
+    var root = getComposerRoot();
+    var allFields = Array.prototype.slice.call(document.querySelectorAll('textarea, input[type="text"]'));
+    var rootFields = root ? allFields.filter(function(field){
+      return root.contains(field) && isVisiblePromptEl(field) && !field.disabled && !field.readOnly;
+    }) : [];
+    var fields = rootFields.length ? rootFields : allFields.filter(function(field){
+      return isVisiblePromptEl(field) && isLikelyComposer(field) && !field.disabled && !field.readOnly;
+    });
+    sortBySubmitProximity(fields);
+    if (fields[0]) return fields[0];
+    var allEditors = Array.prototype.slice.call(document.querySelectorAll('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"]'));
+    var rootEditors = root ? allEditors.filter(function(editor){
+      return root.contains(editor) && isVisiblePromptEl(editor);
+    }) : [];
+    var editors = rootEditors.length ? rootEditors : allEditors.filter(function(editor){
+      return isVisiblePromptEl(editor) && isLikelyComposer(editor);
+    });
+    sortBySubmitProximity(editors);
+    return editors[0] || null;
+  }
+  function getPromptText() {
+    var el = getPromptElement();
+    if (!el) return '';
+    return ((el.value || el.textContent || '') + '').trim();
+  }
   function isDisabled(b) {
     return b.disabled || b.getAttribute('aria-disabled') === 'true' ||
       b.hasAttribute('data-disabled') || b.getAttribute('data-state') === 'disabled';
   }
-  function findBtn() {
+  function hasSubmitIcon(btn) {
+    var icon = btn.querySelector('i');
+    var iconText = icon ? (icon.textContent || '').trim().toLowerCase() : '';
+    var buttonText = (btn.textContent || '').trim().toLowerCase();
+    return iconText.indexOf(${SUBMIT_ICON}) !== -1 || buttonText.indexOf(${SUBMIT_ICON}) !== -1;
+  }
+  function submitCandidates() {
     var all = document.querySelectorAll('button');
+    var candidates = [];
     for (var i = 0; i < all.length; i++) {
       var b = all[i];
       if (b.closest('[role="menu"]') || b.closest('nav')) continue;
-      var ic = b.querySelector('i');
-      if (!ic) continue;
-      var t = (ic.textContent || '').trim().toLowerCase();
-      if (t.indexOf(${SUBMIT_ICON}) !== -1 && !isDisabled(b)) return b;
+      var rect = b.getBoundingClientRect();
+      var st = window.getComputedStyle(b);
+      if (rect.width <= 0 || rect.height <= 0 || st.display === 'none' || st.visibility === 'hidden') continue;
+      if (!hasSubmitIcon(b)) continue;
+      candidates.push(b);
     }
-    return null;
+    candidates.sort(function(a, b) {
+      var ar = a.getBoundingClientRect();
+      var br = b.getBoundingClientRect();
+      return (br.bottom - ar.bottom) || (br.right - ar.right);
+    });
+    return candidates;
+  }
+  function findBtn(includeDisabled) {
+    var candidates = submitCandidates();
+    var preferred = candidates[0] || null;
+    if (includeDisabled) return preferred;
+    return preferred && !isDisabled(preferred) ? preferred : null;
   }
 
   // Wait up to 30s for the submit button to be enabled
   var btn = null;
   for (var a = 0; a < 60; a++) {
-    btn = findBtn();
+    btn = findBtn(false);
     if (btn) { if (a === 0) await wait(1000); break; }
     await wait(500);
   }
-  if (!btn) throw new Error('ไม่พบปุ่มสร้าง (' + ${SUBMIT_ICON} + ') หรือยัง disabled อยู่');
+  if (!btn) {
+    var disabledBtn = findBtn(true);
+    if (disabledBtn && isDisabled(disabledBtn)) {
+      throw new Error('ปุ่มสร้างยัง disabled อยู่หลังกรอก Prompt');
+    }
+    throw new Error('ไม่พบปุ่มสร้าง (' + ${SUBMIT_ICON} + ')');
+  }
 
   var bt = (btn.textContent || '').trim().toLowerCase();
   if (bt.indexOf('create image') !== -1 || bt.indexOf('text to video') !== -1) {
     throw new Error('เจอปุ่มเปลี่ยนโหมด ไม่ใช่ปุ่มสร้าง');
   }
 
-  var editorBefore = document.querySelector('${SLATE}');
-  var lenBefore = ((editorBefore && editorBefore.textContent) || '').trim().length;
+  var lenBefore = getPromptText().length;
+  if (lenBefore <= 0) throw new Error('ยังไม่ได้กรอก Prompt ก่อนกดสร้าง');
 
   btn.scrollIntoView({ behavior: 'instant', block: 'center' });
   var rect = btn.getBoundingClientRect();
@@ -238,8 +522,7 @@ const SUBMIT_BODY = `
   if (!method) { btn.click(); method = 'native.click'; }
 
   await wait(2500);
-  var editorAfter = document.querySelector('${SLATE}');
-  var lenAfter = ((editorAfter && editorAfter.textContent) || '').trim().length;
+  var lenAfter = getPromptText().length;
   var clearedPrompt = lenBefore > 0 && lenAfter === 0;
   return { method: method, clearedPrompt: clearedPrompt, lenBefore: lenBefore, lenAfter: lenAfter };
 `;
@@ -272,14 +555,44 @@ const IMAGE_DIALOG_HELPERS_BODY = `
         var btn = triggers[i];
         if (!isVisible(btn) && !btn.closest('[data-state="open"]')) continue;
         var txt = (btn.textContent || '').trim().toLowerCase();
-        var icons = Array.prototype.slice.call(btn.querySelectorAll('i')).map(function(icon){ return (icon.textContent || '').trim().toLowerCase(); });
-        if (icons.indexOf('add_2') !== -1 || txt === 'start' || txt === 'create' || txt === 'เริ่ม') {
+        var icons = Array.prototype.slice.call(btn.querySelectorAll('i, span')).map(function(icon){ return (icon.textContent || '').trim().toLowerCase(); });
+        if (icons.indexOf('add_2') !== -1 || icons.indexOf('add') !== -1 || txt === 'add' || txt.indexOf('start') !== -1 || txt.indexOf('create') !== -1 || txt.indexOf('เริ่ม') !== -1) {
           showRipple(btn);
           btn.click();
           await wait(1200);
           var dialog = getOpenDialog();
           if (dialog) return dialog;
         }
+      }
+
+      var allIcons = Array.prototype.slice.call(document.querySelectorAll('i, span'));
+      for (var j = 0; j < allIcons.length; j++) {
+        var icon = allIcons[j];
+        var iconText = (icon.textContent || '').trim().toLowerCase();
+        if (iconText !== 'add' && iconText !== 'add_photo_alternate') continue;
+        var iconBtn = icon.closest('button, [role="button"]');
+        if (!iconBtn || !isVisible(iconBtn)) continue;
+        if (iconBtn.closest('[role="menu"]') || iconBtn.closest('nav') || iconBtn.closest('aside')) continue;
+
+        var container = iconBtn.parentElement;
+        var foundArrowForward = false;
+        for (var depth = 0; depth < 10 && container; depth++) {
+          var containerIcons = Array.prototype.slice.call(container.querySelectorAll('i, span'));
+          for (var c = 0; c < containerIcons.length; c++) {
+            if ((containerIcons[c].textContent || '').trim().toLowerCase() === 'arrow_forward') {
+              foundArrowForward = true;
+              break;
+            }
+          }
+          if (foundArrowForward) break;
+          container = container.parentElement;
+        }
+        if (!foundArrowForward && iconText !== 'add_photo_alternate') continue;
+        showRipple(iconBtn);
+        iconBtn.click();
+        await wait(1200);
+        var fallbackDialog = getOpenDialog();
+        if (fallbackDialog) return fallbackDialog;
       }
       await wait(800);
     }
@@ -307,28 +620,120 @@ const IMAGE_DIALOG_HELPERS_BODY = `
     }
     return false;
   }
+  function selectableImageItem(item){
+    if (!item || !item.isConnected || !isVisible(item)) return null;
+    return item.closest('[data-index]') || item;
+  }
+  function dedupeItems(items){
+    var result = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (!item || result.indexOf(item) !== -1) continue;
+      result.push(item);
+    }
+    return result;
+  }
   function imageItems(scope){
     var root = scope || document;
     var indexed = Array.prototype.slice.call(root.querySelectorAll('[data-testid="virtuoso-item-list"] [data-index], [data-index]'))
-      .filter(function(item){ return isVisible(item) && item.querySelector('img'); });
-    if (indexed.length) return indexed;
-    return Array.prototype.slice.call(root.querySelectorAll('[role="option"], [role="gridcell"], [role="button"]'))
-      .filter(function(item){ return isVisible(item) && item.querySelector('img'); });
+      .map(selectableImageItem)
+      .filter(function(item){ return item && isVisible(item) && (item.querySelector('img') || item.tagName === 'IMG'); });
+    if (indexed.length) return dedupeItems(indexed);
+
+    var optionItems = Array.prototype.slice.call(root.querySelectorAll('[role="option"], [role="gridcell"], [role="button"]'))
+      .map(selectableImageItem)
+      .filter(function(item){ return item && isVisible(item) && (item.querySelector('img') || item.tagName === 'IMG'); });
+    if (optionItems.length) return dedupeItems(optionItems);
+
+    return dedupeItems(Array.prototype.slice.call(root.querySelectorAll('img'))
+      .filter(function(img){
+        return isVisible(img) &&
+          (img.complete !== false) &&
+          ((img.naturalWidth || 0) > 20) &&
+          ((img.naturalHeight || 0) > 20);
+      })
+      .map(function(img){
+        return selectableImageItem(img.closest('[role="option"], [role="gridcell"], [role="button"], [data-index]') || img.parentElement || img);
+      })
+      .filter(Boolean));
+  }
+  function itemHasUploadActivity(item){
+    if (!item || !item.isConnected) return false;
+    var text = (item.textContent || '').trim();
+    if (/\\b\\d+%\\b/.test(text)) return true;
+    var progressItems = Array.prototype.slice.call(item.querySelectorAll('i, [role="progressbar"], [aria-busy="true"]'));
+    for (var p = 0; p < progressItems.length; p++) {
+      var txt = (progressItems[p].textContent || '').trim().toLowerCase();
+      if (
+        txt === 'progress_activity' ||
+        txt === 'autorenew' ||
+        txt === 'hourglass_empty' ||
+        progressItems[p].getAttribute('role') === 'progressbar' ||
+        progressItems[p].getAttribute('aria-busy') === 'true'
+      ) return true;
+    }
+    return false;
+  }
+  function itemLooksLikeVideo(item){
+    var selectable = selectableImageItem(item);
+    if (!selectable) return false;
+    if (selectable.querySelector && selectable.querySelector('video')) return true;
+    var text = ((selectable.textContent || '') + ' ' +
+      (selectable.getAttribute('aria-label') || '') + ' ' +
+      (selectable.getAttribute('title') || '')).toLowerCase();
+    if (text.indexOf('play_circle') !== -1 ||
+        text.indexOf('videocam') !== -1 ||
+        text.indexOf('video') !== -1 ||
+        text.indexOf('วิดีโอ') !== -1) return true;
+    var icons = Array.prototype.slice.call(selectable.querySelectorAll ? selectable.querySelectorAll('i, span') : []);
+    for (var i = 0; i < icons.length; i++) {
+      var iconText = (icons[i].textContent || '').trim().toLowerCase();
+      if (iconText === 'play_circle' || iconText === 'videocam' || iconText === 'movie') return true;
+    }
+    return false;
   }
   function readyImageItem(item){
     if (!item || !isVisible(item)) return false;
-    var img = item.querySelector('img') || (item.tagName === 'IMG' ? item : null);
+    var selectable = selectableImageItem(item);
+    if (itemHasUploadActivity(selectable)) return false;
+    if (itemLooksLikeVideo(selectable)) return false;
+    var img = selectable.querySelector('img') || (selectable.tagName === 'IMG' ? selectable : null);
     if (!img || !isVisible(img)) return false;
     if (img.complete === false) return false;
     return (img.naturalWidth || 0) > 20 && (img.naturalHeight || 0) > 20;
   }
   function itemSignature(item){
-    var img = item && (item.querySelector('img') || (item.tagName === 'IMG' ? item : null));
+    var selectable = selectableImageItem(item);
+    var img = selectable && (selectable.querySelector('img') || (selectable.tagName === 'IMG' ? selectable : null));
     if (!img) return '';
-    return [img.currentSrc || img.src || img.getAttribute('src') || '', img.getAttribute('alt') || '', item.getAttribute('data-index') || ''].join('|');
+    var src = img.currentSrc || img.src || img.getAttribute('src') || '';
+    var alt = img.getAttribute('alt') || '';
+    var aria = selectable.getAttribute('aria-label') || '';
+    var mediaId = selectable.getAttribute('data-media-id') || selectable.getAttribute('data-id') || selectable.getAttribute('data-testid') || '';
+    return [src, alt, aria, mediaId].filter(Boolean).join('|');
+  }
+  function optionThumbnailClickTarget(option){
+    if (!option || !option.isConnected) return null;
+    var children = Array.prototype.slice.call(option.children || []);
+    for (var i = 0; i < children.length; i++) {
+      if (isVisible(children[i]) && children[i].querySelector && children[i].querySelector('img')) return children[i];
+    }
+    var imgs = Array.prototype.slice.call(option.querySelectorAll ? option.querySelectorAll('img') : []);
+    for (var j = 0; j < imgs.length; j++) {
+      if (isVisible(imgs[j])) return imgs[j].parentElement || imgs[j];
+    }
+    return null;
+  }
+  function mediaListClickTarget(item){
+    if (!item || !item.isConnected) return null;
+    var option = (item.matches && item.matches('[role="option"]'))
+      ? item
+      : (item.querySelector && item.querySelector('[role="option"]')) || (item.closest && item.closest('[role="option"]'));
+    if (option && isVisible(option)) return optionThumbnailClickTarget(option) || option;
+    return item;
   }
   function clickImageItem(item){
-    var target = item.querySelector('[role="option"]') || item.querySelector('img') || item;
+    var target = mediaListClickTarget(item) || item.querySelector('img') || item;
     target.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' });
     showRipple(target);
     target.click();
@@ -336,15 +741,22 @@ const IMAGE_DIALOG_HELPERS_BODY = `
   async function clickAddToPrompt(dialog){
     var scope = dialog && dialog.isConnected ? dialog : getOpenDialog();
     if (!scope) return false;
-    var buttons = Array.prototype.slice.call(scope.querySelectorAll('button'));
-    for (var i = 0; i < buttons.length; i++) {
-      var txt = (buttons[i].textContent || '').replace(/\\s+/g, ' ').trim();
-      if (/^(add to prompt|select|done|use image|เลือก|เพิ่ม)$/i.test(txt) && isVisible(buttons[i]) && !buttons[i].disabled) {
-        showRipple(buttons[i]);
-        buttons[i].click();
+    function findButton(root){
+      var buttons = Array.prototype.slice.call(root.querySelectorAll('button'));
+      for (var i = 0; i < buttons.length; i++) {
+        var txt = (buttons[i].textContent || '').replace(/\\s+/g, ' ').trim();
+        if (/^(add to prompt|select|done|use image|เลือก|เพิ่ม)$/i.test(txt) && isVisible(buttons[i]) && !buttons[i].disabled) {
+          return buttons[i];
+        }
+      }
+      return null;
+    }
+    var button = findButton(scope) || (scope !== document ? findButton(document) : null);
+    if (button) {
+        showRipple(button);
+        button.click();
         await wait(700);
         return true;
-      }
     }
     return false;
   }
@@ -368,9 +780,9 @@ const SELECT_RECENT_IMAGE_BODY = `
   if (scroller) {
     for (var s = 0; s < 3; s++) { scroller.scrollTop = 0; await wait(200); }
   }
-  await wait(1200);
+  await wait(1800);
   var picked = null;
-  for (var attempt = 0; attempt < 12 && !picked; attempt++) {
+  for (var attempt = 0; attempt < 24 && !picked; attempt++) {
     var items = imageItems(dialog)
       .filter(readyImageItem)
       .sort(function(a, b){
@@ -384,12 +796,28 @@ const SELECT_RECENT_IMAGE_BODY = `
     if (!picked) await wait(500);
   }
   if (!picked) throw new Error('ไม่พบรูปในรายการล่าสุดสำหรับแนบ reference');
+  await wait(2000);
+  var stablePicked = null;
+  for (var stableAttempt = 0; stableAttempt < 12 && !stablePicked; stableAttempt++) {
+    var stableItems = imageItems(getOpenDialog() || dialog)
+      .filter(readyImageItem)
+      .sort(function(a, b){
+        var ai = parseInt(a.getAttribute('data-index') || '', 10);
+        var bi = parseInt(b.getAttribute('data-index') || '', 10);
+        var safeA = Number.isFinite(ai) ? ai : Number.MAX_SAFE_INTEGER;
+        var safeB = Number.isFinite(bi) ? bi : Number.MAX_SAFE_INTEGER;
+        return safeA - safeB || a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+      });
+    stablePicked = stableItems[Math.min(indexOffset, Math.max(0, stableItems.length - 1))] || null;
+    if (!stablePicked) await wait(500);
+  }
+  picked = stablePicked || picked;
   var dataIndex = picked.getAttribute('data-index');
   clickImageItem(picked);
   await wait(1000);
   if (!(await waitForDialogClosed(dialog, 4500))) {
-    await clickAddToPrompt(dialog);
-    await waitForDialogClosed(dialog, 4500);
+    if (!(await clickAddToPrompt(dialog))) throw new Error('เลือกรูปแล้วแต่ไม่พบปุ่ม Add to Prompt');
+    if (!(await waitForDialogClosed(dialog, 4500))) throw new Error('เลือกรูปแล้วแต่ dialog ยังไม่ปิด');
   }
   return { success: true, dataIndex: dataIndex };
 `;
@@ -441,11 +869,133 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
     return null;
   }
+  function isDialogOpen(dialog){
+    var active = getOpenDialog() || dialog;
+    return !!(active && active.isConnected && isVisible(active));
+  }
+  function sortImageItemsByTop(items){
+    return items.sort(function(a, b){
+      var ai = parseInt(a.getAttribute('data-index') || '', 10);
+      var bi = parseInt(b.getAttribute('data-index') || '', 10);
+      var safeA = Number.isFinite(ai) ? ai : Number.MAX_SAFE_INTEGER;
+      var safeB = Number.isFinite(bi) ? bi : Number.MAX_SAFE_INTEGER;
+      if (safeA !== safeB) return safeA - safeB;
+      var ar = a.getBoundingClientRect();
+      var br = b.getBoundingClientRect();
+      return (ar.top - br.top) || (ar.left - br.left);
+    });
+  }
+  async function scrollImageListTop(dialog){
+    var scope = dialog && dialog.isConnected ? dialog : document;
+    var scroller = scope.querySelector('[data-testid="virtuoso-scroller"]') || document.querySelector('[data-testid="virtuoso-scroller"]');
+    if (scroller) {
+      for (var s = 0; s < 3; s++) {
+        scroller.scrollTop = 0;
+        await wait(200);
+      }
+    }
+  }
+  async function waitForTopReadyImageItem(dialog, retries){
+    await scrollImageListTop(dialog);
+    for (var r = 0; r < (retries || 12); r++) {
+      var scope = getOpenDialog() || dialog || document;
+      var topItems = sortImageItemsByTop(imageItems(scope).filter(readyImageItem));
+      if (topItems.length > 0) return topItems[0];
+      await wait(350);
+    }
+    return null;
+  }
+  async function waitForStableTopReadyImageItem(dialog){
+    var topItem = await waitForTopReadyImageItem(dialog, 12);
+    if (!topItem) return null;
+    await wait(2000);
+    return (await waitForTopReadyImageItem(dialog, 8)) || topItem;
+  }
+  function getUploadActivity(dialog){
+    var scope = dialog && dialog.isConnected ? dialog : document;
+    var textCandidates = Array.prototype.slice.call(scope.querySelectorAll('[data-index] div, [data-testid="virtuoso-item-list"] div, [role="progressbar"]'));
+    for (var t = 0; t < textCandidates.length; t++) {
+      var txt = (textCandidates[t].textContent || '').trim();
+      if (/^\\d+%$/.test(txt)) {
+        return {
+          active: true,
+          percent: txt,
+          item: textCandidates[t].closest('[data-index], [role="option"], [role="gridcell"], [role="button"]')
+        };
+      }
+    }
+    var progressItems = Array.prototype.slice.call(scope.querySelectorAll('i, [role="progressbar"], [aria-busy="true"]'));
+    for (var p = 0; p < progressItems.length; p++) {
+      var ptxt = (progressItems[p].textContent || '').trim().toLowerCase();
+      if (
+        ptxt === 'progress_activity' ||
+        ptxt === 'autorenew' ||
+        ptxt === 'hourglass_empty' ||
+        progressItems[p].getAttribute('role') === 'progressbar' ||
+        progressItems[p].getAttribute('aria-busy') === 'true'
+      ) {
+        var item = progressItems[p].closest('[data-index], [role="option"], [role="gridcell"], [role="button"]');
+        if (item && isVisible(item)) return { active: true, percent: null, item: item };
+      }
+    }
+    return { active: false, percent: null, item: null };
+  }
+  function findReadyUploadedImageItem(dialog, knownSignatures, lastUploadItem){
+    var scope = dialog && dialog.isConnected ? dialog : document;
+    var preferred = lastUploadItem && (lastUploadItem.closest('[data-index]') || lastUploadItem);
+    if (preferred && readyImageItem(preferred)) {
+      var preferredSig = itemSignature(preferred);
+      if (preferredSig && knownSignatures.indexOf(preferredSig) === -1) return preferred;
+    }
+    var seen = [];
+    var items = sortImageItemsByTop(imageItems(scope).filter(readyImageItem)).filter(function(item){
+      if (seen.indexOf(item) !== -1) return false;
+      seen.push(item);
+      return true;
+    });
+    for (var i = 0; i < items.length; i++) {
+      var sig = itemSignature(items[i]);
+      if (sig && knownSignatures.indexOf(sig) === -1) return items[i];
+    }
+    return null;
+  }
+  async function waitForUploadedImageItem(dialog, knownSignatures){
+    var lastUploadItem = null;
+    var stableSignature = '';
+    var stableCount = 0;
+    for (var attempt = 0; attempt < 90; attempt++) {
+      var activeDialog = getOpenDialog() || dialog;
+      if (!isDialogOpen(activeDialog)) return { autoAttached: true, item: null };
+      var uploadActivity = getUploadActivity(activeDialog);
+      if (uploadActivity.item) lastUploadItem = uploadActivity.item;
+      if (!uploadActivity.active) {
+        var uploadedItem = findReadyUploadedImageItem(activeDialog, knownSignatures, lastUploadItem);
+        if (uploadedItem) {
+          var sig = itemSignature(uploadedItem) || ('item:' + (uploadedItem.getAttribute('data-index') || '?'));
+          if (sig === stableSignature) stableCount += 1;
+          else {
+            stableSignature = sig;
+            stableCount = 1;
+          }
+          if (stableCount >= 2) return { autoAttached: false, item: uploadedItem };
+        } else {
+          stableSignature = '';
+          stableCount = 0;
+        }
+      } else {
+        stableSignature = '';
+        stableCount = 0;
+      }
+      await wait(1000);
+    }
+    return { autoAttached: false, item: findReadyUploadedImageItem(getOpenDialog() || dialog, knownSignatures, lastUploadItem) };
+  }
   var resolvedDataUrl = await resolveDataUrl();
   var dialog = await openImageDialog();
   await handleAgreeDialog();
   dialog = getOpenDialog() || dialog;
   var known = imageItems(dialog).filter(readyImageItem).map(itemSignature).filter(Boolean);
+  var knownInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
   var uploadButton = findUploadButton(dialog);
   if (uploadButton) {
     showRipple(uploadButton);
@@ -454,7 +1004,10 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
   }
   var input = null;
   for (var f = 0; f < 20 && !input; f++) {
-    input = document.querySelector('input[type="file"]');
+    var allInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
+    var newInputs = allInputs.filter(function(candidate){ return knownInputs.indexOf(candidate) === -1; });
+    var candidates = newInputs.length ? newInputs : allInputs;
+    input = candidates[candidates.length - 1] || null;
     if (!input) await wait(300);
   }
   if (!input) throw new Error('ไม่พบ input upload รูปใน Google Flow');
@@ -463,30 +1016,27 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
   input.files = dt.files;
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
-  var picked = null;
-  for (var attempt = 0; attempt < 90 && !picked; attempt++) {
-    await wait(1000);
-    var items = imageItems(getOpenDialog() || dialog).filter(readyImageItem);
-    for (var i = 0; i < items.length; i++) {
-      var sig = itemSignature(items[i]);
-      if (sig && known.indexOf(sig) === -1) { picked = items[i]; break; }
-    }
-    if (!picked && attempt > 6 && items.length > 0) {
-      items.sort(function(a, b){
-        var ai = parseInt(a.getAttribute('data-index') || '', 10);
-        var bi = parseInt(b.getAttribute('data-index') || '', 10);
-        return (Number.isFinite(ai) ? ai : 999999) - (Number.isFinite(bi) ? bi : 999999);
-      });
-      picked = items[0];
+  await wait(1200);
+  if (!isDialogOpen(dialog)) {
+    return { success: true, dataIndex: null, autoAttached: true };
+  }
+  var uploadResult = await waitForUploadedImageItem(dialog, known);
+  if (uploadResult.autoAttached) {
+    return { success: true, dataIndex: null, autoAttached: true };
+  }
+  var picked = uploadResult.item;
+  if (!picked) {
+    if (await clickAddToPrompt(dialog)) {
+      if (await waitForDialogClosed(dialog, 5000)) return { success: true, dataIndex: null, confirmed: true };
     }
   }
-  if (!picked) throw new Error('อัปโหลดรูปแล้วแต่ไม่พบ thumbnail พร้อมเลือก');
+  if (!picked) throw new Error('อัปโหลดรูปแล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก');
   var dataIndex = picked.getAttribute('data-index');
   clickImageItem(picked);
   await wait(1000);
   if (!(await waitForDialogClosed(dialog, 5000))) {
-    await clickAddToPrompt(dialog);
-    await waitForDialogClosed(dialog, 5000);
+    if (!(await clickAddToPrompt(dialog))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ไม่พบปุ่ม Add to Prompt');
+    if (!(await waitForDialogClosed(dialog, 5000))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ dialog ยังไม่ปิด');
   }
   return { success: true, dataIndex: dataIndex };
 `;

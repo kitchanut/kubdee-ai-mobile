@@ -306,7 +306,7 @@ export async function mergeGoogleFlowVideos(
 
 export async function probeGoogleFlowVideos(
   videoUris: string[],
-  trimEndSeconds = 0.5
+  trimEndSeconds = 0.3
 ): Promise<NativeGoogleFlowVideoProbe> {
   if (Platform.OS === 'android' && nativeModule?.probeGoogleFlowVideos) {
     return nativeModule.probeGoogleFlowVideos(videoUris, trimEndSeconds);

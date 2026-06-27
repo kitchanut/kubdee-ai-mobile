@@ -398,10 +398,11 @@ export function useAutoPilotController({
       setProductSettingsById((current) => {
         const next = { ...current };
         for (const product of targets) {
+          const baseSettings = current[product.id] ?? product.settings;
           next[product.id] = {
-            ...product.settings,
+            ...baseSettings,
             image: {
-              ...product.settings.image,
+              ...baseSettings.image,
               [key]: value,
             },
           };
@@ -418,10 +419,11 @@ export function useAutoPilotController({
       setProductSettingsById((current) => {
         const next = { ...current };
         for (const product of targets) {
+          const baseSettings = current[product.id] ?? product.settings;
           next[product.id] = {
-            ...product.settings,
+            ...baseSettings,
             video: {
-              ...product.settings.video,
+              ...baseSettings.video,
               [key]: value,
             },
           };
@@ -442,9 +444,9 @@ export function useAutoPilotController({
       setProductSettingsById((current) => ({
         ...current,
         [product.id]: {
-          ...product.settings,
+          ...(current[product.id] ?? product.settings),
           image: {
-            ...product.settings.image,
+            ...(current[product.id]?.image ?? product.settings.image),
             [key]: value,
           },
         },
@@ -463,9 +465,9 @@ export function useAutoPilotController({
       setProductSettingsById((current) => ({
         ...current,
         [product.id]: {
-          ...product.settings,
+          ...(current[product.id] ?? product.settings),
           video: {
-            ...product.settings.video,
+            ...(current[product.id]?.video ?? product.settings.video),
             [key]: value,
           },
         },
