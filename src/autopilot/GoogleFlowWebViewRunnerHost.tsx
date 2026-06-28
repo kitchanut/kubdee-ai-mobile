@@ -376,8 +376,14 @@ function dialogueForScene(product: GoogleFlowRunnerProduct, sceneNumber: number)
   return product.caption?.trim() || 'พูดแนะนำจุดเด่นสินค้าแบบกระชับ เป็นภาษาไทย ฟังเป็นธรรมชาติ';
 }
 
-function multiSceneImagePrompt(product: GoogleFlowRunnerProduct, sceneNumber: number, totalScenes: number, sameAngle: boolean): string {
-  return [
+function multiSceneImagePrompt(
+  product: GoogleFlowRunnerProduct,
+  sceneNumber: number,
+  totalScenes: number,
+  sameAngle: boolean,
+  basePrompt?: string
+): string {
+  const sceneInstruction = [
     `สร้างภาพฉากที่ ${sceneNumber}/${totalScenes} สำหรับวิดีโอหลายฉากของสินค้า "${product.name || 'สินค้า'}"`,
     getAutoMultiSceneImageVariationInstruction(sceneNumber, totalScenes),
     sameAngle ? SAME_ANGLE_PRESENTER_IMAGE_INSTRUCTION : 'คงตัวละครเดิม ใบหน้าเดิม สินค้าเดิม แพ็กเกจเดิม และแบรนด์เดิม แต่เปลี่ยนมุมกล้อง ระยะภาพ การกระทำ หรือบริบทให้ต่างจากฉากก่อนหน้าอย่างชัดเจน',
@@ -386,6 +392,8 @@ function multiSceneImagePrompt(product: GoogleFlowRunnerProduct, sceneNumber: nu
   ]
     .filter(Boolean)
     .join(' ');
+
+  return [basePrompt?.trim(), sceneInstruction].filter(Boolean).join('\n\n');
 }
 
 function multiSceneVideoPrompt(product: GoogleFlowRunnerProduct, basePrompt: string, sceneNumber: number, totalScenes: number, voiceover: boolean): string {
@@ -2338,7 +2346,13 @@ export default function GoogleFlowWebViewRunnerHost({
             payload,
             product,
             productIndex,
-            prompt: multiSceneImagePrompt(product, sceneNumber, sceneCount, useSameAngle),
+            prompt: multiSceneImagePrompt(
+              product,
+              sceneNumber,
+              sceneCount,
+              useSameAngle,
+              promptForStep(product, 'image')
+            ),
             round,
             step: 'image',
           });

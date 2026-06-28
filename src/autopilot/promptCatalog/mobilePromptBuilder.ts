@@ -43,6 +43,16 @@ function resolveVideoDuration(product: AutoPilotProduct, settings: AutoPilotSett
   return videoModel === 'omni_flash' ? configured : Math.min(configured, 8);
 }
 
+function isMultiSceneVideo(product: AutoPilotProduct): boolean {
+  const videoSettings = product.settings.video;
+  const sceneCount = Number.parseInt(videoSettings.sceneCount || '1', 10);
+  return (
+    (videoSettings.videoMethod || 'extend') === 'multi' &&
+    Number.isFinite(sceneCount) &&
+    sceneCount > 1
+  );
+}
+
 function createImageBuildSettings(product: AutoPilotProduct, settings: AutoPilotSettings): BuildSettings {
   const imageSettings = product.settings.image;
   const videoDuration = resolveVideoDuration(product, settings);
@@ -94,7 +104,8 @@ export function buildGoogleFlowPromptBundle({
   };
 
   const bundle: GoogleFlowRunnerPromptBundle = {};
-  if (enabledSteps.includes('image')) {
+  const needsImagePrompt = enabledSteps.includes('image') || (enabledSteps.includes('video') && isMultiSceneVideo(product));
+  if (needsImagePrompt) {
     const prompt = buildPrompt(
       'image',
       createImageBuildSettings(product, settings),

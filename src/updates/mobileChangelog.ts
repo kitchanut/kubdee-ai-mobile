@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.22',
+    date: '2026-06-29',
+    highlight: 'ปรับวิดีโอหลายฉากให้ใช้สไตล์ภาพได้ครบขึ้น',
+    changes: [
+      { type: 'improved', text: 'คงสไตล์รูปภาพและรายละเอียดสินค้าเมื่อสร้างวิดีโอหลายฉาก แม้เลือกสร้างเฉพาะวิดีโอ' },
+      { type: 'improved', text: 'ปรับ prompt รูปของแต่ละฉากให้ต่อยอดจากค่าตั้งต้นได้สม่ำเสมอขึ้น' },
+    ],
+  },
+  {
     version: '0.1.21',
     date: '2026-06-29',
     highlight: 'เพิ่มการฟังตัวอย่างเสียงก่อนสร้างวิดีโอ',
@@ -240,4 +249,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.21';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.22';
