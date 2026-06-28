@@ -115,6 +115,8 @@ interface OverlayLogLine {
   id: string;
   message: string;
   ts: number;
+  step?: AutoPilotStepType;
+  stage?: string;
 }
 
 interface OverlayProgressState {
@@ -126,7 +128,18 @@ interface OverlayProgressState {
   stage: string | null;
   productName: string;
   flowStats?: AutoPilotFlowStats;
+  assetStats: OverlayAssetStats;
+  startedAt: number;
   updatedAt: number;
+}
+
+interface OverlayAssetStats {
+  plannedImages: number;
+  plannedVideos: number;
+  generatedImages: number;
+  generatedVideos: number;
+  failedImages: number;
+  failedVideos: number;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -191,6 +204,106 @@ function clampAutoSceneCount(value: string | number | null | undefined): number 
 function isAutoMultiSceneVideo(product: GoogleFlowRunnerProduct): boolean {
   const video = product.settings.video;
   return (video.videoMethod || 'extend') === 'multi' && clampAutoSceneCount(video.sceneCount) > 1;
+}
+
+function outputCountForRunnerStep(product: GoogleFlowRunnerProduct, step: AutoPilotStepType): number {
+  const raw = product.settings[step]?.outputCount;
+  const parsed = Number.parseInt(String(raw ?? '1'), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function getAutoMultiSceneImageCount(product: GoogleFlowRunnerProduct, enabledSteps: AutoPilotStepType[]): number {
+  if (!enabledSteps.includes('video') || !isAutoMultiSceneVideo(product)) {
+    return 0;
+  }
+  const sceneCount = clampAutoSceneCount(product.settings.video.sceneCount);
+  const useSameAngle = autoMultiSceneMode(product) === 'same_angle';
+  if (useSameAngle) {
+    return enabledSteps.includes('image') ? 0 : 1;
+  }
+  return enabledSteps.includes('image') ? Math.max(0, sceneCount - 1) : sceneCount;
+}
+
+function getAutoVideoResultCount(product: GoogleFlowRunnerProduct): number {
+  return isAutoMultiSceneVideo(product) ? 1 : outputCountForRunnerStep(product, 'video');
+}
+
+function getPlannedOverlayAssetStats(payload: GoogleFlowRunnerPayload): OverlayAssetStats {
+  const plannedRounds =
+    payload.settings.totalRounds >= AUTO_PILOT_INFINITE_ROUNDS
+      ? AUTO_PILOT_INFINITE_ROUNDS
+      : Math.max(1, payload.settings.totalRounds);
+  const plannedImages = payload.enabledSteps.includes('image')
+    ? payload.products.reduce((sum, product) => sum + outputCountForRunnerStep(product, 'image'), 0) * plannedRounds
+    : 0;
+  const plannedMultiSceneImages = payload.enabledSteps.includes('video')
+    ? payload.products.reduce((sum, product) => sum + getAutoMultiSceneImageCount(product, payload.enabledSteps), 0) * plannedRounds
+    : 0;
+  const plannedVideos = payload.enabledSteps.includes('video')
+    ? payload.products.reduce((sum, product) => sum + getAutoVideoResultCount(product), 0) * plannedRounds
+    : 0;
+  return {
+    plannedImages: plannedImages + plannedMultiSceneImages,
+    plannedVideos,
+    generatedImages: 0,
+    generatedVideos: 0,
+    failedImages: 0,
+    failedVideos: 0,
+  };
+}
+
+function incrementOverlayCount(current: number, planned: number, delta = 1): number {
+  const next = current + Math.max(1, delta);
+  return planned > 0 ? Math.min(planned, next) : next;
+}
+
+function incrementOverlayFailure(currentFailed: number, generated: number, planned: number, delta = 1): number {
+  const next = currentFailed + Math.max(1, delta);
+  return planned > 0 ? Math.min(Math.max(0, planned - generated), next) : next;
+}
+
+function updateOverlayAssetStats(
+  current: OverlayAssetStats,
+  entry: Omit<GoogleFlowRunnerLogEntry, 'ts'> & { ts?: number }
+): OverlayAssetStats {
+  if (entry.event === 'asset' && entry.step === 'image') {
+    return {
+      ...current,
+      generatedImages: incrementOverlayCount(current.generatedImages, current.plannedImages),
+    };
+  }
+  if (entry.event === 'asset' && entry.step === 'video') {
+    return {
+      ...current,
+      generatedVideos: incrementOverlayCount(current.generatedVideos, current.plannedVideos),
+    };
+  }
+
+  const failedStage = entry.stage === 'failed' || entry.stage === 'download_missing';
+  const failedOutputs = Math.max(1, Math.floor(Number(entry.failedOutputs ?? 1) || 1));
+  if (entry.event === 'progress' && failedStage && entry.step === 'image') {
+    return {
+      ...current,
+      failedImages: incrementOverlayFailure(
+        current.failedImages,
+        current.generatedImages,
+        current.plannedImages,
+        failedOutputs
+      ),
+    };
+  }
+  if (entry.event === 'progress' && failedStage && entry.step === 'video') {
+    return {
+      ...current,
+      failedVideos: incrementOverlayFailure(
+        current.failedVideos,
+        current.generatedVideos,
+        current.plannedVideos,
+        failedOutputs
+      ),
+    };
+  }
+  return current;
 }
 
 function autoMultiSceneMode(product: GoogleFlowRunnerProduct): string {
@@ -999,6 +1112,16 @@ export default function GoogleFlowWebViewRunnerHost({
 
   const emit = useCallback((entry: Omit<GoogleFlowRunnerLogEntry, 'ts'> & { ts?: number }): void => {
     const ts = entry.ts ?? Date.now();
+    const plannedAssetStats = payloadRef.current
+      ? getPlannedOverlayAssetStats(payloadRef.current)
+      : {
+          plannedImages: 0,
+          plannedVideos: 0,
+          generatedImages: 0,
+          generatedVideos: 0,
+          failedImages: 0,
+          failedVideos: 0,
+        };
     const terminalStage =
       entry.status === 'completed' || entry.status === 'stopped' || entry.status === 'error'
         ? entry.status
@@ -1022,8 +1145,23 @@ export default function GoogleFlowWebViewRunnerHost({
         stage: entry.stage ?? current?.stage ?? null,
         productName: entry.productName ?? current?.productName ?? '',
         flowStats: entry.flowStats ?? current?.flowStats,
+        assetStats: updateOverlayAssetStats(current?.assetStats ?? plannedAssetStats, entry),
+        startedAt: current?.startedAt ?? ts,
         updatedAt: ts,
       }));
+    } else if (entry.event === 'asset') {
+      setOverlayProgress((current) =>
+        current
+          ? {
+              ...current,
+              step: entry.step ?? current.step,
+              stage: entry.stage ?? current.stage,
+              productName: entry.productName ?? current.productName,
+              assetStats: updateOverlayAssetStats(current.assetStats ?? plannedAssetStats, entry),
+              updatedAt: ts,
+            }
+          : current
+      );
     } else if (terminalStage) {
       setOverlayProgress((current) =>
         current
@@ -1042,6 +1180,8 @@ export default function GoogleFlowWebViewRunnerHost({
           id: `${ts}-${current.length}`,
           message: entry.message,
           ts,
+          step: entry.step,
+          stage: entry.stage ?? terminalStage ?? undefined,
         },
       ]);
     }
@@ -3427,6 +3567,8 @@ export default function GoogleFlowWebViewRunnerHost({
         stopRequestedRef.current = true;
         emit({
           runId,
+          event: 'progress',
+          stage: 'stopping',
           status: 'running',
           message: 'กำลังหยุด Google Flow WebView runner...',
         });
@@ -3444,6 +3586,8 @@ export default function GoogleFlowWebViewRunnerHost({
     stopRequestedRef.current = true;
     emit({
       runId: activePayload.runId,
+      event: 'progress',
+      stage: 'stopping',
       status: 'running',
       message: 'กำลังหยุด Google Flow WebView runner...',
     });
@@ -3511,10 +3655,37 @@ export default function GoogleFlowWebViewRunnerHost({
                 theme={theme}
                 value={formatOverlayFlowStats(overlayProgress.flowStats)}
               />
+              {overlayProgress.assetStats.plannedImages > 0 ? (
+                <OverlayStatChip
+                  label="รูป"
+                  theme={theme}
+                  value={formatOverlayAssetProgress(
+                    overlayProgress.assetStats.generatedImages,
+                    overlayProgress.assetStats.failedImages,
+                    overlayProgress.assetStats.plannedImages
+                  )}
+                />
+              ) : null}
+              {overlayProgress.assetStats.plannedVideos > 0 ? (
+                <OverlayStatChip
+                  label="วิดีโอ"
+                  theme={theme}
+                  value={formatOverlayAssetProgress(
+                    overlayProgress.assetStats.generatedVideos,
+                    overlayProgress.assetStats.failedVideos,
+                    overlayProgress.assetStats.plannedVideos
+                  )}
+                />
+              ) : null}
               <OverlayStatChip
                 label="ล่าสุด"
                 theme={theme}
                 value={formatOverlayTime(overlayProgress.updatedAt)}
+              />
+              <OverlayStatChip
+                label="ใช้เวลา"
+                theme={theme}
+                value={formatOverlayDuration(overlayProgress.updatedAt - overlayProgress.startedAt)}
               />
               {overlayProgress.productName ? (
                 <OverlayStatChip label="งาน" theme={theme} value={overlayProgress.productName} wide />
@@ -3542,14 +3713,26 @@ export default function GoogleFlowWebViewRunnerHost({
               style={{ backgroundColor: 'rgba(0,0,0,0.66)' }}
               className="absolute inset-x-2 top-2 rounded-kd-lg px-3 py-2"
             >
-              {overlayLogs.map((line) => (
-                <Text key={line.id} numberOfLines={1} className="text-kd-micro leading-4 text-white">
-                  <Text className="text-kd-micro" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                    {formatOverlayTime(line.ts)}{' '}
+              {overlayLogs.map((line, index) => {
+                const firstLog = overlayLogs[0] ?? line;
+                const previousLog = index > 0 ? overlayLogs[index - 1] : null;
+                const deltaMs = previousLog ? Math.max(0, line.ts - previousLog.ts) : 0;
+                const elapsedMs = Math.max(0, line.ts - firstLog.ts);
+                const meta = formatOverlayLogMeta(line);
+                return (
+                  <Text key={line.id} numberOfLines={1} className="text-kd-micro leading-4 text-white">
+                    <Text className="text-kd-micro" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                      {formatOverlayTime(line.ts)} +{formatOverlayDuration(deltaMs)} · {formatOverlayDuration(elapsedMs)}{' '}
+                    </Text>
+                    {meta ? (
+                      <Text className="text-kd-micro font-semibold" style={{ color: 'rgba(255,255,255,0.88)' }}>
+                        [{meta}]{' '}
+                      </Text>
+                    ) : null}
+                    {line.message}
                   </Text>
-                  {line.message}
-                </Text>
-              ))}
+                );
+              })}
             </View>
           ) : null}
           {!flowRef.current ? (
@@ -3616,10 +3799,32 @@ function formatOverlayFlowStats(stats?: AutoPilotFlowStats): string {
   return parts.length > 0 ? parts.join(' ') : 'รอข้อมูล';
 }
 
+function formatOverlayAssetProgress(generated: number, failed: number, planned: number): string {
+  if (failed > 0) {
+    return `${generated}·${failed}/${planned}`;
+  }
+  return `${generated}/${planned}`;
+}
+
+function formatOverlayLogMeta(line: OverlayLogLine): string | null {
+  if (!line.step && !line.stage) return null;
+  return formatOverlayStep(line.step ?? null, line.stage ?? null);
+}
+
 function formatOverlayTime(timestamp: number): string {
   return new Intl.DateTimeFormat('th-TH', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   }).format(new Date(timestamp));
+}
+
+function formatOverlayDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${seconds}s`;
 }
