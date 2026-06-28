@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.27',
+    date: '2026-06-29',
+    highlight: 'ปรับปรุงความพร้อมของระบบอัปเดตมือถือ',
+    changes: [
+      { type: 'improved', text: 'ออก APK เวอร์ชันใหม่สำหรับตรวจอัปเดตและดาวน์โหลดผ่านหน้า Mobile' },
+      { type: 'improved', text: 'ปรับข้อมูล changelog ให้ตรงกับ patch release ล่าสุด' },
+    ],
+  },
+  {
     version: '0.1.26',
     date: '2026-06-29',
     highlight: 'ปรับ Activity Log ให้ตามเวลาทำงานได้ชัดขึ้น',
@@ -285,4 +294,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.26';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.27';
