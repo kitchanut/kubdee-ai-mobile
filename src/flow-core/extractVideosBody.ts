@@ -20,7 +20,7 @@
  * Reads `args`: { count?: number, ignoreUrls?: string[] } — how many leading
  * tiles to inspect, and a snapshot of pre-existing video URLs to ignore (so an
  * old video that predates this generation is not counted as a new output).
- * Returns `{ videos, images, failedCount, successCount, generatingCount, queuedCount, tilesFound, progress }`.
+ * Returns `{ videos, images, failedCount, failedMessages, successCount, generatingCount, queuedCount, tilesFound, progress }`.
  *
  * NOTE: regex backslashes are doubled (\\b, \\s, \\d) so the outer template
  * literal yields the correct regex source when injected.
@@ -139,6 +139,38 @@ export const VIDEO_RESULTS_BODY = `
     }
     return false;
   }
+  function collectFailedMessages(scope){
+    var messages = [];
+    var seen = {};
+    function addMessage(rawText){
+      var text = (rawText || '').replace(/\\s+/g, ' ').trim();
+      if (!text || text.length < 6) return;
+      if (!/\\bFailed\\b|generation failed|สร้างไม่สำเร็จ/i.test(text)) return;
+      var message = '';
+      if (/Audio generation failed/i.test(text)) {
+        message = 'Audio generation failed';
+      } else {
+        message = text
+          .replace(/^warning/i, '')
+          .replace(/^Failed/i, 'Failed:')
+          .replace(/refreshRetry.*$/i, '')
+          .replace(/undoReuse Prompt.*$/i, '')
+          .replace(/delete_foreverDelete.*$/i, '')
+          .trim();
+      }
+      if (!message || message.length > 220 || seen[message]) return;
+      seen[message] = true;
+      messages.push(message);
+    }
+    var root = scope || document.body;
+    var els = Array.prototype.slice.call(root.querySelectorAll('div, span, button, p'));
+    for (var i = 0; i < els.length; i++) {
+      if (!isVisible(els[i]) || isHiddenByOpacity(els[i], root)) continue;
+      addMessage(els[i].textContent);
+      if (messages.length >= 3) break;
+    }
+    return messages.slice(0, 3);
+  }
   function estimateBlurProgress(scope){
     var blurEls = Array.prototype.slice.call(scope.querySelectorAll('[style*="blur-amount"]'));
     var values = [];
@@ -171,7 +203,7 @@ export const VIDEO_RESULTS_BODY = `
     }
   }
 
-  var result = { videos: [], images: 0, failedCount: 0, successCount: 0, generatingCount: 0, queuedCount: 0, tilesFound: tiles.length, progress: null };
+  var result = { videos: [], images: 0, failedCount: 0, failedMessages: [], successCount: 0, generatingCount: 0, queuedCount: 0, tilesFound: tiles.length, progress: null };
   var progressVals = [];
   var limit = tiles.slice(0, n);
   for (var z = 0; z < limit.length; z++) {
@@ -251,6 +283,9 @@ export const VIDEO_RESULTS_BODY = `
       result.images = fallbackImages.length;
       result.successCount = Math.max(result.successCount, fallbackImages.length);
     }
+  }
+  if (result.failedCount > 0) {
+    result.failedMessages = collectFailedMessages(itemList || document.body);
   }
   return result;
 `;

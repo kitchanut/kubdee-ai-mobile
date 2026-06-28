@@ -293,6 +293,7 @@ function LogFlowStats({
       <LogFlowStat label="สำเร็จ" value={stats.success} theme={theme} />
       <LogFlowStat label="ล้มเหลว" value={stats.failed} theme={theme} warning={stats.failed > 0} />
       {stats.progress != null ? <LogFlowStat label="%" value={stats.progress} theme={theme} /> : null}
+      {stats.tilesFound != null ? <LogFlowStat label="ทั้งหมด" value={stats.tilesFound} theme={theme} /> : null}
     </View>
   );
 }
@@ -488,6 +489,8 @@ function getRunStageLabel(stage: string | null): string {
       return 'ส่งคำสั่งสร้างแล้ว';
     case 'submit_start_check':
       return 'ตรวจหลัง Submit';
+    case 'waiting_start':
+      return 'รอ Flow เริ่ม';
     case 'submit_wait_without_retry':
     case 'submit_wait_after_retype':
       return 'รอ Flow เริ่ม';
@@ -507,6 +510,8 @@ function getRunStageLabel(stage: string | null): string {
       return 'ส่ง Retry แล้ว';
     case 'waiting_result':
       return 'รอผลจาก Flow';
+    case 'waiting_result_settle':
+      return 'รอ Preview';
     case 'downloading_result':
       return 'กำลังดาวน์โหลด';
     case 'download_triggered':

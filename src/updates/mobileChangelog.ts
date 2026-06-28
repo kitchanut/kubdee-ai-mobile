@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.11',
+    date: '2026-06-29',
+    highlight: 'ปรับการติดตามผล Google Flow ให้แม่นขึ้นระหว่างสร้างงาน',
+    changes: [
+      { type: 'improved', text: 'เพิ่มการรอให้ Google Flow เริ่มสร้างงานจริงก่อนสรุปล้มเหลว' },
+      { type: 'improved', text: 'เพิ่มการรอ URL และ Preview หลัง progress หาย เพื่อไม่พลาดผลงานที่เพิ่งเสร็จ' },
+      { type: 'fixed', text: 'แสดงข้อความล้มเหลวจาก Flow ใน Activity Log ได้ชัดเจนขึ้น' },
+      { type: 'improved', text: 'เพิ่มจำนวน tile ที่ตรวจพบใน log สถานะ Flow ระหว่างสร้างรูปและวิดีโอ' },
+    ],
+  },
+  {
     version: '0.1.10',
     date: '2026-06-29',
     highlight: 'ปรับ Auto Workflow และ Activity Log ให้ตามงานบน Google Flow ได้ชัดเจนขึ้น',
@@ -130,4 +141,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.10';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.11';

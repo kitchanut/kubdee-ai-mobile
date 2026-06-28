@@ -40,6 +40,7 @@ interface FlowResultPoll {
   videos?: string[];
   images?: number;
   failedCount?: number;
+  failedMessages?: string[];
   successCount?: number;
   generatingCount?: number;
   queuedCount?: number;
@@ -315,6 +316,17 @@ function normalizeVoiceoverScript(text: string): string {
 
 function isAudioGenerationFailure(error?: string): boolean {
   return /\baudio\s+generation\s+failed\b/i.test(error || '');
+}
+
+function buildFlowFailedError(step: AutoPilotStepType, result: FlowResultPoll): string {
+  const messages = (result.failedMessages ?? [])
+    .map((message) => message.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  if (messages.length > 0) {
+    return `Flow แจ้งล้มเหลวสำหรับ${stepLabel(step)}: ${messages.join(' | ')}`;
+  }
+  return `Flow แจ้งล้มเหลวสำหรับ${stepLabel(step)}`;
 }
 
 function formatPromptPreview(prompt: string): string {
@@ -1294,12 +1306,19 @@ export default function GoogleFlowWebViewRunnerHost({
     }): Promise<FlowResultPoll> => {
       const startedAt = Date.now();
       const timeoutMs = step === 'video' ? 300_000 : 180_000;
+      const resultReadyTimeoutMs = step === 'video' ? 30_000 : 20_000;
+      const noStartTimeoutMs = step === 'video' ? 55_000 : 40_000;
       let failConfirm = 0;
       let doneConfirm = 0;
+      let hasSeenProgress = false;
+      let hasSeenActiveWork = false;
+      let lastSeenProgress = 0;
+      let resultReadyWaitStart: number | null = null;
+      let emptyTilesLogged = false;
 
       while (Date.now() - startedAt < timeoutMs) {
         checkStop();
-        await sleep(4000);
+        await sleep(resultReadyWaitStart ? 1000 : 4000);
         const result = (await runActionOrThrow(
           handle,
           'videoResults',
@@ -1315,6 +1334,16 @@ export default function GoogleFlowWebViewRunnerHost({
         const videos = result.videos ?? [];
         const imageCount = result.images ?? 0;
         const progress = result.progress;
+        const hasOutput = step === 'video' ? videos.length > 0 : imageCount > 0;
+        const isActive = generating > 0 || queued > 0 || progress != null;
+        const elapsedMs = Date.now() - startedAt;
+        if (progress != null) {
+          hasSeenProgress = true;
+          lastSeenProgress = Math.max(lastSeenProgress, progress);
+        }
+        if (isActive || hasOutput || failed > 0 || tilesFound > 0) {
+          hasSeenActiveWork = true;
+        }
         emit({
           event: 'progress',
           runId: payload.runId,
@@ -1340,14 +1369,43 @@ export default function GoogleFlowWebViewRunnerHost({
           }`,
         });
 
-        if (generating > 0 || queued > 0 || progress != null || tilesFound === 0) {
+        if (tilesFound === 0 && !isActive && !hasOutput && failed === 0) {
           failConfirm = 0;
           doneConfirm = 0;
+          resultReadyWaitStart = null;
+          if (!emptyTilesLogged && elapsedMs > 16_000) {
+            emptyTilesLogged = true;
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              level: 'warning',
+              step,
+              stage: 'waiting_start',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `ยังไม่พบ tile หรือ progress ของ${stepLabel(step)}หลัง submit กำลังรออีกสักครู่`,
+            });
+          }
+          if (!hasSeenActiveWork && elapsedMs > noStartTimeoutMs) {
+            throw new Error(`ไม่พบการเริ่มสร้าง${stepLabel(step)}ภายใน ${Math.round(noStartTimeoutMs / 1000)} วินาที`);
+          }
           continue;
         }
 
-        const hasOutput = step === 'video' ? videos.length > 0 : imageCount > 0;
+        if (isActive) {
+          failConfirm = 0;
+          doneConfirm = 0;
+          resultReadyWaitStart = null;
+          continue;
+        }
+
         if (hasOutput) {
+          resultReadyWaitStart = null;
           doneConfirm += 1;
           if (doneConfirm >= 2) {
             return result;
@@ -1355,6 +1413,7 @@ export default function GoogleFlowWebViewRunnerHost({
         } else if (failed > 0) {
           failConfirm += 1;
           if (failConfirm >= 3) {
+            const failedError = buildFlowFailedError(step, result);
             emit({
               event: 'progress',
               runId: payload.runId,
@@ -1367,13 +1426,47 @@ export default function GoogleFlowWebViewRunnerHost({
               totalRounds: payload.settings.totalRounds,
               currentProduct: productIndex + 1,
               totalProducts: payload.products.length,
-              message: `Flow แจ้งล้มเหลวสำหรับ${stepLabel(step)}`,
+              message: failedError,
             });
-            throw new Error(`Flow แจ้งล้มเหลวสำหรับ${stepLabel(step)}`);
+            throw new Error(failedError);
+          }
+        } else if (hasSeenProgress && lastSeenProgress >= 40) {
+          failConfirm = 0;
+          doneConfirm = 0;
+          if (!resultReadyWaitStart) {
+            resultReadyWaitStart = Date.now();
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: 'waiting_result_settle',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              flowStats: {
+                generating,
+                queued,
+                success,
+                failed,
+                tilesFound,
+                progress: progress ?? null,
+              },
+              message: `Progress ${stepLabel(step)}หายหลังเห็น ${lastSeenProgress}% กำลังรอ URL/preview แสดงบนการ์ด`,
+            });
+            continue;
+          }
+          const waitElapsed = Date.now() - resultReadyWaitStart;
+          if (waitElapsed > resultReadyTimeoutMs) {
+            throw new Error(`รอ URL/preview ของ${stepLabel(step)}หลัง progress หายไม่สำเร็จ`);
           }
         } else {
           failConfirm = 0;
           doneConfirm = 0;
+          resultReadyWaitStart = null;
         }
       }
 
