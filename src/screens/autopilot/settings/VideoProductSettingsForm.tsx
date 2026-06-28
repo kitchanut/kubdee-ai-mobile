@@ -197,11 +197,14 @@ export function VideoProductSettingsForm({
             accent={accent}
             value={settings.sceneCount}
             onChange={(value) => {
+              const nextSceneCount = parseInt(String(value), 10);
               onChange('sceneCount', String(value));
-              if (parseInt(String(value), 10) > 1) {
+              if (nextSceneCount > 1) {
                 onChange('outputCount', '1');
                 onChange('videoMethod', 'multi');
                 if (!settings.multiSceneAngleMode) onChange('multiSceneAngleMode', 'same_angle');
+              } else {
+                onChange('videoMethod', 'extend');
               }
             }}
           />
