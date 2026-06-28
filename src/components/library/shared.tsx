@@ -392,6 +392,7 @@ export function SelectionBar({
   onAuto,
   onClear,
   onDelete,
+  onEdit,
 }: {
   theme: KubdeeTheme;
   accent: string;
@@ -400,6 +401,7 @@ export function SelectionBar({
   onAuto?: () => void;
   onClear: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
 }): React.JSX.Element {
   const inverseText = theme.isDark ? '#000000' : theme.white;
 
@@ -442,6 +444,7 @@ export function SelectionBar({
           <Pressable
             accessibilityLabel="แก้ไข"
             accessibilityRole="button"
+            onPress={onEdit}
             className="h-7 w-7 items-center justify-center rounded-full"
             style={{ backgroundColor: accent }}
           >

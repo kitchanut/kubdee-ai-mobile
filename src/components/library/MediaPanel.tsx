@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Image as NativeImage, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Image as NativeImage, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
 import {
   ChevronDown,
   ChevronRight,
@@ -16,12 +18,13 @@ import {
   Trash2,
   Upload,
   Video,
+  X,
 } from 'lucide-react-native';
+import { toast } from 'sonner-native';
 
 import Text from '@/components/ui/KubdeeText';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
-import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
@@ -56,6 +59,7 @@ interface MediaSubItem {
   portrait: boolean;
   warnings: string[];
   uri?: string | null;
+  mimeType?: string | null;
 }
 
 interface MediaGroupRecord {
@@ -109,6 +113,9 @@ const panelCopy: Record<
   },
 };
 
+const ANDROID_VIEW_ACTION = 'android.intent.action.VIEW';
+const FLAG_GRANT_READ_URI_PERMISSION = 1;
+
 function getItemCode(item: MediaGroupRecord): string {
   return item.code || item.id;
 }
@@ -133,6 +140,40 @@ function formatAssetSize(sizeBytes: number | null): string {
   }
 
   return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+}
+
+function getFallbackMimeType(kind: MediaKind): string {
+  return kind === 'images' ? 'image/*' : 'video/*';
+}
+
+async function openGeneratedFile(uri: string, kind: MediaKind, mimeType?: string | null): Promise<void> {
+  if (Platform.OS === 'android' && uri.startsWith('file://')) {
+    const contentUri = await FileSystem.getContentUriAsync(uri);
+    await IntentLauncher.startActivityAsync(ANDROID_VIEW_ACTION, {
+      data: contentUri,
+      flags: FLAG_GRANT_READ_URI_PERMISSION,
+      type: mimeType || getFallbackMimeType(kind),
+    });
+    return;
+  }
+
+  await Linking.openURL(uri);
+}
+
+async function deleteLocalFiles(assets: GeneratedMediaAsset[]): Promise<number> {
+  let failedCount = 0;
+  for (const asset of assets) {
+    if (!asset.fileUri?.startsWith('file://')) {
+      continue;
+    }
+
+    try {
+      await FileSystem.deleteAsync(asset.fileUri, { idempotent: true });
+    } catch {
+      failedCount += 1;
+    }
+  }
+  return failedCount;
 }
 
 function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Array<{ item: MediaGroupRecord; media: MediaSubItem[] }> {
@@ -163,6 +204,7 @@ function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Arra
       portrait: true,
       warnings: [],
       uri: asset.fileUri,
+      mimeType: asset.mimeType,
     });
 
     groupsByProduct.set(groupId, group);
@@ -183,8 +225,7 @@ export default function MediaPanel({
   kind: MediaKind;
   selectedProfileId: string;
 }): React.JSX.Element {
-  const { getAssetsByKind } = useGeneratedMedia();
-  const { deleteMediaAssets } = useCreativeLibrary();
+  const { deleteGeneratedMediaAssets, getAssetsByKind, updateGeneratedMediaAsset } = useGeneratedMedia();
   const copy = panelCopy[kind];
   const accentColor = kind === 'images' ? theme.amber : theme.red;
   const accent = getAccentTone(theme, accentColor);
@@ -202,8 +243,15 @@ export default function MediaPanel({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<'name' | 'code' | 'date'>('name');
   const [sortAscending, setSortAscending] = useState(true);
+  const [previewMedia, setPreviewMedia] = useState<MediaSubItem | null>(null);
+  const [editMedia, setEditMedia] = useState<MediaSubItem | null>(null);
+  const [editTitle, setEditTitle] = useState('');
 
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
+  const generatedAssetById = useMemo(
+    () => new Map(generatedAssets.map((asset) => [asset.id, asset])),
+    [generatedAssets]
+  );
   const groups = useMemo(() => {
     return toGeneratedGroups(kind, generatedAssets);
   }, [generatedAssets, kind]);
@@ -270,8 +318,118 @@ export default function MediaPanel({
   const deleteSelected = async (): Promise<void> => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    await deleteMediaAssets(ids);
-    setSelectedIds(new Set());
+    confirmDelete(ids);
+  };
+
+  const openMedia = async (media: MediaSubItem): Promise<void> => {
+    if (!media.uri) {
+      toast.warning('ไม่พบไฟล์สำหรับเปิด');
+      return;
+    }
+
+    if (kind === 'images') {
+      setPreviewMedia(media);
+      return;
+    }
+
+    try {
+      await openGeneratedFile(media.uri, kind, media.mimeType);
+    } catch {
+      toast.error('เปิดวิดีโอไม่สำเร็จ');
+    }
+  };
+
+  const openEdit = (media: MediaSubItem): void => {
+    setEditMedia(media);
+    setEditTitle(media.title);
+  };
+
+  const saveEdit = async (): Promise<void> => {
+    if (!editMedia) return;
+    const title = editTitle.trim();
+    if (!title) {
+      toast.warning('กรุณากรอกชื่อ');
+      return;
+    }
+
+    const updated = await updateGeneratedMediaAsset(editMedia.id, { title });
+    if (!updated) {
+      toast.error('ไม่พบรายการที่จะแก้ไข');
+      return;
+    }
+
+    setEditMedia(null);
+    setPreviewMedia((current) => (current?.id === editMedia.id ? { ...current, title } : current));
+    toast.success('บันทึกแล้ว');
+  };
+
+  const editSelected = (): void => {
+    const ids = Array.from(selectedIds);
+    if (ids.length !== 1) {
+      toast.warning('เลือกทีละรายการเพื่อแก้ไข');
+      return;
+    }
+
+    const selectedMedia = productMedia.find((media) => media.id === ids[0]);
+    if (!selectedMedia) {
+      toast.error('ไม่พบรายการที่จะแก้ไข');
+      return;
+    }
+
+    openEdit(selectedMedia);
+  };
+
+  const downloadMedia = async (media: MediaSubItem): Promise<void> => {
+    if (!media.uri) {
+      toast.warning('ไม่พบไฟล์สำหรับดาวน์โหลด');
+      return;
+    }
+
+    try {
+      await openGeneratedFile(media.uri, kind, media.mimeType);
+      toast.success('เปิดไฟล์แล้ว สามารถบันทึกจากแอปปลายทางได้');
+    } catch {
+      toast.error('เปิดไฟล์ไม่สำเร็จ');
+    }
+  };
+
+  const performDelete = async (ids: string[]): Promise<void> => {
+    const assetsToDelete = ids
+      .map((id) => generatedAssetById.get(id))
+      .filter((asset): asset is GeneratedMediaAsset => !!asset);
+    if (assetsToDelete.length === 0) {
+      toast.error('ไม่พบรายการที่จะลบ');
+      return;
+    }
+
+    await deleteGeneratedMediaAssets(assetsToDelete.map((asset) => asset.id));
+    const failedFileCount = await deleteLocalFiles(assetsToDelete);
+    const idSet = new Set(assetsToDelete.map((asset) => asset.id));
+    setSelectedIds((current) => new Set(Array.from(current).filter((id) => !idSet.has(id))));
+    setPreviewMedia((current) => (current && idSet.has(current.id) ? null : current));
+    setEditMedia((current) => (current && idSet.has(current.id) ? null : current));
+
+    if (failedFileCount > 0) {
+      toast.warning(`ลบรายการแล้ว แต่ลบไฟล์ไม่ได้ ${failedFileCount} ไฟล์`);
+      return;
+    }
+    toast.success(`ลบแล้ว ${assetsToDelete.length} ${copy.unit}`);
+  };
+
+  const confirmDelete = (ids: string[]): void => {
+    const cleanIds = ids.filter((id) => generatedAssetById.has(id));
+    if (cleanIds.length === 0) return;
+
+    Alert.alert(`ลบ${copy.unit}?`, `ต้องการลบ ${cleanIds.length} ${copy.unit} ออกจากคลังนี้หรือไม่`, [
+      { text: 'ยกเลิก', style: 'cancel' },
+      {
+        text: 'ลบ',
+        style: 'destructive',
+        onPress: () => {
+          void performDelete(cleanIds);
+        },
+      },
+    ]);
   };
 
   return (
@@ -286,8 +444,18 @@ export default function MediaPanel({
           tone={accent}
           actions={
             <>
-              <HeaderIconButton theme={theme} icon={Upload} label="อัพโหลด" />
-              <HeaderIconButton theme={theme} icon={RefreshCw} label="รีเฟรช" />
+              <HeaderIconButton
+                theme={theme}
+                icon={Upload}
+                label="อัพโหลด"
+                onPress={() => toast.info('อัพโหลดเข้าคลังจะเพิ่มในเวอร์ชันถัดไป')}
+              />
+              <HeaderIconButton
+                theme={theme}
+                icon={RefreshCw}
+                label="รีเฟรช"
+                onPress={() => toast.success('รีเฟรชคลังแล้ว')}
+              />
             </>
           }
         />
@@ -420,6 +588,11 @@ export default function MediaPanel({
                       selectedIds={selectedIds}
                       onToggleExpand={() => toggleGroup(item.id)}
                       onToggleSelect={toggleSelect}
+                      onDeleteMedia={(media) => confirmDelete([media.id])}
+                      onDownloadMedia={(media) => void downloadMedia(media)}
+                      onEditMedia={openEdit}
+                      onFavoriteMedia={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
+                      onViewMedia={(media) => void openMedia(media)}
                     />
                   ))
                 ) : kind === 'images' ? (
@@ -432,7 +605,10 @@ export default function MediaPanel({
                         media={media}
                         selected={selectedIds.has(media.id)}
                         showProductInfo
+                        onDelete={() => confirmDelete([media.id])}
+                        onEdit={() => openEdit(media)}
                         onToggleSelect={() => toggleSelect(media.id)}
+                        onView={() => void openMedia(media)}
                       />
                     ))}
                   </View>
@@ -457,6 +633,11 @@ export default function MediaPanel({
                           selected={selectedIds.has(media.id)}
                           showDivider={false}
                           showProductInfo
+                          onDelete={() => confirmDelete([media.id])}
+                          onDownload={() => void downloadMedia(media)}
+                          onEdit={() => openEdit(media)}
+                          onFavorite={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
+                          onPlay={() => void openMedia(media)}
                           onToggleSelect={() => toggleSelect(media.id)}
                         />
                       </View>
@@ -478,8 +659,117 @@ export default function MediaPanel({
           count={selectedIds.size}
           onClear={() => setSelectedIds(new Set())}
           onDelete={() => void deleteSelected()}
+          onEdit={editSelected}
         />
       ) : null}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={!!previewMedia}
+        onRequestClose={() => setPreviewMedia(null)}
+      >
+        <View className="flex-1 bg-black/90 px-4 py-8">
+          <View className="mb-3 flex-row items-center justify-between gap-3">
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="text-kd-body font-semibold text-white">
+                {previewMedia?.title ?? 'รูปภาพ'}
+              </Text>
+              <Text numberOfLines={1} className="text-kd-caption text-white/60">
+                {previewMedia?.productName ?? ''}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityLabel="ปิด"
+              accessibilityRole="button"
+              onPress={() => setPreviewMedia(null)}
+              className="h-9 w-9 items-center justify-center rounded-full bg-white/15"
+            >
+              <X size={18} color={theme.white} strokeWidth={2.4} />
+            </Pressable>
+          </View>
+
+          <View className="flex-1 items-center justify-center">
+            {previewMedia?.uri ? (
+              <NativeImage source={{ uri: previewMedia.uri }} className="h-full w-full" resizeMode="contain" />
+            ) : (
+              <View className="items-center gap-2">
+                <ImageIcon size={36} color="rgba(255,255,255,0.5)" strokeWidth={1.5} />
+                <Text className="text-kd-caption text-white/60">ไม่พบไฟล์รูปภาพ</Text>
+              </View>
+            )}
+          </View>
+
+          {previewMedia ? (
+            <View className="mt-4 flex-row gap-2">
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => openEdit(previewMedia)}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg bg-white/15"
+              >
+                <Text className="text-kd-body font-medium text-white">แก้ไข</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => confirmDelete([previewMedia.id])}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg bg-kd-red"
+              >
+                <Text className="text-kd-body font-semibold text-white">ลบ</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={!!editMedia}
+        onRequestClose={() => setEditMedia(null)}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <View className="gap-3 rounded-t-[20px] border border-kd-border bg-kd-panel p-4 pb-6">
+            <View className="flex-row items-center justify-between gap-3">
+              <Text className="text-kd-title font-semibold text-kd-text">
+                แก้ไข{kind === 'images' ? 'รูปภาพ' : 'วิดีโอ'}
+              </Text>
+              <Pressable
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                onPress={() => setEditMedia(null)}
+                className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted"
+              >
+                <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+
+            <TextInput
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="ชื่อรายการ"
+              placeholderTextColor={theme.textMuted}
+              className="h-11 rounded-kd-lg border border-kd-border bg-kd-input px-3 text-kd-body text-kd-text"
+            />
+
+            <View className="flex-row gap-2">
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setEditMedia(null)}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card"
+              >
+                <Text className="text-kd-body font-medium text-kd-text-subtle">ยกเลิก</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void saveEdit()}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg bg-kd-text"
+              >
+                <Text className="text-kd-body font-semibold text-kd-panel">บันทึก</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -499,6 +789,11 @@ function MediaGroupCard({
   selectedIds,
   onToggleExpand,
   onToggleSelect,
+  onDeleteMedia,
+  onDownloadMedia,
+  onEditMedia,
+  onFavoriteMedia,
+  onViewMedia,
 }: {
   theme: KubdeeTheme;
   kind: MediaKind;
@@ -510,6 +805,11 @@ function MediaGroupCard({
   selectedIds: Set<string>;
   onToggleExpand: () => void;
   onToggleSelect: (id: string) => void;
+  onDeleteMedia: (media: MediaSubItem) => void;
+  onDownloadMedia: (media: MediaSubItem) => void;
+  onEditMedia: (media: MediaSubItem) => void;
+  onFavoriteMedia: (media: MediaSubItem) => void;
+  onViewMedia: (media: MediaSubItem) => void;
 }): React.JSX.Element {
   const ChevronIcon = expanded ? ChevronDown : ChevronRight;
 
@@ -565,7 +865,10 @@ function MediaGroupCard({
                   accentColor={accentColor}
                   media={entry}
                   selected={selectedIds.has(entry.id)}
+                  onDelete={() => onDeleteMedia(entry)}
+                  onEdit={() => onEditMedia(entry)}
                   onToggleSelect={() => onToggleSelect(entry.id)}
+                  onView={() => onViewMedia(entry)}
                 />
               ))}
             </View>
@@ -578,6 +881,11 @@ function MediaGroupCard({
                 media={entry}
                 selected={selectedIds.has(entry.id)}
                 showDivider={index > 0}
+                onDelete={() => onDeleteMedia(entry)}
+                onDownload={() => onDownloadMedia(entry)}
+                onEdit={() => onEditMedia(entry)}
+                onFavorite={() => onFavoriteMedia(entry)}
+                onPlay={() => onViewMedia(entry)}
                 onToggleSelect={() => onToggleSelect(entry.id)}
               />
             ))
@@ -598,20 +906,27 @@ function ImageTile({
   media,
   selected,
   showProductInfo = false,
+  onDelete,
+  onEdit,
   onToggleSelect,
+  onView,
 }: {
   theme: KubdeeTheme;
   accentColor: string;
   media: MediaSubItem;
   selected: boolean;
   showProductInfo?: boolean;
+  onDelete: () => void;
+  onEdit: () => void;
   onToggleSelect: () => void;
+  onView: () => void;
 }): React.JSX.Element {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      onPress={onToggleSelect}
+      onLongPress={onToggleSelect}
+      onPress={onView}
       className="aspect-square w-[31.4%] overflow-hidden rounded-kd-lg border-2 bg-kd-border dark:bg-kd-card-muted"
       style={{ borderColor: selected ? accentColor : 'transparent' }}
     >
@@ -623,8 +938,33 @@ function ImageTile({
         )}
       </View>
 
-      <View className="absolute left-1.5 top-1.5">
+      <Pressable
+        accessibilityLabel="เลือก"
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: selected }}
+        onPress={onToggleSelect}
+        className="absolute left-1.5 top-1.5"
+      >
         <SelectCircle theme={theme} selected={selected} accent={accentColor} size={18} light />
+      </Pressable>
+
+      <View className="absolute right-1.5 top-1.5 flex-row gap-1">
+        <Pressable
+          accessibilityLabel="แก้ไข"
+          accessibilityRole="button"
+          onPress={onEdit}
+          className="h-6 w-6 items-center justify-center rounded-kd-sm bg-black/55"
+        >
+          <Pencil size={12} color={theme.white} strokeWidth={2.2} />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="ลบ"
+          accessibilityRole="button"
+          onPress={onDelete}
+          className="h-6 w-6 items-center justify-center rounded-kd-sm bg-black/55"
+        >
+          <Trash2 size={12} color={theme.white} strokeWidth={2.2} />
+        </Pressable>
       </View>
 
       {showProductInfo ? (
@@ -656,6 +996,11 @@ function VideoRow({
   selected,
   showDivider,
   showProductInfo = false,
+  onDelete,
+  onDownload,
+  onEdit,
+  onFavorite,
+  onPlay,
   onToggleSelect,
 }: {
   theme: KubdeeTheme;
@@ -664,6 +1009,11 @@ function VideoRow({
   selected: boolean;
   showDivider: boolean;
   showProductInfo?: boolean;
+  onDelete: () => void;
+  onDownload: () => void;
+  onEdit: () => void;
+  onFavorite: () => void;
+  onPlay: () => void;
   onToggleSelect: () => void;
 }): React.JSX.Element {
   return (
@@ -688,13 +1038,16 @@ function VideoRow({
         <SelectCircle theme={theme} selected={selected} accent={accentColor} size={20} />
       </Pressable>
 
-      <View
+      <Pressable
+        accessibilityLabel="เล่นวิดีโอ"
+        accessibilityRole="button"
+        onPress={onPlay}
         className={`shrink-0 items-center justify-center overflow-hidden rounded-kd-md bg-kd-border dark:bg-kd-card-muted ${
           media.portrait ? 'h-16 w-12' : 'h-12 w-20'
         }`}
       >
         <Play size={16} color={theme.textSubtle} strokeWidth={1.5} />
-      </View>
+      </Pressable>
 
       <View className="min-w-0 flex-1">
         {showProductInfo ? (
@@ -719,11 +1072,11 @@ function VideoRow({
         </View>
 
         <View className="mt-0.5 flex-row items-center justify-end gap-0.5">
-          <RowIconButton theme={theme} icon={Pencil} label="แก้ไข" />
-          <RowIconButton theme={theme} icon={Play} label="เล่น" />
-          <RowIconButton theme={theme} icon={Download} label="ดาวน์โหลด" />
-          <RowIconButton theme={theme} icon={Heart} label="กดถูกใจ" />
-          <RowIconButton theme={theme} icon={Trash2} label="ลบ" />
+          <RowIconButton theme={theme} icon={Pencil} label="แก้ไข" onPress={onEdit} />
+          <RowIconButton theme={theme} icon={Play} label="เล่น" onPress={onPlay} />
+          <RowIconButton theme={theme} icon={Download} label="ดาวน์โหลด" onPress={onDownload} />
+          <RowIconButton theme={theme} icon={Heart} label="กดถูกใจ" onPress={onFavorite} />
+          <RowIconButton theme={theme} icon={Trash2} label="ลบ" onPress={onDelete} />
         </View>
       </View>
     </View>

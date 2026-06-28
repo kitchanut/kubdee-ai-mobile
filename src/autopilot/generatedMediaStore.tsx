@@ -50,7 +50,9 @@ export interface AddGeneratedMediaAssetInput {
 interface GeneratedMediaContextType {
   assets: GeneratedMediaAsset[];
   addGeneratedMediaAsset: (input: AddGeneratedMediaAssetInput) => Promise<GeneratedMediaAsset>;
+  deleteGeneratedMediaAssets: (ids: string[]) => Promise<void>;
   getAssetsByKind: (kind: GeneratedMediaKind, profileLocalId?: string) => GeneratedMediaAsset[];
+  updateGeneratedMediaAsset: (id: string, patch: Partial<Pick<GeneratedMediaAsset, 'title'>>) => Promise<GeneratedMediaAsset | null>;
 }
 
 const GENERATED_MEDIA_STORE_KEY = 'kubdee_ai_mobile_generated_media_v1';
@@ -166,7 +168,7 @@ async function loadStoredAssets(): Promise<GeneratedMediaAsset[]> {
 }
 
 export function GeneratedMediaProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const { addMediaAsset, getMediaAssets } = useCreativeLibrary();
+  const { addMediaAsset, deleteMediaAssets, getMediaAssets } = useCreativeLibrary();
   const [assets, setAssets] = useState<GeneratedMediaAsset[]>([]);
 
   useEffect(() => {
@@ -288,6 +290,72 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
     return asset;
   }, [addMediaAsset]);
 
+  const updateGeneratedMediaAsset = useCallback(
+    async (id: string, patch: Partial<Pick<GeneratedMediaAsset, 'title'>>): Promise<GeneratedMediaAsset | null> => {
+      const cleanId = id.trim();
+      const currentAsset = assets.find((asset) => asset.id === cleanId);
+      if (!currentAsset) {
+        return null;
+      }
+
+      const nextAsset: GeneratedMediaAsset = {
+        ...currentAsset,
+        title: cleanText(patch.title) || currentAsset.title,
+      };
+
+      await addMediaAsset({
+        id: nextAsset.id,
+        kind: nextAsset.kind,
+        runId: nextAsset.runId,
+        profileLocalId: nextAsset.profileLocalId,
+        productId: nextAsset.productId,
+        productName: nextAsset.productName,
+        productCode: nextAsset.productCode,
+        productUrl: nextAsset.productUrl,
+        caption: nextAsset.caption,
+        hashtags: nextAsset.hashtags,
+        platform: nextAsset.platform,
+        title: nextAsset.title,
+        fileUri: nextAsset.fileUri,
+        fileName: nextAsset.fileName,
+        mimeType: nextAsset.mimeType,
+        sizeBytes: nextAsset.sizeBytes,
+        width: null,
+        height: null,
+        durationMs: null,
+        source: nextAsset.source,
+        createdAt: nextAsset.createdAt,
+      });
+
+      setAssets((current) => {
+        const next = current.map((asset) => (asset.id === cleanId ? nextAsset : asset));
+        void persistAssets(next);
+        return next;
+      });
+
+      return nextAsset;
+    },
+    [addMediaAsset, assets]
+  );
+
+  const deleteGeneratedMediaAssets = useCallback(
+    async (ids: string[]): Promise<void> => {
+      const cleanIds = ids.map((id) => id.trim()).filter(Boolean);
+      if (cleanIds.length === 0) {
+        return;
+      }
+
+      await deleteMediaAssets(cleanIds);
+      const idSet = new Set(cleanIds);
+      setAssets((current) => {
+        const next = current.filter((asset) => !idSet.has(asset.id));
+        void persistAssets(next);
+        return next;
+      });
+    },
+    [deleteMediaAssets]
+  );
+
   const getAssetsByKind = useCallback(
     (kind: GeneratedMediaKind, profileLocalId?: string): GeneratedMediaAsset[] => {
       const cleanProfileLocalId = profileLocalId?.trim();
@@ -304,9 +372,11 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
     () => ({
       addGeneratedMediaAsset,
       assets,
+      deleteGeneratedMediaAssets,
       getAssetsByKind,
+      updateGeneratedMediaAsset,
     }),
-    [addGeneratedMediaAsset, assets, getAssetsByKind]
+    [addGeneratedMediaAsset, assets, deleteGeneratedMediaAssets, getAssetsByKind, updateGeneratedMediaAsset]
   );
 
   return <GeneratedMediaContext.Provider value={value}>{children}</GeneratedMediaContext.Provider>;

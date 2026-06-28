@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.2',
+    date: '2026-06-28',
+    highlight: 'ปรับปรุงคลังรูปภาพและวิดีโอให้ใช้งานได้จริงมากขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้ปุ่มลบในคลังรูปภาพและวิดีโอให้ลบรายการที่เลือกได้ถูกต้อง' },
+      { type: 'added', text: 'เพิ่มการดูตัวอย่างรูปภาพจากในคลัง' },
+      { type: 'added', text: 'เพิ่มการเปิดเล่นวิดีโอจากคลังผ่าน Android viewer' },
+      { type: 'changed', text: 'ปรับการแก้ไขชื่อรายการในคลังให้บันทึกได้จากมือถือ' },
+    ],
+  },
+  {
     version: '0.1.1',
     date: '2026-06-28',
     highlight: 'ปรับปรุงระบบอัปเดตแอปให้ชัดเจนขึ้น',
@@ -35,4 +46,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.0';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.2';
