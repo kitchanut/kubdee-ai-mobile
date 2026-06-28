@@ -2292,6 +2292,37 @@ export default function GoogleFlowWebViewRunnerHost({
             throw new Error(`ตั้งค่า Flow รูปฉากไม่ครบ: ${config.error ?? 'unknown'}`);
           }
 
+          if (product.preview) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step: 'image',
+              stage: 'multi_scene_attach_product_reference',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `แนบรูปสินค้าเป็น reference รูปฉาก ${sceneNumber}/${sceneCount}`,
+            });
+            const productReferenceDataUrl = await loadImageReferenceDataUrl(product.preview);
+            await uploadReferenceImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step: 'image',
+              args: {
+                dataUrl: productReferenceDataUrl ?? undefined,
+                fileName: getReferenceFileName(product),
+                imageUrl: productReferenceDataUrl ? undefined : product.preview,
+              },
+            });
+          }
+
           const previousSceneImageDataUrl = sceneImageDataUrls[sceneImageDataUrls.length - 1];
           if ((sceneNumber > 1 || hasPriorImageStep) && previousSceneImageDataUrl) {
             emit({
@@ -2322,21 +2353,6 @@ export default function GoogleFlowWebViewRunnerHost({
             });
           } else if (sceneNumber > 1 || hasPriorImageStep) {
             throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
-          } else if (product.preview) {
-            const dataUrl = await loadImageReferenceDataUrl(product.preview);
-            await uploadReferenceImageOrThrow({
-              handle,
-              payload,
-              product,
-              productIndex,
-              round,
-              step: 'image',
-              args: {
-                dataUrl: dataUrl ?? undefined,
-                fileName: getReferenceFileName(product),
-                imageUrl: dataUrl ? undefined : product.preview,
-              },
-            });
           }
 
           await fillPromptAndSubmit({
