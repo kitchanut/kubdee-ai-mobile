@@ -405,6 +405,55 @@ export const VOICE_OPTIONS: AutoPilotOption[] = [
   { value: '__custom__', label: 'กำหนดเอง', isCustom: true },
 ];
 
+export const VOICEOVER_TTS_GROUPS: Array<{ label: string; options: AutoPilotOption[] }> = [
+  {
+    label: 'หญิง',
+    options: [
+      { value: 'tts_aoede', label: 'Aoede โปร่งสบาย' },
+      { value: 'tts_leda', label: 'Leda วัยรุ่น' },
+      { value: 'tts_callirrhoe', label: 'Callirrhoe สบายๆ' },
+      { value: 'tts_zephyr', label: 'Zephyr สดใส' },
+      { value: 'tts_sulafat', label: 'Sulafat อบอุ่น' },
+      { value: 'tts_achird', label: 'Achird เป็นมิตร' },
+      { value: 'tts_achernar', label: 'Achernar นุ่ม' },
+      { value: 'tts_vindemiatrix', label: 'Vindemiatrix อ่อนโยน' },
+      { value: 'tts_despina', label: 'Despina เรียบลื่น' },
+      { value: 'tts_erinome', label: 'Erinome ใสชัด' },
+    ],
+  },
+  {
+    label: 'ชาย',
+    options: [
+      { value: 'tts_puck', label: 'Puck ร่าเริง' },
+      { value: 'tts_charon', label: 'Charon ข้อมูลชัด' },
+      { value: 'tts_fenrir', label: 'Fenrir ตื่นเต้น' },
+      { value: 'tts_orus', label: 'Orus หนักแน่น' },
+      { value: 'tts_iapetus', label: 'Iapetus ชัดเจน' },
+      { value: 'tts_algenib', label: 'Algenib หนักแน่น' },
+      { value: 'tts_alnilam', label: 'Alnilam หนักแน่น' },
+      { value: 'tts_rasalgethi', label: 'Rasalgethi ข่าวสาร' },
+      { value: 'tts_gacrux', label: 'Gacrux ผู้ใหญ่' },
+      { value: 'tts_sadaltager', label: 'Sadaltager ชัดเจน' },
+    ],
+  },
+  {
+    label: 'กลาง',
+    options: [
+      { value: '', label: 'ออโต้' },
+      { value: 'tts_kore', label: 'Kore หนักแน่น' },
+      { value: 'tts_autonoe', label: 'Autonoe สดใส' },
+      { value: 'tts_enceladus', label: 'Enceladus ลมหายใจ' },
+      { value: 'tts_umbriel', label: 'Umbriel ง่ายๆ' },
+      { value: 'tts_algieba', label: 'Algieba นุ่มลื่น' },
+      { value: 'tts_laomedeia', label: 'Laomedeia ร่าเริง' },
+      { value: 'tts_pulcherrima', label: 'Pulcherrima กังวาน' },
+      { value: 'tts_schedar', label: 'Schedar เสมอ' },
+      { value: 'tts_zubenelgenubi', label: 'Zubenelgenubi กันเอง' },
+      { value: 'tts_sadachbia', label: 'Sadachbia มีชีวิตชีวา' },
+    ],
+  },
+];
+
 export const SCRIPT_STYLE_OPTIONS: AutoPilotOption[] = [
   { value: '', label: 'ออโต้' },
   { value: 'normal', label: 'ปกติ' },

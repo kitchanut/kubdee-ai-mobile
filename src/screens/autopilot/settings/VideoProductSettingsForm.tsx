@@ -23,6 +23,7 @@ import {
   VIDEO_CHARACTER_MODE_OPTIONS,
   VIDEO_PROMPT_MODE_OPTIONS,
   VIDEO_STYLE_OPTIONS,
+  VOICEOVER_TTS_GROUPS,
   VOICE_OPTIONS,
 } from '@/autopilot/optionSets';
 import { kubdeeFontFamilies } from '@/theme/fonts';
@@ -300,34 +301,54 @@ export function VideoProductSettingsForm({
             </View>
           </SettingsSection>
 
-          {/* 5. เสียงพากย์ */}
+          {/* 5. เสียงพูด / เสียงพากย์ */}
           <View className="gap-1.5">
-            <FieldHeader label="เสียงพากย์" onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.voice)} />
-            <CardOptionGrid
-              options={VOICE_OPTIONS}
-              theme={theme}
-              accent={accent}
-              value={settings.voiceCharacter}
-              onChange={(value) => {
-                onChange('voiceCharacter', value);
-                if (value === 'none') onChange('dialogueMode', 'none');
-              }}
-            />
-            {settings.voiceCharacter === '__custom__' ? (
-              <SettingInput
-                placeholder="พิมพ์ลักษณะเสียงพูด..."
-                theme={theme}
-                value={settings.voiceCharacterCustom}
-                onChangeText={(value) => onChange('voiceCharacterCustom', value)}
-              />
-            ) : null}
-            <UserPresetGridLite
-              builtInOptions={[]}
-              theme={theme}
-              accent={accent}
-              value={settings.voiceCharacter}
-              onChange={(value) => onChange('voiceCharacter', value)}
-            />
+            <FieldHeader label={isVoiceoverMode ? 'เสียงพากย์' : 'เสียงพูด'} onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.voice)} />
+            {isVoiceoverMode ? (
+              <View className="gap-2">
+                {VOICEOVER_TTS_GROUPS.map((group) => (
+                  <View key={group.label} className="gap-1.5">
+                    <Text className="text-[10px] font-semibold uppercase text-kd-text-subtle">{group.label}</Text>
+                    <CardOptionGrid
+                      columns={2}
+                      options={group.options}
+                      theme={theme}
+                      accent={accent}
+                      value={settings.voiceCharacter}
+                      onChange={(value) => onChange('voiceCharacter', value)}
+                    />
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <>
+                <CardOptionGrid
+                  options={VOICE_OPTIONS}
+                  theme={theme}
+                  accent={accent}
+                  value={settings.voiceCharacter}
+                  onChange={(value) => {
+                    onChange('voiceCharacter', value);
+                    if (value === 'none') onChange('dialogueMode', 'none');
+                  }}
+                />
+                {settings.voiceCharacter === '__custom__' ? (
+                  <SettingInput
+                    placeholder="พิมพ์ลักษณะเสียงพูด..."
+                    theme={theme}
+                    value={settings.voiceCharacterCustom}
+                    onChangeText={(value) => onChange('voiceCharacterCustom', value)}
+                  />
+                ) : null}
+                <UserPresetGridLite
+                  builtInOptions={[]}
+                  theme={theme}
+                  accent={accent}
+                  value={settings.voiceCharacter}
+                  onChange={(value) => onChange('voiceCharacter', value)}
+                />
+              </>
+            )}
           </View>
 
           {/* 6. บทพูด */}
