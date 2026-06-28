@@ -1,12 +1,29 @@
 import {
   DEFAULT_AUTO_PILOT_IMAGE_SETTINGS,
   DEFAULT_AUTO_PILOT_VIDEO_SETTINGS,
+  FLOW_IMAGE_MODELS,
+  FLOW_VIDEO_MODELS,
 } from '@/autopilot/defaults';
 import type { AutoPilotProduct, AutoPilotProductSettings, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import type { AffiliateProduct } from '@/library/types';
 
 function cleanText(value: string | null | undefined): string {
   return value?.trim() ?? '';
+}
+
+const VALID_IMAGE_MODELS = new Set<string>(FLOW_IMAGE_MODELS.map((model) => model.value));
+const VALID_VIDEO_MODELS = new Set<string>(FLOW_VIDEO_MODELS.map((model) => model.value));
+
+function normalizeImageModel(value: unknown): string {
+  return typeof value === 'string' && VALID_IMAGE_MODELS.has(value)
+    ? value
+    : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.imageModel;
+}
+
+function normalizeVideoModel(value: unknown): string {
+  return typeof value === 'string' && VALID_VIDEO_MODELS.has(value)
+    ? value
+    : DEFAULT_AUTO_PILOT_VIDEO_SETTINGS.videoModel;
 }
 
 export function getAutoPilotProductId(product: AffiliateProduct): string {
@@ -39,14 +56,23 @@ export function toAutoPilotProduct(product: AffiliateProduct): AutoPilotProduct 
 export function normalizeAutoPilotProductSettings(
   settings: Partial<AutoPilotProductSettings> | null | undefined
 ): AutoPilotProductSettings {
+  const image = {
+    ...DEFAULT_AUTO_PILOT_IMAGE_SETTINGS,
+    ...(settings?.image ?? {}),
+  };
+  const video = {
+    ...DEFAULT_AUTO_PILOT_VIDEO_SETTINGS,
+    ...(settings?.video ?? {}),
+  };
+
   return {
     image: {
-      ...DEFAULT_AUTO_PILOT_IMAGE_SETTINGS,
-      ...(settings?.image ?? {}),
+      ...image,
+      imageModel: normalizeImageModel(image.imageModel),
     },
     video: {
-      ...DEFAULT_AUTO_PILOT_VIDEO_SETTINGS,
-      ...(settings?.video ?? {}),
+      ...video,
+      videoModel: normalizeVideoModel(video.videoModel),
     },
   };
 }

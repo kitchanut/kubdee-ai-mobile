@@ -157,7 +157,8 @@ function isAutoMultiSceneVideo(product: GoogleFlowRunnerProduct): boolean {
 }
 
 function autoMultiSceneMode(product: GoogleFlowRunnerProduct): string {
-  return product.settings.video.multiSceneAngleMode || 'same_angle';
+  const mode = product.settings.video.multiSceneAngleMode || 'same_angle';
+  return mode === 'same_angle' || mode === 'multi_angle' || mode === 'voiceover' ? mode : 'same_angle';
 }
 
 const FACE_VISIBILITY_IMAGE_INSTRUCTION =

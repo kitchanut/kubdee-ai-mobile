@@ -102,6 +102,7 @@ export interface AutoPilotSettings {
   flowVideoDuration: number;
   browserMode: AutoPilotBrowserMode;
   aiGenerateCaption: boolean;
+  aiGenerateHashtags: boolean;
   aiSendImageToAi: boolean;
   aiGenerateCta: boolean;
   aiRewritePromptOnAudioFailure: boolean;

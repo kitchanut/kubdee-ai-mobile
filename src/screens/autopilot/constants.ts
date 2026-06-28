@@ -4,7 +4,7 @@ import type { AutoPilotImageSettings, AutoPilotVideoSettings } from '@/autopilot
 
 export type OptionValue = string | number | boolean;
 export type ProductSettingsTab = 'image' | 'video';
-export type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
+export type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'caption' | 'hashtags' | 'cta';
 
 // Section grouping mirrors the kubdee-ai-extension settings modal:
 // ตั้งค่าพื้นฐาน → ตัวละคร → การสร้าง Prompt → สไตล์รูปภาพ → ฉาก → คำสั่งเพิ่มเติม

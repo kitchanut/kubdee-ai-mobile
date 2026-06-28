@@ -265,6 +265,7 @@ export default function AutoPilotScreen({
             onRoundChange={(value) => controller.updateSetting('totalRounds', Number(value))}
             onToggleCaption={(value) => controller.updateSetting('aiGenerateCaption', value)}
             onToggleCta={(value) => controller.updateSetting('aiGenerateCta', value)}
+            onToggleHashtags={(value) => controller.updateSetting('aiGenerateHashtags', value)}
             onToggleRewrite={(value) => controller.updateSetting('aiRewritePromptOnAudioFailure', value)}
             onToggleStartNewProject={(value) => controller.updateSetting('startNewFlowProjectPerProduct', value)}
             onToggleSendImage={(value) => controller.updateSetting('aiSendImageToAi', value)}

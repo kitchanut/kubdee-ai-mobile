@@ -16,6 +16,7 @@ export function ExtensionBasicSettingsBlock({
   onRoundChange,
   onToggleCaption,
   onToggleCta,
+  onToggleHashtags,
   onToggleRewrite,
   onToggleStartNewProject,
   onToggleSendImage,
@@ -27,6 +28,7 @@ export function ExtensionBasicSettingsBlock({
   onRoundChange: (value: OptionValue) => void;
   onToggleCaption: (value: boolean) => void;
   onToggleCta: (value: boolean) => void;
+  onToggleHashtags: (value: boolean) => void;
   onToggleRewrite: (value: boolean) => void;
   onToggleStartNewProject: (value: boolean) => void;
   onToggleSendImage: (value: boolean) => void;
@@ -67,20 +69,27 @@ export function ExtensionBasicSettingsBlock({
         <View className="gap-1">
           <ExtensionToggleRow
             icon={Star}
-            label="AI คิด Caption/Hashtags"
-            rightSlot={settings.aiGenerateCaption ? (
+            label="AI คิด Caption"
+            theme={theme}
+            value={settings.aiGenerateCaption}
+            onValueChange={onToggleCaption}
+          />
+          <ExtensionToggleRow
+            icon={Star}
+            label="AI คิด Hashtags"
+            rightSlot={settings.aiGenerateHashtags ? (
               <HashtagCountSelector
-                enabled={settings.aiGenerateCaption}
+                enabled={settings.aiGenerateHashtags}
                 theme={theme}
                 value={settings.aiHashtagCount}
                 onChange={onHashtagCountChange}
               />
             ) : null}
             theme={theme}
-            value={settings.aiGenerateCaption}
-            onValueChange={onToggleCaption}
+            value={settings.aiGenerateHashtags}
+            onValueChange={onToggleHashtags}
           />
-          {SHOW_SEND_IMAGE_TO_AI && settings.aiGenerateCaption ? (
+          {SHOW_SEND_IMAGE_TO_AI && (settings.aiGenerateCaption || settings.aiGenerateHashtags) ? (
             <View className="min-h-7 flex-row items-center gap-3 pl-7">
               <View className="min-w-0 flex-1 flex-row flex-wrap items-baseline gap-x-1.5">
                 <Text className="text-kd-caption font-medium text-kd-text-muted">ส่งรูปให้ AI วิเคราะห์</Text>

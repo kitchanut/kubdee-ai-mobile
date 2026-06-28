@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.9',
+    date: '2026-06-29',
+    highlight: 'ปรับ Auto Workflow ให้ตั้งค่าและทำงานใกล้เคียง Desktop มากขึ้น',
+    changes: [
+      { type: 'added', text: 'เพิ่มตัวเลือกให้ AI คิด Caption, Hashtags และ CTA แยกกันได้' },
+      { type: 'improved', text: 'ปรับตัวเลือกวิดีโอหลายฉากให้มีมุมเดิม หลายมุม และเสียงพากษ์' },
+      { type: 'improved', text: 'ปรับค่าเริ่มต้นและการตรวจโมเดล Flow ให้เหมาะกับการใช้งานบนมือถือมากขึ้น' },
+      { type: 'fixed', text: 'ปรับการบันทึกผลลัพธ์ให้ใช้ข้อความที่ AI คิดล่าสุดกับรูปและวิดีโอที่สร้าง' },
+    ],
+  },
+  {
     version: '0.1.8',
     date: '2026-06-28',
     highlight: 'ปรับ Auto Workflow ให้ทำงานต่อเนื่องและตรวจสถานะได้ชัดเจนขึ้น',
@@ -108,4 +119,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.8';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.9';

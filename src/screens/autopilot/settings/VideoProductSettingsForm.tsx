@@ -167,6 +167,7 @@ export function VideoProductSettingsForm({
             theme={theme}
             accent={accent}
             value={selectedVideoMethod}
+            disabledValues={!multiScene ? ['multi', 'extend'] : undefined}
             onChange={(value) => {
               const nextMethod = String(value);
               onChange('videoMethod', nextMethod);
@@ -180,12 +181,13 @@ export function VideoProductSettingsForm({
           />
           {multiScene && selectedVideoMethod === 'multi' ? (
             <OptionGroup
-              columns={3}
+              columns={4}
               label="รูปแบบหลายฉาก"
               options={VIDEO_MULTI_SCENE_ANGLE_SELECT_OPTIONS}
               theme={theme}
               accent={accent}
               value={selectedMultiSceneAngleMode}
+              disabledValues={['soon_2']}
               onChange={(value) => {
                 const nextMode = String(value);
                 onChange('multiSceneAngleMode', nextMode);

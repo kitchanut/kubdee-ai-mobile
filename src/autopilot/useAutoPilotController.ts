@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { DEFAULT_AUTO_PILOT_SETTINGS } from '@/autopilot/defaults';
+import {
+  DEFAULT_AUTO_PILOT_SETTINGS,
+  FLOW_IMAGE_MODELS,
+  FLOW_VIDEO_MODELS,
+} from '@/autopilot/defaults';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import {
   createGoogleFlowRunnerPayload,
@@ -9,6 +13,10 @@ import {
   stopGoogleFlowRunner,
   subscribeGoogleFlowRunnerLogs,
 } from '@/autopilot/googleFlowRunnerBridge';
+import {
+  generateAutoPilotProductContent,
+  getAutoPilotAiContentLabels,
+} from '@/autopilot/aiCaption';
 import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
 import {
   getAutoPilotProductId,
@@ -28,10 +36,12 @@ import type {
 } from '@/autopilot/types';
 import type { AffiliateProduct } from '@/library/types';
 
-type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
+type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'caption' | 'hashtags' | 'cta';
 
 const AUTO_PILOT_RUNTIME_SETTINGS_KEY = 'kubdee_ai_mobile_auto_runtime_settings_v1';
 const DEFAULT_ENABLED_STEPS: AutoPilotStepType[] = ['image', 'video'];
+const VALID_FLOW_IMAGE_MODELS = new Set<string>(FLOW_IMAGE_MODELS.map((model) => model.value));
+const VALID_FLOW_VIDEO_MODELS = new Set<string>(FLOW_VIDEO_MODELS.map((model) => model.value));
 
 const initialRunState: AutoPilotRunState = {
   runId: null,
@@ -102,6 +112,14 @@ function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {
   const totalRounds = Number(input.totalRounds);
   const aiHashtagCount = Number(input.aiHashtagCount);
   const flowVideoDuration = Number(input.flowVideoDuration);
+  const flowImageModel =
+    typeof input.flowImageModel === 'string' && VALID_FLOW_IMAGE_MODELS.has(input.flowImageModel)
+      ? input.flowImageModel
+      : DEFAULT_AUTO_PILOT_SETTINGS.flowImageModel;
+  const flowVideoModel =
+    typeof input.flowVideoModel === 'string' && VALID_FLOW_VIDEO_MODELS.has(input.flowVideoModel)
+      ? input.flowVideoModel
+      : DEFAULT_AUTO_PILOT_SETTINGS.flowVideoModel;
 
   return {
     ...DEFAULT_AUTO_PILOT_SETTINGS,
@@ -119,6 +137,12 @@ function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {
       typeof input.aiGenerateCaption === 'boolean'
         ? input.aiGenerateCaption
         : DEFAULT_AUTO_PILOT_SETTINGS.aiGenerateCaption,
+    aiGenerateHashtags:
+      typeof input.aiGenerateHashtags === 'boolean'
+        ? input.aiGenerateHashtags
+        : input.aiGenerateCaption === true
+          ? true
+          : DEFAULT_AUTO_PILOT_SETTINGS.aiGenerateHashtags,
     aiSendImageToAi:
       typeof input.aiSendImageToAi === 'boolean'
         ? input.aiSendImageToAi
@@ -133,8 +157,8 @@ function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {
       typeof input.startNewFlowProjectPerProduct === 'boolean'
         ? input.startNewFlowProjectPerProduct
         : DEFAULT_AUTO_PILOT_SETTINGS.startNewFlowProjectPerProduct,
-    flowImageModel: typeof input.flowImageModel === 'string' ? input.flowImageModel : DEFAULT_AUTO_PILOT_SETTINGS.flowImageModel,
-    flowVideoModel: typeof input.flowVideoModel === 'string' ? input.flowVideoModel : DEFAULT_AUTO_PILOT_SETTINGS.flowVideoModel,
+    flowImageModel,
+    flowVideoModel,
     flowVideoDuration:
       Number.isFinite(flowVideoDuration) && flowVideoDuration > 0
         ? flowVideoDuration
@@ -177,6 +201,7 @@ export function useAutoPilotController({
   const [productSettingsById, setProductSettingsById] = useState<Record<string, AutoPilotProductSettings>>({});
   const [runState, setRunState] = useState<AutoPilotRunState>(initialRunState);
   const runIdRef = useRef<string | null>(null);
+  const preparedProductByKeyRef = useRef<Map<string, AutoPilotProduct>>(new Map());
   const runtimeSettingsLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -340,7 +365,8 @@ export function useAutoPilotController({
       }
 
       if (entry.event === 'asset' && entry.step && (entry.fileUri || entry.fileName)) {
-        const product = entry.productId ? productById.get(entry.productId) : undefined;
+        const preparedProduct = entry.productId ? preparedProductByKeyRef.current.get(entry.productId) : undefined;
+        const product = preparedProduct ?? (entry.productId ? productById.get(entry.productId) : undefined);
         const productId = entry.productId || product?.productId || product?.id || 'unknown';
         void addGeneratedMediaAsset({
           kind: entry.step === 'image' ? 'images' : 'videos',
@@ -424,6 +450,7 @@ export function useAutoPilotController({
     setProductFieldsById((current) => ({
       ...current,
       [localId]: {
+        caption: '',
         cta: '',
         hashtags: '',
         name: '',
@@ -724,16 +751,6 @@ export function useAutoPilotController({
 
     const runId = createRunId();
     runIdRef.current = runId;
-    const payload = createGoogleFlowRunnerPayload({
-      enabledSteps,
-      promptCatalog: catalogResult.catalog,
-      promptCatalogSource: catalogResult.source,
-      promptCatalogVersion: catalogResult.version,
-      products: selectedProducts,
-      profileLocalId,
-      runId,
-      settings,
-    });
 
     setRunState({
       runId,
@@ -754,7 +771,93 @@ export function useAutoPilotController({
           ? 'cache'
           : 'fallback ในแอป';
     appendLog('info', `ใช้ชุด prompt จาก${catalogSourceLabel} v${catalogResult.version ?? '-'}`);
-    appendLog('action', `ส่งงานไป Google Flow WebView: ${selectedProducts.length} สินค้า`);
+
+    const aiContentLabels = getAutoPilotAiContentLabels(settings);
+    let preparedProducts = selectedProducts;
+    if (aiContentLabels) {
+      appendLog('action', `AI กำลังคิด ${aiContentLabels} สำหรับ ${selectedProducts.length} สินค้า...`);
+      const preparedResults = await Promise.all(
+        selectedProducts.map(async (product) => {
+          const result = await generateAutoPilotProductContent({ product, settings });
+          if (!result.success) {
+            appendLog(
+              'warning',
+              `AI ${aiContentLabels} ไม่สำเร็จ (${product.name || 'สินค้า'}): ${result.error || 'unknown'} — ใช้ค่าเดิม`
+            );
+            return {
+              product,
+              updates: {} as Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>,
+            };
+          }
+
+          const updates: Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>> = {};
+          if (settings.aiGenerateCaption && result.caption) {
+            updates.caption = result.caption;
+          }
+          if (settings.aiGenerateHashtags && result.hashtags) {
+            updates.hashtags = result.hashtags;
+          }
+          if (settings.aiGenerateCta && result.cta) {
+            updates.cta = result.cta;
+          }
+          appendLog('success', `AI ${aiContentLabels} สำเร็จ: ${product.name || 'สินค้า'}`);
+          if (updates.caption) {
+            appendLog('info', `AI Caption: ${updates.caption.slice(0, 120)}`);
+          }
+          if (updates.hashtags) {
+            appendLog('info', `AI Hashtags: ${updates.hashtags}`);
+          }
+          if (updates.cta) {
+            appendLog('info', `AI CTA: ${updates.cta}`);
+          }
+          return { product, updates };
+        })
+      );
+
+      preparedProducts = preparedResults.map(({ product, updates }) => ({ ...product, ...updates }));
+      const fieldUpdates = preparedResults.reduce<
+        Record<string, Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>>
+      >((acc, { product, updates }) => {
+        if (Object.keys(updates).length > 0) {
+          acc[product.id] = updates;
+        }
+        return acc;
+      }, {});
+
+      if (Object.keys(fieldUpdates).length > 0) {
+        setProductFieldsById((current) => {
+          const next = { ...current };
+          for (const [productId, updates] of Object.entries(fieldUpdates)) {
+            next[productId] = {
+              ...next[productId],
+              ...updates,
+            };
+          }
+          return next;
+        });
+      }
+    }
+
+    const payload = createGoogleFlowRunnerPayload({
+      enabledSteps,
+      promptCatalog: catalogResult.catalog,
+      promptCatalogSource: catalogResult.source,
+      promptCatalogVersion: catalogResult.version,
+      products: preparedProducts,
+      profileLocalId,
+      runId,
+      settings,
+    });
+    preparedProductByKeyRef.current = new Map();
+    for (const product of preparedProducts) {
+      for (const key of [product.id, product.productId, product.catalogId]) {
+        if (key) {
+          preparedProductByKeyRef.current.set(key, product);
+        }
+      }
+    }
+
+    appendLog('action', `ส่งงานไป Google Flow WebView: ${preparedProducts.length} สินค้า`);
     const result = await startGoogleFlowRunner(payload);
 
     if (!result.success) {

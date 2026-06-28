@@ -135,6 +135,7 @@ export function SelectField({
 export function OptionGroup({
   compact = false,
   columns,
+  disabledValues,
   label,
   options,
   theme,
@@ -146,8 +147,9 @@ export function OptionGroup({
 }: {
   compact?: boolean;
   columns?: number;
+  disabledValues?: OptionValue[];
   label?: string;
-  options: Array<{ label: string; value: OptionValue }>;
+  options: Array<{ label: string; value: OptionValue; disabled?: boolean }>;
   theme: KubdeeTheme;
   value: OptionValue | OptionValue[];
   variant?: 'segmented' | 'grid';
@@ -161,6 +163,9 @@ export function OptionGroup({
   const isGrid = variant === 'grid';
 
   const handlePress = (optionValue: OptionValue): void => {
+    if (disabledValues?.some((disabledValue) => String(disabledValue) === String(optionValue))) {
+      return;
+    }
     if (onToggle) {
       onToggle(optionValue);
     } else {
@@ -213,10 +218,12 @@ export function OptionGroup({
       >
         {options.map((option) => {
           const active = values.includes(option.value);
+          const disabled = option.disabled || disabledValues?.some((disabledValue) => String(disabledValue) === String(option.value));
           return (
             <Pressable
               accessibilityRole={onToggle ? 'checkbox' : 'button'}
-              accessibilityState={{ checked: active, selected: active }}
+              accessibilityState={{ checked: active, disabled, selected: active }}
+              disabled={disabled}
               key={String(option.value)}
               onPress={() => handlePress(option.value)}
               className={`min-h-[30px] items-center justify-center rounded-kd-md px-2 ${isGrid ? 'border' : ''}`}
@@ -227,7 +234,7 @@ export function OptionGroup({
                 minimumFontScale={0.78}
                 numberOfLines={1}
                 className={`${compact ? 'text-kd-micro' : 'text-kd-caption'} font-semibold`}
-                style={{ color: active ? accentColor : theme.textSubtle }}
+                style={{ color: active ? accentColor : theme.textSubtle, opacity: disabled ? 0.42 : 1 }}
               >
                 {option.label}
               </Text>

@@ -13,9 +13,10 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   flowVideoModel: 'veo_31_lite_lower',
   flowVideoDuration: 8,
   browserMode: 'webview',
-  aiGenerateCaption: true,
+  aiGenerateCaption: false,
+  aiGenerateHashtags: false,
   aiSendImageToAi: false,
-  aiGenerateCta: true,
+  aiGenerateCta: false,
   aiRewritePromptOnAudioFailure: true,
   startNewFlowProjectPerProduct: true,
   aiHashtagCount: 3,
@@ -188,12 +189,13 @@ export const VIDEO_CHARACTER_MODE_OPTIONS = [
 export const VIDEO_SCENE_OPTIONS = ['1', '2', '3'] as const;
 
 export const VIDEO_METHOD_OPTIONS = [
-  { value: 'extend', label: 'ต่อจากรูป' },
   { value: 'multi', label: 'หลายฉาก' },
+  { value: 'extend', label: 'ขยายฉาก' },
 ] as const;
 
 export const VIDEO_MULTI_SCENE_ANGLE_OPTIONS = [
-  { value: 'same_angle', label: 'มุมเดียว' },
+  { value: 'same_angle', label: 'มุมเดิม' },
   { value: 'multi_angle', label: 'หลายมุม' },
   { value: 'voiceover', label: 'เสียงพากษ์' },
+  { value: 'soon_2', label: 'soon', disabled: true },
 ] as const;
