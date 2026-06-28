@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.21',
+    date: '2026-06-29',
+    highlight: 'เพิ่มการฟังตัวอย่างเสียงก่อนสร้างวิดีโอ',
+    changes: [
+      { type: 'added', text: 'เพิ่มปุ่ม Preview สำหรับฟังตัวอย่างเสียงพูดและเสียงพากย์ในตั้งค่าวิดีโอ' },
+      { type: 'improved', text: 'ช่วยให้เลือกโทนเสียงผู้หญิง ผู้ชาย และเสียงพากย์ได้แม่นขึ้นก่อนเริ่มงาน' },
+    ],
+  },
+  {
     version: '0.1.20',
     date: '2026-06-29',
     highlight: 'ปรับ Auto Workflow และตัวเลือกเสียงให้ใช้งานต่อเนื่องขึ้น',
@@ -231,4 +240,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.20';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.21';
