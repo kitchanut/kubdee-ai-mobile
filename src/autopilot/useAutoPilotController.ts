@@ -21,6 +21,7 @@ import {
   stopGoogleFlowRunner,
   subscribeGoogleFlowRunnerLogs,
 } from '@/autopilot/googleFlowRunnerBridge';
+import { getAutoPilotStageLabel } from '@/autopilot/stageLabels';
 import {
   generateAutoPilotProductContent,
   getAutoPilotAiContentLabels,
@@ -266,6 +267,17 @@ function incrementFailureBounded(currentFailed: number, generated: number, plann
   return planned > 0 ? Math.min(Math.max(0, planned - generated), next) : next;
 }
 
+function formatAutomationActivityMessage(
+  message: string,
+  step?: AutoPilotStepType,
+  stage?: string
+): string {
+  const stepLabel = step === 'image' ? 'รูปภาพ' : step === 'video' ? 'วิดีโอ' : '';
+  const stageLabel = stage && stage !== 'step_started' ? getAutoPilotStageLabel(stage, '') : '';
+  const meta = [stepLabel, stageLabel].filter(Boolean).join(' · ');
+  return meta ? `[${meta}] ${message}` : message;
+}
+
 export function useAutoPilotController({
   initialSelectedProductIds = [],
   profileLocalId,
@@ -366,7 +378,7 @@ export function useAutoPilotController({
   const appendLog = useCallback((
     level: AutoPilotLogLevel,
     message: string,
-    options?: { timestamp?: number; flowStats?: AutoPilotFlowStats }
+    options?: { timestamp?: number; flowStats?: AutoPilotFlowStats; step?: AutoPilotStepType; stage?: string }
   ): void => {
     const timestamp = options?.timestamp ?? Date.now();
     setRunState((current) => ({
@@ -378,11 +390,17 @@ export function useAutoPilotController({
           level,
           message,
           timestamp,
+          step: options?.step,
+          stage: options?.stage,
           flowStats: options?.flowStats,
         },
       ].slice(-120),
     }));
-    pushAutomationActivityLog('auto-pilot', message, timestamp);
+    pushAutomationActivityLog(
+      'auto-pilot',
+      formatAutomationActivityMessage(message, options?.step, options?.stage),
+      timestamp
+    );
   }, []);
 
   useEffect(() => {
@@ -410,7 +428,12 @@ export function useAutoPilotController({
             : entry.status === 'error'
               ? 'error'
               : 'info');
-      appendLog(level, entry.message, { timestamp: entry.ts, flowStats: entry.flowStats });
+      appendLog(level, entry.message, {
+        timestamp: entry.ts,
+        flowStats: entry.flowStats,
+        step: entry.step,
+        stage: entry.stage,
+      });
 
       if (entry.event === 'progress') {
         const failedStage = entry.stage === 'failed' || entry.stage === 'download_missing';
@@ -503,7 +526,11 @@ export function useAutoPilotController({
           },
         }));
       } else if (entry.event === 'asset' && entry.step) {
-        appendLog('warning', `ยังไม่บันทึก${entry.step === 'image' ? 'รูปภาพ' : 'วิดีโอ'}เข้าคลัง เพราะยังไม่มีไฟล์ดาวน์โหลดจริง`);
+        appendLog(
+          'warning',
+          `ยังไม่บันทึก${entry.step === 'image' ? 'รูปภาพ' : 'วิดีโอ'}เข้าคลัง เพราะยังไม่มีไฟล์ดาวน์โหลดจริง`,
+          { step: entry.step, stage: 'download_missing' }
+        );
       }
 
       if (terminalStatus) {

@@ -63,6 +63,7 @@ export const AUTO_PILOT_STAGE_LABELS: Record<string, string> = {
   submit_wait_without_retry: 'รอ Flow เริ่ม',
   submit_wait_after_retype: 'รอ Flow เริ่ม',
   retype_prompt_retry: 'Retype Prompt',
+  retype_submitted: 'ส่งหลัง Retype',
   retype_start_check: 'ตรวจหลัง Retype',
   single_step_retry: 'Retry งานเดี่ยว',
   single_step_reuse_prompt: 'Reuse Prompt',

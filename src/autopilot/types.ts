@@ -159,6 +159,8 @@ export interface AutoPilotRunLog {
   level: AutoPilotLogLevel;
   message: string;
   timestamp: number;
+  step?: AutoPilotStepType;
+  stage?: string;
   flowStats?: AutoPilotFlowStats;
 }
 

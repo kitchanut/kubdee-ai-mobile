@@ -1773,7 +1773,7 @@ export default function GoogleFlowWebViewRunnerHost({
       });
 
       await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'retype_prompt_retry');
-      await runActionWithLogContext('submit', {}, 45_000, 'submitted');
+      await runActionWithLogContext('submit', {}, 45_000, 'retype_submitted');
       await sleep(step === 'video' ? 10_000 : 8_000);
 
       if (await checkFlowStarted(Math.max(4, Math.ceil(startChecks / 2)), 'retype_start_check')) {
@@ -3369,6 +3369,7 @@ export default function GoogleFlowWebViewRunnerHost({
         emit({
           runId: payload.runId,
           status: 'completed',
+          stage: 'completed',
           message: 'Auto Pilot Google Flow WebView จบแล้ว',
         });
         setVisible(false);
@@ -3377,6 +3378,7 @@ export default function GoogleFlowWebViewRunnerHost({
           emit({
             runId: payload.runId,
             status: 'stopped',
+            stage: 'stopped',
             message: 'หยุด Auto Pilot Google Flow WebView แล้ว',
           });
           setVisible(false);
@@ -3384,6 +3386,7 @@ export default function GoogleFlowWebViewRunnerHost({
           emit({
             runId: payload.runId,
             status: 'error',
+            stage: 'error',
             message: `Google Flow WebView error: ${error instanceof Error ? error.message : String(error)}`,
           });
         }

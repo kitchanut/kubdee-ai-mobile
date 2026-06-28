@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.17',
+    date: '2026-06-29',
+    highlight: 'ปรับ Activity Log ของ Auto Workflow ให้อ่านสถานะได้ชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'เพิ่มป้ายขั้นตอนใน log ของ Auto Workflow ทั้งหน้า Auto และหน้าประวัติ' },
+      { type: 'improved', text: 'แสดงเวลาที่ใช้และเวลาระหว่างเหตุการณ์ใน log ให้ดูต่อเนื่องขึ้น' },
+      { type: 'fixed', text: 'ปรับสถานะหลัง Retype และสถานะจบงานให้แสดงตรงกับขั้นตอนจริงมากขึ้น' },
+    ],
+  },
+  {
     version: '0.1.16',
     date: '2026-06-29',
     highlight: 'ปรับ Auto Workflow ให้ retry และนับผลลัพธ์ได้แม่นขึ้น',
@@ -192,4 +202,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.16';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.17';

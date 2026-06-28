@@ -74,9 +74,12 @@ export function RunStatusSummaryBlock({
 
         {latestLog ? (
           <View className="rounded-kd-md bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
-            <Text className="text-kd-micro font-semibold text-kd-text-subtle">
-              ล่าสุด {formatTime(latestLog.timestamp)}
-            </Text>
+            <View className="flex-row flex-wrap items-center gap-1">
+              <Text className="text-kd-micro font-semibold text-kd-text-subtle">
+                ล่าสุด {formatTime(latestLog.timestamp)}
+              </Text>
+              <LogStageMeta log={latestLog} theme={theme} compact />
+            </View>
             <Text
               numberOfLines={2}
               className="mt-0.5 text-kd-caption leading-4"
@@ -248,6 +251,7 @@ export function ActivityLogSheet({
                       </Text>
                     </View>
                     <View className="min-w-0 flex-1">
+                      <LogStageMeta log={log} theme={theme} />
                       <Text className="text-kd-caption leading-4" style={{ color: getLogTextColor(log.level, theme) }}>
                         {log.message}
                       </Text>
@@ -261,6 +265,41 @@ export function ActivityLogSheet({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function LogStageMeta({
+  log,
+  theme,
+  compact = false,
+}: {
+  log: AutoPilotRunState['logs'][number];
+  theme: KubdeeTheme;
+  compact?: boolean;
+}): React.JSX.Element | null {
+  if (!log.step && !log.stage) {
+    return null;
+  }
+
+  const stepLabel = log.step ? getCurrentStepLabel(log.step) : null;
+  const stageLabel = log.stage ? getAutoPilotStageLabel(log.stage, '') : null;
+  const label = [stepLabel, stageLabel].filter(Boolean).join(' · ');
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <View
+      className={`self-start rounded-kd-sm border px-1.5 ${compact ? 'py-0' : 'mb-1 py-0.5'}`}
+      style={{
+        backgroundColor: alpha(theme.blue, theme.isDark ? 0.18 : 0.08),
+        borderColor: alpha(theme.blue, theme.isDark ? 0.32 : 0.18),
+      }}
+    >
+      <Text className="text-kd-tiny font-semibold" style={{ color: theme.blue }} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
