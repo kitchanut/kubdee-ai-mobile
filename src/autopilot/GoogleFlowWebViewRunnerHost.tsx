@@ -1232,6 +1232,104 @@ export default function GoogleFlowWebViewRunnerHost({
     [checkStop, emit, runActionOrThrow]
   );
 
+  const ensureVideoReferenceAttached = useCallback(
+    async ({
+      handle,
+      payload,
+      product,
+      productIndex,
+      round,
+      step,
+      message = 'ตรวจสอบรูป reference ก่อนกดสร้างวิดีโอ',
+    }: {
+      handle: FlowWebViewHandle;
+      payload: GoogleFlowRunnerPayload;
+      product: GoogleFlowRunnerProduct;
+      productIndex: number;
+      round: number;
+      step: AutoPilotStepType;
+      message?: string;
+    }): Promise<void> => {
+      emit({
+        event: 'progress',
+        runId: payload.runId,
+        status: 'running',
+        step,
+        stage: 'ensure_video_reference',
+        productId: product.id,
+        productName: product.name,
+        currentRound: round,
+        totalRounds: payload.settings.totalRounds,
+        currentProduct: productIndex + 1,
+        totalProducts: payload.products.length,
+        message,
+      });
+
+      const result = (await runActionOrThrow(
+        handle,
+        'ensureVideoReferenceAttached',
+        {},
+        20_000
+      )) as { attachedCount?: number };
+
+      emit({
+        event: 'progress',
+        runId: payload.runId,
+        status: 'running',
+        step,
+        stage: 'ensure_video_reference',
+        productId: product.id,
+        productName: product.name,
+        currentRound: round,
+        totalRounds: payload.settings.totalRounds,
+        currentProduct: productIndex + 1,
+        totalProducts: payload.products.length,
+        message: `ตรวจพบรูป reference ก่อนสร้างวิดีโอแล้ว (${result.attachedCount || 1} รูป)`,
+      });
+    },
+    [emit, runActionOrThrow]
+  );
+
+  const uploadReferenceImageOrThrow = useCallback(
+    async ({
+      args,
+      handle,
+      payload,
+      product,
+      productIndex,
+      round,
+      step,
+    }: {
+      args: Record<string, unknown>;
+      handle: FlowWebViewHandle;
+      payload: GoogleFlowRunnerPayload;
+      product: GoogleFlowRunnerProduct;
+      productIndex: number;
+      round: number;
+      step: AutoPilotStepType;
+    }): Promise<Record<string, unknown>> => {
+      const result = await runActionOrThrow(handle, 'uploadReferenceImage', args, 120_000);
+      if (result.rateLimitRetried) {
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'upload_reference_retry',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: 'Google Flow จำกัดความถี่อัปโหลดรูป ระบบรอ 30 วิและอัปโหลด reference สำเร็จหลัง retry',
+        });
+      }
+      return result;
+    },
+    [emit, runActionOrThrow]
+  );
+
   const runProductStep = useCallback(
     async ({
       handle,
@@ -1375,29 +1473,35 @@ export default function GoogleFlowWebViewRunnerHost({
               totalProducts: payload.products.length,
               message: `แนบรูปฉากก่อนหน้าที่บันทึกไว้เป็น reference รูปฉาก ${sceneNumber}`,
             });
-            await runActionOrThrow(
+            await uploadReferenceImageOrThrow({
               handle,
-              'uploadReferenceImage',
-              {
+              payload,
+              product,
+              productIndex,
+              round,
+              step: 'image',
+              args: {
                 dataUrl: previousSceneImageDataUrl,
                 fileName: `kubdee-scene-reference-${sceneNumber}.png`,
               },
-              120_000
-            );
+            });
           } else if (sceneNumber > 1 || hasPriorImageStep) {
             throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
           } else if (product.preview) {
             const dataUrl = await loadImageReferenceDataUrl(product.preview);
-            await runActionOrThrow(
+            await uploadReferenceImageOrThrow({
               handle,
-              'uploadReferenceImage',
-              {
+              payload,
+              product,
+              productIndex,
+              round,
+              step: 'image',
+              args: {
                 dataUrl: dataUrl ?? undefined,
                 fileName: getReferenceFileName(product),
                 imageUrl: dataUrl ? undefined : product.preview,
               },
-              120_000
-            );
+            });
           }
 
           await fillPromptAndSubmit({
@@ -1558,7 +1662,7 @@ export default function GoogleFlowWebViewRunnerHost({
           const sceneReferenceDataUrl = useSameAngle
             ? sceneImageDataUrls[0]
             : sceneImageDataUrls[sceneIndex];
-          const attachSceneReference = async (): Promise<void> => {
+          const attachSceneReference = async (): Promise<boolean> => {
             if (useSameAngle && sceneReferenceDataUrl && sceneNumber === 1) {
               emit({
                 event: 'progress',
@@ -1576,6 +1680,7 @@ export default function GoogleFlowWebViewRunnerHost({
               });
               try {
                 await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+                return true;
               } catch (error) {
                 const fallbackMessage = error instanceof Error ? error.message : String(error);
                 emit({
@@ -1592,15 +1697,19 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalProducts: payload.products.length,
                   message: `เลือกรูปบนสุดไม่สำเร็จ จะอัปโหลดรูปแรกแทน: ${fallbackMessage}`,
                 });
-                await runActionOrThrow(
+                await uploadReferenceImageOrThrow({
                   handle,
-                  'uploadReferenceImage',
-                  {
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  step,
+                  args: {
                     dataUrl: sceneReferenceDataUrl,
                     fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
                   },
-                  120_000
-                );
+                });
+                return true;
               }
             } else if (sceneReferenceDataUrl) {
               emit({
@@ -1619,33 +1728,53 @@ export default function GoogleFlowWebViewRunnerHost({
                   ? `แนบรูปแรกที่บันทึกไว้เป็น reference วิดีโอฉาก ${sceneNumber}`
                   : `แนบรูปฉาก ${sceneNumber} ที่บันทึกไว้เป็น reference วิดีโอ`,
               });
-              await runActionOrThrow(
+              await uploadReferenceImageOrThrow({
                 handle,
-                'uploadReferenceImage',
-                {
+                payload,
+                product,
+                productIndex,
+                round,
+                step,
+                args: {
                   dataUrl: sceneReferenceDataUrl,
                   fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
                 },
-                120_000
-              );
+              });
+              return true;
             } else if (neededSceneImages > 0 || payload.enabledSteps.includes('image')) {
               throw new Error(`ไม่มีรูป reference สำหรับวิดีโอฉาก ${sceneNumber}`);
             } else if (product.preview) {
               const dataUrl = await loadImageReferenceDataUrl(product.preview);
-              await runActionOrThrow(
+              await uploadReferenceImageOrThrow({
                 handle,
-                'uploadReferenceImage',
-                {
+                payload,
+                product,
+                productIndex,
+                round,
+                step,
+                args: {
                   dataUrl: dataUrl ?? undefined,
                   fileName: getReferenceFileName(product),
                   imageUrl: dataUrl ? undefined : product.preview,
                 },
-                120_000
-              );
+              });
+              return true;
             }
+            return false;
           };
 
-          await attachSceneReference();
+          const sceneReferenceAttached = await attachSceneReference();
+          if (sceneReferenceAttached) {
+            await ensureVideoReferenceAttached({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              message: `ตรวจ reference วิดีโอฉาก ${sceneNumber}/${sceneCount} ก่อนกดสร้าง`,
+            });
+          }
 
           const scenePrompt = promptResult.prompts[sceneIndex] || multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover);
           const runSceneVideo = async (nextPrompt: string): Promise<FlowResultPoll> => {
@@ -1724,7 +1853,18 @@ export default function GoogleFlowWebViewRunnerHost({
               throw new Error(`ตั้งค่า Flow วิดีโอฉากก่อน retry ไม่ครบ: ${retryConfig.error ?? 'unknown'}`);
             }
 
-            await attachSceneReference();
+            const retryReferenceAttached = await attachSceneReference();
+            if (retryReferenceAttached) {
+              await ensureVideoReferenceAttached({
+                handle,
+                payload,
+                product,
+                productIndex,
+                round,
+                step,
+                message: `ตรวจ reference วิดีโอฉาก ${sceneNumber}/${sceneCount} ก่อน retry`,
+              });
+            }
             videoResult = await runSceneVideo(toVoiceoverSilentRetryPrompt(scenePrompt));
           }
 
@@ -1968,6 +2108,7 @@ export default function GoogleFlowWebViewRunnerHost({
         emit({ runId: payload.runId, status: 'running', message: `ตั้งค่าโหมด${label}แล้ว` });
       }
 
+      let videoReferenceAttached = false;
       const shouldUsePreviousImage = step === 'video' && payload.enabledSteps.includes('image');
       if (shouldUsePreviousImage) {
         emit({
@@ -1985,6 +2126,7 @@ export default function GoogleFlowWebViewRunnerHost({
           message: 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
         });
         await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+        videoReferenceAttached = true;
       } else if (product.preview) {
         emit({
           event: 'progress',
@@ -2001,20 +2143,34 @@ export default function GoogleFlowWebViewRunnerHost({
           message: `แนบรูปสินค้า reference สำหรับ${label}`,
         });
         const dataUrl = await loadImageReferenceDataUrl(product.preview);
-        await runActionOrThrow(
+        await uploadReferenceImageOrThrow({
           handle,
-          'uploadReferenceImage',
-          {
+          payload,
+          product,
+          productIndex,
+          round,
+          step,
+          args: {
             dataUrl: dataUrl ?? undefined,
             fileName: getReferenceFileName(product),
             imageUrl: dataUrl ? undefined : product.preview,
           },
-          120_000
-        );
+        });
+        videoReferenceAttached = step === 'video';
       }
 
       let baselineVideoUrls: string[] = [];
       if (step === 'video') {
+        if (videoReferenceAttached) {
+          await ensureVideoReferenceAttached({
+            handle,
+            payload,
+            product,
+            productIndex,
+            round,
+            step,
+          });
+        }
         const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
         baselineVideoUrls = snapshot.videoUrls ?? [];
       }
@@ -2214,7 +2370,17 @@ export default function GoogleFlowWebViewRunnerHost({
         }
       }
     },
-    [downloadLatestFlowImage, emit, fillPromptAndSubmit, openGoogleFlowProject, refreshGoogleFlowProject, runActionOrThrow, waitForStepResult]
+    [
+      downloadLatestFlowImage,
+      emit,
+      ensureVideoReferenceAttached,
+      fillPromptAndSubmit,
+      openGoogleFlowProject,
+      refreshGoogleFlowProject,
+      runActionOrThrow,
+      uploadReferenceImageOrThrow,
+      waitForStepResult,
+    ]
   );
 
   const runPayload = useCallback(

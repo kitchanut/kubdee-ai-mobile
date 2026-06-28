@@ -26,6 +26,7 @@ export type FlowActionName =
   | 'configurePopper'
   | 'selectRecentImage'
   | 'uploadReferenceImage'
+  | 'ensureVideoReferenceAttached'
   | 'fillPrompt'
   | 'submit'
   | 'videoSnapshot'
@@ -620,6 +621,35 @@ const IMAGE_DIALOG_HELPERS_BODY = `
     }
     return false;
   }
+  function getUploadRateLimitToast(){
+    var rateLimitPattern = /uploading\\s+too\\s+quickly|please\\s+wait\\s+a\\s+moment\\s+and\\s+try\\s+later|อัปโหลด.*เร็ว|อัพโหลด.*เร็ว/i;
+    var candidates = Array.prototype.slice.call(document.querySelectorAll(
+      '[data-sonner-toast], [role="alert"], [role="status"], [aria-live], [class*="toast"], [class*="snackbar"], section, div'
+    ));
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      if (!isVisible(el)) continue;
+      var rect = el.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) continue;
+      var text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+      if (text && text.length < 400 && rateLimitPattern.test(text)) return text;
+    }
+    return null;
+  }
+  function dismissUploadRateLimitToast(){
+    if (!getUploadRateLimitToast()) return false;
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"]'));
+    for (var i = 0; i < buttons.length; i++) {
+      if (!isVisible(buttons[i])) continue;
+      var text = (buttons[i].textContent || '').replace(/\\s+/g, ' ').trim();
+      if (/dismiss|ปิด|ตกลง|ok/i.test(text)) {
+        showRipple(buttons[i]);
+        buttons[i].click();
+        return true;
+      }
+    }
+    return false;
+  }
   function selectableImageItem(item){
     if (!item || !item.isConnected || !isVisible(item)) return null;
     return item.closest('[data-index]') || item;
@@ -990,55 +1020,233 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
     return { autoAttached: false, item: findReadyUploadedImageItem(getOpenDialog() || dialog, knownSignatures, lastUploadItem) };
   }
+  async function waitBeforeUploadRetry(){
+    dismissUploadRateLimitToast();
+    await wait(30000);
+  }
   var resolvedDataUrl = await resolveDataUrl();
   var dialog = await openImageDialog();
   await handleAgreeDialog();
   dialog = getOpenDialog() || dialog;
-  var known = imageItems(dialog).filter(readyImageItem).map(itemSignature).filter(Boolean);
-  var knownInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
-  var uploadButton = findUploadButton(dialog);
-  if (uploadButton) {
-    showRipple(uploadButton);
-    uploadButton.click();
-    await wait(600);
-  }
-  var input = null;
-  for (var f = 0; f < 20 && !input; f++) {
-    var allInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
-    var newInputs = allInputs.filter(function(candidate){ return knownInputs.indexOf(candidate) === -1; });
-    var candidates = newInputs.length ? newInputs : allInputs;
-    input = candidates[candidates.length - 1] || null;
-    if (!input) await wait(300);
-  }
-  if (!input) throw new Error('ไม่พบ input upload รูปใน Google Flow');
-  var dt = new DataTransfer();
-  dt.items.add(dataUrlToFile(resolvedDataUrl, fileName));
-  input.files = dt.files;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.dispatchEvent(new Event('change', { bubbles: true }));
-  await wait(1200);
-  if (!isDialogOpen(dialog)) {
-    return { success: true, dataIndex: null, autoAttached: true };
-  }
-  var uploadResult = await waitForUploadedImageItem(dialog, known);
-  if (uploadResult.autoAttached) {
-    return { success: true, dataIndex: null, autoAttached: true };
-  }
-  var picked = uploadResult.item;
-  if (!picked) {
-    if (await clickAddToPrompt(dialog)) {
-      if (await waitForDialogClosed(dialog, 5000)) return { success: true, dataIndex: null, confirmed: true };
+  var lastRateLimitText = '';
+  for (var uploadAttempt = 1; uploadAttempt <= 2; uploadAttempt++) {
+    dialog = getOpenDialog() || (dialog && isDialogOpen(dialog) ? dialog : null);
+    if (!dialog) {
+      dialog = await openImageDialog();
+      await handleAgreeDialog();
+      dialog = getOpenDialog() || dialog;
     }
+    var known = imageItems(dialog).filter(readyImageItem).map(itemSignature).filter(Boolean);
+    var knownInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
+    var uploadButton = findUploadButton(dialog);
+    if (uploadButton) {
+      showRipple(uploadButton);
+      uploadButton.click();
+      await wait(600);
+    }
+    var rateLimitAfterButton = getUploadRateLimitToast();
+    if (rateLimitAfterButton) {
+      lastRateLimitText = rateLimitAfterButton;
+      if (uploadAttempt < 2) {
+        await waitBeforeUploadRetry();
+        continue;
+      }
+      throw new Error('Google Flow จำกัดความถี่การอัปโหลดรูป (' + lastRateLimitText + ') — รอ 30 วิและลองอัปโหลดใหม่แล้ว แต่ยังไม่สำเร็จ');
+    }
+
+    var input = null;
+    for (var f = 0; f < 20 && !input; f++) {
+      var allInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
+      var newInputs = allInputs.filter(function(candidate){ return knownInputs.indexOf(candidate) === -1; });
+      var candidates = newInputs.length ? newInputs : allInputs;
+      input = candidates[candidates.length - 1] || null;
+      if (!input) {
+        var rateLimitWhileFindingInput = getUploadRateLimitToast();
+        if (rateLimitWhileFindingInput) break;
+        await wait(300);
+      }
+    }
+    if (!input) {
+      var rateLimitWithoutInput = getUploadRateLimitToast();
+      if (rateLimitWithoutInput) {
+        lastRateLimitText = rateLimitWithoutInput;
+        if (uploadAttempt < 2) {
+          await waitBeforeUploadRetry();
+          continue;
+        }
+        throw new Error('Google Flow จำกัดความถี่การอัปโหลดรูป (' + lastRateLimitText + ') — รอ 30 วิและลองอัปโหลดใหม่แล้ว แต่ยังไม่สำเร็จ');
+      }
+      throw new Error('ไม่พบ input upload รูปใน Google Flow');
+    }
+
+    var dt = new DataTransfer();
+    dt.items.add(dataUrlToFile(resolvedDataUrl, fileName));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await wait(1200);
+    var rateLimitAfterInput = getUploadRateLimitToast();
+    if (rateLimitAfterInput) {
+      lastRateLimitText = rateLimitAfterInput;
+      if (uploadAttempt < 2) {
+        await waitBeforeUploadRetry();
+        continue;
+      }
+      throw new Error('Google Flow จำกัดความถี่การอัปโหลดรูป (' + lastRateLimitText + ') — รอ 30 วิและลองอัปโหลดใหม่แล้ว แต่ยังไม่สำเร็จ');
+    }
+
+    if (!isDialogOpen(dialog)) {
+      return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
+    }
+    var uploadResult = await waitForUploadedImageItem(dialog, known);
+    if (uploadResult.autoAttached) {
+      return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
+    }
+    var rateLimitAfterUploadWait = getUploadRateLimitToast();
+    if (rateLimitAfterUploadWait) {
+      lastRateLimitText = rateLimitAfterUploadWait;
+      if (uploadAttempt < 2) {
+        await waitBeforeUploadRetry();
+        continue;
+      }
+      throw new Error('Google Flow จำกัดความถี่การอัปโหลดรูป (' + lastRateLimitText + ') — รอ 30 วิและลองอัปโหลดใหม่แล้ว แต่ยังไม่สำเร็จ');
+    }
+
+    var picked = uploadResult.item;
+    if (!picked) {
+      if (await clickAddToPrompt(dialog)) {
+        if (await waitForDialogClosed(dialog, 5000)) return { success: true, dataIndex: null, confirmed: true, rateLimitRetried: uploadAttempt > 1 };
+      }
+    }
+    if (!picked) throw new Error('อัปโหลดรูปแล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก');
+    var dataIndex = picked.getAttribute('data-index');
+    clickImageItem(picked);
+    await wait(1000);
+    if (!(await waitForDialogClosed(dialog, 5000))) {
+      if (!(await clickAddToPrompt(dialog))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ไม่พบปุ่ม Add to Prompt');
+      if (!(await waitForDialogClosed(dialog, 5000))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ dialog ยังไม่ปิด');
+    }
+    return { success: true, dataIndex: dataIndex, rateLimitRetried: uploadAttempt > 1 };
   }
-  if (!picked) throw new Error('อัปโหลดรูปแล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก');
-  var dataIndex = picked.getAttribute('data-index');
-  clickImageItem(picked);
-  await wait(1000);
-  if (!(await waitForDialogClosed(dialog, 5000))) {
-    if (!(await clickAddToPrompt(dialog))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ไม่พบปุ่ม Add to Prompt');
-    if (!(await waitForDialogClosed(dialog, 5000))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ dialog ยังไม่ปิด');
+  throw new Error('Google Flow จำกัดความถี่การอัปโหลดรูป (' + (lastRateLimitText || 'uploading too quickly') + ') — รอ 30 วิและลองอัปโหลดใหม่แล้ว แต่ยังไม่สำเร็จ');
+`;
+
+const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
+  function isVisible(el){
+    if (!el || !el.isConnected) return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) return false;
+    var style = window.getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || '1') > 0;
   }
-  return { success: true, dataIndex: dataIndex };
+  function isDisabled(btn){
+    return btn.disabled ||
+      btn.getAttribute('aria-disabled') === 'true' ||
+      btn.hasAttribute('data-disabled') ||
+      btn.getAttribute('data-state') === 'disabled';
+  }
+  function findCreateButton(){
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button'));
+    for (var i = 0; i < buttons.length; i++) {
+      var button = buttons[i];
+      if (button.closest('[role="menu"]') || button.closest('nav')) continue;
+      var icon = button.querySelector('i');
+      var iconText = icon ? (icon.textContent || '').trim().toLowerCase() : '';
+      if (iconText.indexOf(${SUBMIT_ICON}) !== -1 && !isDisabled(button) && isVisible(button)) {
+        return button;
+      }
+    }
+    return null;
+  }
+  function findComposer(createButton){
+    var node = createButton;
+    for (var depth = 0; node && depth < 12; depth++) {
+      if (
+        node.querySelector('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"], textarea') &&
+        node.querySelector('[aria-haspopup="dialog"]')
+      ) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+
+    var editor = document.querySelector('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"], textarea');
+    node = editor;
+    for (var ed = 0; node && ed < 12; ed++) {
+      var icons = Array.prototype.slice.call(node.querySelectorAll('button i, button span'));
+      for (var i = 0; i < icons.length; i++) {
+        if ((icons[i].textContent || '').trim().toLowerCase().indexOf(${SUBMIT_ICON}) !== -1) {
+          return node;
+        }
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function findFrameScope(composer){
+    var icons = Array.prototype.slice.call(composer.querySelectorAll('i, span'));
+    for (var i = 0; i < icons.length; i++) {
+      if ((icons[i].textContent || '').trim().toLowerCase() === 'swap_horiz') {
+        var button = icons[i].closest('button');
+        return (button && button.parentElement) || composer;
+      }
+    }
+    return composer;
+  }
+  function checkOnce(){
+    var createButton = findCreateButton();
+    var composer = findComposer(createButton);
+    if (!composer) {
+      return {
+        ok: false,
+        error: 'หา prompt composer ไม่เจอ จึงตรวจสอบรูป reference ก่อนสร้างวิดีโอไม่ได้'
+      };
+    }
+
+    var frameScope = findFrameScope(composer);
+    var visibleImages = Array.prototype.slice.call(frameScope.querySelectorAll('img')).filter(function(img){
+      if (!isVisible(img)) return false;
+      var src = img.currentSrc || img.src || img.getAttribute('src') || '';
+      return !!String(src || '').trim();
+    });
+    var visibleMediaCards = Array.prototype.slice.call(frameScope.querySelectorAll('[data-card-open], button, [role="button"]')).filter(function(card){
+      if (!isVisible(card)) return false;
+      if (card.hasAttribute('aria-haspopup')) return false;
+      return !!card.querySelector('img');
+    });
+
+    var attachedCount = Math.max(visibleImages.length, visibleMediaCards.length);
+    if (attachedCount > 0) {
+      return { ok: true, attachedCount: attachedCount };
+    }
+
+    var frameText = (frameScope.textContent || '').replace(/\\s+/g, ' ').trim();
+    var hasStartPlaceholder = /\\bstart\\b|เริ่ม/i.test(frameText);
+    var hasEndPlaceholder = /\\bend\\b|จบ/i.test(frameText);
+    var detail = [
+      hasStartPlaceholder ? 'ยังเห็นช่อง Start' : '',
+      hasEndPlaceholder ? 'ยังเห็นช่อง End' : ''
+    ].filter(Boolean).join(', ');
+
+    return {
+      ok: false,
+      attachedCount: 0,
+      detail: detail,
+      error: detail
+        ? 'ยังไม่มีรูป reference แนบในช่องวิดีโอ (' + detail + ')'
+        : 'ยังไม่มีรูป reference แนบในช่องวิดีโอ'
+    };
+  }
+
+  var result = checkOnce();
+  for (var attempt = 1; !result.ok && attempt < 10; attempt++) {
+    await wait(500);
+    result = checkOnce();
+  }
+  if (!result.ok) {
+    throw new Error(result.error || 'ยังไม่มีรูป reference แนบในช่องวิดีโอ');
+  }
+  return { success: true, attachedCount: result.attachedCount || 1 };
 `;
 
 // --- downloadVideo: read the ready video through the page session and return it as data URL ---
@@ -1306,6 +1514,7 @@ const ACTION_BODIES: Record<FlowActionName, string> = {
   configurePopper: CONFIGURE_POPPER_BODY,
   selectRecentImage: SELECT_RECENT_IMAGE_BODY,
   uploadReferenceImage: UPLOAD_REFERENCE_IMAGE_BODY,
+  ensureVideoReferenceAttached: ENSURE_VIDEO_REFERENCE_ATTACHED_BODY,
   fillPrompt: FILL_PROMPT_BODY,
   submit: SUBMIT_BODY,
   videoSnapshot: VIDEO_SNAPSHOT_BODY,

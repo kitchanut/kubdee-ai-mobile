@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.5',
+    date: '2026-06-28',
+    highlight: 'ปรับความแม่นยำการแนบรูป reference ใน Auto Workflow',
+    changes: [
+      { type: 'improved', text: 'เพิ่มการตรวจสอบรูป reference ก่อนเริ่มสร้างวิดีโอ' },
+      { type: 'improved', text: 'เพิ่มการรอและลองอัปโหลดรูป reference ซ้ำเมื่อ Google Flow ขอให้เว้นจังหวะ' },
+      { type: 'improved', text: 'แสดงสถานะการตรวจ reference และ retry อัปโหลดในหน้าความคืบหน้า' },
+    ],
+  },
+  {
     version: '0.1.4',
     date: '2026-06-28',
     highlight: 'ปรับ Auto Workflow ให้ติดตามสถานะได้ละเอียดขึ้น',
@@ -67,4 +77,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.4';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.5';
