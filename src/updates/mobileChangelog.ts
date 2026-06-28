@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.25',
+    date: '2026-06-29',
+    highlight: 'อัปเดตเวอร์ชันสำหรับระบบอัปเดตอัตโนมัติ',
+    changes: [
+      { type: 'improved', text: 'เตรียม APK เวอร์ชันใหม่ให้ตรวจพบและดาวน์โหลดจากหน้าอัปเดตได้ต่อเนื่อง' },
+      { type: 'improved', text: 'ปรับข้อมูล changelog ให้ตรงกับเวอร์ชันล่าสุดของแอปมือถือ' },
+    ],
+  },
+  {
     version: '0.1.24',
     date: '2026-06-29',
     highlight: 'ปรับ AI คิดบทหลายฉากให้ทำงานต่อได้ดีขึ้น',
@@ -267,4 +276,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.24';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.25';
