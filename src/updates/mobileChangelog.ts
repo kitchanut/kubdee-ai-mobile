@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.1',
+    date: '2026-06-28',
+    highlight: 'ปรับปรุงระบบอัปเดตแอปให้ชัดเจนขึ้น',
+    changes: [
+      { type: 'added', text: 'เพิ่มแถบความคืบหน้าระหว่างดาวน์โหลดอัปเดต' },
+      { type: 'added', text: 'เพิ่มการตรวจสอบไฟล์หลังดาวน์โหลด' },
+      { type: 'changed', text: 'ปรับการเช็คอัปเดตให้ครอบคลุมมากขึ้นหลังเข้าสู่ระบบ' },
+      { type: 'fixed', text: 'ปรับข้อความช่วยเหลือเมื่อ Android ต้องอนุญาตการติดตั้งแอป' },
+    ],
+  },
+  {
     version: '0.1.0',
     date: '2026-06-28',
     highlight: 'เริ่มระบบ Mobile App พร้อมหน้าตรวจสอบเวอร์ชัน',

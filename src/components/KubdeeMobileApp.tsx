@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { colorScheme as nativeWindColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -37,11 +37,18 @@ import {
   downloadAndOpenMobileUpdate,
   getCurrentMobileVersionLabel,
   getReleaseNotes,
+  openAndroidInstallPermissionSettings,
   type MobileRelease,
   type MobileUpdateResult,
 } from '@/updates/mobileUpdate';
 
 type ThemeMode = 'dark' | 'light';
+
+interface UpdateDownloadState {
+  visible: boolean;
+  progress: number | null;
+  detail: string;
+}
 
 const SELECTED_PROFILE_STORAGE_KEY = 'kubdee_ai_mobile_selected_profile_id';
 const SEEN_CHANGELOG_STORAGE_KEY = 'kubdee_ai_mobile_seen_changelog_version';
@@ -82,6 +89,11 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const [isCheckingMobileUpdate, setIsCheckingMobileUpdate] = useState(false);
   const [changelogVisible, setChangelogVisible] = useState(false);
   const [hasCheckedChangelog, setHasCheckedChangelog] = useState(false);
+  const [updateDownloadState, setUpdateDownloadState] = useState<UpdateDownloadState>({
+    visible: false,
+    progress: null,
+    detail: '',
+  });
   const promptedMobileUpdateIdRef = useRef('');
   const auth = useAuth();
   const { importShopeeProducts } = useLibrary();
@@ -319,11 +331,54 @@ export default function KubdeeMobileApp(): React.JSX.Element {
         return;
       }
 
+      setUpdateDownloadState({
+        visible: true,
+        progress: 0,
+        detail: 'กำลังเตรียมดาวน์โหลด...',
+      });
+
       try {
-        await downloadAndOpenMobileUpdate(auth.token, release);
+        await downloadAndOpenMobileUpdate(auth.token, release, {
+          onProgress: ({ progress }) => {
+            const safeProgress = progress == null ? null : Math.max(0, Math.min(1, progress));
+            setUpdateDownloadState({
+              visible: true,
+              progress: safeProgress,
+              detail:
+                safeProgress == null
+                  ? 'กำลังดาวน์โหลดอัปเดต...'
+                  : `กำลังดาวน์โหลด ${Math.round(safeProgress * 100)}%`,
+            });
+          },
+        });
+        setUpdateDownloadState({
+          visible: true,
+          progress: 1,
+          detail: 'กำลังเปิดหน้าติดตั้ง...',
+        });
+        setTimeout(() => {
+          setUpdateDownloadState({ visible: false, progress: null, detail: '' });
+        }, 1200);
       } catch (error) {
+        setUpdateDownloadState({ visible: false, progress: null, detail: '' });
         const message = error instanceof Error ? error.message : 'ดาวน์โหลดอัปเดตไม่สำเร็จ';
-        Alert.alert('อัปเดตไม่สำเร็จ', message);
+        const shouldOpenSettings = /ติดตั้ง|อนุญาต|install|permission/i.test(message);
+
+        Alert.alert(
+          'อัปเดตไม่สำเร็จ',
+          message,
+          shouldOpenSettings
+            ? [
+                { text: 'ปิด', style: 'cancel' },
+                {
+                  text: 'เปิดการตั้งค่า',
+                  onPress: () => {
+                    void openAndroidInstallPermissionSettings();
+                  },
+                },
+              ]
+            : undefined
+        );
       }
     },
     [auth.token]
@@ -417,7 +472,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   );
 
   useEffect(() => {
-    if (!auth.token || !auth.user || !auth.isPlanValid || auth.isLoading) {
+    if (!auth.token || !auth.user || auth.isLoading) {
       return;
     }
 
@@ -426,7 +481,11 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [auth.isLoading, auth.isPlanValid, auth.token, auth.user, checkForMobileUpdate]);
+  }, [auth.isLoading, auth.token, auth.user, checkForMobileUpdate]);
+
+  const downloadProgressPercent = updateDownloadState.progress == null
+    ? null
+    : Math.round(updateDownloadState.progress * 100);
 
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
@@ -543,6 +602,35 @@ export default function KubdeeMobileApp(): React.JSX.Element {
         visible={changelogVisible}
         onClose={closeMobileChangelog}
       />
+      <Modal animationType="fade" transparent visible={updateDownloadState.visible}>
+        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <View
+            className="w-full max-w-[320px] rounded-3xl border p-5"
+            style={{ backgroundColor: theme.card, borderColor: theme.border }}
+          >
+            <View className="mb-4 flex-row items-center gap-3">
+              <ActivityIndicator color={theme.emerald} />
+              <View className="min-w-0 flex-1">
+                <Text className="font-semibold" style={{ color: theme.text, fontSize: 16 }}>
+                  กำลังอัปเดตแอป
+                </Text>
+                <Text className="mt-1" style={{ color: theme.textSubtle, fontSize: 12 }}>
+                  {updateDownloadState.detail || 'กำลังดำเนินการ...'}
+                </Text>
+              </View>
+            </View>
+            <View className="h-2 overflow-hidden rounded-full" style={{ backgroundColor: theme.panelMuted }}>
+              <View
+                className="h-full rounded-full"
+                style={{
+                  width: downloadProgressPercent == null ? '45%' : `${downloadProgressPercent}%`,
+                  backgroundColor: theme.emerald,
+                }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
