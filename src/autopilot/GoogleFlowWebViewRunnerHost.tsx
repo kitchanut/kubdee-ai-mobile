@@ -159,6 +159,18 @@ class GoogleFlowWebViewRunnerStopped extends Error {
   }
 }
 
+class GoogleFlowCountedStepFailure extends Error {
+  readonly step: AutoPilotStepType;
+  readonly failedOutputs: number;
+
+  constructor(message: string, step: AutoPilotStepType, failedOutputs = 1) {
+    super(message);
+    this.name = 'GoogleFlowCountedStepFailure';
+    this.step = step;
+    this.failedOutputs = Math.max(1, Math.floor(Number(failedOutputs) || 1));
+  }
+}
+
 function stepLabel(step: AutoPilotStepType): string {
   return step === 'image' ? 'รูปภาพ' : 'วิดีโอ';
 }
@@ -1658,7 +1670,9 @@ export default function GoogleFlowWebViewRunnerHost({
               failedOutputs: Math.max(1, Math.min(expectedCount, failed)),
               message: failedError,
             });
-            throw new Error(failedError);
+            throw countFailure
+              ? new GoogleFlowCountedStepFailure(failedError, step, Math.max(1, Math.min(expectedCount, failed)))
+              : new Error(failedError);
           }
         } else if (hasOutput || failed > 0) {
           failConfirm = 0;
@@ -1739,7 +1753,13 @@ export default function GoogleFlowWebViewRunnerHost({
               failedOutputs: Math.max(1, Math.min(expectedCount, failedResult.failedCount ?? expectedCount)),
               message: failedError,
             });
-            throw new Error(failedError);
+            throw countFailure
+              ? new GoogleFlowCountedStepFailure(
+                  failedError,
+                  step,
+                  Math.max(1, Math.min(expectedCount, failedResult.failedCount ?? expectedCount))
+                )
+              : new Error(failedError);
           }
         } else if (hasSeenProgress && lastSeenProgress >= 40) {
           failConfirm = 0;
@@ -3287,7 +3307,7 @@ export default function GoogleFlowWebViewRunnerHost({
               totalProducts: payload.products.length,
               message: 'สร้างวิดีโอแล้ว แต่ดาวน์โหลดไฟล์ลงมือถือไม่สำเร็จ',
             });
-            throw new Error('สร้างวิดีโอแล้ว แต่ดาวน์โหลดไฟล์ลงมือถือไม่สำเร็จ');
+            throw new GoogleFlowCountedStepFailure('สร้างวิดีโอแล้ว แต่ดาวน์โหลดไฟล์ลงมือถือไม่สำเร็จ', step, 1);
           }
 
           emit({
@@ -3451,8 +3471,56 @@ export default function GoogleFlowWebViewRunnerHost({
               checkStop();
             }
 
+            let imageStepFailed = false;
+            let imageStepError = '';
+
+            const emitStepFailure = (
+              step: AutoPilotStepType,
+              error: unknown,
+              failedOutputs: number
+            ): void => {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'error',
+                step,
+                stage: 'failed',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                failedOutputs,
+                message: `สร้าง${stepLabel(step)}ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
+              });
+            };
+
             for (const step of payload.enabledSteps) {
               checkStop();
+
+              if (step === 'video' && payload.enabledSteps.includes('image') && imageStepFailed) {
+                const reason = imageStepError || 'ไม่มีรูปภาพที่สร้างสำเร็จสำหรับใช้เป็น reference';
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'error',
+                  step,
+                  stage: 'failed',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  failedOutputs: getAutoVideoResultCount(product),
+                  message: `ข้ามสร้างวิดีโอ: ${reason}`,
+                });
+                continue;
+              }
+
               emit({
                 event: 'progress',
                 runId: payload.runId,
@@ -3467,14 +3535,32 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalProducts: payload.products.length,
                 message: `เริ่ม${stepLabel(step)}สำหรับสินค้า ${productIndex + 1}/${payload.products.length}`,
               });
-              await runProductStep({
-                handle,
-                payload,
-                product,
-                productIndex,
-                round,
-                step,
-              });
+              try {
+                await runProductStep({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  step,
+                });
+              } catch (stepError) {
+                if (stepError instanceof GoogleFlowWebViewRunnerStopped) {
+                  throw stepError;
+                }
+
+                if (step === 'image') {
+                  imageStepFailed = true;
+                  imageStepError = stepError instanceof Error ? stepError.message : String(stepError);
+                }
+
+                if (!(stepError instanceof GoogleFlowCountedStepFailure)) {
+                  const failedOutputs = step === 'video'
+                    ? getAutoVideoResultCount(product)
+                    : outputCountForRunnerStep(product, 'image');
+                  emitStepFailure(step, stepError, failedOutputs);
+                }
+              }
             }
 
             await cleanupLatestFlowProjectForProduct({
