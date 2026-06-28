@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.24',
+    date: '2026-06-29',
+    highlight: 'ปรับ AI คิดบทหลายฉากให้ทำงานต่อได้ดีขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ลดโอกาสงานหยุดเมื่อ AI ตอบบทหลายฉากมาไม่ตรงรูปแบบเป๊ะ' },
+      { type: 'improved', text: 'รองรับการอ่านบทฉากจากข้อความของ AI ได้ยืดหยุ่นขึ้น' },
+    ],
+  },
+  {
     version: '0.1.23',
     date: '2026-06-29',
     highlight: 'ปรับวิดีโอหลายฉากให้คุม reference ได้แม่นขึ้น',
@@ -258,4 +267,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.23';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.24';
