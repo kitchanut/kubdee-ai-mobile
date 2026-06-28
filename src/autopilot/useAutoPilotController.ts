@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
+  beginAutomationActivityRun,
+  clearAutomationActivityRun,
+  pushAutomationActivityLog,
+  setAutomationActivityRunning,
+  setAutomationActivityStopping,
+} from '@/activity/automationActivityLogStore';
+import {
   DEFAULT_AUTO_PILOT_SETTINGS,
   FLOW_IMAGE_MODELS,
   FLOW_VIDEO_MODELS,
@@ -157,6 +164,10 @@ function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {
       typeof input.startNewFlowProjectPerProduct === 'boolean'
         ? input.startNewFlowProjectPerProduct
         : DEFAULT_AUTO_PILOT_SETTINGS.startNewFlowProjectPerProduct,
+    deleteLatestFlowProjectBeforeNewProject:
+      typeof input.deleteLatestFlowProjectBeforeNewProject === 'boolean'
+        ? input.deleteLatestFlowProjectBeforeNewProject
+        : DEFAULT_AUTO_PILOT_SETTINGS.deleteLatestFlowProjectBeforeNewProject,
     flowImageModel,
     flowVideoModel,
     flowVideoDuration:
@@ -281,6 +292,7 @@ export function useAutoPilotController({
     message: string,
     options?: { timestamp?: number; flowStats?: AutoPilotFlowStats }
   ): void => {
+    const timestamp = options?.timestamp ?? Date.now();
     setRunState((current) => ({
       ...current,
       logs: [
@@ -289,11 +301,12 @@ export function useAutoPilotController({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           level,
           message,
-          timestamp: options?.timestamp ?? Date.now(),
+          timestamp,
           flowStats: options?.flowStats,
         },
       ].slice(-120),
     }));
+    pushAutomationActivityLog('auto-pilot', message, timestamp);
   }, []);
 
   useEffect(() => {
@@ -401,6 +414,8 @@ export function useAutoPilotController({
       }
 
       if (terminalStatus) {
+        setAutomationActivityRunning('auto-pilot', false);
+        setAutomationActivityStopping('auto-pilot', false);
         setRunState((current) => ({
           ...current,
           status: terminalStatus,
@@ -536,6 +551,7 @@ export function useAutoPilotController({
       ...current,
       logs: [],
     }));
+    clearAutomationActivityRun('auto-pilot');
   }, []);
 
   const updateSelectedImageSetting = useCallback(
@@ -751,6 +767,7 @@ export function useAutoPilotController({
 
     const runId = createRunId();
     runIdRef.current = runId;
+    beginAutomationActivityRun('auto-pilot', `Auto Workflow · ${selectedProducts.length} สินค้า`);
 
     setRunState({
       runId,
@@ -863,6 +880,7 @@ export function useAutoPilotController({
     if (!result.success) {
       appendLog('error', result.error || 'เริ่ม Auto Pilot บนมือถือไม่สำเร็จ');
       setRunState((current) => ({ ...current, status: 'error' }));
+      setAutomationActivityRunning('auto-pilot', false);
       return;
     }
 
@@ -876,13 +894,17 @@ export function useAutoPilotController({
     }
 
     appendLog('warning', 'กำลังส่งคำสั่งหยุดไป Google Flow บนมือถือ');
+    setAutomationActivityStopping('auto-pilot', true);
     const result = await stopGoogleFlowRunner(runId);
     if (!result.success) {
       appendLog('error', result.error || 'หยุด Auto Pilot บนมือถือไม่สำเร็จ');
+      setAutomationActivityStopping('auto-pilot', false);
       return;
     }
 
     appendLog('success', result.message || 'ส่งคำสั่งหยุดแล้ว');
+    setAutomationActivityRunning('auto-pilot', false);
+    setAutomationActivityStopping('auto-pilot', false);
     setRunState((current) => ({ ...current, status: 'stopped' }));
   }, [appendLog, runState.runId]);
 

@@ -6,7 +6,7 @@ import {
 } from '@/native/AccessibilityBridge';
 import type { NativeShopeeImportLog, NativeShopeePostLog } from '@/native/AccessibilityBridge';
 
-export type AutomationActivityKind = 'shopee-import' | 'shopee-post';
+export type AutomationActivityKind = 'auto-pilot' | 'shopee-import' | 'shopee-post';
 
 export interface AutomationActivityLogEntry {
   message: string;
@@ -30,6 +30,7 @@ export interface AutomationActivitySnapshot {
 const MAX_LOGS_PER_RUN = 100;
 
 const defaultTitles: Record<AutomationActivityKind, string> = {
+  'auto-pilot': 'Auto Workflow ล่าสุด',
   'shopee-import': 'Shopee import ล่าสุด',
   'shopee-post': 'Shopee post ล่าสุด',
 };
@@ -50,6 +51,7 @@ function createRun(kind: AutomationActivityKind): AutomationActivityRun {
 
 let snapshot: AutomationActivitySnapshot = {
   runs: {
+    'auto-pilot': createRun('auto-pilot'),
     'shopee-import': createRun('shopee-import'),
     'shopee-post': createRun('shopee-post'),
   },

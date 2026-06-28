@@ -94,6 +94,12 @@ interface FlowActionLogContext {
   stage: string;
 }
 
+interface OverlayLogLine {
+  id: string;
+  message: string;
+  ts: number;
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const AUTO_MULTI_SCENE_TRIM_END_SECONDS = 0.3;
 const VOICEOVER_END_BUFFER_SECONDS = 1;
@@ -946,12 +952,20 @@ export default function GoogleFlowWebViewRunnerHost({
   const [visible, setVisible] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [flowStatus, setFlowStatus] = useState<FlowConnectionState>('unknown');
-  const [overlayLogs, setOverlayLogs] = useState<string[]>([]);
+  const [overlayLogs, setOverlayLogs] = useState<OverlayLogLine[]>([]);
 
   const emit = useCallback((entry: Omit<GoogleFlowRunnerLogEntry, 'ts'> & { ts?: number }): void => {
-    emitGoogleFlowRunnerLog(entry);
+    const ts = entry.ts ?? Date.now();
+    emitGoogleFlowRunnerLog({ ...entry, ts });
     if (entry.message) {
-      setOverlayLogs((current) => [...current.slice(-7), entry.message]);
+      setOverlayLogs((current) => [
+        ...current.slice(-7),
+        {
+          id: `${ts}-${current.length}`,
+          message: entry.message,
+          ts,
+        },
+      ]);
     }
   }, []);
 
@@ -1185,6 +1199,75 @@ export default function GoogleFlowWebViewRunnerHost({
       });
     },
     [checkStop, emit, openGoogleFlowProject]
+  );
+
+  const cleanupLatestFlowProjectForProduct = useCallback(
+    async ({
+      handle,
+      payload,
+      product,
+      productIndex,
+      round,
+    }: {
+      handle: FlowWebViewHandle;
+      payload: GoogleFlowRunnerPayload;
+      product: GoogleFlowRunnerProduct;
+      productIndex: number;
+      round: number;
+    }): Promise<void> => {
+      if (!payload.settings.deleteLatestFlowProjectBeforeNewProject) return;
+      if (payload.settings.startNewFlowProjectPerProduct === false) return;
+
+      try {
+        checkStop();
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          stage: 'cleanup_latest_project',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: 'เปิดหน้า Flow หลักก่อนลบโปรเจกต์ที่สร้างต่อสินค้า',
+        });
+        flowUrlRef.current = FLOW_ENGLISH_URL;
+        handle.goHome();
+        await sleep(3000);
+        checkStop();
+
+        const result = (await runActionOrThrow(handle, 'deleteLatestProject', {}, 65_000)) as {
+          success?: boolean;
+          skipped?: boolean;
+          error?: string;
+        };
+        if (result.success === false) {
+          emit({
+            runId: payload.runId,
+            status: 'running',
+            level: 'warning',
+            message: `ลบโปรเจกต์ที่สร้างต่อสินค้าไม่สำเร็จ: ${result.error || 'unknown'}`,
+          });
+          return;
+        }
+        emit({
+          runId: payload.runId,
+          status: 'running',
+          level: result.skipped ? 'info' : 'success',
+          message: result.skipped ? 'ไม่พบโปรเจกต์ที่สร้างต่อสินค้าให้ลบ' : 'ลบโปรเจกต์ที่สร้างต่อสินค้าแล้ว',
+        });
+      } catch (error) {
+        emit({
+          runId: payload.runId,
+          status: 'running',
+          level: 'warning',
+          message: `ลบโปรเจกต์ที่สร้างต่อสินค้าไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    },
+    [checkStop, emit, runActionOrThrow]
   );
 
   const waitForStepResult = useCallback(
@@ -2878,6 +2961,14 @@ export default function GoogleFlowWebViewRunnerHost({
               });
             }
 
+            await cleanupLatestFlowProjectForProduct({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+            });
+
             if (productIndex < payload.products.length - 1) {
               checkStop();
               const delayMs = randomAutoRunDelayMs(payload.settings);
@@ -2927,7 +3018,7 @@ export default function GoogleFlowWebViewRunnerHost({
         setActiveRunId(null);
       }
     },
-    [checkStop, emit, runProductStep, waitForHandle]
+    [checkStop, cleanupLatestFlowProjectForProduct, emit, runProductStep, waitForHandle]
   );
 
   useEffect(() => {
@@ -3033,9 +3124,12 @@ export default function GoogleFlowWebViewRunnerHost({
               style={{ backgroundColor: 'rgba(0,0,0,0.66)' }}
               className="absolute inset-x-2 top-2 rounded-kd-lg px-3 py-2"
             >
-              {overlayLogs.map((line, index) => (
-                <Text key={`${index}-${line}`} numberOfLines={1} className="text-kd-micro leading-4 text-white">
-                  {line}
+              {overlayLogs.map((line) => (
+                <Text key={line.id} numberOfLines={1} className="text-kd-micro leading-4 text-white">
+                  <Text className="text-kd-micro" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                    {formatOverlayTime(line.ts)}{' '}
+                  </Text>
+                  {line.message}
                 </Text>
               ))}
             </View>
@@ -3049,4 +3143,12 @@ export default function GoogleFlowWebViewRunnerHost({
       </SafeAreaView>
     </Modal>
   );
+}
+
+function formatOverlayTime(timestamp: number): string {
+  return new Intl.DateTimeFormat('th-TH', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(timestamp));
 }

@@ -139,6 +139,24 @@ export const VIDEO_RESULTS_BODY = `
     }
     return false;
   }
+  function estimateBlurProgress(scope){
+    var blurEls = Array.prototype.slice.call(scope.querySelectorAll('[style*="blur-amount"]'));
+    var values = [];
+    for (var i = 0; i < blurEls.length; i++) {
+      if (!isVisible(blurEls[i])) continue;
+      var style = blurEls[i].getAttribute('style') || '';
+      var match = style.match(/--blur-amount:\\s*([\\d.]+)px/);
+      if (!match) continue;
+      var blurAmount = parseFloat(match[1]);
+      if (!isFinite(blurAmount) || blurAmount <= 0.5) continue;
+      var maxBlur = 30;
+      values.push(Math.round(Math.max(0, Math.min(99, (1 - blurAmount / maxBlur) * 100))));
+    }
+    if (values.length === 0) return null;
+    var min = values[0];
+    for (var v = 1; v < values.length; v++) { if (values[v] < min) min = values[v]; }
+    return min;
+  }
 
   var tiles = [];
   if (itemList) {
@@ -165,9 +183,11 @@ export const VIDEO_RESULTS_BODY = `
     // separately from actively-rendering (% / กำลังสร้าง).
     if (tileQueued(tile)) { result.queuedCount++; continue; }
     var pm = tileText.match(/(\\d{1,3})\\s?%/);
+    var blurProgress = estimateBlurProgress(tile);
     var generating = tileText.indexOf('กำลังสร้าง') !== -1 || !!pm;
-    if (generating) {
+    if (generating || blurProgress != null) {
       if (pm) progressVals.push(parseInt(pm[1], 10));
+      if (blurProgress != null) progressVals.push(blurProgress);
       result.generatingCount++;
       continue;
     }
@@ -203,6 +223,8 @@ export const VIDEO_RESULTS_BODY = `
       if (r2.width > 0 && r2.height > 0) progressVals.push(parseInt(dt, 10));
     }
   }
+  var pageBlurProgress = estimateBlurProgress(document);
+  if (pageBlurProgress != null) progressVals.push(pageBlurProgress);
   // Mobile WebView/Flow sometimes exposes the progress only through the
   // accessible label of the card, e.g. "play_circle 27% ... Reuse prompt".
   // Read attributes as a fallback so the submit-start guard does not resubmit.

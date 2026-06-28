@@ -1,5 +1,5 @@
 import { Pressable, View } from 'react-native';
-import { Copy, FilePlus2, Sparkles, Star } from 'lucide-react-native';
+import { Copy, FilePlus2, Sparkles, Star, Trash2 } from 'lucide-react-native';
 import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
@@ -18,6 +18,7 @@ export function ExtensionBasicSettingsBlock({
   onToggleCta,
   onToggleHashtags,
   onToggleRewrite,
+  onToggleDeleteLatestProject,
   onToggleStartNewProject,
   onToggleSendImage,
 }: {
@@ -30,6 +31,7 @@ export function ExtensionBasicSettingsBlock({
   onToggleCta: (value: boolean) => void;
   onToggleHashtags: (value: boolean) => void;
   onToggleRewrite: (value: boolean) => void;
+  onToggleDeleteLatestProject: (value: boolean) => void;
   onToggleStartNewProject: (value: boolean) => void;
   onToggleSendImage: (value: boolean) => void;
 }): React.JSX.Element {
@@ -125,6 +127,14 @@ export function ExtensionBasicSettingsBlock({
           value={settings.startNewFlowProjectPerProduct}
           onValueChange={onToggleStartNewProject}
         />
+        <ExtensionToggleRow
+          disabled={!settings.startNewFlowProjectPerProduct}
+          icon={Trash2}
+          label="ลบโปรเจกต์ที่สร้างต่อสินค้า"
+          theme={theme}
+          value={settings.deleteLatestFlowProjectBeforeNewProject}
+          onValueChange={onToggleDeleteLatestProject}
+        />
       </View>
     </View>
   );
@@ -172,12 +182,14 @@ function HashtagCountSelector({
 
 function ExtensionToggleRow({
   icon: Icon,
+  disabled = false,
   label,
   rightSlot,
   theme,
   value,
   onValueChange,
 }: {
+  disabled?: boolean;
   icon: typeof Star;
   label: string;
   rightSlot?: React.ReactNode;
@@ -186,8 +198,8 @@ function ExtensionToggleRow({
   onValueChange: (value: boolean) => void;
 }): React.JSX.Element {
   return (
-    <View className="min-h-6 flex-row items-center gap-2.5">
-      <Icon size={15} color={theme.textMuted} strokeWidth={2} />
+    <View className={`min-h-6 flex-row items-center gap-2.5 ${disabled ? 'opacity-50' : ''}`}>
+      <Icon size={15} color={disabled ? theme.textSubtle : theme.textMuted} strokeWidth={2} />
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.85}
@@ -199,6 +211,7 @@ function ExtensionToggleRow({
       {rightSlot}
       <Switch
         size="sm"
+        disabled={disabled}
         checked={value}
         onCheckedChange={onValueChange}
         className={value ? 'bg-black dark:bg-zinc-200' : 'bg-kd-border-strong dark:bg-kd-card-muted'}

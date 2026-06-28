@@ -267,6 +267,7 @@ export default function AutoPilotScreen({
             onToggleCta={(value) => controller.updateSetting('aiGenerateCta', value)}
             onToggleHashtags={(value) => controller.updateSetting('aiGenerateHashtags', value)}
             onToggleRewrite={(value) => controller.updateSetting('aiRewritePromptOnAudioFailure', value)}
+            onToggleDeleteLatestProject={(value) => controller.updateSetting('deleteLatestFlowProjectBeforeNewProject', value)}
             onToggleStartNewProject={(value) => controller.updateSetting('startNewFlowProjectPerProduct', value)}
             onToggleSendImage={(value) => controller.updateSetting('aiSendImageToAi', value)}
           />

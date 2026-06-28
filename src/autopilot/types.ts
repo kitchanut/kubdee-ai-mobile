@@ -107,6 +107,7 @@ export interface AutoPilotSettings {
   aiGenerateCta: boolean;
   aiRewritePromptOnAudioFailure: boolean;
   startNewFlowProjectPerProduct: boolean;
+  deleteLatestFlowProjectBeforeNewProject: boolean;
   aiHashtagCount: number;
 }
 

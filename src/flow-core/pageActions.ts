@@ -23,6 +23,7 @@ import { FLOW_SELECTORS } from './selectors';
 
 export type FlowActionName =
   | 'newProject'
+  | 'deleteLatestProject'
   | 'configurePopper'
   | 'selectRecentImage'
   | 'uploadReferenceImage'
@@ -82,6 +83,145 @@ const NEW_PROJECT_BODY = `
     }
   }
   throw new Error('กด New project แล้ว แต่ช่อง prompt ไม่ปรากฏ');
+`;
+
+// --- deleteLatestProject: delete the top project card on the Flow home page. ---
+const DELETE_LATEST_PROJECT_BODY = `
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
+  function isVisible(el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 2 || rect.height <= 2) return false;
+    var style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+  }
+  function dispatchHover(el) {
+    try {
+      ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'mousemove'].forEach(function(type) {
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      });
+    } catch (e) {}
+  }
+  function findScrollContainer() {
+    var candidates = Array.prototype.slice.call(document.querySelectorAll('*'))
+      .filter(function(el) {
+        var style = window.getComputedStyle(el);
+        return style.overflowY === 'auto' && el.scrollHeight > el.clientHeight + 100;
+      })
+      .sort(function(a, b) { return (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight); });
+    return candidates[0] || document.scrollingElement || document.documentElement;
+  }
+  function findCard(button) {
+    var node = button;
+    for (var depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
+      var text = (node.innerText || node.textContent || '').trim();
+      var rect = node.getBoundingClientRect();
+      var hasActions =
+        (text.indexOf('Delete project') !== -1 || text.indexOf('ลบโปรเจกต์') !== -1) &&
+        (text.indexOf('Edit project') !== -1 || text.indexOf('แก้ไขโปรเจกต์') !== -1);
+      if (hasActions && rect.width >= 120 && rect.height >= 80) return node;
+    }
+    return null;
+  }
+  function collectProjects() {
+    return Array.prototype.slice.call(document.querySelectorAll('button, [role="button"]'))
+      .filter(function(button) {
+        var text = (button.innerText || button.textContent || '').trim();
+        return text.indexOf('Delete project') !== -1 || text.indexOf('ลบโปรเจกต์') !== -1;
+      })
+      .map(function(button) {
+        var card = findCard(button);
+        return card ? { button: button, card: card, projectText: (card.innerText || card.textContent || '').trim() } : null;
+      })
+      .filter(Boolean);
+  }
+  function projectCount() {
+    return collectProjects().filter(function(item) { return isVisible(item.card); }).length;
+  }
+  function hasDeleteDialog() {
+    var text = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+    return text.indexOf('Are you sure you want to delete this project?') !== -1 ||
+      text.indexOf('Delete Project') !== -1 ||
+      text.indexOf('ยืนยัน') !== -1 && text.indexOf('ลบ') !== -1;
+  }
+  function findConfirmButton() {
+    var dialogs = Array.prototype.slice.call(document.querySelectorAll('[role="dialog"], [aria-modal="true"], dialog, div'))
+      .filter(function(el) { return isVisible(el); })
+      .filter(function(el) {
+        var text = (el.innerText || el.textContent || '').trim();
+        return text.indexOf('Are you sure you want to delete this project?') !== -1 ||
+          text.indexOf('Delete Project') !== -1 ||
+          text.indexOf('ยืนยัน') !== -1 && text.indexOf('ลบ') !== -1;
+      });
+    for (var i = 0; i < dialogs.length; i += 1) {
+      var buttons = Array.prototype.slice.call(dialogs[i].querySelectorAll('button, [role="button"]'));
+      for (var j = 0; j < buttons.length; j += 1) {
+        var text = (buttons[j].innerText || buttons[j].textContent || '').trim();
+        if (isVisible(buttons[j]) && (text === 'Delete Project' || text.indexOf('Delete Project') !== -1 || text.indexOf('ลบ') !== -1)) {
+          return buttons[j];
+        }
+      }
+    }
+    return null;
+  }
+
+  setStatus('ลบโปรเจกต์ที่สร้างต่อสินค้า...', 'action');
+  var scroller = findScrollContainer();
+  if (scroller) {
+    scroller.scrollTop = 0;
+    await wait(350);
+  }
+  var projects = collectProjects();
+  if (!projects.length && scroller) {
+    scroller.scrollTop = 0;
+    await wait(650);
+    projects = collectProjects();
+  }
+  if (!projects.length) {
+    setStatus('ไม่พบโปรเจกต์ที่สร้างต่อสินค้าให้ลบ', 'info');
+    return { success: true, skipped: true, reason: 'no_project_delete_buttons' };
+  }
+
+  projects.sort(function(a, b) {
+    var ar = a.card.getBoundingClientRect();
+    var br = b.card.getBoundingClientRect();
+    return ar.top === br.top ? ar.left - br.left : ar.top - br.top;
+  });
+  var target = projects[0];
+  var beforeCount = projects.length;
+  var targetText = target.projectText || '';
+  target.card.scrollIntoView({ block: 'center', inline: 'center' });
+  await wait(350);
+  dispatchHover(target.card);
+  await wait(250);
+
+  setStatus('พบโปรเจกต์ล่าสุดแล้ว กำลังกด Delete project...', 'action');
+  target.button.click();
+  await wait(900);
+
+  var confirmButton = findConfirmButton();
+  if (!confirmButton) {
+    throw new Error('ไม่พบปุ่มยืนยัน Delete Project');
+  }
+  confirmButton.click();
+
+  for (var attempt = 0; attempt < 24; attempt += 1) {
+    await wait(500);
+    var bodyText = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+    var deletedToast = bodyText.indexOf('Project deleted') !== -1 || bodyText.indexOf('ลบโปรเจกต์แล้ว') !== -1;
+    var stillVisible = targetText ? collectProjects().some(function(item) { return item.projectText === targetText && isVisible(item.card); }) : false;
+    if (!hasDeleteDialog() && (deletedToast || projectCount() < beforeCount || !stillVisible)) {
+      setStatus('ลบโปรเจกต์ที่สร้างต่อสินค้าแล้ว', 'success');
+      return { success: true };
+    }
+  }
+
+  throw new Error('กดยืนยันลบแล้ว แต่ยังยืนยันผลลบโปรเจกต์ไม่ได้');
 `;
 
 // --- fillPrompt: write into the Slate editor via its React fiber instance ---
@@ -1608,6 +1748,7 @@ const DOWNLOAD_VIDEO_BODY = `
 
 const ACTION_BODIES: Record<FlowActionName, string> = {
   newProject: NEW_PROJECT_BODY,
+  deleteLatestProject: DELETE_LATEST_PROJECT_BODY,
   configurePopper: CONFIGURE_POPPER_BODY,
   selectRecentImage: SELECT_RECENT_IMAGE_BODY,
   uploadReferenceImage: UPLOAD_REFERENCE_IMAGE_BODY,
