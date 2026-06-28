@@ -302,54 +302,56 @@ export function VideoProductSettingsForm({
           </SettingsSection>
 
           {/* 5. เสียงพูด / เสียงพากย์ */}
-          <View className="gap-1.5">
-            <FieldHeader label={isVoiceoverMode ? 'เสียงพากย์' : 'เสียงพูด'} onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.voice)} />
-            {isVoiceoverMode ? (
-              <View className="gap-2">
-                {VOICEOVER_TTS_GROUPS.map((group) => (
-                  <View key={group.label} className="gap-1.5">
-                    <Text className="text-[10px] font-semibold uppercase text-kd-text-subtle">{group.label}</Text>
-                    <CardOptionGrid
-                      columns={2}
-                      options={group.options}
-                      theme={theme}
-                      accent={accent}
-                      value={settings.voiceCharacter}
-                      onChange={(value) => onChange('voiceCharacter', value)}
-                    />
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <>
-                <CardOptionGrid
-                  options={VOICE_OPTIONS}
-                  theme={theme}
-                  accent={accent}
-                  value={settings.voiceCharacter}
-                  onChange={(value) => {
-                    onChange('voiceCharacter', value);
-                    if (value === 'none') onChange('dialogueMode', 'none');
-                  }}
-                />
-                {settings.voiceCharacter === '__custom__' ? (
-                  <SettingInput
-                    placeholder="พิมพ์ลักษณะเสียงพูด..."
+          {settings.dialogueMode !== 'none' || isVoiceoverMode ? (
+            <View className="gap-1.5">
+              <FieldHeader label={isVoiceoverMode ? 'เสียงพากย์' : 'เสียงพูด'} onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.voice)} />
+              {isVoiceoverMode ? (
+                <View className="gap-2">
+                  {VOICEOVER_TTS_GROUPS.map((group) => (
+                    <View key={group.label} className="gap-1.5">
+                      <Text className="text-[10px] font-semibold uppercase text-kd-text-subtle">{group.label}</Text>
+                      <CardOptionGrid
+                        columns={2}
+                        options={group.options}
+                        theme={theme}
+                        accent={accent}
+                        value={settings.voiceCharacter}
+                        onChange={(value) => onChange('voiceCharacter', value)}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <>
+                  <CardOptionGrid
+                    options={VOICE_OPTIONS}
                     theme={theme}
-                    value={settings.voiceCharacterCustom}
-                    onChangeText={(value) => onChange('voiceCharacterCustom', value)}
+                    accent={accent}
+                    value={settings.voiceCharacter}
+                    onChange={(value) => {
+                      onChange('voiceCharacter', value);
+                      if (value === 'none') onChange('dialogueMode', 'none');
+                    }}
                   />
-                ) : null}
-                <UserPresetGridLite
-                  builtInOptions={[]}
-                  theme={theme}
-                  accent={accent}
-                  value={settings.voiceCharacter}
-                  onChange={(value) => onChange('voiceCharacter', value)}
-                />
-              </>
-            )}
-          </View>
+                  {settings.voiceCharacter === '__custom__' ? (
+                    <SettingInput
+                      placeholder="พิมพ์ลักษณะเสียงพูด..."
+                      theme={theme}
+                      value={settings.voiceCharacterCustom}
+                      onChangeText={(value) => onChange('voiceCharacterCustom', value)}
+                    />
+                  ) : null}
+                  <UserPresetGridLite
+                    builtInOptions={[]}
+                    theme={theme}
+                    accent={accent}
+                    value={settings.voiceCharacter}
+                    onChange={(value) => onChange('voiceCharacter', value)}
+                  />
+                </>
+              )}
+            </View>
+          ) : null}
 
           {/* 6. บทพูด */}
           <View className="gap-1.5">
