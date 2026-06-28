@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.4',
+    date: '2026-06-28',
+    highlight: 'ปรับ Auto Workflow ให้ติดตามสถานะได้ละเอียดขึ้น',
+    changes: [
+      { type: 'improved', text: 'เพิ่มเวลาเริ่มงาน เวลาล่าสุด และ log ล่าสุดในสถานะการทำงาน' },
+      { type: 'improved', text: 'เพิ่มสถานะ Google Flow ระหว่างสร้าง เช่น กำลังทำ คิว สำเร็จ และล้มเหลว' },
+      { type: 'improved', text: 'ปรับการตรวจหลังส่งคำสั่งสร้างให้ลองกรอก prompt ซ้ำเมื่อ Flow ยังไม่เริ่ม' },
+      { type: 'improved', text: 'เพิ่มการหน่วงเวลาระหว่างสินค้าตามค่าความเร็วที่เลือก' },
+    ],
+  },
+  {
     version: '0.1.3',
     date: '2026-06-28',
     highlight: 'ปรับหน้าตา Changelog ให้ใกล้เคียง Desktop มากขึ้น',
@@ -56,4 +67,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.3';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.4';

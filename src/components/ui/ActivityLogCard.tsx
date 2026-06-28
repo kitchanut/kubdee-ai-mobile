@@ -68,7 +68,13 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
 }: ActivityLogCardProps<TLog>): React.JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(initiallyExpanded);
   const visibleLogs = useMemo(() => logs.slice(-maxVisible), [logs, maxVisible]);
-  const statusText = running ? runningText : logs.length > 0 ? `ล่าสุด ${logs.length} รายการ` : idleText;
+  const latestLog = logs[logs.length - 1] ?? null;
+  const latestTimeText = latestLog ? `ล่าสุด ${formatTimestamp(latestLog.ts)}` : '';
+  const statusText = running
+    ? [runningText, latestTimeText].filter(Boolean).join(' · ')
+    : latestLog
+      ? `${latestTimeText} · ${logs.length} รายการ`
+      : idleText;
   const Icon = icon;
 
   return (
@@ -252,5 +258,6 @@ function formatLogTime(timestamp: number): string {
   return new Intl.DateTimeFormat('th-TH', {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   }).format(new Date(timestamp));
 }

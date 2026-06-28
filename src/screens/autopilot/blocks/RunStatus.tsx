@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
-import type { AutoPilotRunState } from '@/autopilot/types';
+import type { AutoPilotFlowStats, AutoPilotRunState } from '@/autopilot/types';
 import { formatTime } from '../constants';
 import { ProgressMetric, SectionCard } from '../primitives';
 
@@ -21,6 +21,13 @@ export function RunStatusSummaryBlock({
   const progress = runState.progress;
   const progressRatio = getRunProgressRatio(runState);
   const currentStepLabel = getCurrentStepLabel(progress.currentStep);
+  const currentStepProgressLabel =
+    progress.totalSteps > 1 && progress.currentStepIndex > 0
+      ? `${currentStepLabel} ${progress.currentStepIndex}/${progress.totalSteps}`
+      : currentStepLabel;
+  const firstLog = getFirstLog(runState);
+  const latestLog = getLatestLog(runState);
+  const flowStats = runState.status === 'running' ? getLatestFlowStats(runState) : null;
 
   return (
     <SectionCard theme={theme} icon={Clock3} title="สถานะการทำงาน">
@@ -37,8 +44,15 @@ export function RunStatusSummaryBlock({
               </Text>
             </View>
             <Text numberOfLines={1} className="mt-1 text-kd-micro text-kd-text-subtle">
-              {progress.currentProductName || 'ยังไม่มีสินค้าที่กำลังทำ'} · {currentStepLabel}
+              {progress.currentProductName || 'ยังไม่มีสินค้าที่กำลังทำ'} · {currentStepProgressLabel}
             </Text>
+            {firstLog || latestLog ? (
+              <Text numberOfLines={1} className="mt-0.5 text-kd-micro text-kd-text-subtle">
+                {firstLog ? `เริ่ม ${formatTime(firstLog.timestamp)}` : ''}
+                {firstLog && latestLog ? ' · ' : ''}
+                {latestLog ? `ล่าสุด ${formatTime(latestLog.timestamp)}` : ''}
+              </Text>
+            ) : null}
           </View>
 
           <Button
@@ -53,6 +67,21 @@ export function RunStatusSummaryBlock({
             <Text className="text-kd-micro font-semibold text-kd-text-subtle">รายละเอียด</Text>
           </Button>
         </View>
+
+        {latestLog ? (
+          <View className="rounded-kd-md bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
+            <Text className="text-kd-micro font-semibold text-kd-text-subtle">
+              ล่าสุด {formatTime(latestLog.timestamp)}
+            </Text>
+            <Text
+              numberOfLines={2}
+              className="mt-0.5 text-kd-caption leading-4"
+              style={{ color: getLogTextColor(latestLog.level, theme) }}
+            >
+              {latestLog.message}
+            </Text>
+          </View>
+        ) : null}
 
         <View className="gap-1.5">
           <View className="flex-row items-center justify-between">
@@ -74,6 +103,25 @@ export function RunStatusSummaryBlock({
           <ProgressMetric color={theme.amber} icon={ImageIcon} label="รูป" theme={theme} value={`${progress.generatedImages}/${progress.failedImages}`} />
           <ProgressMetric color={theme.red} icon={Video} label="วิดีโอ" theme={theme} value={`${progress.generatedVideos}/${progress.failedVideos}`} />
         </View>
+
+        {flowStats ? (
+          <View className="gap-1.5 rounded-kd-md border border-kd-border bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
+            <View className="flex-row items-center justify-between gap-2">
+              <Text className="text-kd-micro font-semibold text-kd-text-subtle">สถานะ Google Flow</Text>
+              {flowStats.progress != null ? (
+                <Text className="text-kd-micro font-semibold text-kd-text">
+                  {flowStats.progress}%
+                </Text>
+              ) : null}
+            </View>
+            <View className="flex-row flex-wrap gap-1.5">
+              <MiniFlowStat label="กำลัง" value={flowStats.generating} theme={theme} />
+              <MiniFlowStat label="คิว" value={flowStats.queued} theme={theme} />
+              <MiniFlowStat label="สำเร็จ" value={flowStats.success} theme={theme} />
+              <MiniFlowStat label="ล้มเหลว" value={flowStats.failed} theme={theme} warning={flowStats.failed > 0} />
+            </View>
+          </View>
+        ) : null}
       </View>
     </SectionCard>
   );
@@ -96,6 +144,8 @@ export function ActivityLogSheet({
 }): React.JSX.Element {
   const isRunning = runState.status === 'running';
   const logs = runState.logs.slice(-80);
+  const firstLog = getFirstLog(runState);
+  const latestLog = getLatestLog(runState);
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
@@ -113,7 +163,10 @@ export function ActivityLogSheet({
                 <View className="min-w-0 flex-1">
                   <Text className="text-[14px] font-semibold text-kd-text">รายละเอียดการทำงาน</Text>
                   <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-                    {getRunStatusLabel(runState.status)} · แสดง log ล่าสุด {logs.length} รายการ
+                    {getRunStatusLabel(runState.status)}
+                    {firstLog ? ` · เริ่ม ${formatTime(firstLog.timestamp)}` : ''}
+                    {latestLog ? ` · ล่าสุด ${formatTime(latestLog.timestamp)}` : ''}
+                    {` · log ${logs.length} รายการ`}
                   </Text>
                 </View>
               </View>
@@ -185,15 +238,77 @@ export function ActivityLogSheet({
   );
 }
 
+function MiniFlowStat({
+  label,
+  value,
+  theme,
+  warning = false,
+}: {
+  label: string;
+  value: number;
+  theme: KubdeeTheme;
+  warning?: boolean;
+}): React.JSX.Element {
+  return (
+    <View className="min-w-[58px] flex-1 rounded-kd-md bg-kd-card px-2 py-1.5">
+      <Text className="text-kd-tiny font-semibold text-kd-text-subtle">{label}</Text>
+      <Text className="mt-px text-kd-caption font-semibold" style={{ color: warning ? theme.red : theme.text }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function getRunProgressRatio(runState: AutoPilotRunState): number {
   const progress = runState.progress;
-  const totalWork = Math.max(1, progress.totalRounds * Math.max(1, progress.totalProducts));
+  const totalSteps = Math.max(1, progress.totalSteps || 1);
+  const totalProducts = Math.max(1, progress.totalProducts);
+  const totalWork = Math.max(1, progress.totalRounds * totalProducts * totalSteps);
   const currentWork = Math.min(
     totalWork,
-    Math.max(0, (Math.max(0, progress.currentRound - 1) * Math.max(1, progress.totalProducts)) + progress.currentProduct)
+    Math.max(
+      0,
+      (Math.max(0, progress.currentRound - 1) * totalProducts * totalSteps) +
+        (Math.max(0, progress.currentProduct - 1) * totalSteps) +
+        Math.max(0, progress.currentStepIndex || (progress.currentStep ? 1 : 0))
+    )
   );
 
   return runState.status === 'completed' ? 1 : currentWork / totalWork;
+}
+
+function getFirstLog(runState: AutoPilotRunState): AutoPilotRunState['logs'][number] | null {
+  return runState.logs[0] ?? null;
+}
+
+function getLatestLog(runState: AutoPilotRunState): AutoPilotRunState['logs'][number] | null {
+  return runState.logs[runState.logs.length - 1] ?? null;
+}
+
+function getLatestFlowStats(runState: AutoPilotRunState): AutoPilotFlowStats | null {
+  for (let index = runState.logs.length - 1; index >= 0; index -= 1) {
+    const log = runState.logs[index];
+    if (log?.flowStats) {
+      return log.flowStats;
+    }
+
+    const message = log?.message ?? '';
+    const match = message.match(/gen\s+(\d+)\s+queue\s+(\d+)\s+ok\s+(\d+)\s+fail\s+(\d+)(?:\s+(\d+)%?)?/i);
+    if (!match) {
+      continue;
+    }
+
+    const progress = match[5] != null ? Number.parseInt(match[5], 10) : null;
+    return {
+      generating: Number.parseInt(match[1] ?? '0', 10) || 0,
+      queued: Number.parseInt(match[2] ?? '0', 10) || 0,
+      success: Number.parseInt(match[3] ?? '0', 10) || 0,
+      failed: Number.parseInt(match[4] ?? '0', 10) || 0,
+      progress: Number.isFinite(progress) ? progress : null,
+    };
+  }
+
+  return null;
 }
 
 function getCurrentStepLabel(step: AutoPilotRunState['progress']['currentStep']): string {
@@ -245,10 +360,72 @@ function getRunStageLabel(stage: string | null): string {
       return 'เริ่มรอบใหม่';
     case 'product_started':
       return 'เลือกสินค้า';
+    case 'delay_between_products':
+      return 'หน่วงเวลาสินค้าถัดไป';
     case 'step_started':
       return 'เริ่มสร้างงาน';
+    case 'open_project':
+      return 'เปิดโปรเจกต์';
+    case 'wait_flow_ready':
+      return 'รอ Flow พร้อม';
+    case 'refresh_before_config':
+    case 'multi_scene_refresh_image':
+    case 'multi_scene_refresh_video':
+    case 'voiceover_video_retry_refresh':
+      return 'รีเฟรช Flow';
+    case 'attach_reference':
+    case 'multi_scene_attach_reference':
+    case 'multi_scene_attach_previous_image':
+      return 'แนบรูปอ้างอิง';
+    case 'multi_scene_start':
+      return 'เริ่มหลายฉาก';
+    case 'multi_scene_capture_prior_image':
+      return 'ดึงรูปตั้งต้น';
+    case 'multi_scene_image':
+      return 'สร้างรูปฉาก';
+    case 'multi_scene_prepare_prompts':
+      return 'AI คิดบท';
+    case 'multi_scene_dialogue_ready':
+      return 'ได้บทพูด';
+    case 'multi_scene_video':
+      return 'สร้างวิดีโอฉาก';
+    case 'multi_scene_select_recent_reference':
+      return 'เลือกรูปล่าสุด';
+    case 'multi_scene_upload_reference_fallback':
+      return 'อัปโหลดรูปแทน';
+    case 'fill_prompt':
+      return 'กรอก Prompt';
     case 'submitted':
       return 'ส่งคำสั่งสร้างแล้ว';
+    case 'submit_start_check':
+      return 'ตรวจหลัง Submit';
+    case 'submit_wait_without_retry':
+    case 'submit_wait_after_retype':
+      return 'รอ Flow เริ่ม';
+    case 'retype_prompt_retry':
+      return 'Retype Prompt';
+    case 'retype_start_check':
+      return 'ตรวจหลัง Retype';
+    case 'waiting_result':
+      return 'รอผลจาก Flow';
+    case 'downloading_result':
+      return 'กำลังดาวน์โหลด';
+    case 'download_triggered':
+      return 'รับไฟล์จาก Flow';
+    case 'generated':
+      return 'บันทึกเข้าคลัง';
+    case 'scene_video_ready':
+      return 'ได้วิดีโอฉาก';
+    case 'voiceover_video_retry':
+      return 'Retry ภาพล้วน';
+    case 'voiceover_probe_videos':
+      return 'ตรวจความยาวจริง';
+    case 'voiceover':
+      return 'สร้างเสียงพากย์';
+    case 'merge_video':
+      return 'รวมวิดีโอ';
+    case 'multi_scene_done':
+      return 'เสร็จหลายฉาก';
     case 'failed':
       return 'สร้างไม่สำเร็จ';
     case 'download_missing':

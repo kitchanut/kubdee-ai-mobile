@@ -82,6 +82,11 @@ interface PreparedMultiScenePromptResult {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const AUTO_MULTI_SCENE_TRIM_END_SECONDS = 0.3;
 const VOICEOVER_END_BUFFER_SECONDS = 1;
+const AUTO_RUN_DELAY_PRESETS = {
+  slow: { min: 4, max: 7 },
+  normal: { min: 2, max: 4 },
+  fast: { min: 1, max: 2 },
+} as const;
 
 class GoogleFlowWebViewRunnerStopped extends Error {
   constructor() {
@@ -91,6 +96,11 @@ class GoogleFlowWebViewRunnerStopped extends Error {
 
 function stepLabel(step: AutoPilotStepType): string {
   return step === 'image' ? 'รูปภาพ' : 'วิดีโอ';
+}
+
+function randomAutoRunDelayMs(settings: AutoPilotSettings): number {
+  const preset = AUTO_RUN_DELAY_PRESETS[settings.delayPreset] ?? AUTO_RUN_DELAY_PRESETS.normal;
+  return Math.round((preset.min + Math.random() * (preset.max - preset.min)) * 1000);
 }
 
 function outputCountForStep(product: GoogleFlowRunnerProduct, step: AutoPilotStepType): number {
@@ -1022,6 +1032,8 @@ export default function GoogleFlowWebViewRunnerHost({
         const generating = result.generatingCount ?? 0;
         const queued = result.queuedCount ?? 0;
         const failed = result.failedCount ?? 0;
+        const success = result.successCount ?? 0;
+        const tilesFound = result.tilesFound ?? 0;
         const videos = result.videos ?? [];
         const imageCount = result.images ?? 0;
         const progress = result.progress;
@@ -1037,12 +1049,20 @@ export default function GoogleFlowWebViewRunnerHost({
           totalRounds: payload.settings.totalRounds,
           currentProduct: productIndex + 1,
           totalProducts: payload.products.length,
-          message: `รอผล${stepLabel(step)}: gen ${generating} queue ${queued} ok ${result.successCount ?? 0} fail ${failed}${
+          flowStats: {
+            generating,
+            queued,
+            success,
+            failed,
+            tilesFound,
+            progress: progress ?? null,
+          },
+          message: `รอผล${stepLabel(step)}: gen ${generating} queue ${queued} ok ${success} fail ${failed}${
             progress != null ? ` ${progress}%` : ''
           }`,
         });
 
-        if (generating > 0 || queued > 0 || progress != null || (result.tilesFound ?? 0) === 0) {
+        if (generating > 0 || queued > 0 || progress != null || tilesFound === 0) {
           failConfirm = 0;
           doneConfirm = 0;
           continue;
@@ -1107,31 +1127,68 @@ export default function GoogleFlowWebViewRunnerHost({
       step: AutoPilotStepType;
     }): Promise<void> => {
       checkStop();
+      const startChecks = step === 'video' ? 8 : 7;
+
+      const checkFlowStarted = async (maxChecks: number, stage: string): Promise<boolean> => {
+        for (let startCheck = 1; startCheck <= maxChecks; startCheck += 1) {
+          checkStop();
+          const result = (await runActionOrThrow(
+            handle,
+            'videoResults',
+            { count, ignoreUrls: baselineVideoUrls },
+            20_000
+          )) as FlowResultPoll;
+
+          const generating = result.generatingCount ?? 0;
+          const queued = result.queuedCount ?? 0;
+          const success = result.successCount ?? 0;
+          const failed = result.failedCount ?? 0;
+          const progress = result.progress;
+          const hasOutput = step === 'video' ? (result.videos ?? []).length > 0 : (result.images ?? 0) > 0;
+
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage,
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            flowStats: {
+              generating,
+              queued,
+              success,
+              failed,
+              tilesFound: result.tilesFound ?? 0,
+              progress: progress ?? null,
+            },
+            message: `ตรวจหลัง submit ${startCheck}/${maxChecks}: gen ${generating} queue ${queued} ok ${success} fail ${failed}${
+              progress != null ? ` ${progress}%` : ''
+            }`,
+          });
+
+          if (generating > 0 || queued > 0 || progress != null || hasOutput) {
+            return true;
+          }
+
+          if (startCheck < maxChecks) {
+            await sleep(step === 'video' ? 5_000 : 4_000);
+          }
+        }
+
+        return false;
+      };
+
       await runActionOrThrow(handle, 'fillPrompt', { prompt }, 45_000);
       await runActionOrThrow(handle, 'submit', {}, 45_000);
       await sleep(step === 'video' ? 10_000 : 8_000);
 
-      const startChecks = step === 'video' ? 8 : 7;
-      for (let startCheck = 1; startCheck <= startChecks; startCheck += 1) {
-        checkStop();
-        const result = (await runActionOrThrow(
-          handle,
-          'videoResults',
-          { count, ignoreUrls: baselineVideoUrls },
-          20_000
-        )) as FlowResultPoll;
-
-        const generating = result.generatingCount ?? 0;
-        const queued = result.queuedCount ?? 0;
-        const progress = result.progress;
-        const hasOutput = step === 'video' ? (result.videos ?? []).length > 0 : (result.images ?? 0) > 0;
-        if (generating > 0 || queued > 0 || progress != null || hasOutput) {
-          return;
-        }
-
-        if (startCheck < startChecks) {
-          await sleep(step === 'video' ? 5_000 : 4_000);
-        }
+      if (await checkFlowStarted(startChecks, 'submit_start_check')) {
+        return;
       }
 
       emit({
@@ -1139,14 +1196,37 @@ export default function GoogleFlowWebViewRunnerHost({
         runId: payload.runId,
         status: 'running',
         step,
-        stage: 'submit_wait_without_retry',
+        stage: 'retype_prompt_retry',
         productId: product.id,
         productName: product.name,
         currentRound: round,
         totalRounds: payload.settings.totalRounds,
         currentProduct: productIndex + 1,
         totalProducts: payload.products.length,
-        message: `ยังไม่เห็น Flow เริ่มสร้าง${stepLabel(step)}หลัง submit จะรอผลต่อโดยไม่กดสร้างซ้ำ`,
+        message: `ยังไม่เห็น Flow เริ่มสร้าง${stepLabel(step)} จะ retype prompt แล้ว submit ซ้ำ 1 ครั้ง`,
+      });
+
+      await runActionOrThrow(handle, 'fillPrompt', { prompt }, 45_000);
+      await runActionOrThrow(handle, 'submit', {}, 45_000);
+      await sleep(step === 'video' ? 10_000 : 8_000);
+
+      if (await checkFlowStarted(Math.max(4, Math.ceil(startChecks / 2)), 'retype_start_check')) {
+        return;
+      }
+
+      emit({
+        event: 'progress',
+        runId: payload.runId,
+        status: 'running',
+        step,
+        stage: 'submit_wait_after_retype',
+        productId: product.id,
+        productName: product.name,
+        currentRound: round,
+        totalRounds: payload.settings.totalRounds,
+        currentProduct: productIndex + 1,
+        totalProducts: payload.products.length,
+        message: `ยังไม่เห็น Flow เริ่มสร้าง${stepLabel(step)}หลัง retype จะรอผลต่อโดยไม่กดสร้างซ้ำ`,
       });
     },
     [checkStop, emit, runActionOrThrow]
@@ -2142,16 +2222,64 @@ export default function GoogleFlowWebViewRunnerHost({
       try {
         const handle = await waitForHandle();
         emit({
+          event: 'progress',
           runId: payload.runId,
           status: 'running',
+          stage: 'started',
+          currentRound: 0,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: 0,
+          totalProducts: payload.products.length,
           message: 'Google Flow WebView runner เริ่มทำงาน',
         });
 
         for (let round = 1; round <= payload.settings.totalRounds; round += 1) {
+          checkStop();
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            stage: 'round_started',
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: 0,
+            totalProducts: payload.products.length,
+            message: `เริ่มรอบ ${round}/${payload.settings.totalRounds}`,
+          });
+
           for (let productIndex = 0; productIndex < payload.products.length; productIndex += 1) {
             const product = payload.products[productIndex];
+            checkStop();
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              stage: 'product_started',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `เริ่มสินค้า ${productIndex + 1}/${payload.products.length}: ${product.name || 'สินค้า'}`,
+            });
+
             for (const step of payload.enabledSteps) {
               checkStop();
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step,
+                stage: 'step_started',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `เริ่ม${stepLabel(step)}สำหรับสินค้า ${productIndex + 1}/${payload.products.length}`,
+              });
               await runProductStep({
                 handle,
                 payload,
@@ -2160,6 +2288,25 @@ export default function GoogleFlowWebViewRunnerHost({
                 round,
                 step,
               });
+            }
+
+            if (productIndex < payload.products.length - 1) {
+              checkStop();
+              const delayMs = randomAutoRunDelayMs(payload.settings);
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                stage: 'delay_between_products',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `หน่วงเวลา ${(delayMs / 1000).toFixed(1)} วิ ก่อนเริ่มสินค้าถัดไป`,
+              });
+              await sleep(delayMs);
             }
           }
         }

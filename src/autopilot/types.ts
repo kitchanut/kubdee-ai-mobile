@@ -130,6 +130,8 @@ export interface AutoPilotRunProgress {
   currentProduct: number;
   totalProducts: number;
   currentStep: AutoPilotStepType | null;
+  currentStepIndex: number;
+  totalSteps: number;
   currentStage: string | null;
   currentProductName: string | null;
   generatedImages: number;
@@ -138,11 +140,21 @@ export interface AutoPilotRunProgress {
   failedVideos: number;
 }
 
+export interface AutoPilotFlowStats {
+  generating: number;
+  queued: number;
+  success: number;
+  failed: number;
+  tilesFound?: number;
+  progress: number | null;
+}
+
 export interface AutoPilotRunLog {
   id: string;
   level: AutoPilotLogLevel;
   message: string;
   timestamp: number;
+  flowStats?: AutoPilotFlowStats;
 }
 
 export interface AutoPilotRunState {
@@ -214,6 +226,7 @@ export interface GoogleFlowRunnerLogEntry {
   totalRounds?: number;
   currentProduct?: number;
   totalProducts?: number;
+  flowStats?: AutoPilotFlowStats;
   fileUri?: string;
   fileName?: string;
   mimeType?: string;

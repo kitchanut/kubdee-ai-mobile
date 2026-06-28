@@ -17,6 +17,7 @@ import {
 import type {
   AutoPilotImageSettings,
   AutoPilotLogLevel,
+  AutoPilotFlowStats,
   AutoPilotProduct,
   AutoPilotProductSettings,
   AutoPilotRunState,
@@ -37,6 +38,8 @@ const initialRunState: AutoPilotRunState = {
     currentProduct: 0,
     totalProducts: 0,
     currentStep: null,
+    currentStepIndex: 0,
+    totalSteps: 0,
     currentStage: null,
     currentProductName: null,
     generatedImages: 0,
@@ -145,7 +148,11 @@ export function useAutoPilotController({
     return map;
   }, [products]);
 
-  const appendLog = useCallback((level: AutoPilotLogLevel, message: string): void => {
+  const appendLog = useCallback((
+    level: AutoPilotLogLevel,
+    message: string,
+    options?: { timestamp?: number; flowStats?: AutoPilotFlowStats }
+  ): void => {
     setRunState((current) => ({
       ...current,
       logs: [
@@ -154,7 +161,8 @@ export function useAutoPilotController({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           level,
           message,
-          timestamp: Date.now(),
+          timestamp: options?.timestamp ?? Date.now(),
+          flowStats: options?.flowStats,
         },
       ].slice(-120),
     }));
@@ -184,11 +192,16 @@ export function useAutoPilotController({
             : entry.status === 'error'
               ? 'error'
               : 'info';
-      appendLog(level, entry.message);
+      appendLog(level, entry.message, { timestamp: entry.ts, flowStats: entry.flowStats });
 
       if (entry.event === 'progress') {
         const failedStage = entry.stage === 'failed' || entry.stage === 'download_missing';
         const generatedStage = entry.stage === 'generated';
+        const shouldClearStep =
+          entry.stage === 'started' ||
+          entry.stage === 'round_started' ||
+          entry.stage === 'product_started';
+        const currentStepIndex = entry.step ? Math.max(1, enabledSteps.indexOf(entry.step) + 1) : null;
         setRunState((current) => ({
           ...current,
           progress: {
@@ -197,7 +210,9 @@ export function useAutoPilotController({
             totalRounds: entry.totalRounds ?? current.progress.totalRounds,
             currentProduct: entry.currentProduct ?? current.progress.currentProduct,
             totalProducts: entry.totalProducts ?? current.progress.totalProducts,
-            currentStep: entry.step ?? current.progress.currentStep,
+            currentStep: entry.step ?? (shouldClearStep ? null : current.progress.currentStep),
+            currentStepIndex: currentStepIndex ?? (shouldClearStep ? 0 : current.progress.currentStepIndex),
+            totalSteps: enabledSteps.length || current.progress.totalSteps,
             currentStage: entry.stage ?? current.progress.currentStage,
             currentProductName: entry.productName ?? current.progress.currentProductName,
             failedImages:
@@ -270,7 +285,7 @@ export function useAutoPilotController({
     return () => {
       subscription?.remove();
     };
-  }, [addGeneratedMediaAsset, appendLog, productById, profileLocalId]);
+  }, [addGeneratedMediaAsset, appendLog, enabledSteps, productById, profileLocalId]);
 
   const updateSetting = useCallback(
     <K extends keyof AutoPilotSettings>(key: K, value: AutoPilotSettings[K]): void => {
@@ -623,6 +638,7 @@ export function useAutoPilotController({
         ...initialRunState.progress,
         totalRounds: settings.totalRounds,
         totalProducts: selectedProducts.length,
+        totalSteps: enabledSteps.length,
       },
       logs: [],
     });
