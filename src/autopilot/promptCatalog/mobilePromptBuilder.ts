@@ -65,6 +65,38 @@ function createImageBuildSettings(product: AutoPilotProduct, settings: AutoPilot
   };
 }
 
+function createImageReferenceInstructionLines(imageSettings: AutoPilotProduct['settings']['image']): string[] {
+  const lines: string[] = [];
+  const characterDescription = compactText(imageSettings.characterDescription);
+  const sceneDescription = compactText(imageSettings.sceneDescription);
+
+  if (imageSettings.characterMode === 'none') {
+    lines.push('ตัวละคร: ไม่ต้องมีคนหรือตัวละครในภาพ ให้เน้นสินค้าเป็นหลัก');
+  } else if (characterDescription && imageSettings.characterMode !== 'auto') {
+    lines.push(`ตัวละคร reference: ${characterDescription}`);
+  }
+
+  if (imageSettings.sceneMode === 'none') {
+    lines.push('ฉาก: ใช้พื้นหลังเรียบง่ายและไม่ดึงความสนใจจากสินค้า');
+  } else if (sceneDescription && imageSettings.sceneMode !== 'auto') {
+    lines.push(`ฉาก reference: ${sceneDescription}`);
+  }
+
+  return lines;
+}
+
+function appendImageReferenceInstructions(
+  prompt: string,
+  imageSettings: AutoPilotProduct['settings']['image']
+): string {
+  const referenceLines = createImageReferenceInstructionLines(imageSettings);
+  if (referenceLines.length === 0) {
+    return prompt;
+  }
+
+  return [prompt, ...referenceLines].filter(Boolean).join('; ');
+}
+
 function createVideoBuildSettings(product: AutoPilotProduct, settings: AutoPilotSettings): BuildSettings {
   const videoSettings = product.settings.video;
   const sceneCount = Number.parseInt(videoSettings.sceneCount || '1', 10);
@@ -116,7 +148,7 @@ export function buildGoogleFlowPromptBundle({
       catalog
     ).trim();
     if (prompt) {
-      bundle.image = prompt;
+      bundle.image = appendImageReferenceInstructions(prompt, product.settings.image);
     }
   }
 

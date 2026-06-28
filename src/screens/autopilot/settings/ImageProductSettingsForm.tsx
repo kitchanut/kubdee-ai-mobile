@@ -3,6 +3,7 @@ import { Bot, Camera, Image as ImageIcon, Settings2, SlidersHorizontal, Sparkles
 
 import { FLOW_IMAGE_MODELS } from '@/autopilot/defaults';
 import type { AutoPilotImageSettings, AutoPilotImageStyleMode, AutoPilotPromptMode } from '@/autopilot/types';
+import type { CreativeLibraryItem } from '@/library/CreativeLibraryContext';
 import {
   ASPECT_RATIO_OPTIONS,
   CHARACTER_OUTFIT_OPTIONS,
@@ -33,17 +34,35 @@ const COUNT_OPTIONS = OUTPUT_COUNT_VALUES.map((count) => ({ label: count, value:
 const IMAGE_MODEL_OPTIONS = FLOW_IMAGE_MODELS.map((model) => ({ label: model.label, value: model.value }));
 
 export function ImageProductSettingsForm({
+  profileLocalId,
   settings,
   theme,
   onApplySection,
   onChange,
 }: {
+  profileLocalId: string;
   settings: AutoPilotImageSettings;
   theme: KubdeeTheme;
   onApplySection: (keys: Array<keyof AutoPilotImageSettings>) => void;
   onChange: <K extends keyof AutoPilotImageSettings>(key: K, value: AutoPilotImageSettings[K]) => void;
 }): React.JSX.Element {
   const accent = theme.amber;
+
+  const selectCharacterReference = (item: CreativeLibraryItem): void => {
+    onChange('characterMode', 'gallery');
+    onChange('selectedCharacterId', item.id);
+    onChange('customCharacterUri', item.imageUri);
+    onChange('customCharacterPreview', item.imageUri ?? '');
+    onChange('characterDescription', formatLibraryReferenceDescription(item));
+  };
+
+  const selectSceneReference = (item: CreativeLibraryItem): void => {
+    onChange('sceneMode', 'gallery');
+    onChange('selectedSceneId', item.id);
+    onChange('customSceneUri', item.imageUri);
+    onChange('customScenePreview', item.imageUri ?? '');
+    onChange('sceneDescription', formatLibraryReferenceDescription(item));
+  };
 
   // ชุดของตัวละคร — ใช้ทุก styleMode + AI ; ข้อความในภาพ — ใช้ใน AI mode (auto mode มี section แยกล่างสุด)
   const OutfitBlock = (): React.JSX.Element => (
@@ -143,6 +162,14 @@ export function ImageProductSettingsForm({
         <CharacterPicker
           mode={settings.characterMode}
           onModeChange={(value) => onChange('characterMode', value)}
+          profileLocalId={profileLocalId}
+          selectedItemId={settings.selectedCharacterId}
+          uploadUri={settings.customCharacterUri}
+          onSelectItem={selectCharacterReference}
+          onUploadUriChange={(value) => {
+            onChange('customCharacterUri', value.trim() || null);
+            onChange('customCharacterPreview', value.trim());
+          }}
           description={settings.characterDescription}
           onDescriptionChange={(value) => onChange('characterDescription', value)}
           theme={theme}
@@ -307,6 +334,14 @@ export function ImageProductSettingsForm({
             <ScenePicker
               mode={settings.sceneMode}
               onModeChange={(value) => onChange('sceneMode', value)}
+              profileLocalId={profileLocalId}
+              selectedItemId={settings.selectedSceneId}
+              uploadUri={settings.customSceneUri}
+              onSelectItem={selectSceneReference}
+              onUploadUriChange={(value) => {
+                onChange('customSceneUri', value.trim() || null);
+                onChange('customScenePreview', value.trim());
+              }}
               description={settings.sceneDescription}
               onDescriptionChange={(value) => onChange('sceneDescription', value)}
               theme={theme}
@@ -439,4 +474,9 @@ export function ImageProductSettingsForm({
       </SettingsSection>
     </View>
   );
+}
+
+function formatLibraryReferenceDescription(item: CreativeLibraryItem): string {
+  const detail = item.description?.trim();
+  return detail ? `${item.name}: ${detail}` : item.name;
 }

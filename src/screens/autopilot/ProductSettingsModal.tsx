@@ -28,6 +28,7 @@ import { VideoProductSettingsForm } from './settings/VideoProductSettingsForm';
 export function ProductSettingsModal({
   bottomInset,
   enabledSteps,
+  profileLocalId,
   product,
   selectedProductCount,
   tab,
@@ -44,6 +45,7 @@ export function ProductSettingsModal({
 }: {
   bottomInset: number;
   enabledSteps: AutoPilotStepType[];
+  profileLocalId: string;
   product: AutoPilotProduct;
   selectedProductCount: number;
   tab: ProductSettingsTab;
@@ -148,6 +150,7 @@ export function ProductSettingsModal({
             >
               {activeTab === 'image' && showImageTab ? (
                 <ImageProductSettingsForm
+                  profileLocalId={profileLocalId}
                   settings={product.settings.image}
                   theme={theme}
                   onApplySection={onApplyImageSection}

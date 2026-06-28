@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.28',
+    date: '2026-06-29',
+    highlight: 'หน้า Auto เลือกตัวละครและฉากจากคลังได้จริง',
+    changes: [
+      { type: 'added', text: 'ตั้งค่ารูปภาพใน Auto สามารถเลือกตัวละครและฉากจากคลัง local ได้แล้ว' },
+      { type: 'improved', text: 'แนบรูป reference ตัวละครหรือฉากตอนสร้างรูป เพื่อให้ workflow ใกล้ desktop มากขึ้น' },
+      { type: 'improved', text: 'เพิ่ม log ขั้นตอนแนบตัวละครและฉากใน Activity Log' },
+    ],
+  },
+  {
     version: '0.1.27',
     date: '2026-06-29',
     highlight: 'ปรับปรุงความพร้อมของระบบอัปเดตมือถือ',
@@ -294,4 +304,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.27';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.28';

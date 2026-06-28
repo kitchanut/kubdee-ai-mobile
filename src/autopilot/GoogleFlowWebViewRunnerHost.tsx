@@ -1200,6 +1200,73 @@ function getReferenceFileName(product: GoogleFlowRunnerProduct): string {
   return `kubdee-reference-${code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 48)}.png`;
 }
 
+function getSafeReferenceName(value: string | null | undefined, fallback: string): string {
+  const clean = value?.trim() || fallback;
+  return clean.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || fallback;
+}
+
+function getAdditionalImageReferences(product: GoogleFlowRunnerProduct): Array<{
+  fileName: string;
+  label: string;
+  stage: string;
+  uri: string;
+}> {
+  const imageSettings = product.settings.image;
+  const references: Array<{
+    fileName: string;
+    label: string;
+    stage: string;
+    uri: string;
+  }> = [];
+  const usedUris = new Set<string>();
+  const productPreview = product.preview?.trim();
+  if (productPreview) {
+    usedUris.add(productPreview);
+  }
+
+  const pushReference = ({
+    fileName,
+    label,
+    stage,
+    uri,
+  }: {
+    fileName: string;
+    label: string;
+    stage: string;
+    uri: string | null | undefined;
+  }): void => {
+    const cleanUri = uri?.trim();
+    if (!cleanUri || usedUris.has(cleanUri)) {
+      return;
+    }
+    usedUris.add(cleanUri);
+    references.push({ fileName, label, stage, uri: cleanUri });
+  };
+
+  if (imageSettings.characterMode !== 'auto' && imageSettings.characterMode !== 'none') {
+    pushReference({
+      fileName: `kubdee-character-reference-${getSafeReferenceName(
+        imageSettings.selectedCharacterId,
+        'character'
+      )}.png`,
+      label: 'ตัวละคร',
+      stage: 'attach_character_reference',
+      uri: imageSettings.customCharacterUri,
+    });
+  }
+
+  if (imageSettings.sceneMode !== 'auto' && imageSettings.sceneMode !== 'none') {
+    pushReference({
+      fileName: `kubdee-scene-reference-${getSafeReferenceName(imageSettings.selectedSceneId, 'scene')}.png`,
+      label: 'ฉาก',
+      stage: 'attach_scene_reference',
+      uri: imageSettings.customSceneUri,
+    });
+  }
+
+  return references;
+}
+
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -2442,6 +2509,37 @@ export default function GoogleFlowWebViewRunnerHost({
             });
           }
 
+          for (const reference of getAdditionalImageReferences(product)) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step: 'image',
+              stage: reference.stage,
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `แนบรูป${reference.label}เป็น reference รูปฉาก ${sceneNumber}/${sceneCount}`,
+            });
+            const referenceDataUrl = await loadImageReferenceDataUrl(reference.uri);
+            await uploadReferenceImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step: 'image',
+              args: {
+                dataUrl: referenceDataUrl ?? undefined,
+                fileName: reference.fileName,
+                imageUrl: referenceDataUrl ? undefined : reference.uri,
+              },
+            });
+          }
+
           const previousSceneImageDataUrl = sceneImageDataUrls[sceneImageDataUrls.length - 1];
           if ((sceneNumber > 1 || hasPriorImageStep) && previousSceneImageDataUrl) {
             emit({
@@ -3164,6 +3262,39 @@ export default function GoogleFlowWebViewRunnerHost({
             },
           });
           videoReferenceAttached = step === 'video';
+        }
+
+        if (step === 'image') {
+          for (const reference of getAdditionalImageReferences(product)) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: reference.stage,
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `แนบรูป${reference.label}เป็น reference สำหรับ${label}`,
+            });
+            const referenceDataUrl = await loadImageReferenceDataUrl(reference.uri);
+            await uploadReferenceImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              args: {
+                dataUrl: referenceDataUrl ?? undefined,
+                fileName: reference.fileName,
+                imageUrl: referenceDataUrl ? undefined : reference.uri,
+              },
+            });
+          }
         }
 
         let baselineVideoUrls: string[] = [];

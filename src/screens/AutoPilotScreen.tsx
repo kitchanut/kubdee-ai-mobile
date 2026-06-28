@@ -324,6 +324,7 @@ export default function AutoPilotScreen({
         <ProductSettingsModal
           bottomInset={insets.bottom}
           enabledSteps={controller.enabledSteps}
+          profileLocalId={selectedProfileId}
           product={editingProduct}
           selectedProductCount={controller.selectedProducts.length}
           tab={productSettingsTab}
