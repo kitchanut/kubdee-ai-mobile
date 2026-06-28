@@ -1,5 +1,7 @@
+import { useCallback, useEffect } from 'react';
 import { Pressable, View } from 'react-native';
-import { Ban, Bot, Plus, Settings2, SlidersHorizontal, Sparkles, Star, X } from 'lucide-react-native';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { Ban, Bot, Plus, Settings2, SlidersHorizontal, Sparkles, Star, Volume2, X } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import { Input } from '@/components/ui/input';
@@ -26,6 +28,7 @@ import {
   VOICEOVER_TTS_GROUPS,
   VOICE_OPTIONS,
 } from '@/autopilot/optionSets';
+import { getVoicePreviewName, getVoicePreviewUrl } from '@/autopilot/voicePreview';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 
@@ -70,6 +73,47 @@ export function VideoProductSettingsForm({
   const durationOptions = VIDEO_DURATION_OPTIONS.filter(
     (duration) => selectedVideoModel === 'omni_flash' || duration !== 10
   ).map((duration) => ({ label: `${duration}s`, value: duration }));
+  const voicePreviewPlayer = useAudioPlayer(null, {
+    keepAudioSessionActive: false,
+    updateInterval: 250,
+  });
+  const voicePreviewStatus = useAudioPlayerStatus(voicePreviewPlayer);
+  const previewVoiceCharacter = isVoiceoverMode
+    ? settings.voiceCharacter?.startsWith('tts_')
+      ? settings.voiceCharacter
+      : ''
+    : settings.voiceCharacter?.startsWith('tts_')
+      ? ''
+      : settings.voiceCharacter || '';
+  const canPreviewVoice = previewVoiceCharacter !== 'none';
+  const voicePreviewName = getVoicePreviewName(previewVoiceCharacter);
+  const voicePreviewUrl = getVoicePreviewUrl(previewVoiceCharacter);
+  const isVoicePreviewPlaying = voicePreviewStatus.playing || voicePreviewStatus.isBuffering;
+
+  const playVoicePreview = useCallback(async () => {
+    if (!canPreviewVoice) return;
+
+    try {
+      voicePreviewPlayer.pause();
+      await voicePreviewPlayer.seekTo(0).catch(() => undefined);
+      voicePreviewPlayer.replace({ uri: voicePreviewUrl, name: voicePreviewName });
+
+      setTimeout(() => {
+        try {
+          voicePreviewPlayer.play();
+        } catch {
+          // expo-audio reports playback failures through status.error; keep the UI non-blocking.
+        }
+      }, 120);
+    } catch {
+      // Keep preview best-effort so settings edits are never blocked by audio playback.
+    }
+  }, [canPreviewVoice, voicePreviewName, voicePreviewPlayer, voicePreviewUrl]);
+
+  useEffect(() => {
+    voicePreviewPlayer.pause();
+    void voicePreviewPlayer.seekTo(0).catch(() => undefined);
+  }, [voicePreviewPlayer, voicePreviewUrl]);
 
   // ───── บทพูด: dialogue list ─────
   const dialogueList =
@@ -304,7 +348,15 @@ export function VideoProductSettingsForm({
           {/* 5. เสียงพูด / เสียงพากย์ */}
           {settings.dialogueMode !== 'none' || isVoiceoverMode ? (
             <View className="gap-1.5">
-              <FieldHeader label={isVoiceoverMode ? 'เสียงพากย์' : 'เสียงพูด'} onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.voice)} />
+              <VoiceFieldHeader
+                label={isVoiceoverMode ? 'เสียงพากย์' : 'เสียงพูด'}
+                theme={theme}
+                previewName={voicePreviewName}
+                previewDisabled={!canPreviewVoice}
+                previewPlaying={isVoicePreviewPlaying}
+                onPreview={playVoicePreview}
+                onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.voice)}
+              />
               {isVoiceoverMode ? (
                 <View className="gap-2">
                   {VOICEOVER_TTS_GROUPS.map((group) => (
@@ -522,6 +574,47 @@ export function VideoProductSettingsForm({
           </SettingsSection>
         </>
       ) : null}
+    </View>
+  );
+}
+
+function VoiceFieldHeader({
+  label,
+  onApplyAll,
+  onPreview,
+  previewDisabled,
+  previewName,
+  previewPlaying,
+  theme,
+}: {
+  label: string;
+  onApplyAll: () => void;
+  onPreview: () => void;
+  previewDisabled: boolean;
+  previewName: string;
+  previewPlaying: boolean;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  return (
+    <View className="flex-row items-center justify-between">
+      <Text className="text-kd-micro font-semibold uppercase text-kd-text-subtle">{label}</Text>
+      <View className="flex-row items-center gap-2">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`ฟังตัวอย่างเสียง ${previewName}`}
+          disabled={previewDisabled}
+          onPress={onPreview}
+          className={`flex-row items-center gap-1 px-1.5 py-0.5 ${previewDisabled ? 'opacity-45' : ''}`}
+        >
+          <Volume2 size={11} color={theme.textSubtle} strokeWidth={2.2} />
+          <Text className="text-kd-micro font-semibold text-kd-text-subtle">
+            {previewPlaying ? 'กำลังเล่น' : 'Preview'}
+          </Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={onApplyAll} className="px-1.5 py-0.5">
+          <Text className="text-kd-micro font-semibold text-kd-text-subtle">นำไปใช้ทั้งหมด</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }

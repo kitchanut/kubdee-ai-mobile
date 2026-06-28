@@ -41,6 +41,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     favicon: './assets/favicon.png',
   },
   plugins: [
+    [
+      'expo-audio',
+      {
+        recordAudioAndroid: false,
+        enableBackgroundRecording: false,
+        enableBackgroundPlayback: false,
+      },
+    ],
     'expo-dev-client',
     'expo-sqlite',
     'expo-splash-screen',

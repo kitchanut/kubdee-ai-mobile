@@ -35,6 +35,7 @@
     "clsx": "^2.1.1",
     "expo": "~56.0.9",
     "expo-application": "~56.0.3",
+    "expo-audio": "~56.0.12",
     "expo-build-properties": "~56.0.17",
     "expo-crypto": "~56.0.4",
     "expo-dev-client": "~56.0.19",
