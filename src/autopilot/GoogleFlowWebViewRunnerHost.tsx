@@ -434,18 +434,103 @@ function cleanAiPromptText(text: string): string {
     .trim();
 }
 
+function extractBalancedJson(text: string): string | null {
+  const stack: string[] = [];
+  let inString = false;
+  let quote = '';
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      inString = true;
+      quote = char;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      stack.push(char === '{' ? '}' : ']');
+      continue;
+    }
+
+    if (char === '}' || char === ']') {
+      if (stack.pop() !== char) {
+        return null;
+      }
+      if (stack.length === 0) {
+        return text.slice(0, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 function parseAiJsonText(text: string): unknown {
   const cleaned = cleanAiJsonText(text);
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const firstBrace = cleaned.indexOf('{');
-    const lastBrace = cleaned.lastIndexOf('}');
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+  const candidates = [cleaned];
+
+  for (const match of String(text || '').matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]?.trim()) {
+      candidates.push(match[1].trim());
     }
-    throw new Error('Parse AI response ไม่ได้');
   }
+
+  for (let index = 0; index < cleaned.length; index += 1) {
+    if (cleaned[index] !== '{' && cleaned[index] !== '[') {
+      continue;
+    }
+    const balanced = extractBalancedJson(cleaned.slice(index));
+    if (balanced) {
+      candidates.push(balanced);
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // AI often wraps JSON in prose, markdown fences, or returns another JSON shape.
+    }
+  }
+
+  throw new Error('Parse AI response ไม่ได้');
+}
+
+function parseSceneDialoguesFromText(text: string, sceneCount: number): Array<{ sceneNumber: number; dialogue: string }> {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const scenes: Array<{ sceneNumber: number; dialogue: string }> = [];
+
+  for (const line of lines) {
+    const match = line.match(/^(?:[-*]\s*)?(?:ฉาก|scene)\s*(\d+)\s*[:：.)-]\s*(.+)$/i);
+    if (!match) {
+      continue;
+    }
+    const sceneNumber = Math.min(sceneCount, Math.max(1, Number(match[1]) || scenes.length + 1));
+    const dialogue = normalizeDialogueText(match[2].replace(/^["']|["']$/g, '').trim());
+    if (dialogue) {
+      scenes.push({ sceneNumber, dialogue });
+    }
+  }
+
+  return scenes
+    .sort((left, right) => left.sceneNumber - right.sceneNumber)
+    .slice(0, sceneCount);
 }
 
 function normalizeDialogueText(text: string): string {
@@ -717,14 +802,48 @@ voiceGender:
 }
 
 function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMultiScenePromptResult, 'scenes' | 'voiceStyleInstruction' | 'voiceoverScript' | 'voiceGender'> {
-  const parsed = parseAiJsonText(text) as {
+  const buildFallbackPreparedScenes = (fallbackScenes: Array<{ sceneNumber: number; dialogue: string }>) => {
+    const sceneByNumber = new Map(fallbackScenes.map((scene) => [scene.sceneNumber, scene]));
+    return {
+      scenes: Array.from({ length: sceneCount }, (_, index) => {
+        const source = sceneByNumber.get(index + 1);
+        return {
+          sceneNumber: index + 1,
+          dialogue: source?.dialogue || '',
+        };
+      }),
+      voiceStyleInstruction: '',
+      voiceoverScript: '',
+      voiceGender: undefined,
+    };
+  };
+  let parsed: {
     scenes?: Array<{ sceneNumber?: number; dialogue?: string; script?: string; text?: string }>;
     voiceStyleInstruction?: string;
     voiceoverScript?: string;
     voiceGender?: string;
-  };
-  const sourceScenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
-  const rawVoiceGender = String(parsed.voiceGender || '').trim().toLowerCase();
+  } | Array<{ sceneNumber?: number; dialogue?: string; script?: string; text?: string }>;
+
+  try {
+    parsed = parseAiJsonText(text) as typeof parsed;
+  } catch {
+    const fallbackScenes = parseSceneDialoguesFromText(text, sceneCount);
+    if (fallbackScenes.length > 0) {
+      return buildFallbackPreparedScenes(fallbackScenes);
+    }
+    throw new Error('Parse AI response ไม่ได้');
+  }
+
+  const parsedRecord = Array.isArray(parsed) ? {} : parsed;
+  const sourceScenes = Array.isArray(parsed) ? parsed : Array.isArray(parsed.scenes) ? parsed.scenes : [];
+  if (sourceScenes.length === 0) {
+    const fallbackScenes = parseSceneDialoguesFromText(text, sceneCount);
+    if (fallbackScenes.length > 0) {
+      return buildFallbackPreparedScenes(fallbackScenes);
+    }
+    throw new Error('ไม่พบ scenes ใน AI response');
+  }
+  const rawVoiceGender = String(parsedRecord.voiceGender || '').trim().toLowerCase();
   const voiceGender = rawVoiceGender === 'female' || rawVoiceGender === 'male' || rawVoiceGender === 'neutral'
     ? rawVoiceGender
     : undefined;
@@ -737,8 +856,8 @@ function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMul
   });
   return {
     scenes,
-    voiceStyleInstruction: String(parsed.voiceStyleInstruction || '').trim(),
-    voiceoverScript: normalizeVoiceoverScript(String(parsed.voiceoverScript || '')),
+    voiceStyleInstruction: String(parsedRecord.voiceStyleInstruction || '').trim(),
+    voiceoverScript: normalizeVoiceoverScript(String(parsedRecord.voiceoverScript || '')),
     voiceGender,
   };
 }
