@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.14',
+    date: '2026-06-29',
+    highlight: 'ปรับวิดีโอหลายฉากและสถานะ Auto Workflow ให้ตรงงานจริงขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับวิดีโอหลายฉากมุมเดียวให้เลือกรูปล่าสุดเป็น reference ได้ถูกต้องขึ้น' },
+      { type: 'fixed', text: 'ปรับจำนวนวิดีโอที่วางแผนไว้ให้ตรงกับผลลัพธ์รวมของวิดีโอหลายฉาก' },
+      { type: 'improved', text: 'เพิ่มสถานะระหว่างตั้งค่า Flow สำหรับรูปและวิดีโอหลายฉากให้อ่านง่ายขึ้น' },
+    ],
+  },
+  {
     version: '0.1.13',
     date: '2026-06-29',
     highlight: 'ปรับการติดตาม Auto Workflow บน Google Flow ให้ชัดเจนขึ้น',
@@ -162,4 +172,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.13';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.14';

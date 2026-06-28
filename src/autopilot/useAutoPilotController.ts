@@ -227,6 +227,13 @@ function getAutoMultiSceneImageCount(product: AutoPilotProduct, enabledSteps: Au
   return enabledSteps.includes('image') ? Math.max(0, sceneCount - 1) : sceneCount;
 }
 
+function getAutoVideoResultCount(product: AutoPilotProduct): number {
+  if (isAutoMultiSceneVideo(product.settings.video)) {
+    return 1;
+  }
+  return outputCountForStep(product, 'video');
+}
+
 function getPlannedAutoTotals(
   products: AutoPilotProduct[],
   enabledSteps: AutoPilotStepType[],
@@ -240,7 +247,7 @@ function getPlannedAutoTotals(
     ? products.reduce((sum, product) => sum + getAutoMultiSceneImageCount(product, enabledSteps), 0) * plannedRounds
     : 0;
   const plannedVideos = enabledSteps.includes('video')
-    ? products.reduce((sum, product) => sum + outputCountForStep(product, 'video'), 0) * plannedRounds
+    ? products.reduce((sum, product) => sum + getAutoVideoResultCount(product), 0) * plannedRounds
     : 0;
 
   return {

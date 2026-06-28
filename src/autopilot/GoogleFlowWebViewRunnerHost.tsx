@@ -1870,6 +1870,31 @@ export default function GoogleFlowWebViewRunnerHost({
       if (!prompt.trim()) {
         throw new Error(`prompt ${label} ว่าง`);
       }
+      const runActionWithProductContext = async (
+        action: Parameters<FlowWebViewHandle['runAction']>[0],
+        args: Record<string, unknown>,
+        timeoutMs: number,
+        stage: string,
+        contextStep: AutoPilotStepType = step
+      ): Promise<Record<string, unknown>> => {
+        const previousContext = actionLogContextRef.current;
+        const context: FlowActionLogContext = {
+          payload,
+          product,
+          productIndex,
+          round,
+          step: contextStep,
+          stage,
+        };
+        actionLogContextRef.current = context;
+        try {
+          return await runActionOrThrow(handle, action, args, timeoutMs);
+        } finally {
+          if (actionLogContextRef.current === context) {
+            actionLogContextRef.current = previousContext;
+          }
+        }
+      };
 
       if (step === 'video' && isAutoMultiSceneVideo(product)) {
         const sceneCount = clampAutoSceneCount(product.settings.video.sceneCount);
@@ -1960,8 +1985,7 @@ export default function GoogleFlowWebViewRunnerHost({
             message: `รีเฟรชหน้า Flow ก่อนสร้างรูปฉาก ${sceneNumber}/${sceneCount}`,
           });
 
-          const config = (await runActionOrThrow(
-            handle,
+          const config = (await runActionWithProductContext(
             'configurePopper',
             {
               targetMode: 'image',
@@ -1969,7 +1993,9 @@ export default function GoogleFlowWebViewRunnerHost({
               outputCount: 1,
               imageModel,
             },
-            70_000
+            70_000,
+            'multi_scene_config_image',
+            'image'
           )) as { success?: boolean; error?: string };
           if (config.success === false) {
             throw new Error(`ตั้งค่า Flow รูปฉากไม่ครบ: ${config.error ?? 'unknown'}`);
@@ -2161,8 +2187,7 @@ export default function GoogleFlowWebViewRunnerHost({
             message: `รีเฟรชหน้า Flow ก่อนสร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
           });
 
-          const config = (await runActionOrThrow(
-            handle,
+          const config = (await runActionWithProductContext(
             'configurePopper',
             {
               targetMode: 'video',
@@ -2171,7 +2196,8 @@ export default function GoogleFlowWebViewRunnerHost({
               videoDuration,
               videoModel,
             },
-            70_000
+            70_000,
+            'multi_scene_config_video'
           )) as { success?: boolean; error?: string };
           if (config.success === false) {
             throw new Error(`ตั้งค่า Flow วิดีโอฉากไม่ครบ: ${config.error ?? 'unknown'}`);
@@ -2181,7 +2207,7 @@ export default function GoogleFlowWebViewRunnerHost({
             ? sceneImageDataUrls[0]
             : sceneImageDataUrls[sceneIndex];
           const attachSceneReference = async (): Promise<boolean> => {
-            if (useSameAngle && sceneReferenceDataUrl && sceneNumber === 1) {
+            if (useSameAngle && sceneReferenceDataUrl) {
               emit({
                 event: 'progress',
                 runId: payload.runId,
@@ -2194,7 +2220,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalRounds: payload.settings.totalRounds,
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
-                message: `เลือกรูปบนสุดจาก Flow เป็น reference วิดีโอฉาก ${sceneNumber}`,
+                message: `เลือกรูปล่าสุดจาก Flow เป็น reference วิดีโอฉาก ${sceneNumber}`,
               });
               try {
                 await selectRecentImageOrThrow({
@@ -2221,7 +2247,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   currentProduct: productIndex + 1,
                   totalProducts: payload.products.length,
-                  message: `เลือกรูปบนสุดไม่สำเร็จ จะอัปโหลดรูปแรกแทน: ${fallbackMessage}`,
+                  message: `เลือกรูปล่าสุดไม่สำเร็จ จะอัปโหลดรูปแรกแทน: ${fallbackMessage}`,
                 });
                 await uploadReferenceImageOrThrow({
                   handle,
@@ -2364,8 +2390,7 @@ export default function GoogleFlowWebViewRunnerHost({
               message: `รีเฟรชหน้า Flow ก่อน retry วิดีโอฉาก ${sceneNumber}/${sceneCount} แบบไม่มีเสียง`,
             });
 
-            const retryConfig = (await runActionOrThrow(
-              handle,
+            const retryConfig = (await runActionWithProductContext(
               'configurePopper',
               {
                 targetMode: 'video',
@@ -2374,7 +2399,8 @@ export default function GoogleFlowWebViewRunnerHost({
                 videoDuration,
                 videoModel,
               },
-              70_000
+              70_000,
+              'voiceover_video_retry_config'
             )) as { success?: boolean; error?: string };
             if (retryConfig.success === false) {
               throw new Error(`ตั้งค่า Flow วิดีโอฉากก่อน retry ไม่ครบ: ${retryConfig.error ?? 'unknown'}`);
@@ -2629,7 +2655,12 @@ export default function GoogleFlowWebViewRunnerHost({
                 videoDuration: videoDurationForProduct(product, payload.settings),
                 videoModel: videoModelForProduct(product, payload.settings),
               };
-        const config = (await runActionOrThrow(handle, 'configurePopper', configArgs, 70_000)) as {
+        const config = (await runActionWithProductContext(
+          'configurePopper',
+          configArgs,
+          70_000,
+          attempt === 1 ? 'configure_flow' : 'single_step_retry_config'
+        )) as {
           success?: boolean;
           error?: string;
         };
@@ -3379,6 +3410,11 @@ function formatOverlayStep(step: AutoPilotStepType | null, stage: string | null)
   if (stage === 'waiting_start') return `${stepText} · รอเริ่ม`;
   if (stage === 'generated') return `${stepText} · ได้ไฟล์`;
   if (stage === 'downloading_result') return `${stepText} · บันทึกไฟล์`;
+  if (stage === 'configure_flow' || stage === 'flow_configurePopper') return `${stepText} · ตั้งค่า Flow`;
+  if (stage === 'single_step_retry_config') return `${stepText} · ตั้งค่า Retry`;
+  if (stage === 'multi_scene_config_image') return 'รูปภาพ · ตั้งค่ารูปฉาก';
+  if (stage === 'multi_scene_config_video') return `${stepText} · ตั้งค่าวิดีโอฉาก`;
+  if (stage === 'voiceover_video_retry_config') return `${stepText} · ตั้งค่า Retry`;
   if (stage === 'step_started') return stepText;
   return `${stepText} · ${stage.replace(/^flow_/, '')}`;
 }

@@ -477,6 +477,17 @@ function getRunStageLabel(stage: string | null): string {
     case 'multi_scene_refresh_video':
     case 'voiceover_video_retry_refresh':
       return 'รีเฟรช Flow';
+    case 'configure_flow':
+    case 'flow_configurePopper':
+      return 'ตั้งค่า Flow';
+    case 'single_step_retry_config':
+      return 'ตั้งค่า Retry';
+    case 'multi_scene_config_image':
+      return 'ตั้งค่ารูปฉาก';
+    case 'multi_scene_config_video':
+      return 'ตั้งค่าวิดีโอฉาก';
+    case 'voiceover_video_retry_config':
+      return 'ตั้งค่า Retry ภาพล้วน';
     case 'attach_reference':
     case 'multi_scene_attach_reference':
     case 'multi_scene_attach_previous_image':
