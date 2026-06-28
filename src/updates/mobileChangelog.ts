@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.23',
+    date: '2026-06-29',
+    highlight: 'ปรับวิดีโอหลายฉากให้คุม reference ได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แนบรูปสินค้าเป็น reference ทุกครั้งที่สร้างรูปฉากในวิดีโอหลายฉาก' },
+      { type: 'fixed', text: 'เปลี่ยนกลับเป็นขยายฉากอัตโนมัติเมื่อเลือกจำนวนฉากเป็น 1 ฉาก' },
+    ],
+  },
+  {
     version: '0.1.22',
     date: '2026-06-29',
     highlight: 'ปรับวิดีโอหลายฉากให้ใช้สไตล์ภาพได้ครบขึ้น',
@@ -249,4 +258,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.22';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.23';
