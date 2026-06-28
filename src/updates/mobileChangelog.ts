@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.19',
+    date: '2026-06-29',
+    highlight: 'ปรับการตั้งค่าวิดีโอใน Google Flow ให้เลือก reference ได้ถูกต้องขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับการเลือกช่องอ้างอิงวิดีโอให้ตรงกับ Google Flow รุ่นล่าสุด' },
+      { type: 'improved', text: 'ลดโอกาสเลือกโหมดอ้างอิงผิดตอนสร้างวิดีโอจากรูปที่สร้างไว้' },
+    ],
+  },
+  {
     version: '0.1.18',
     date: '2026-06-29',
     highlight: 'ปรับหน้าต่าง Google Flow ให้ติดตามงาน Auto Workflow ได้ละเอียดขึ้น',
@@ -212,4 +221,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.18';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.19';
