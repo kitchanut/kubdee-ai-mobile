@@ -1,5 +1,5 @@
 export interface MobileChangelogItem {
-  type: 'added' | 'changed' | 'fixed';
+  type: 'feature' | 'added' | 'fixed' | 'improved' | 'changed' | 'removed';
   text: string;
 }
 
@@ -11,6 +11,16 @@ export interface MobileChangelogRelease {
 }
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
+  {
+    version: '0.1.3',
+    date: '2026-06-28',
+    highlight: 'ปรับหน้าตา Changelog ให้ใกล้เคียง Desktop มากขึ้น',
+    changes: [
+      { type: 'changed', text: 'เปลี่ยน Changelog จาก bottom sheet เป็น modal กลางจอแบบ Desktop' },
+      { type: 'changed', text: 'จัดรายการอัปเดตเป็น timeline พร้อมจุดเวอร์ชันและเส้นลำดับแบบ Desktop' },
+      { type: 'changed', text: 'จัดกลุ่มรายการเป็น FEATURES, IMPROVEMENTS และ BUG FIXES เหมือน Desktop' },
+    ],
+  },
   {
     version: '0.1.2',
     date: '2026-06-28',
@@ -46,4 +56,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.2';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.3';
