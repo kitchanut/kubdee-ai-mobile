@@ -1,8 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { colorScheme as nativeWindColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, useColorScheme, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Linking, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -11,6 +11,7 @@ import {
 } from '@/activity/automationActivityLogStore';
 import GoogleFlowWebViewRunnerHost from '@/autopilot/GoogleFlowWebViewRunnerHost';
 import { useAuth } from '@/auth/AuthContext';
+import MobileChangelogModal from '@/components/MobileChangelogModal';
 import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
@@ -30,10 +31,20 @@ import ProfileScreen from '@/screens/ProfileScreen';
 import ShopeeScreen from '@/screens/ShopeeScreen';
 import { darkTheme, lightTheme } from '@/theme/tokens';
 import type { TabId } from '@/types/navigation';
+import { CURRENT_CHANGELOG_VERSION } from '@/updates/mobileChangelog';
+import {
+  checkMobileUpdate,
+  downloadAndOpenMobileUpdate,
+  getCurrentMobileVersionLabel,
+  getReleaseNotes,
+  type MobileRelease,
+  type MobileUpdateResult,
+} from '@/updates/mobileUpdate';
 
 type ThemeMode = 'dark' | 'light';
 
 const SELECTED_PROFILE_STORAGE_KEY = 'kubdee_ai_mobile_selected_profile_id';
+const SEEN_CHANGELOG_STORAGE_KEY = 'kubdee_ai_mobile_seen_changelog_version';
 
 function uniqueProductIds(productIds: string[]): string[] {
   return Array.from(new Set(productIds.map((productId) => productId.trim()).filter(Boolean)));
@@ -68,8 +79,13 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const [autoPilotSelectionRequest, setAutoPilotSelectionRequest] =
     useState<AutoPilotProductSelectionRequest | null>(null);
   const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
+  const [isCheckingMobileUpdate, setIsCheckingMobileUpdate] = useState(false);
+  const [changelogVisible, setChangelogVisible] = useState(false);
+  const [hasCheckedChangelog, setHasCheckedChangelog] = useState(false);
+  const promptedMobileUpdateIdRef = useRef('');
   const auth = useAuth();
   const { importShopeeProducts } = useLibrary();
+  const mobileVersionLabel = useMemo(() => getCurrentMobileVersionLabel(), []);
 
   const appendRecoveredShopeeLog = useCallback((message: string, ts = Date.now()): void => {
     pushAutomationActivityLog('shopee-import', message, ts);
@@ -258,6 +274,160 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     );
   }, []);
 
+  const openMobileChangelog = useCallback((): void => {
+    setChangelogVisible(true);
+  }, []);
+
+  const closeMobileChangelog = useCallback((): void => {
+    setChangelogVisible(false);
+    void AsyncStorage.setItem(SEEN_CHANGELOG_STORAGE_KEY, CURRENT_CHANGELOG_VERSION);
+  }, []);
+
+  useEffect(() => {
+    if (hasCheckedChangelog || auth.isLoading || !auth.user || !auth.token) {
+      return;
+    }
+
+    let active = true;
+
+    AsyncStorage.getItem(SEEN_CHANGELOG_STORAGE_KEY)
+      .then((seenVersion) => {
+        if (active && seenVersion !== CURRENT_CHANGELOG_VERSION) {
+          setChangelogVisible(true);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setChangelogVisible(true);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setHasCheckedChangelog(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [auth.isLoading, auth.token, auth.user, hasCheckedChangelog]);
+
+  const startMobileUpdateDownload = useCallback(
+    async (release: MobileRelease): Promise<void> => {
+      if (!auth.token) {
+        Alert.alert('ยังไม่ได้เข้าสู่ระบบ', 'กรุณาเข้าสู่ระบบก่อนดาวน์โหลดอัปเดต');
+        return;
+      }
+
+      try {
+        await downloadAndOpenMobileUpdate(auth.token, release);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'ดาวน์โหลดอัปเดตไม่สำเร็จ';
+        Alert.alert('อัปเดตไม่สำเร็จ', message);
+      }
+    },
+    [auth.token]
+  );
+
+  const promptMobileUpdate = useCallback(
+    (result: MobileUpdateResult): void => {
+      const latest = result.latest;
+      if (!latest) {
+        return;
+      }
+
+      const releaseNotes = getReleaseNotes(latest);
+      const lines = [
+        `เครื่องนี้ ${getCurrentMobileVersionLabel()}`,
+        `เวอร์ชันล่าสุด v${latest.version}`,
+        releaseNotes.length > 0 ? `\nมีอะไรใหม่:\n${releaseNotes.map((note) => `- ${note}`).join('\n')}` : '',
+        '\nหลังดาวน์โหลด ระบบจะพาไปขั้นตอนติดตั้งเวอร์ชันใหม่',
+      ].filter(Boolean);
+
+      Alert.alert(
+        result.forceUpdate ? 'ต้องอัปเดตแอป' : 'มีอัปเดตใหม่',
+        lines.join('\n'),
+        result.forceUpdate
+          ? [
+              {
+                text: 'ดาวน์โหลดอัปเดต',
+                onPress: () => {
+                  void startMobileUpdateDownload(latest);
+                },
+              },
+            ]
+          : [
+              { text: 'ภายหลัง', style: 'cancel' },
+              {
+                text: 'ดาวน์โหลด',
+                onPress: () => {
+                  void startMobileUpdateDownload(latest);
+                },
+              },
+            ],
+        { cancelable: !result.forceUpdate }
+      );
+    },
+    [startMobileUpdateDownload]
+  );
+
+  const checkForMobileUpdate = useCallback(
+    async (manual = false): Promise<void> => {
+      if (!auth.token) {
+        if (manual) {
+          Alert.alert('ยังไม่ได้เข้าสู่ระบบ', 'กรุณาเข้าสู่ระบบก่อนเช็คอัปเดต');
+        }
+        return;
+      }
+
+      setIsCheckingMobileUpdate(true);
+      try {
+        const result = await checkMobileUpdate(auth.token);
+
+        if (!result.latest) {
+          if (manual) {
+            Alert.alert('ยังไม่มีไฟล์อัปเดต', 'ยังไม่พบ release ของ Kubdee AI Mobile บน kubdee.ai');
+          }
+          return;
+        }
+
+        if (!result.hasUpdate && !result.forceUpdate) {
+          if (manual) {
+            Alert.alert('เวอร์ชันล่าสุดแล้ว', `เครื่องนี้ใช้ ${getCurrentMobileVersionLabel()} อยู่`);
+          }
+          return;
+        }
+
+        if (!manual && promptedMobileUpdateIdRef.current === result.latest.id) {
+          return;
+        }
+
+        promptedMobileUpdateIdRef.current = result.latest.id;
+        promptMobileUpdate(result);
+      } catch (error) {
+        if (manual) {
+          const message = error instanceof Error ? error.message : 'เช็คอัปเดตไม่สำเร็จ';
+          Alert.alert('เช็คอัปเดตไม่สำเร็จ', message);
+        }
+      } finally {
+        setIsCheckingMobileUpdate(false);
+      }
+    },
+    [auth.token, promptMobileUpdate]
+  );
+
+  useEffect(() => {
+    if (!auth.token || !auth.user || !auth.isPlanValid || auth.isLoading) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void checkForMobileUpdate(false);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [auth.isLoading, auth.isPlanValid, auth.token, auth.user, checkForMobileUpdate]);
+
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
       case 'pipeline':
@@ -342,6 +512,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
           ) : (
             <>
               <MobileHeader
+                isCheckingUpdate={isCheckingMobileUpdate}
                 isSyncingProfiles={auth.isSyncingProfiles}
                 profileDataError={auth.profileDataError}
                 profileGroups={auth.syncedProfileGroups}
@@ -349,7 +520,12 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 runningCount={0}
                 selectedProfileId={selectedProfileId}
                 theme={theme}
+                versionLabel={mobileVersionLabel}
+                onChangelogPress={openMobileChangelog}
                 onLogsPress={() => setActiveTab('logs')}
+                onCheckUpdate={() => {
+                  void checkForMobileUpdate(true);
+                }}
                 onProfilePress={() => setActiveTab('profile')}
                 onSelectedProfileChange={setSelectedProfileId}
                 onThemeModeToggle={toggleThemeMode}
@@ -361,6 +537,12 @@ export default function KubdeeMobileApp(): React.JSX.Element {
           )}
         </View>
       </SafeAreaView>
+      <MobileChangelogModal
+        theme={theme}
+        versionLabel={mobileVersionLabel}
+        visible={changelogVisible}
+        onClose={closeMobileChangelog}
+      />
     </View>
   );
 }

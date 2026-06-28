@@ -1,9 +1,11 @@
 import {
   ChartNoAxesColumn,
   ChevronDown,
+  FileText,
   Globe2,
   LogOut,
   Moon,
+  RefreshCw,
   Square,
   Sun,
   UserCircle,
@@ -12,8 +14,6 @@ import {
 import { useMemo, useState } from 'react';
 import { Image, Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
-
-import packageJson from '../../package.json';
 
 import { useAuth } from '@/auth/AuthContext';
 import { BACKEND_URL } from '@/auth/constants';
@@ -34,8 +34,12 @@ interface MobileHeaderProps {
   profiles: SyncedProfile[];
   profileGroups: SyncedProfileGroup[];
   selectedProfileId: string;
+  versionLabel: string;
+  isCheckingUpdate: boolean;
   isSyncingProfiles: boolean;
   profileDataError: string | null;
+  onCheckUpdate: () => void;
+  onChangelogPress: () => void;
   onLogsPress: () => void;
   onProfilePress: () => void;
   onSelectedProfileChange: (profileId: string) => void;
@@ -48,8 +52,12 @@ export default function MobileHeader({
   profiles,
   profileGroups,
   selectedProfileId,
+  versionLabel,
+  isCheckingUpdate,
   isSyncingProfiles,
   profileDataError,
+  onCheckUpdate,
+  onChangelogPress,
   onLogsPress,
   onProfilePress,
   onSelectedProfileChange,
@@ -117,6 +125,16 @@ export default function MobileHeader({
   const handleOpenLogs = (): void => {
     closeProfileMenu();
     onLogsPress();
+  };
+
+  const handleCheckUpdate = (): void => {
+    closeProfileMenu();
+    onCheckUpdate();
+  };
+
+  const handleOpenChangelog = (): void => {
+    closeProfileMenu();
+    onChangelogPress();
   };
 
   const handleOpenProfile = (): void => {
@@ -361,7 +379,7 @@ export default function MobileHeader({
 
                 <View className="flex-row items-center justify-between gap-3">
                   <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">Version</Text>
-                  <Text className="flex-shrink text-kd-micro font-semibold text-kd-text">v{packageJson.version}</Text>
+                  <Text className="flex-shrink text-kd-micro font-semibold text-kd-text">{versionLabel}</Text>
                 </View>
 
                 <View className="mt-0.5 gap-1.5 border-t border-gray-100 pt-2 dark:border-kd-border">
@@ -412,6 +430,13 @@ export default function MobileHeader({
             <View className="mx-1 my-0.5 h-px bg-gray-100 dark:bg-kd-border" />
 
             <PopoverMenuButton icon={Users} label="จัดการโปรไฟล์" theme={theme} onPress={handleOpenProfile} />
+            <PopoverMenuButton icon={FileText} label="เวอร์ชัน / Changelog" theme={theme} onPress={handleOpenChangelog} />
+            <PopoverMenuButton
+              icon={RefreshCw}
+              label={isCheckingUpdate ? 'กำลังเช็คอัปเดต' : 'เช็คอัปเดต'}
+              theme={theme}
+              onPress={handleCheckUpdate}
+            />
             <PopoverMenuButton icon={ChartNoAxesColumn} label="Logs" theme={theme} onPress={handleOpenLogs} />
             <PopoverMenuButton icon={Globe2} label="ไปเว็บไซต์" theme={theme} onPress={handleOpenWebsite} />
             <PopoverMenuButton danger icon={LogOut} label="ออกจากระบบ" theme={theme} onPress={handleLogout} />

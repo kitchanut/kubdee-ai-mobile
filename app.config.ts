@@ -27,6 +27,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.WRITE_EXTERNAL_STORAGE',
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.VIBRATE',
+      'android.permission.REQUEST_INSTALL_PACKAGES',
     ],
     adaptiveIcon: {
       backgroundColor: '#111827',
