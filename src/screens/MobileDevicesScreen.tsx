@@ -201,6 +201,8 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
               logs={importRun.logs}
               running={importRun.running}
               stopping={importStopping}
+              startedAt={importRun.startedAt}
+              updatedAt={importRun.updatedAt}
               runningText="กำลังดึงสินค้า Shopee"
               idleText="รอบล่าสุดเสร็จแล้ว"
               emptyText="ยังไม่มี log ของ Shopee import"
@@ -221,6 +223,8 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
               logs={postRun.logs}
               running={postRun.running}
               stopping={postStopping}
+              startedAt={postRun.startedAt}
+              updatedAt={postRun.updatedAt}
               runningText="กำลังโพสต์ Shopee"
               idleText="รอบล่าสุดเสร็จแล้ว"
               emptyText="ยังไม่มี log ของ Shopee post"

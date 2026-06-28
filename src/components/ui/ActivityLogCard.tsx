@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from 'react-native';
 import { ChevronDown, ChevronUp, Square, Trash2 } from 'lucide-react-native';
@@ -40,6 +40,8 @@ interface ActivityLogCardProps<TLog extends ActivityLogEntry = ActivityLogEntry>
   stopLabel?: string;
   stoppingLabel?: string;
   clearLabel?: string;
+  startedAt?: number | null;
+  updatedAt?: number | null;
   stats?: ActivityLogStat[];
   onStop?: () => void;
   onClear?: () => void;
@@ -61,21 +63,32 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
   stopLabel = 'หยุด',
   stoppingLabel = 'กำลังหยุด',
   clearLabel = 'ล้างประวัติ',
+  startedAt = null,
+  updatedAt = null,
   stats = [],
   onStop,
   onClear,
   formatTimestamp = formatLogTime,
 }: ActivityLogCardProps<TLog>): React.JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(initiallyExpanded);
+  const now = useRunningNow(running);
   const visibleLogs = useMemo(() => logs.slice(-maxVisible), [logs, maxVisible]);
   const latestLog = logs[logs.length - 1] ?? null;
+  const runStartedAt = startedAt ?? logs[0]?.ts ?? null;
+  const runUpdatedAt = updatedAt ?? latestLog?.ts ?? null;
+  const elapsedTarget = running ? now : runUpdatedAt;
+  const elapsedText =
+    runStartedAt != null && elapsedTarget != null
+      ? `ใช้เวลา ${formatLogDuration(elapsedTarget - runStartedAt)}`
+      : '';
   const latestTimeText = latestLog ? `ล่าสุด ${formatTimestamp(latestLog.ts)}` : '';
   const statusText = running
-    ? [runningText, latestTimeText].filter(Boolean).join(' · ')
+    ? [runningText, elapsedText, latestTimeText].filter(Boolean).join(' · ')
     : latestLog
-      ? `${latestTimeText} · ${logs.length} รายการ`
+      ? [latestTimeText, elapsedText, `${logs.length} รายการ`].filter(Boolean).join(' · ')
       : idleText;
   const Icon = icon;
+  const visibleStartIndex = Math.max(0, logs.length - visibleLogs.length);
 
   return (
     <>
@@ -197,16 +210,28 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
               showsVerticalScrollIndicator={false}
             >
               {visibleLogs.length > 0 ? (
-                visibleLogs.map((entry, index) => (
-                  <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
-                    <Text className="w-[48px] shrink-0 text-[10px] text-kd-text-muted">
-                      {formatTimestamp(entry.ts)}
-                    </Text>
-                    <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
-                      {entry.message}
-                    </Text>
-                  </View>
-                ))
+                visibleLogs.map((entry, index) => {
+                  const absoluteIndex = visibleStartIndex + index;
+                  const previousEntry = absoluteIndex > 0 ? logs[absoluteIndex - 1] : null;
+                  const deltaMs = previousEntry ? entry.ts - previousEntry.ts : 0;
+                  const sinceStartMs = runStartedAt != null ? entry.ts - runStartedAt : deltaMs;
+
+                  return (
+                    <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
+                      <View className="w-[78px] shrink-0">
+                        <Text className="text-[10px] font-bold text-kd-text-muted">
+                          {formatTimestamp(entry.ts)}
+                        </Text>
+                        <Text className="mt-0.5 text-[9px] leading-3 text-kd-text-muted" numberOfLines={1}>
+                          +{formatLogDuration(deltaMs)} · {formatLogDuration(sinceStartMs)}
+                        </Text>
+                      </View>
+                      <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
+                        {entry.message}
+                      </Text>
+                    </View>
+                  );
+                })
               ) : (
                 <Text className="text-kd-caption text-kd-text-subtle">{emptyText}</Text>
               )}
@@ -260,4 +285,35 @@ function formatLogTime(timestamp: number): string {
     minute: '2-digit',
     second: '2-digit',
   }).format(new Date(timestamp));
+}
+
+function formatLogDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${seconds}s`;
+}
+
+function useRunningNow(running: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+
+    setNow(Date.now());
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [running]);
+
+  return now;
 }

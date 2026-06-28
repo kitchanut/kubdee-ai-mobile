@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.26',
+    date: '2026-06-29',
+    highlight: 'ปรับ Activity Log ให้ตามเวลาทำงานได้ชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'แสดงเวลาที่ใช้และช่วงเวลาระหว่างแต่ละ log ในหน้ารายละเอียด activity' },
+      { type: 'improved', text: 'อัปเดตสถานะกำลังทำงานให้เห็นเวลารวมแบบต่อเนื่อง' },
+    ],
+  },
+  {
     version: '0.1.25',
     date: '2026-06-29',
     highlight: 'อัปเดตเวอร์ชันสำหรับระบบอัปเดตอัตโนมัติ',
@@ -276,4 +285,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.25';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.26';
