@@ -256,6 +256,16 @@ function getPlannedAutoTotals(
   };
 }
 
+function incrementBounded(current: number, planned: number, delta = 1): number {
+  const next = current + Math.max(1, delta);
+  return planned > 0 ? Math.min(planned, next) : next;
+}
+
+function incrementFailureBounded(currentFailed: number, generated: number, planned: number, delta = 1): number {
+  const next = currentFailed + Math.max(1, delta);
+  return planned > 0 ? Math.min(Math.max(0, planned - generated), next) : next;
+}
+
 export function useAutoPilotController({
   initialSelectedProductIds = [],
   profileLocalId,
@@ -404,7 +414,7 @@ export function useAutoPilotController({
 
       if (entry.event === 'progress') {
         const failedStage = entry.stage === 'failed' || entry.stage === 'download_missing';
-        const generatedStage = entry.stage === 'generated';
+        const failedOutputs = Math.max(1, Math.floor(Number(entry.failedOutputs ?? 1) || 1));
         const shouldClearStep =
           entry.stage === 'started' ||
           entry.stage === 'round_started' ||
@@ -425,20 +435,22 @@ export function useAutoPilotController({
             currentProductName: entry.productName ?? current.progress.currentProductName,
             failedImages:
               failedStage && entry.step === 'image'
-                ? current.progress.failedImages + 1
+                ? incrementFailureBounded(
+                    current.progress.failedImages,
+                    current.progress.generatedImages,
+                    current.progress.plannedImages,
+                    failedOutputs
+                  )
                 : current.progress.failedImages,
             failedVideos:
               failedStage && entry.step === 'video'
-                ? current.progress.failedVideos + 1
+                ? incrementFailureBounded(
+                    current.progress.failedVideos,
+                    current.progress.generatedVideos,
+                    current.progress.plannedVideos,
+                    failedOutputs
+                  )
                 : current.progress.failedVideos,
-            generatedImages:
-              generatedStage && entry.step === 'image'
-                ? current.progress.generatedImages + 1
-                : current.progress.generatedImages,
-            generatedVideos:
-              generatedStage && entry.step === 'video'
-                ? current.progress.generatedVideos + 1
-                : current.progress.generatedVideos,
           },
         }));
       }
@@ -481,9 +493,13 @@ export function useAutoPilotController({
             currentStage: entry.stage ?? 'generated',
             currentProductName: entry.productName || product?.name || current.progress.currentProductName,
             generatedImages:
-              assetStep === 'image' ? current.progress.generatedImages + 1 : current.progress.generatedImages,
+              assetStep === 'image'
+                ? incrementBounded(current.progress.generatedImages, current.progress.plannedImages)
+                : current.progress.generatedImages,
             generatedVideos:
-              assetStep === 'video' ? current.progress.generatedVideos + 1 : current.progress.generatedVideos,
+              assetStep === 'video'
+                ? incrementBounded(current.progress.generatedVideos, current.progress.plannedVideos)
+                : current.progress.generatedVideos,
           },
         }));
       } else if (entry.event === 'asset' && entry.step) {

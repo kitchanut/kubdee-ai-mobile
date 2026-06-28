@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.16',
+    date: '2026-06-29',
+    highlight: 'ปรับ Auto Workflow ให้ retry และนับผลลัพธ์ได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'รอผลรูปและวิดีโอให้ครบตามจำนวนที่ตั้งไว้ก่อนสรุปงาน' },
+      { type: 'improved', text: 'ปรับการนับผลสำเร็จและล้มเหลวใน Auto Workflow ให้ตรงกับจำนวนที่วางแผนไว้' },
+      { type: 'improved', text: 'เพิ่มการลองใช้ prompt จากงานล่าสุดก่อน retry แบบทำ Flow ใหม่' },
+    ],
+  },
+  {
     version: '0.1.15',
     date: '2026-06-29',
     highlight: 'ปรับสถานะ Auto Workflow ระหว่างทำงานบน Google Flow ให้ชัดขึ้น',
@@ -182,4 +192,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.15';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.16';

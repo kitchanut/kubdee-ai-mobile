@@ -353,8 +353,14 @@ function formatRoundProgress(currentRound: number, totalRounds: number): string 
 }
 
 function formatAssetProgress(generated: number, failed: number, planned: number): string {
-  const completed = failed > 0 ? `${generated}·${failed}` : `${generated}`;
-  return `${completed}/${Math.max(0, planned)}`;
+  const safePlanned = Math.max(0, planned);
+  const safeGenerated = safePlanned > 0 ? Math.min(Math.max(0, generated), safePlanned) : Math.max(0, generated);
+  const safeFailed =
+    safePlanned > 0
+      ? Math.min(Math.max(0, failed), Math.max(0, safePlanned - safeGenerated))
+      : Math.max(0, failed);
+  const completed = safeFailed > 0 ? `${safeGenerated}·${safeFailed}` : `${safeGenerated}`;
+  return `${completed}/${safePlanned}`;
 }
 
 function getFirstLog(runState: AutoPilotRunState): AutoPilotRunState['logs'][number] | null {

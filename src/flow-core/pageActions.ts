@@ -30,6 +30,7 @@ export type FlowActionName =
   | 'ensureVideoReferenceAttached'
   | 'fillPrompt'
   | 'submit'
+  | 'reusePromptAndSubmit'
   | 'videoSnapshot'
   | 'videoResults'
   | 'downloadImages'
@@ -735,6 +736,148 @@ const SUBMIT_BODY = `
   }
   setStatus('กดปุ่มสร้างแล้ว (' + method + ')', 'success');
   return { method: method, clearedPrompt: clearedPrompt, lenBefore: lenBefore, lenAfter: lenAfter };
+`;
+
+const REUSE_PROMPT_AND_SUBMIT_BODY = `
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
+  function waitLocal(ms){ return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
+  function isVisible(el){
+    if (!el || !el.isConnected) return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) return false;
+    var style = window.getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || '1') > 0;
+  }
+  function isDisabled(btn){
+    return btn.disabled ||
+      btn.getAttribute('aria-disabled') === 'true' ||
+      btn.hasAttribute('data-disabled') ||
+      btn.getAttribute('data-state') === 'disabled';
+  }
+  function clickReactFirst(btn){
+    if (!btn) return { ok: false, method: 'none' };
+    var rect = btn.getBoundingClientRect();
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top + rect.height / 2;
+    var fakeEvent = {
+      type: 'click', target: btn, currentTarget: btn,
+      nativeEvent: { type: 'click', isTrusted: true, button: 0, buttons: 1, clientX: cx, clientY: cy },
+      preventDefault: function(){}, stopPropagation: function(){}, stopImmediatePropagation: function(){},
+      isDefaultPrevented: function(){ return false; }, isPropagationStopped: function(){ return false; },
+      persist: function(){}, bubbles: true, cancelable: true, button: 0, buttons: 1,
+      clientX: cx, clientY: cy, isTrusted: true
+    };
+    var propsKey = Object.keys(btn).find(function(k){ return k.indexOf('__reactProps$') === 0; });
+    if (propsKey) {
+      var props = btn[propsKey];
+      if (props && typeof props.onClick === 'function') {
+        props.onClick(fakeEvent);
+        return { ok: true, method: 'reactProps.onClick' };
+      }
+    }
+    var fiberKey = Object.keys(btn).find(function(k){
+      return k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0;
+    });
+    if (fiberKey) {
+      var fiber = btn[fiberKey];
+      for (var i = 0; i < 30 && fiber; i++) {
+        var p = fiber.memoizedProps || fiber.pendingProps;
+        if (p && typeof p.onClick === 'function') {
+          p.onClick(fakeEvent);
+          return { ok: true, method: 'fiber.onClick@' + i };
+        }
+        fiber = fiber.return;
+      }
+    }
+    btn.click();
+    return { ok: true, method: 'native.click' };
+  }
+  function findReuseButton(){
+    var itemList = document.querySelector('[data-testid="virtuoso-item-list"]');
+    var scopes = [];
+    if (itemList) {
+      for (var idx = 0; idx < 6; idx++) {
+        var row = itemList.querySelector('[data-index="' + idx + '"]');
+        if (row) scopes.push(row);
+      }
+    }
+    for (var s = 0; s < scopes.length; s++) {
+      var buttons = Array.prototype.slice.call(scopes[s].querySelectorAll('button, [role="button"]'));
+      for (var b = 0; b < buttons.length; b++) {
+        var button = buttons[b];
+        if (!isVisible(button) || isDisabled(button) || button.closest('[role="menu"]') || button.closest('nav')) continue;
+        var textParts = [
+          button.textContent || '',
+          button.getAttribute('aria-label') || '',
+          button.getAttribute('title') || '',
+        ].join(' ').toLowerCase();
+        var icons = Array.prototype.slice.call(button.querySelectorAll('i, span'));
+        var iconHit = icons.some(function(icon){
+          var iconText = (icon.textContent || '').trim().toLowerCase();
+          return iconText === 'undo' || iconText === 'redo' || iconText === 'wrap_text';
+        });
+        var textHit =
+          textParts.indexOf('reuse prompt') !== -1 ||
+          textParts.indexOf('reuse') !== -1 ||
+          textParts.indexOf('ใช้พรอมต์ซ้ำ') !== -1 ||
+          textParts.indexOf('ใช้ prompt ซ้ำ') !== -1;
+        if (iconHit || textHit) return button;
+      }
+    }
+    return null;
+  }
+  function findSubmitButton(){
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button'));
+    var candidates = [];
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      if (!isVisible(btn) || isDisabled(btn) || btn.closest('[role="menu"]') || btn.closest('nav')) continue;
+      var icon = btn.querySelector('i');
+      var iconText = icon ? (icon.textContent || '').trim().toLowerCase() : '';
+      var buttonText = (btn.textContent || '').trim().toLowerCase();
+      if (iconText.indexOf(${SUBMIT_ICON}) !== -1 || buttonText.indexOf(${SUBMIT_ICON}) !== -1) {
+        candidates.push(btn);
+      }
+    }
+    candidates.sort(function(a, b){
+      var ar = a.getBoundingClientRect();
+      var br = b.getBoundingClientRect();
+      return (br.bottom - ar.bottom) || (br.right - ar.right);
+    });
+    return candidates[0] || null;
+  }
+
+  setStatus('Retry 1: กำลังหาปุ่ม Reuse Prompt จากการ์ดล่าสุด...', 'info');
+  var reuseButton = findReuseButton();
+  if (!reuseButton) {
+    throw new Error('ไม่พบปุ่ม Reuse Prompt บนการ์ดล่าสุด');
+  }
+  reuseButton.scrollIntoView({ behavior: 'instant', block: 'center' });
+  var reuseClick = clickReactFirst(reuseButton);
+  setStatus('กด Reuse Prompt แล้ว (' + reuseClick.method + ')', 'success');
+  await waitLocal(3000);
+
+  var submitButton = null;
+  for (var attempt = 0; attempt < 30; attempt++) {
+    submitButton = findSubmitButton();
+    if (submitButton) break;
+    if (attempt === 0 || attempt === 10 || attempt === 20) {
+      setStatus('Reuse Prompt แล้ว กำลังรอปุ่มสร้างพร้อมกด...', 'info');
+    }
+    await waitLocal(500);
+  }
+  if (!submitButton) {
+    throw new Error('Reuse Prompt แล้ว แต่ไม่พบปุ่มสร้างที่พร้อมกด');
+  }
+  submitButton.scrollIntoView({ behavior: 'instant', block: 'center' });
+  var submitClick = clickReactFirst(submitButton);
+  setStatus('ส่ง Reuse Prompt แล้ว (' + submitClick.method + ')', 'success');
+  await waitLocal(2000);
+  return { success: true, reuseMethod: reuseClick.method, submitMethod: submitClick.method };
 `;
 
 const IMAGE_DIALOG_HELPERS_BODY = `
@@ -1787,6 +1930,7 @@ const ACTION_BODIES: Record<FlowActionName, string> = {
   ensureVideoReferenceAttached: ENSURE_VIDEO_REFERENCE_ATTACHED_BODY,
   fillPrompt: FILL_PROMPT_BODY,
   submit: SUBMIT_BODY,
+  reusePromptAndSubmit: REUSE_PROMPT_AND_SUBMIT_BODY,
   videoSnapshot: VIDEO_SNAPSHOT_BODY,
   videoResults: VIDEO_RESULTS_BODY,
   downloadImages: DOWNLOAD_IMAGES_BODY,

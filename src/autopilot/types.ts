@@ -233,6 +233,7 @@ export interface GoogleFlowRunnerLogEntry {
   currentProduct?: number;
   totalProducts?: number;
   flowStats?: AutoPilotFlowStats;
+  failedOutputs?: number;
   fileUri?: string;
   fileName?: string;
   mimeType?: string;

@@ -1400,7 +1400,11 @@ export default function GoogleFlowWebViewRunnerHost({
         const videos = result.videos ?? [];
         const imageCount = result.images ?? 0;
         const progress = result.progress;
-        const hasOutput = step === 'video' ? videos.length > 0 : imageCount > 0;
+        const expectedCount = Math.max(1, count);
+        const readyCount = step === 'video' ? videos.length : imageCount;
+        const resolvedCount = readyCount + failed;
+        const hasOutput = readyCount > 0;
+        const hasCompleteResolution = resolvedCount >= expectedCount;
         const isActive = generating > 0 || queued > 0 || progress != null;
         const elapsedMs = Date.now() - startedAt;
         if (progress != null) {
@@ -1425,14 +1429,14 @@ export default function GoogleFlowWebViewRunnerHost({
           flowStats: {
             generating,
             queued,
-            success,
+            success: Math.max(success, readyCount),
             failed,
             tilesFound,
             progress: progress ?? null,
           },
-          message: `รอผล${stepLabel(step)}: gen ${generating} queue ${queued} ok ${success} fail ${failed}${
+          message: `รอผล${stepLabel(step)}: gen ${generating} queue ${queued} ok ${readyCount} fail ${failed}${
             progress != null ? ` ${progress}%` : ''
-          }`,
+          } (${resolvedCount}/${expectedCount})`,
         });
 
         if (tilesFound === 0 && !isActive && !hasOutput && failed === 0) {
@@ -1470,13 +1474,32 @@ export default function GoogleFlowWebViewRunnerHost({
           continue;
         }
 
-        if (hasOutput) {
+        if (hasOutput && hasCompleteResolution) {
           resultReadyWaitStart = null;
           doneConfirm += 1;
           if (doneConfirm >= 2) {
+            const failedOutputCount = Math.max(0, expectedCount - readyCount);
+            if (failedOutputCount > 0) {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'warning',
+                step,
+                stage: countFailure ? 'failed' : 'flow_failed_detected',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                failedOutputs: failedOutputCount,
+                message: `ได้ผล${stepLabel(step)} ${readyCount}/${expectedCount} และมี ${failedOutputCount} รายการที่สร้างไม่สำเร็จ`,
+              });
+            }
             return result;
           }
-        } else if (failed > 0) {
+        } else if (!hasOutput && failed > 0 && hasCompleteResolution) {
           failConfirm += 1;
           if (failConfirm >= 3) {
             const failedError = buildFlowFailedError(step, result);
@@ -1492,6 +1515,88 @@ export default function GoogleFlowWebViewRunnerHost({
               totalRounds: payload.settings.totalRounds,
               currentProduct: productIndex + 1,
               totalProducts: payload.products.length,
+              failedOutputs: Math.max(1, Math.min(expectedCount, failed)),
+              message: failedError,
+            });
+            throw new Error(failedError);
+          }
+        } else if (hasOutput || failed > 0) {
+          failConfirm = 0;
+          doneConfirm = 0;
+          if (!resultReadyWaitStart) {
+            resultReadyWaitStart = Date.now();
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              level: 'warning',
+              step,
+              stage: 'waiting_result_settle',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              flowStats: {
+                generating,
+                queued,
+                success: Math.max(success, readyCount),
+                failed,
+                tilesFound,
+                progress: progress ?? null,
+              },
+              message: `พบผล${stepLabel(step)}บางส่วนแล้ว (${resolvedCount}/${expectedCount}) กำลังรอให้ครบตามจำนวน`,
+            });
+            continue;
+          }
+          const waitElapsed = Date.now() - resultReadyWaitStart;
+          if (waitElapsed > resultReadyTimeoutMs) {
+            if (hasOutput) {
+              const failedOutputCount = Math.max(0, expectedCount - readyCount);
+              if (failedOutputCount > 0) {
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'warning',
+                  step,
+                  stage: countFailure ? 'failed' : 'flow_failed_detected',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  failedOutputs: failedOutputCount,
+                  message: `รอผล${stepLabel(step)}ครบไม่สำเร็จ จะใช้ผลที่ได้ ${readyCount}/${expectedCount} และนับที่ไม่สำเร็จ ${failedOutputCount} รายการเป็นล้มเหลว`,
+                });
+              }
+              return {
+                ...result,
+                failedCount: failedOutputCount,
+                successCount: Math.max(success, readyCount),
+              };
+            }
+
+            const failedResult = {
+              ...result,
+              failedCount: Math.max(failed, expectedCount),
+            };
+            const failedError = buildFlowFailedError(step, failedResult);
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: countFailure ? 'failed' : 'flow_failed_detected',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              failedOutputs: Math.max(1, Math.min(expectedCount, failedResult.failedCount ?? expectedCount)),
               message: failedError,
             });
             throw new Error(failedError);
@@ -2852,6 +2957,7 @@ export default function GoogleFlowWebViewRunnerHost({
             totalProducts: payload.products.length,
             message: `${label} ล้มเหลว จะ retry แบบทำ Flow ใหม่ (${attempt}/${maxSingleStepAttempts - 1}): ${reason}`,
           });
+          let rewriteChanged = false;
           if (step === 'video' && payload.settings.aiRewritePromptOnAudioFailure !== false && !rewriteAttempted) {
             rewriteAttempted = true;
             emit({
@@ -2878,6 +2984,7 @@ export default function GoogleFlowWebViewRunnerHost({
             });
             if (rewrite.prompt?.trim()) {
               activePrompt = rewrite.prompt.trim();
+              rewriteChanged = true;
               emit({
                 event: 'progress',
                 runId: payload.runId,
@@ -2908,6 +3015,66 @@ export default function GoogleFlowWebViewRunnerHost({
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
                 message: `AI rewrite prompt ไม่สำเร็จ จะ retry ด้วย prompt เดิม: ${rewrite.error || 'unknown'}`,
+              });
+            }
+          }
+
+          if (attempt === 1 && !rewriteChanged) {
+            try {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'action',
+                step,
+                stage: 'single_step_reuse_prompt',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `Retry ${label} รอบ 1: ลอง Reuse Prompt จากการ์ดล่าสุดก่อนทำ Flow ใหม่`,
+              });
+              const baselineVideoUrls =
+                step === 'video'
+                  ? (((await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot)
+                      .videoUrls ?? [])
+                  : [];
+              await runActionWithProductContext(
+                'reusePromptAndSubmit',
+                {},
+                70_000,
+                'single_step_reuse_prompt'
+              );
+              result = await waitForStepResult({
+                baselineVideoUrls,
+                countFailure: false,
+                count,
+                handle,
+                payload,
+                product,
+                productIndex,
+                round,
+                step,
+              });
+              break;
+            } catch (reuseError) {
+              const reuseReason = reuseError instanceof Error ? reuseError.message : String(reuseError);
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'warning',
+                step,
+                stage: 'single_step_reuse_prompt',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `Reuse Prompt ไม่สำเร็จ จะ fallback ไปทำ Flow ใหม่: ${reuseReason}`,
               });
             }
           }
