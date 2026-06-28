@@ -14,6 +14,14 @@ export interface FlowAccount {
   photo?: string;
 }
 
+export interface FlowActionLogEntry {
+  id: string;
+  action: FlowActionName;
+  message: string;
+  level: 'info' | 'success' | 'warning' | 'error' | 'action';
+  ts: number;
+}
+
 export const FLOW_URL = 'https://labs.google/fx/tools/flow';
 
 // Pretend to be real mobile Chrome (NO "; wv" token) so Google's WebView sign-in
@@ -162,6 +170,7 @@ interface FlowWebViewProps {
   onStatusChange?: (state: FlowConnectionState, href: string) => void;
   onAccount?: (account: FlowAccount) => void;
   onNavigationChange?: (href: string) => void;
+  onActionLog?: (entry: FlowActionLogEntry) => void;
   style?: StyleProp<ViewStyle>;
   backgroundColor?: string;
 }
@@ -185,7 +194,7 @@ export interface FlowWebViewHandle {
  * this connection screen and the automation runner reuse the same session.
  */
 const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function FlowWebView(
-  { onStatusChange, onAccount, onNavigationChange, style, backgroundColor = '#000000' },
+  { onStatusChange, onAccount, onNavigationChange, onActionLog, style, backgroundColor = '#000000' },
   ref
 ) {
   const innerRef = useRef<WebView>(null);
@@ -240,7 +249,21 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
             ok?: boolean;
             result?: Record<string, unknown>;
             error?: string;
+            action?: FlowActionName;
+            message?: string;
+            level?: FlowActionLogEntry['level'];
+            ts?: number;
           };
+          if (data?.type === 'flowActionLog' && data.id && data.message) {
+            onActionLog?.({
+              id: data.id,
+              action: data.action ?? 'fillPrompt',
+              message: data.message,
+              level: data.level ?? 'info',
+              ts: data.ts ?? Date.now(),
+            });
+            return;
+          }
           if (data?.type === 'flowResult' && data.id) {
             const entry = pendingRef.current.get(data.id);
             if (entry) {

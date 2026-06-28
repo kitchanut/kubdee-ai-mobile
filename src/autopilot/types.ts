@@ -214,6 +214,7 @@ export interface GoogleFlowRunnerStartResult {
 export interface GoogleFlowRunnerLogEntry {
   message: string;
   ts: number;
+  level?: AutoPilotLogLevel;
   runId?: string;
   status?: 'running' | 'completed' | 'stopped' | 'error';
   event?: 'asset' | 'progress';

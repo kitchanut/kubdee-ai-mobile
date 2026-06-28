@@ -376,6 +376,7 @@ function getRunStageLabel(stage: string | null): string {
     case 'attach_reference':
     case 'multi_scene_attach_reference':
     case 'multi_scene_attach_previous_image':
+    case 'upload_reference':
       return 'แนบรูปอ้างอิง';
     case 'ensure_video_reference':
       return 'ตรวจ reference';

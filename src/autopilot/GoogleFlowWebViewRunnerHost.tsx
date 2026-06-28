@@ -16,7 +16,11 @@ import type {
   GoogleFlowRunnerPayload,
   GoogleFlowRunnerProduct,
 } from '@/autopilot/types';
-import FlowWebView, { type FlowConnectionState, type FlowWebViewHandle } from '@/flow/FlowWebView';
+import FlowWebView, {
+  type FlowActionLogEntry,
+  type FlowConnectionState,
+  type FlowWebViewHandle,
+} from '@/flow/FlowWebView';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 import {
@@ -77,6 +81,15 @@ interface PreparedMultiScenePromptResult {
   voiceStyleInstruction: string;
   voiceoverScript: string;
   voiceGender?: 'female' | 'male' | 'neutral';
+}
+
+interface FlowActionLogContext {
+  payload: GoogleFlowRunnerPayload;
+  product: GoogleFlowRunnerProduct;
+  productIndex: number;
+  round: number;
+  step: AutoPilotStepType;
+  stage: string;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -817,6 +830,7 @@ export default function GoogleFlowWebViewRunnerHost({
   const stopRequestedRef = useRef(false);
   const payloadRef = useRef<GoogleFlowRunnerPayload | null>(null);
   const flowStatusRef = useRef<FlowConnectionState>('unknown');
+  const actionLogContextRef = useRef<FlowActionLogContext | null>(null);
   const [visible, setVisible] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [flowStatus, setFlowStatus] = useState<FlowConnectionState>('unknown');
@@ -828,6 +842,34 @@ export default function GoogleFlowWebViewRunnerHost({
       setOverlayLogs((current) => [...current.slice(-7), entry.message]);
     }
   }, []);
+
+  const emitFlowActionLog = useCallback(
+    (entry: FlowActionLogEntry): void => {
+      if (!runningRef.current || !payloadRef.current) {
+        return;
+      }
+      const context = actionLogContextRef.current;
+      const payload = context?.payload ?? payloadRef.current;
+
+      emit({
+        event: 'progress',
+        runId: payload.runId,
+        status: 'running',
+        level: entry.level,
+        step: context?.step,
+        stage: context?.stage ?? `flow_${entry.action}`,
+        productId: context?.product.id,
+        productName: context?.product.name,
+        currentRound: context?.round,
+        totalRounds: context?.payload.settings.totalRounds ?? payload.settings.totalRounds,
+        currentProduct: context ? context.productIndex + 1 : undefined,
+        totalProducts: context?.payload.products.length ?? payload.products.length,
+        message: entry.message,
+        ts: entry.ts,
+      });
+    },
+    [emit]
+  );
 
   const checkStop = useCallback((): void => {
     if (stopRequestedRef.current) {
@@ -918,7 +960,23 @@ export default function GoogleFlowWebViewRunnerHost({
         }
 
         try {
-          return await runActionOrThrow(handle, 'newProject', {}, 35_000);
+          const previousContext = actionLogContextRef.current;
+          const context: FlowActionLogContext = {
+            payload,
+            product,
+            productIndex,
+            round,
+            step,
+            stage: 'open_project',
+          };
+          actionLogContextRef.current = context;
+          try {
+            return await runActionOrThrow(handle, 'newProject', {}, 35_000);
+          } finally {
+            if (actionLogContextRef.current === context) {
+              actionLogContextRef.current = previousContext;
+            }
+          }
         } catch (error) {
           lastError = error instanceof Error ? error.message : String(error);
           emit({
@@ -1128,6 +1186,30 @@ export default function GoogleFlowWebViewRunnerHost({
     }): Promise<void> => {
       checkStop();
       const startChecks = step === 'video' ? 8 : 7;
+      const runActionWithLogContext = async (
+        action: Parameters<FlowWebViewHandle['runAction']>[0],
+        args: Record<string, unknown>,
+        timeoutMs: number,
+        stage: string
+      ): Promise<Record<string, unknown>> => {
+        const previousContext = actionLogContextRef.current;
+        const context: FlowActionLogContext = {
+          payload,
+          product,
+          productIndex,
+          round,
+          step,
+          stage,
+        };
+        actionLogContextRef.current = context;
+        try {
+          return await runActionOrThrow(handle, action, args, timeoutMs);
+        } finally {
+          if (actionLogContextRef.current === context) {
+            actionLogContextRef.current = previousContext;
+          }
+        }
+      };
 
       const checkFlowStarted = async (maxChecks: number, stage: string): Promise<boolean> => {
         for (let startCheck = 1; startCheck <= maxChecks; startCheck += 1) {
@@ -1183,8 +1265,8 @@ export default function GoogleFlowWebViewRunnerHost({
         return false;
       };
 
-      await runActionOrThrow(handle, 'fillPrompt', { prompt }, 45_000);
-      await runActionOrThrow(handle, 'submit', {}, 45_000);
+      await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'fill_prompt');
+      await runActionWithLogContext('submit', {}, 45_000, 'submitted');
       await sleep(step === 'video' ? 10_000 : 8_000);
 
       if (await checkFlowStarted(startChecks, 'submit_start_check')) {
@@ -1206,8 +1288,8 @@ export default function GoogleFlowWebViewRunnerHost({
         message: `ยังไม่เห็น Flow เริ่มสร้าง${stepLabel(step)} จะ retype prompt แล้ว submit ซ้ำ 1 ครั้ง`,
       });
 
-      await runActionOrThrow(handle, 'fillPrompt', { prompt }, 45_000);
-      await runActionOrThrow(handle, 'submit', {}, 45_000);
+      await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'retype_prompt_retry');
+      await runActionWithLogContext('submit', {}, 45_000, 'submitted');
       await sleep(step === 'video' ? 10_000 : 8_000);
 
       if (await checkFlowStarted(Math.max(4, Math.ceil(startChecks / 2)), 'retype_start_check')) {
@@ -1308,26 +1390,84 @@ export default function GoogleFlowWebViewRunnerHost({
       round: number;
       step: AutoPilotStepType;
     }): Promise<Record<string, unknown>> => {
-      const result = await runActionOrThrow(handle, 'uploadReferenceImage', args, 120_000);
-      if (result.rateLimitRetried) {
-        emit({
-          event: 'progress',
-          runId: payload.runId,
-          status: 'running',
-          step,
-          stage: 'upload_reference_retry',
-          productId: product.id,
-          productName: product.name,
-          currentRound: round,
-          totalRounds: payload.settings.totalRounds,
-          currentProduct: productIndex + 1,
-          totalProducts: payload.products.length,
-          message: 'Google Flow จำกัดความถี่อัปโหลดรูป ระบบรอ 30 วิและอัปโหลด reference สำเร็จหลัง retry',
-        });
+      const previousContext = actionLogContextRef.current;
+      const context: FlowActionLogContext = {
+        payload,
+        product,
+        productIndex,
+        round,
+        step,
+        stage: 'upload_reference',
+      };
+      actionLogContextRef.current = context;
+      try {
+        const result = await runActionOrThrow(handle, 'uploadReferenceImage', args, 120_000);
+        if (result.rateLimitRetried) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            level: 'warning',
+            step,
+            stage: 'upload_reference_retry',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: 'Google Flow จำกัดความถี่อัปโหลดรูป ระบบรอ 30 วิและอัปโหลด reference สำเร็จหลัง retry',
+          });
+        }
+        return result;
+      } finally {
+        if (actionLogContextRef.current === context) {
+          actionLogContextRef.current = previousContext;
+        }
       }
-      return result;
     },
     [emit, runActionOrThrow]
+  );
+
+  const selectRecentImageOrThrow = useCallback(
+    async ({
+      handle,
+      indexOffset = 0,
+      payload,
+      product,
+      productIndex,
+      round,
+      stage,
+      step,
+    }: {
+      handle: FlowWebViewHandle;
+      indexOffset?: number;
+      payload: GoogleFlowRunnerPayload;
+      product: GoogleFlowRunnerProduct;
+      productIndex: number;
+      round: number;
+      stage: string;
+      step: AutoPilotStepType;
+    }): Promise<Record<string, unknown>> => {
+      const previousContext = actionLogContextRef.current;
+      const context: FlowActionLogContext = {
+        payload,
+        product,
+        productIndex,
+        round,
+        step,
+        stage,
+      };
+      actionLogContextRef.current = context;
+      try {
+        return await runActionOrThrow(handle, 'selectRecentImage', { indexOffset }, 45_000);
+      } finally {
+        if (actionLogContextRef.current === context) {
+          actionLogContextRef.current = previousContext;
+        }
+      }
+    },
+    [runActionOrThrow]
   );
 
   const runProductStep = useCallback(
@@ -1679,7 +1819,15 @@ export default function GoogleFlowWebViewRunnerHost({
                 message: `เลือกรูปบนสุดจาก Flow เป็น reference วิดีโอฉาก ${sceneNumber}`,
               });
               try {
-                await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+                await selectRecentImageOrThrow({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  stage: 'multi_scene_select_recent_reference',
+                  step,
+                });
                 return true;
               } catch (error) {
                 const fallbackMessage = error instanceof Error ? error.message : String(error);
@@ -2125,7 +2273,15 @@ export default function GoogleFlowWebViewRunnerHost({
           totalProducts: payload.products.length,
           message: 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
         });
-        await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 45_000);
+        await selectRecentImageOrThrow({
+          handle,
+          payload,
+          product,
+          productIndex,
+          round,
+          stage: 'attach_reference',
+          step,
+        });
         videoReferenceAttached = true;
       } else if (product.preview) {
         emit({
@@ -2378,6 +2534,7 @@ export default function GoogleFlowWebViewRunnerHost({
       openGoogleFlowProject,
       refreshGoogleFlowProject,
       runActionOrThrow,
+      selectRecentImageOrThrow,
       uploadReferenceImageOrThrow,
       waitForStepResult,
     ]
@@ -2594,6 +2751,7 @@ export default function GoogleFlowWebViewRunnerHost({
           <FlowWebView
             ref={flowRef}
             backgroundColor={theme.screen}
+            onActionLog={emitFlowActionLog}
             onStatusChange={(state) => {
               flowStatusRef.current = state;
               setFlowStatus(state);

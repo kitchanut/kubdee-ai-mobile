@@ -46,7 +46,16 @@ const NEW_PROJECT_LABELS = JSON.stringify(FLOW_SELECTORS.newProjectText);
 
 // --- newProject: click the "New project" tile and wait for the prompt editor ---
 const NEW_PROJECT_BODY = `
-  if (document.querySelector('${SLATE}')) return { entered: true, already: true };
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
+  if (document.querySelector('${SLATE}')) {
+    setStatus('อยู่ใน Google Flow project อยู่แล้ว ช่อง prompt พร้อมใช้งาน', 'success');
+    return { entered: true, already: true };
+  }
+  setStatus('กำลังหา New project ใน Google Flow...', 'info');
   var labels = ${NEW_PROJECT_LABELS};
   var btns = document.querySelectorAll('button');
   var target = null;
@@ -60,10 +69,17 @@ const NEW_PROJECT_BODY = `
     }
   }
   if (!target) throw new Error('ไม่พบปุ่ม New project (อาจยังไม่ได้ login หรือหน้ายังโหลดไม่เสร็จ)');
+  setStatus('พบปุ่ม New project แล้ว กำลังเปิดโปรเจกต์ใหม่...', 'action');
   target.click();
   for (var a = 0; a < 30; a++) {
     await wait(500);
-    if (document.querySelector('${SLATE}')) return { entered: true };
+    if (document.querySelector('${SLATE}')) {
+      setStatus('เข้า Google Flow project แล้ว ช่อง prompt พร้อมใช้งาน', 'success');
+      return { entered: true };
+    }
+    if (a === 3 || a === 10 || a === 20) {
+      setStatus('กด New project แล้ว กำลังรอช่อง prompt ปรากฏ...', 'info');
+    }
   }
   throw new Error('กด New project แล้ว แต่ช่อง prompt ไม่ปรากฏ');
 `;
@@ -73,6 +89,12 @@ const NEW_PROJECT_BODY = `
 const FILL_PROMPT_BODY = `
   var promptText = String(args.prompt || '');
   if (!promptText) throw new Error('prompt ว่าง');
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
+  setStatus('กำลังกรอก prompt เข้า Google Flow...', 'action');
 
   function isVisiblePromptEl(el) {
     if (!el || !el.isConnected) return false;
@@ -212,6 +234,7 @@ const FILL_PROMPT_BODY = `
     fillTextField(preferredField);
     await wait(500);
     if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+    setStatus('กรอก prompt สำเร็จด้วยช่อง text field', 'success');
     return { type: 'textarea-preferred' };
   }
 
@@ -219,6 +242,7 @@ const FILL_PROMPT_BODY = `
   for (var w = 0; w < 15; w++) {
     el = getVisibleSlate();
     if (el && el.offsetParent) break;
+    if (w === 0 || w === 5 || w === 10) setStatus('กำลังรอช่อง prompt ของ Google Flow พร้อม...', 'info');
     await wait(1000);
   }
   if (!el || !el.offsetParent) {
@@ -232,6 +256,7 @@ const FILL_PROMPT_BODY = `
     fillTextField(field);
     await wait(500);
     if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+    setStatus('กรอก prompt สำเร็จด้วย fallback text field', 'success');
     return { type: 'textarea' };
   }
 
@@ -280,6 +305,7 @@ const FILL_PROMPT_BODY = `
       slateEditor.insertText(promptText);
       await wait(500);
       if (!wasInserted()) throw new Error('Slate insertText ไม่ติด');
+      setStatus('กรอก prompt สำเร็จด้วย Slate editor', 'success');
       return { type: 'slate-fiber' };
     }
     var deepFiber = el[fiberKey];
@@ -307,6 +333,7 @@ const FILL_PROMPT_BODY = `
       slateEditor.insertText(promptText);
       await wait(500);
       if (!wasInserted()) throw new Error('Slate deep insertText ไม่ติด');
+      setStatus('กรอก prompt สำเร็จด้วย Slate editor deep fallback', 'success');
       return { type: 'slate-fiber-deep' };
     }
   }
@@ -338,6 +365,7 @@ const FILL_PROMPT_BODY = `
     await wait(500);
   }
   if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+  setStatus('กรอก prompt สำเร็จด้วย execCommand fallback', 'success');
   return { type: 'slate-execCommand' };
 `;
 
@@ -345,6 +373,12 @@ const FILL_PROMPT_BODY = `
 // Ported from desktop submitGenerate.ts (PRIMARY: reactProps/fiber onClick; the
 // CDP-mouse fallback is desktop-only, native click() is the last resort here).
 const SUBMIT_BODY = `
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
+  setStatus('กำลังหาปุ่มสร้างของ Google Flow...', 'info');
   function isVisiblePromptEl(el) {
     if (!el || !el.isConnected) return false;
     var rect = el.getBoundingClientRect();
@@ -470,6 +504,7 @@ const SUBMIT_BODY = `
   for (var a = 0; a < 60; a++) {
     btn = findBtn(false);
     if (btn) { if (a === 0) await wait(1000); break; }
+    if (a === 0 || a === 10 || a === 30) setStatus('ยังไม่พบปุ่มสร้างที่พร้อมกด กำลังรอ...', 'info');
     await wait(500);
   }
   if (!btn) {
@@ -487,6 +522,7 @@ const SUBMIT_BODY = `
 
   var lenBefore = getPromptText().length;
   if (lenBefore <= 0) throw new Error('ยังไม่ได้กรอก Prompt ก่อนกดสร้าง');
+  setStatus('พบปุ่มสร้างแล้ว กำลังกดส่ง prompt...', 'action');
 
   btn.scrollIntoView({ behavior: 'instant', block: 'center' });
   var rect = btn.getBoundingClientRect();
@@ -525,6 +561,7 @@ const SUBMIT_BODY = `
   await wait(2500);
   var lenAfter = getPromptText().length;
   var clearedPrompt = lenBefore > 0 && lenAfter === 0;
+  setStatus('กดปุ่มสร้างแล้ว (' + method + ')', 'success');
   return { method: method, clearedPrompt: clearedPrompt, lenBefore: lenBefore, lenAfter: lenAfter };
 `;
 
@@ -802,14 +839,23 @@ const IMAGE_DIALOG_HELPERS_BODY = `
 
 const SELECT_RECENT_IMAGE_BODY = `
   ${IMAGE_DIALOG_HELPERS_BODY}
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
   var indexOffset = Math.max(0, Number(args.indexOffset || 0) || 0);
+  setStatus(indexOffset > 0 ? ('เลือกรูปย้อนหลังลำดับ ' + (indexOffset + 1) + ' จากรายการ...') : 'เลือกรูปล่าสุดจากรายการ...', 'info');
+  setStatus('กำลังเปิด dialog รูป reference...', 'action');
   var dialog = await openImageDialog();
   await handleAgreeDialog();
   dialog = getOpenDialog() || dialog;
+  setStatus('Dialog รูปเปิดแล้ว กำลังเลื่อนไปรายการบนสุด...', 'info');
   var scroller = dialog.querySelector('[data-testid="virtuoso-scroller"]') || document.querySelector('[data-testid="virtuoso-scroller"]');
   if (scroller) {
     for (var s = 0; s < 3; s++) { scroller.scrollTop = 0; await wait(200); }
   }
+  setStatus(indexOffset > 0 ? ('Scroll ไปรูปย้อนหลังลำดับ ' + (indexOffset + 1) + ' แล้วรอ 2 วิ ก่อนเลือก...') : 'Scroll ไปรูปแรก (ใหม่สุด) แล้วรอ 2 วิ ก่อนเลือก...', 'info');
   await wait(1800);
   var picked = null;
   for (var attempt = 0; attempt < 24 && !picked; attempt++) {
@@ -821,11 +867,17 @@ const SELECT_RECENT_IMAGE_BODY = `
         var safeA = Number.isFinite(ai) ? ai : Number.MAX_SAFE_INTEGER;
         var safeB = Number.isFinite(bi) ? bi : Number.MAX_SAFE_INTEGER;
         return safeA - safeB || a.getBoundingClientRect().top - b.getBoundingClientRect().top;
-      });
+    });
     picked = items[Math.min(indexOffset, Math.max(0, items.length - 1))] || null;
-    if (!picked) await wait(500);
+    if (!picked) {
+      if (attempt === 0 || attempt === 8 || attempt === 16) {
+        setStatus('ยังไม่พบรูปที่พร้อมเลือก กำลังรอรายการรูปโหลด...', 'info');
+      }
+      await wait(500);
+    }
   }
   if (!picked) throw new Error('ไม่พบรูปในรายการล่าสุดสำหรับแนบ reference');
+  setStatus('พบรูปที่พร้อมเลือกแล้ว รอให้รายการนิ่ง 2 วิ...', 'info');
   await wait(2000);
   var stablePicked = null;
   for (var stableAttempt = 0; stableAttempt < 12 && !stablePicked; stableAttempt++) {
@@ -837,18 +889,26 @@ const SELECT_RECENT_IMAGE_BODY = `
         var safeA = Number.isFinite(ai) ? ai : Number.MAX_SAFE_INTEGER;
         var safeB = Number.isFinite(bi) ? bi : Number.MAX_SAFE_INTEGER;
         return safeA - safeB || a.getBoundingClientRect().top - b.getBoundingClientRect().top;
-      });
+    });
     stablePicked = stableItems[Math.min(indexOffset, Math.max(0, stableItems.length - 1))] || null;
-    if (!stablePicked) await wait(500);
+    if (!stablePicked) {
+      if (stableAttempt === 0 || stableAttempt === 6) {
+        setStatus('กำลังตรวจรูปที่เลือกอีกครั้งหลังรอ 2 วิ...', 'info');
+      }
+      await wait(500);
+    }
   }
   picked = stablePicked || picked;
   var dataIndex = picked.getAttribute('data-index');
+  setStatus('เลือกรูป reference [' + (dataIndex || '?') + ']...', 'action');
   clickImageItem(picked);
   await wait(1000);
   if (!(await waitForDialogClosed(dialog, 4500))) {
+    setStatus('เลือกรูปแล้วแต่ dialog ยังไม่ปิด กำลังกด Add to Prompt...', 'action');
     if (!(await clickAddToPrompt(dialog))) throw new Error('เลือกรูปแล้วแต่ไม่พบปุ่ม Add to Prompt');
     if (!(await waitForDialogClosed(dialog, 4500))) throw new Error('เลือกรูปแล้วแต่ dialog ยังไม่ปิด');
   }
+  setStatus('เลือกรูปล่าสุดเป็น reference สำเร็จ', 'success');
   return { success: true, dataIndex: dataIndex };
 `;
 
@@ -886,6 +946,11 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     var ext = mime.indexOf('jpeg') !== -1 ? '.jpg' : mime.indexOf('webp') !== -1 ? '.webp' : '.png';
     var safeName = /\\.[a-z0-9]+$/i.test(name) ? name : name + ext;
     return new File([bytes], safeName, { type: mime });
+  }
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
   }
   function findUploadButton(dialog){
     var buttons = Array.prototype.slice.call(dialog.querySelectorAll('button, [role="button"]'));
@@ -993,11 +1058,26 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     var lastUploadItem = null;
     var stableSignature = '';
     var stableCount = 0;
+    var lastStatusMessage = '';
+    var lastStatusAt = 0;
+    function logUploadStatus(message){
+      var now = Date.now();
+      if (message !== lastStatusMessage || now - lastStatusAt > 5000) {
+        lastStatusMessage = message;
+        lastStatusAt = now;
+        setStatus(message, 'info');
+      }
+    }
     for (var attempt = 0; attempt < 90; attempt++) {
       var activeDialog = getOpenDialog() || dialog;
       if (!isDialogOpen(activeDialog)) return { autoAttached: true, item: null };
       var uploadActivity = getUploadActivity(activeDialog);
       if (uploadActivity.item) lastUploadItem = uploadActivity.item;
+      if (uploadActivity.active) {
+        logUploadStatus(uploadActivity.percent ? ('กำลังอัปโหลดรูป reference: ' + uploadActivity.percent) : 'รูป reference กำลังอัปโหลด/ประมวลผลใน Google Flow...');
+      } else {
+        logUploadStatus('กำลังรอรูป reference ที่อัปโหลดเสร็จพร้อมเลือก...');
+      }
       if (!uploadActivity.active) {
         var uploadedItem = findReadyUploadedImageItem(activeDialog, knownSignatures, lastUploadItem);
         if (uploadedItem) {
@@ -1022,16 +1102,23 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
   }
   async function waitBeforeUploadRetry(){
     dismissUploadRateLimitToast();
-    await wait(30000);
+    for (var remaining = 30; remaining > 0; remaining -= 5) {
+      setStatus('Google Flow จำกัดความถี่การอัปโหลดรูป — รอ ' + remaining + ' วิ แล้วจะลองอัปโหลดใหม่', 'warning');
+      await wait(Math.min(5000, remaining * 1000));
+    }
   }
+  setStatus('เตรียมรูป reference สำหรับอัปโหลดเข้า Google Flow...', 'info');
   var resolvedDataUrl = await resolveDataUrl();
+  setStatus('กำลังเปิด dialog เลือกรูป reference...', 'action');
   var dialog = await openImageDialog();
   await handleAgreeDialog();
   dialog = getOpenDialog() || dialog;
+  setStatus('Dialog เลือกรูปเปิดแล้ว กำลังเตรียมอัปโหลด...', 'info');
   var lastRateLimitText = '';
   for (var uploadAttempt = 1; uploadAttempt <= 2; uploadAttempt++) {
     dialog = getOpenDialog() || (dialog && isDialogOpen(dialog) ? dialog : null);
     if (!dialog) {
+      setStatus('Dialog ปิดไปแล้ว กำลังเปิดใหม่ก่อน retry อัปโหลดรูป...', 'warning');
       dialog = await openImageDialog();
       await handleAgreeDialog();
       dialog = getOpenDialog() || dialog;
@@ -1040,6 +1127,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     var knownInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
     var uploadButton = findUploadButton(dialog);
     if (uploadButton) {
+      setStatus('พบปุ่ม Upload แล้ว กำลังส่งไฟล์รูป reference (ครั้งที่ ' + uploadAttempt + '/2)...', 'action');
       showRipple(uploadButton);
       uploadButton.click();
       await wait(600);
@@ -1055,6 +1143,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
 
     var input = null;
+    setStatus('กำลังค้นหา file input สำหรับส่งรูปให้ Google Flow...', 'info');
     for (var f = 0; f < 20 && !input; f++) {
       var allInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
       var newInputs = allInputs.filter(function(candidate){ return knownInputs.indexOf(candidate) === -1; });
@@ -1081,6 +1170,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 
     var dt = new DataTransfer();
     dt.items.add(dataUrlToFile(resolvedDataUrl, fileName));
+    setStatus('กำลังใส่ไฟล์รูปเข้า file input และเริ่มอัปโหลด...', 'action');
     input.files = dt.files;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1096,10 +1186,13 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
 
     if (!isDialogOpen(dialog)) {
+      setStatus('Google Flow แนบรูป reference อัตโนมัติแล้ว', 'success');
       return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
     }
+    setStatus('ส่งไฟล์แล้ว กำลังรอ Google Flow อัปโหลด/ประมวลผลรูป...', 'info');
     var uploadResult = await waitForUploadedImageItem(dialog, known);
     if (uploadResult.autoAttached) {
+      setStatus('Google Flow แนบรูป reference อัตโนมัติแล้ว', 'success');
       return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
     }
     var rateLimitAfterUploadWait = getUploadRateLimitToast();
@@ -1114,18 +1207,22 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 
     var picked = uploadResult.item;
     if (!picked) {
+      setStatus('ยังไม่พบรูปใหม่ที่พร้อมเลือก กำลังลองกด Add to Prompt...', 'warning');
       if (await clickAddToPrompt(dialog)) {
         if (await waitForDialogClosed(dialog, 5000)) return { success: true, dataIndex: null, confirmed: true, rateLimitRetried: uploadAttempt > 1 };
       }
     }
     if (!picked) throw new Error('อัปโหลดรูปแล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก');
     var dataIndex = picked.getAttribute('data-index');
+    setStatus('อัปโหลดเสร็จแล้ว กำลังเลือกรูป reference บนสุด [' + (dataIndex || '?') + ']...', 'action');
     clickImageItem(picked);
     await wait(1000);
     if (!(await waitForDialogClosed(dialog, 5000))) {
+      setStatus('เลือกรูปแล้ว กำลังกด Add to Prompt...', 'action');
       if (!(await clickAddToPrompt(dialog))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ไม่พบปุ่ม Add to Prompt');
       if (!(await waitForDialogClosed(dialog, 5000))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ dialog ยังไม่ปิด');
     }
+    setStatus('แนบรูป reference เข้า prompt สำเร็จ', 'success');
     return { success: true, dataIndex: dataIndex, rateLimitRetried: uploadAttempt > 1 };
   }
   throw new Error('Google Flow จำกัดความถี่การอัปโหลดรูป (' + (lastRateLimitText || 'uploading too quickly') + ') — รอ 30 วิและลองอัปโหลดใหม่แล้ว แต่ยังไม่สำเร็จ');
@@ -1544,8 +1641,10 @@ export function buildActionScript(
   const body = ACTION_BODIES[action];
   return `(function(){
   var __id = ${JSON.stringify(id)};
+  var __action = ${JSON.stringify(action)};
   var __args = ${JSON.stringify(args)};
   function __post(p){ try { window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({ type: 'flowResult', id: __id }, p))); } catch (e) {} }
+  function __flowLog(message, level){ try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'flowActionLog', id: __id, action: __action, message: String(message || ''), level: level || 'info', ts: Date.now() })); } catch (e) {} }
   function wait(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
   (async function(){
     try {

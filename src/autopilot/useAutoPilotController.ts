@@ -185,13 +185,14 @@ export function useAutoPilotController({
           ? entry.status
           : null;
       const level =
-        entry.status === 'completed'
+        entry.level ??
+        (entry.status === 'completed'
           ? 'success'
           : entry.status === 'stopped'
             ? 'warning'
             : entry.status === 'error'
               ? 'error'
-              : 'info';
+              : 'info');
       appendLog(level, entry.message, { timestamp: entry.ts, flowStats: entry.flowStats });
 
       if (entry.event === 'progress') {
