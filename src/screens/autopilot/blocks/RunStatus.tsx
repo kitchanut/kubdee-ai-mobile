@@ -27,6 +27,7 @@ export function RunStatusSummaryBlock({
       : currentStepLabel;
   const firstLog = getFirstLog(runState);
   const latestLog = getLatestLog(runState);
+  const elapsedMs = getRunElapsedMs(runState);
   const flowStats = runState.status === 'running' ? getLatestFlowStats(runState) : null;
 
   return (
@@ -51,6 +52,7 @@ export function RunStatusSummaryBlock({
                 {firstLog ? `เริ่ม ${formatTime(firstLog.timestamp)}` : ''}
                 {firstLog && latestLog ? ' · ' : ''}
                 {latestLog ? `ล่าสุด ${formatTime(latestLog.timestamp)}` : ''}
+                {elapsedMs != null ? ` · ใช้เวลา ${formatDuration(elapsedMs)}` : ''}
               </Text>
             ) : null}
           </View>
@@ -119,6 +121,9 @@ export function RunStatusSummaryBlock({
               <MiniFlowStat label="คิว" value={flowStats.queued} theme={theme} />
               <MiniFlowStat label="สำเร็จ" value={flowStats.success} theme={theme} />
               <MiniFlowStat label="ล้มเหลว" value={flowStats.failed} theme={theme} warning={flowStats.failed > 0} />
+              {flowStats.tilesFound != null ? (
+                <MiniFlowStat label="ทั้งหมด" value={flowStats.tilesFound} theme={theme} />
+              ) : null}
             </View>
           </View>
         ) : null}
@@ -146,6 +151,7 @@ export function ActivityLogSheet({
   const logs = runState.logs.slice(-80);
   const firstLog = getFirstLog(runState);
   const latestLog = getLatestLog(runState);
+  const elapsedMs = getRunElapsedMs(runState);
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
@@ -166,6 +172,7 @@ export function ActivityLogSheet({
                     {getRunStatusLabel(runState.status)}
                     {firstLog ? ` · เริ่ม ${formatTime(firstLog.timestamp)}` : ''}
                     {latestLog ? ` · ล่าสุด ${formatTime(latestLog.timestamp)}` : ''}
+                    {elapsedMs != null ? ` · ใช้เวลา ${formatDuration(elapsedMs)}` : ''}
                     {` · log ${logs.length} รายการ`}
                   </Text>
                 </View>
@@ -222,14 +229,27 @@ export function ActivityLogSheet({
                 <Text className="text-kd-caption font-semibold text-kd-text-subtle">ยังไม่มีรายละเอียดการทำงาน</Text>
               </View>
             ) : (
-              logs.map((log) => (
-                <View key={log.id} className="flex-row gap-2 rounded-kd-md bg-kd-card px-2.5 py-2">
-                  <Text className="w-[58px] text-kd-micro text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
-                  <Text className="flex-1 text-kd-caption leading-4" style={{ color: getLogTextColor(log.level, theme) }}>
-                    {log.message}
-                  </Text>
-                </View>
-              ))
+              logs.map((log, index) => {
+                const previousLog = index > 0 ? logs[index - 1] : null;
+                const deltaMs = previousLog ? Math.max(0, log.timestamp - previousLog.timestamp) : 0;
+                const sinceStartMs = firstLog ? Math.max(0, log.timestamp - firstLog.timestamp) : 0;
+                return (
+                  <View key={log.id} className="flex-row gap-2 rounded-kd-md bg-kd-card px-2.5 py-2">
+                    <View className="w-[68px]">
+                      <Text className="text-kd-micro font-medium text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
+                      <Text className="mt-0.5 text-kd-tiny text-kd-text-subtle">
+                        {index === 0 ? '+0s' : `+${formatDuration(deltaMs)}`} · {formatDuration(sinceStartMs)}
+                      </Text>
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-kd-caption leading-4" style={{ color: getLogTextColor(log.level, theme) }}>
+                        {log.message}
+                      </Text>
+                      {log.flowStats ? <LogFlowStats stats={log.flowStats} theme={theme} /> : null}
+                    </View>
+                  </View>
+                );
+              })
             )}
           </ScrollView>
         </View>
@@ -253,6 +273,45 @@ function MiniFlowStat({
     <View className="min-w-[58px] flex-1 rounded-kd-md bg-kd-card px-2 py-1.5">
       <Text className="text-kd-tiny font-semibold text-kd-text-subtle">{label}</Text>
       <Text className="mt-px text-kd-caption font-semibold" style={{ color: warning ? theme.red : theme.text }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function LogFlowStats({
+  stats,
+  theme,
+}: {
+  stats: AutoPilotFlowStats;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  return (
+    <View className="mt-1.5 flex-row flex-wrap gap-1">
+      <LogFlowStat label="กำลัง" value={stats.generating} theme={theme} />
+      <LogFlowStat label="คิว" value={stats.queued} theme={theme} />
+      <LogFlowStat label="สำเร็จ" value={stats.success} theme={theme} />
+      <LogFlowStat label="ล้มเหลว" value={stats.failed} theme={theme} warning={stats.failed > 0} />
+      {stats.progress != null ? <LogFlowStat label="%" value={stats.progress} theme={theme} /> : null}
+    </View>
+  );
+}
+
+function LogFlowStat({
+  label,
+  value,
+  theme,
+  warning = false,
+}: {
+  label: string;
+  value: number;
+  theme: KubdeeTheme;
+  warning?: boolean;
+}): React.JSX.Element {
+  return (
+    <View className="flex-row items-center gap-1 rounded-kd-sm bg-kd-panel-muted px-1.5 py-0.5 dark:bg-kd-card-muted">
+      <Text className="text-kd-tiny text-kd-text-subtle">{label}</Text>
+      <Text className="text-kd-tiny font-semibold" style={{ color: warning ? theme.red : theme.textMuted }}>
         {value}
       </Text>
     </View>
@@ -283,6 +342,27 @@ function getFirstLog(runState: AutoPilotRunState): AutoPilotRunState['logs'][num
 
 function getLatestLog(runState: AutoPilotRunState): AutoPilotRunState['logs'][number] | null {
   return runState.logs[runState.logs.length - 1] ?? null;
+}
+
+function getRunElapsedMs(runState: AutoPilotRunState): number | null {
+  const firstLog = getFirstLog(runState);
+  if (!firstLog) {
+    return null;
+  }
+
+  const latestLog = getLatestLog(runState);
+  const end = runState.status === 'running' ? Date.now() : latestLog?.timestamp ?? firstLog.timestamp;
+  return Math.max(0, end - firstLog.timestamp);
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${seconds}s`;
 }
 
 function getLatestFlowStats(runState: AutoPilotRunState): AutoPilotFlowStats | null {
@@ -366,6 +446,8 @@ function getRunStageLabel(stage: string | null): string {
       return 'เริ่มสร้างงาน';
     case 'open_project':
       return 'เปิดโปรเจกต์';
+    case 'flow_home_before_product':
+      return 'เปิด Flow หลัก';
     case 'flow_language_error':
       return 'ตรวจภาษา Flow';
     case 'wait_flow_ready':

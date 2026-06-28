@@ -105,6 +105,7 @@ export interface AutoPilotSettings {
   aiSendImageToAi: boolean;
   aiGenerateCta: boolean;
   aiRewritePromptOnAudioFailure: boolean;
+  startNewFlowProjectPerProduct: boolean;
   aiHashtagCount: number;
 }
 

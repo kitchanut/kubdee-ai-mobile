@@ -17,6 +17,7 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   aiSendImageToAi: false,
   aiGenerateCta: true,
   aiRewritePromptOnAudioFailure: true,
+  startNewFlowProjectPerProduct: true,
   aiHashtagCount: 3,
 };
 

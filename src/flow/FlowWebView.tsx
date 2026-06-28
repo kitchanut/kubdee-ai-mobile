@@ -208,6 +208,7 @@ export interface FlowWebViewHandle {
     args?: Record<string, unknown>,
     timeoutMs?: number
   ) => Promise<FlowActionResult>;
+  goHome: () => void;
   reload: () => void;
 }
 
@@ -239,6 +240,9 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
           pendingRef.current.set(id, { resolve, timer });
           innerRef.current?.injectJavaScript(buildActionScript(id, action, args));
         });
+      },
+      goHome() {
+        innerRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(FLOW_ENGLISH_URL)}; true;`);
       },
       reload() {
         innerRef.current?.reload();

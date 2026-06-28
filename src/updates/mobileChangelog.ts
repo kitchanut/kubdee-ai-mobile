@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.8',
+    date: '2026-06-28',
+    highlight: 'ปรับ Auto Workflow ให้ทำงานต่อเนื่องและตรวจสถานะได้ชัดเจนขึ้น',
+    changes: [
+      { type: 'added', text: 'เพิ่มตัวเลือกสร้างโปรเจกต์ใหม่ใน Google Flow แยกต่อสินค้า' },
+      { type: 'improved', text: 'จำค่าตั้งค่า Auto Workflow และขั้นตอนที่เลือกไว้สำหรับการใช้งานครั้งถัดไป' },
+      { type: 'improved', text: 'เพิ่มเวลาและสถานะ Google Flow ใน Activity Log ระหว่างสร้างงาน' },
+      { type: 'improved', text: 'ปรับ retry การสร้างวิดีโอเดี่ยวให้ลองใหม่เป็นรอบพร้อมแจ้งสถานะชัดเจนขึ้น' },
+    ],
+  },
+  {
     version: '0.1.7',
     date: '2026-06-28',
     highlight: 'ปรับ Auto Workflow ให้รับมือ Google Flow error ได้ดีขึ้น',
@@ -97,4 +108,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.7';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.8';

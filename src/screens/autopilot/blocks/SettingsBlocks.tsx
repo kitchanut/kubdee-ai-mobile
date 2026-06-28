@@ -1,5 +1,5 @@
 import { Pressable, View } from 'react-native';
-import { Copy, Sparkles, Star } from 'lucide-react-native';
+import { Copy, FilePlus2, Sparkles, Star } from 'lucide-react-native';
 import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
@@ -17,6 +17,7 @@ export function ExtensionBasicSettingsBlock({
   onToggleCaption,
   onToggleCta,
   onToggleRewrite,
+  onToggleStartNewProject,
   onToggleSendImage,
 }: {
   settings: AutoPilotSettings;
@@ -27,6 +28,7 @@ export function ExtensionBasicSettingsBlock({
   onToggleCaption: (value: boolean) => void;
   onToggleCta: (value: boolean) => void;
   onToggleRewrite: (value: boolean) => void;
+  onToggleStartNewProject: (value: boolean) => void;
   onToggleSendImage: (value: boolean) => void;
 }): React.JSX.Element {
   return (
@@ -102,10 +104,17 @@ export function ExtensionBasicSettingsBlock({
         />
         <ExtensionToggleRow
           icon={Sparkles}
-          label="AI rewrite prompt เมื่อเสียงล้มเหลว"
+          label="AI rewrite prompt เมื่อเกิด error"
           theme={theme}
           value={settings.aiRewritePromptOnAudioFailure}
           onValueChange={onToggleRewrite}
+        />
+        <ExtensionToggleRow
+          icon={FilePlus2}
+          label="สร้างโปรเจกต์ใหม่ต่อสินค้า"
+          theme={theme}
+          value={settings.startNewFlowProjectPerProduct}
+          onValueChange={onToggleStartNewProject}
         />
       </View>
     </View>

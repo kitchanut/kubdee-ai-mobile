@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { DEFAULT_AUTO_PILOT_SETTINGS } from '@/autopilot/defaults';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
@@ -28,6 +29,9 @@ import type {
 import type { AffiliateProduct } from '@/library/types';
 
 type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'hashtags' | 'cta';
+
+const AUTO_PILOT_RUNTIME_SETTINGS_KEY = 'kubdee_ai_mobile_auto_runtime_settings_v1';
+const DEFAULT_ENABLED_STEPS: AutoPilotStepType[] = ['image', 'video'];
 
 const initialRunState: AutoPilotRunState = {
   runId: null,
@@ -93,6 +97,64 @@ function createManualSourceProduct(profileLocalId: string, localId: string): Aff
   };
 }
 
+function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {
+  const input = value && typeof value === 'object' ? (value as Partial<AutoPilotSettings>) : {};
+  const totalRounds = Number(input.totalRounds);
+  const aiHashtagCount = Number(input.aiHashtagCount);
+  const flowVideoDuration = Number(input.flowVideoDuration);
+
+  return {
+    ...DEFAULT_AUTO_PILOT_SETTINGS,
+    ...input,
+    totalRounds: Number.isFinite(totalRounds) && totalRounds > 0 ? totalRounds : DEFAULT_AUTO_PILOT_SETTINGS.totalRounds,
+    delayPreset:
+      input.delayPreset === 'fast' || input.delayPreset === 'normal' || input.delayPreset === 'slow'
+        ? input.delayPreset
+        : DEFAULT_AUTO_PILOT_SETTINGS.delayPreset,
+    browserMode:
+      input.browserMode === 'webview' || input.browserMode === 'chrome' || input.browserMode === 'default'
+        ? input.browserMode
+        : DEFAULT_AUTO_PILOT_SETTINGS.browserMode,
+    aiGenerateCaption:
+      typeof input.aiGenerateCaption === 'boolean'
+        ? input.aiGenerateCaption
+        : DEFAULT_AUTO_PILOT_SETTINGS.aiGenerateCaption,
+    aiSendImageToAi:
+      typeof input.aiSendImageToAi === 'boolean'
+        ? input.aiSendImageToAi
+        : DEFAULT_AUTO_PILOT_SETTINGS.aiSendImageToAi,
+    aiGenerateCta:
+      typeof input.aiGenerateCta === 'boolean' ? input.aiGenerateCta : DEFAULT_AUTO_PILOT_SETTINGS.aiGenerateCta,
+    aiRewritePromptOnAudioFailure:
+      typeof input.aiRewritePromptOnAudioFailure === 'boolean'
+        ? input.aiRewritePromptOnAudioFailure
+        : DEFAULT_AUTO_PILOT_SETTINGS.aiRewritePromptOnAudioFailure,
+    startNewFlowProjectPerProduct:
+      typeof input.startNewFlowProjectPerProduct === 'boolean'
+        ? input.startNewFlowProjectPerProduct
+        : DEFAULT_AUTO_PILOT_SETTINGS.startNewFlowProjectPerProduct,
+    flowImageModel: typeof input.flowImageModel === 'string' ? input.flowImageModel : DEFAULT_AUTO_PILOT_SETTINGS.flowImageModel,
+    flowVideoModel: typeof input.flowVideoModel === 'string' ? input.flowVideoModel : DEFAULT_AUTO_PILOT_SETTINGS.flowVideoModel,
+    flowVideoDuration:
+      Number.isFinite(flowVideoDuration) && flowVideoDuration > 0
+        ? flowVideoDuration
+        : DEFAULT_AUTO_PILOT_SETTINGS.flowVideoDuration,
+    aiHashtagCount:
+      Number.isFinite(aiHashtagCount) && aiHashtagCount >= 1 && aiHashtagCount <= 5
+        ? aiHashtagCount
+        : DEFAULT_AUTO_PILOT_SETTINGS.aiHashtagCount,
+  };
+}
+
+function normalizeEnabledSteps(value: unknown): AutoPilotStepType[] {
+  if (!Array.isArray(value)) {
+    return DEFAULT_ENABLED_STEPS;
+  }
+
+  const steps = value.filter((step): step is AutoPilotStepType => step === 'image' || step === 'video');
+  return steps.length > 0 ? Array.from(new Set(steps)) : DEFAULT_ENABLED_STEPS;
+}
+
 export function useAutoPilotController({
   initialSelectedProductIds = [],
   profileLocalId,
@@ -104,7 +166,7 @@ export function useAutoPilotController({
 }) {
   const { addGeneratedMediaAsset } = useGeneratedMedia();
   const [settings, setSettings] = useState<AutoPilotSettings>(DEFAULT_AUTO_PILOT_SETTINGS);
-  const [enabledSteps, setEnabledSteps] = useState<AutoPilotStepType[]>(['image', 'video']);
+  const [enabledSteps, setEnabledSteps] = useState<AutoPilotStepType[]>(DEFAULT_ENABLED_STEPS);
   const [manualProducts, setManualProducts] = useState<AffiliateProduct[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(
     () => new Set(initialSelectedProductIds)
@@ -115,6 +177,47 @@ export function useAutoPilotController({
   const [productSettingsById, setProductSettingsById] = useState<Record<string, AutoPilotProductSettings>>({});
   const [runState, setRunState] = useState<AutoPilotRunState>(initialRunState);
   const runIdRef = useRef<string | null>(null);
+  const runtimeSettingsLoadedRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(AUTO_PILOT_RUNTIME_SETTINGS_KEY)
+      .then((raw) => {
+        if (!active || !raw) {
+          return;
+        }
+        const parsed = JSON.parse(raw) as { settings?: unknown; enabledSteps?: unknown };
+        setSettings(normalizeRuntimeSettings(parsed.settings));
+        setEnabledSteps(normalizeEnabledSteps(parsed.enabledSteps));
+      })
+      .catch(() => {
+        // Keep defaults when the saved runtime settings are unavailable or malformed.
+      })
+      .finally(() => {
+        if (active) {
+          runtimeSettingsLoadedRef.current = true;
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!runtimeSettingsLoadedRef.current) {
+      return;
+    }
+
+    void AsyncStorage.setItem(
+      AUTO_PILOT_RUNTIME_SETTINGS_KEY,
+      JSON.stringify({
+        settings,
+        enabledSteps,
+        updatedAt: Date.now(),
+      })
+    );
+  }, [enabledSteps, settings]);
 
   const products = useMemo(
     () =>

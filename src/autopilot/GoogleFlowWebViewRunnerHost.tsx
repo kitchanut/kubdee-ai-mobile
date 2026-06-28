@@ -2324,7 +2324,9 @@ export default function GoogleFlowWebViewRunnerHost({
         return;
       }
 
+      const maxSingleStepAttempts = 3;
       const runSingleStepAttempt = async (attempt: number, attemptPrompt: string): Promise<FlowResultPoll> => {
+        const retryAttempt = Math.max(0, attempt - 1);
         emit({
           event: 'progress',
           runId: payload.runId,
@@ -2340,7 +2342,7 @@ export default function GoogleFlowWebViewRunnerHost({
           message:
             attempt === 1
               ? `เข้า Google Flow project สำหรับ${label}`
-              : `Retry ${label}: ทำ Flow ใหม่ด้วย prompt retry`,
+              : `Retry ${label} รอบ ${retryAttempt}/${maxSingleStepAttempts - 1}: ทำ Flow ใหม่ด้วย prompt ล่าสุด`,
         });
         const newProject = await openGoogleFlowProject({
           handle,
@@ -2367,7 +2369,7 @@ export default function GoogleFlowWebViewRunnerHost({
           message:
             attempt === 1
               ? `รีเฟรชหน้า Flow ก่อนตั้งค่า${label}`
-              : `รีเฟรชหน้า Flow ก่อน retry ${label}`,
+              : `รีเฟรชหน้า Flow ก่อน retry ${label} รอบ ${retryAttempt}`,
         });
 
         const configArgs =
@@ -2490,7 +2492,7 @@ export default function GoogleFlowWebViewRunnerHost({
           message:
             attempt === 1
               ? `กรอก prompt ${label}: ${(product.name || 'สินค้า').slice(0, 34)}`
-              : `Retry ${label}: กรอก prompt ซ้ำ`,
+              : `Retry ${label} รอบ ${retryAttempt}: กรอก prompt ซ้ำ`,
         });
         await fillPromptAndSubmit({
           baselineVideoUrls,
@@ -2515,12 +2517,12 @@ export default function GoogleFlowWebViewRunnerHost({
           totalRounds: payload.settings.totalRounds,
           currentProduct: productIndex + 1,
           totalProducts: payload.products.length,
-          message: attempt === 1 ? `ส่ง prompt ${label} แล้ว` : `Retry ${label}: ส่ง prompt แล้ว`,
+          message: attempt === 1 ? `ส่ง prompt ${label} แล้ว` : `Retry ${label} รอบ ${retryAttempt}: ส่ง prompt แล้ว`,
         });
 
         return waitForStepResult({
           baselineVideoUrls,
-          countFailure: attempt > 1,
+          countFailure: attempt >= maxSingleStepAttempts,
           count,
           handle,
           payload,
@@ -2531,60 +2533,41 @@ export default function GoogleFlowWebViewRunnerHost({
         });
       };
 
-      let result: FlowResultPoll;
-      try {
-        result = await runSingleStepAttempt(1, prompt);
-      } catch (error) {
-        if (!isRetryableFlowError(error)) {
-          throw error;
-        }
-        const reason = error instanceof Error ? error.message : String(error);
-        let retryPrompt = prompt;
-        emit({
-          event: 'progress',
-          runId: payload.runId,
-          status: 'running',
-          level: 'warning',
-          step,
-          stage: 'single_step_retry',
-          productId: product.id,
-          productName: product.name,
-          currentRound: round,
-          totalRounds: payload.settings.totalRounds,
-          currentProduct: productIndex + 1,
-          totalProducts: payload.products.length,
-          message: `${label} ล้มเหลว จะ retry แบบทำ Flow ใหม่ 1 ครั้ง: ${reason}`,
-        });
-        if (step === 'video' && payload.settings.aiRewritePromptOnAudioFailure !== false) {
+      let result: FlowResultPoll | null = null;
+      let activePrompt = prompt;
+      let rewriteAttempted = false;
+      for (let attempt = 1; attempt <= maxSingleStepAttempts; attempt += 1) {
+        try {
+          result = await runSingleStepAttempt(attempt, activePrompt);
+          break;
+        } catch (error) {
+          if (!isRetryableFlowError(error) || attempt >= maxSingleStepAttempts) {
+            throw error;
+          }
+
+          const reason = error instanceof Error ? error.message : String(error);
           emit({
             event: 'progress',
             runId: payload.runId,
             status: 'running',
-            level: 'action',
+            level: 'warning',
             step,
-            stage: 'single_step_ai_rewrite',
+            stage: 'single_step_retry',
             productId: product.id,
             productName: product.name,
             currentRound: round,
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: isAudioGenerationFailure(reason)
-              ? 'AI กำลังปรับบทพูด/prompt หลังเสียงล้มเหลว ก่อน retry'
-              : 'AI กำลัง rewrite prompt หลัง Google Flow error ก่อน retry',
+            message: `${label} ล้มเหลว จะ retry แบบทำ Flow ใหม่ (${attempt}/${maxSingleStepAttempts - 1}): ${reason}`,
           });
-          const rewrite = await rewriteVideoPromptForFlowError({
-            error: reason,
-            originalPrompt: prompt,
-            product,
-          });
-          if (rewrite.prompt?.trim()) {
-            retryPrompt = rewrite.prompt.trim();
+          if (step === 'video' && payload.settings.aiRewritePromptOnAudioFailure !== false && !rewriteAttempted) {
+            rewriteAttempted = true;
             emit({
               event: 'progress',
               runId: payload.runId,
               status: 'running',
-              level: 'success',
+              level: 'action',
               step,
               stage: 'single_step_ai_rewrite',
               productId: product.id,
@@ -2593,27 +2576,54 @@ export default function GoogleFlowWebViewRunnerHost({
               totalRounds: payload.settings.totalRounds,
               currentProduct: productIndex + 1,
               totalProducts: payload.products.length,
-              message: `AI rewrite prompt สำเร็จ (${retryPrompt.length} ตัวอักษร): ${formatPromptPreview(retryPrompt)}`,
+              message: isAudioGenerationFailure(reason)
+                ? 'AI กำลังปรับบทพูด/prompt หลังเสียงล้มเหลว ก่อน retry'
+                : 'AI กำลัง rewrite prompt หลัง Google Flow error ก่อน retry',
             });
-          } else {
-            emit({
-              event: 'progress',
-              runId: payload.runId,
-              status: 'running',
-              level: 'warning',
-              step,
-              stage: 'single_step_ai_rewrite',
-              productId: product.id,
-              productName: product.name,
-              currentRound: round,
-              totalRounds: payload.settings.totalRounds,
-              currentProduct: productIndex + 1,
-              totalProducts: payload.products.length,
-              message: `AI rewrite prompt ไม่สำเร็จ จะ retry ด้วย prompt เดิม: ${rewrite.error || 'unknown'}`,
+            const rewrite = await rewriteVideoPromptForFlowError({
+              error: reason,
+              originalPrompt: activePrompt,
+              product,
             });
+            if (rewrite.prompt?.trim()) {
+              activePrompt = rewrite.prompt.trim();
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'success',
+                step,
+                stage: 'single_step_ai_rewrite',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `AI rewrite prompt สำเร็จ (${activePrompt.length} ตัวอักษร): ${formatPromptPreview(activePrompt)}`,
+              });
+            } else {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'warning',
+                step,
+                stage: 'single_step_ai_rewrite',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `AI rewrite prompt ไม่สำเร็จ จะ retry ด้วย prompt เดิม: ${rewrite.error || 'unknown'}`,
+              });
+            }
           }
         }
-        result = await runSingleStepAttempt(2, retryPrompt);
+      }
+      if (!result) {
+        throw new Error(`สร้าง${label}ไม่สำเร็จหลัง retry`);
       }
 
       if (step === 'video') {
@@ -2820,6 +2830,26 @@ export default function GoogleFlowWebViewRunnerHost({
               totalProducts: payload.products.length,
               message: `เริ่มสินค้า ${productIndex + 1}/${payload.products.length}: ${product.name || 'สินค้า'}`,
             });
+
+            if (payload.settings.startNewFlowProjectPerProduct !== false) {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                stage: 'flow_home_before_product',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: 'เปิดหน้า Flow หลักก่อนสร้างโปรเจกต์ใหม่สำหรับสินค้านี้',
+              });
+              flowUrlRef.current = FLOW_ENGLISH_URL;
+              handle.goHome();
+              await sleep(3000);
+              checkStop();
+            }
 
             for (const step of payload.enabledSteps) {
               checkStop();
