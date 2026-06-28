@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.7',
+    date: '2026-06-28',
+    highlight: 'ปรับ Auto Workflow ให้รับมือ Google Flow error ได้ดีขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แจ้งเตือนเมื่อ Google Flow เปิดเป็นภาษาอื่นที่ทำให้ระบบหาเมนูไม่ตรง' },
+      { type: 'improved', text: 'เพิ่มการ retry งานวิดีโอเดี่ยวเมื่อ Google Flow สร้างไม่สำเร็จ' },
+      { type: 'improved', text: 'เพิ่มการให้ AI ช่วยปรับ prompt ก่อน retry เมื่อการสร้างวิดีโอมีปัญหา' },
+    ],
+  },
+  {
     version: '0.1.6',
     date: '2026-06-28',
     highlight: 'แสดงสถานะ Auto Workflow ระหว่างทำงานกับ Google Flow ได้ละเอียดขึ้น',
@@ -87,4 +97,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.6';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.7';

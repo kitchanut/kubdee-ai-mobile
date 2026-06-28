@@ -17,9 +17,11 @@ import type {
   GoogleFlowRunnerProduct,
 } from '@/autopilot/types';
 import FlowWebView, {
+  FLOW_ENGLISH_URL,
   type FlowActionLogEntry,
   type FlowConnectionState,
   type FlowWebViewHandle,
+  getFlowLanguageIssue,
 } from '@/flow/FlowWebView';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -109,6 +111,13 @@ class GoogleFlowWebViewRunnerStopped extends Error {
 
 function stepLabel(step: AutoPilotStepType): string {
   return step === 'image' ? 'รูปภาพ' : 'วิดีโอ';
+}
+
+function isRetryableFlowError(error: unknown): boolean {
+  if (error instanceof GoogleFlowWebViewRunnerStopped) return false;
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (!message.trim()) return false;
+  return !/ยังไม่ได้เชื่อมต่อ|Google Flow เปิดเป็น|ตั้งค่า Flow ไม่ครบ|prompt .*ว่าง|ไม่มีรูป reference/i.test(message);
 }
 
 function randomAutoRunDelayMs(settings: AutoPilotSettings): number {
@@ -246,6 +255,14 @@ function cleanAiJsonText(text: string): string {
     .trim();
 }
 
+function cleanAiPromptText(text: string): string {
+  return cleanAiJsonText(text)
+    .replace(/^```(?:text|prompt)?\s*/i, '')
+    .replace(/\s*```$/g, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
+}
+
 function parseAiJsonText(text: string): unknown {
   const cleaned = cleanAiJsonText(text);
   try {
@@ -287,6 +304,20 @@ function normalizeVoiceoverScript(text: string): string {
     .replace(/[!"#$%&'()*+,./:;<=>?@\\^_`{|}~]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function isAudioGenerationFailure(error?: string): boolean {
+  return /\baudio\s+generation\s+failed\b/i.test(error || '');
+}
+
+function formatPromptPreview(prompt: string): string {
+  const preview = prompt
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('\n');
+  return preview.length > 220 ? `${preview.slice(0, 220)}...` : preview;
 }
 
 const SCRIPT_STYLE_PRESETS: Record<string, string> = {
@@ -694,6 +725,85 @@ async function prepareAutoMultiScenePrompts({
   return { ...prepared, prompts };
 }
 
+async function rewriteVideoPromptForFlowError({
+  error,
+  originalPrompt,
+  product,
+}: {
+  error: string;
+  originalPrompt: string;
+  product: GoogleFlowRunnerProduct;
+}): Promise<{ prompt: string | null; error?: string }> {
+  if (!originalPrompt.trim()) {
+    return { prompt: null, error: 'ไม่มี prompt เดิมให้ rewrite' };
+  }
+
+  const tokens = await getStoredAuthTokens();
+  if (!tokens?.accessToken) {
+    return { prompt: null, error: 'ยังไม่ได้เข้าสู่ระบบ' };
+  }
+
+  const audioFailure = isAudioGenerationFailure(error);
+  const prompt = `${audioFailure
+    ? 'Fix this Google Flow / Veo product video prompt because the previous generation failed specifically at audio generation.'
+    : 'Rewrite this Google Flow / Veo product video prompt into a safer prompt because the previous generation failed.'}
+
+Return only the final prompt text. Do not use markdown. Do not explain.
+
+Product:
+- Name: ${product.name || ''}
+- Description: ${product.description || ''}
+- Caption: ${product.caption || ''}
+- CTA: ${product.cta || ''}
+
+Failure:
+${error || 'Generation failed'}
+
+Original prompt:
+"""${originalPrompt}"""
+
+Rewrite requirements:
+- Write clear generation instructions in English, except any spoken Thai dialogue.
+- Preserve product identity, reference-image discipline, scene, character, camera framing, face visibility rule, no-subtitle rule, no-on-screen-text rule, and full-screen requirement from the original prompt.
+- Keep the attached reference image as the exact visual source when the original prompt uses a reference image.
+- Do not invent a new product, new person, new background, new location, or new face.
+- If Thai speech is required, keep it plain, natural, TTS-safe, and about 6.3 to 7.0 seconds.
+- If the failure is audio-related, simplify audio to one natural Thai narration voice. Remove or soften background music, sound effects, singing, shouting, whispering, ASMR, multiple speakers, and complex voice acting.
+- If the original prompt requested no speech or voiceover visual-only footage, preserve that and do not add dialogue.
+- Keep the final prompt concise enough for one Google Flow video generation.`.trim();
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/v1/ai/generate`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokens.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        prompt,
+      }),
+    });
+    const data = (await response.json().catch(() => ({}))) as { text?: string; message?: string; error?: string };
+    if (!response.ok) {
+      return { prompt: null, error: data.message || data.error || 'AI rewrite prompt ไม่สำเร็จ' };
+    }
+
+    const rewritten = cleanAiPromptText(data.text || '');
+    if (rewritten.length < 20) {
+      return { prompt: null, error: 'AI rewrite prompt สั้นเกินไป' };
+    }
+
+    return { prompt: rewritten };
+  } catch (fetchError) {
+    return {
+      prompt: null,
+      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+    };
+  }
+}
+
 function resolveGeminiTtsVoice(voiceCharacter?: string, voiceGender?: string): string {
   const directVoice = voiceCharacter?.startsWith('tts_') ? voiceCharacter.replace(/^tts_/, '') : '';
   if (directVoice) {
@@ -830,6 +940,7 @@ export default function GoogleFlowWebViewRunnerHost({
   const stopRequestedRef = useRef(false);
   const payloadRef = useRef<GoogleFlowRunnerPayload | null>(null);
   const flowStatusRef = useRef<FlowConnectionState>('unknown');
+  const flowUrlRef = useRef('');
   const actionLogContextRef = useRef<FlowActionLogContext | null>(null);
   const [visible, setVisible] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -955,6 +1066,29 @@ export default function GoogleFlowWebViewRunnerHost({
       while (Date.now() - startedAt < 120_000) {
         checkStop();
         const status = flowStatusRef.current;
+        const languageIssue = getFlowLanguageIssue(flowUrlRef.current);
+        if (languageIssue) {
+          const localeText = languageIssue.locale ? `/${languageIssue.locale}/` : 'ภาษาอื่น';
+          const message =
+            `Google Flow เปิดเป็น ${localeText} ซึ่งทำให้ระบบหาเมนูไม่ตรง ` +
+            `กรุณาเปิด Google Flow เป็น English ก่อน แล้วเริ่มรันใหม่อีกครั้ง (${FLOW_ENGLISH_URL})`;
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            level: 'error',
+            step,
+            stage: 'flow_language_error',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message,
+          });
+          throw new Error(message);
+        }
         if (status === 'signin' || status === 'loggedout') {
           throw new Error('ยังไม่ได้เชื่อมต่อ Google Flow ใน WebView');
         }
@@ -1062,6 +1196,7 @@ export default function GoogleFlowWebViewRunnerHost({
       productIndex,
       round,
       step,
+      countFailure = true,
     }: {
       baselineVideoUrls: string[];
       count: number;
@@ -1071,6 +1206,7 @@ export default function GoogleFlowWebViewRunnerHost({
       productIndex: number;
       round: number;
       step: AutoPilotStepType;
+      countFailure?: boolean;
     }): Promise<FlowResultPoll> => {
       const startedAt = Date.now();
       const timeoutMs = step === 'video' ? 300_000 : 180_000;
@@ -1140,7 +1276,7 @@ export default function GoogleFlowWebViewRunnerHost({
               runId: payload.runId,
               status: 'running',
               step,
-              stage: 'failed',
+              stage: countFailure ? 'failed' : 'flow_failed_detected',
               productId: product.id,
               productName: product.name,
               currentRound: round,
@@ -1925,7 +2061,7 @@ export default function GoogleFlowWebViewRunnerHost({
           }
 
           const scenePrompt = promptResult.prompts[sceneIndex] || multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover);
-          const runSceneVideo = async (nextPrompt: string): Promise<FlowResultPoll> => {
+          const runSceneVideo = async (nextPrompt: string, countFailure = true): Promise<FlowResultPoll> => {
             const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
             const baselineVideoUrls = snapshot.videoUrls ?? [];
             await fillPromptAndSubmit({
@@ -1941,6 +2077,7 @@ export default function GoogleFlowWebViewRunnerHost({
             });
             return waitForStepResult({
               baselineVideoUrls,
+              countFailure,
               count: 1,
               handle,
               payload,
@@ -1953,7 +2090,7 @@ export default function GoogleFlowWebViewRunnerHost({
 
           let videoResult: FlowResultPoll;
           try {
-            videoResult = await runSceneVideo(scenePrompt);
+            videoResult = await runSceneVideo(scenePrompt, !useVoiceover);
           } catch (error) {
             if (!useVoiceover) {
               throw error;
@@ -2187,200 +2324,297 @@ export default function GoogleFlowWebViewRunnerHost({
         return;
       }
 
-      emit({
-        event: 'progress',
-        runId: payload.runId,
-        status: 'running',
-        step,
-        stage: 'open_project',
-        productId: product.id,
-        productName: product.name,
-        currentRound: round,
-        totalRounds: payload.settings.totalRounds,
-        currentProduct: productIndex + 1,
-        totalProducts: payload.products.length,
-        message: `เข้า Google Flow project สำหรับ${label}`,
-      });
-      const newProject = await openGoogleFlowProject({
-        handle,
-        payload,
-        product,
-        productIndex,
-        round,
-        step,
-      });
-      emit({
-        runId: payload.runId,
-        status: 'running',
-        message: newProject.already ? 'อยู่ใน Google Flow project อยู่แล้ว' : 'เข้า Google Flow project แล้ว',
-      });
-
-      await refreshGoogleFlowProject({
-        handle,
-        payload,
-        product,
-        productIndex,
-        round,
-        step,
-        stage: 'refresh_before_config',
-        message: `รีเฟรชหน้า Flow ก่อนตั้งค่า${label}`,
-      });
-
-      const configArgs =
-        step === 'image'
-          ? {
-              targetMode: 'image',
-              aspectRatio: product.settings.image.aspectRatio,
-              outputCount: count,
-              imageModel: imageModelForProduct(product, payload.settings),
-            }
-          : {
-              targetMode: 'video',
-              aspectRatio: product.settings.video.aspectRatio,
-              outputCount: count,
-              videoDuration: videoDurationForProduct(product, payload.settings),
-              videoModel: videoModelForProduct(product, payload.settings),
-            };
-      const config = (await runActionOrThrow(handle, 'configurePopper', configArgs, 70_000)) as {
-        success?: boolean;
-        error?: string;
-      };
-      if (config.success === false) {
-        emit({
-          runId: payload.runId,
-          status: 'running',
-          message: `ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'}`,
-        });
-        throw new Error(`ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'}`);
-      } else {
-        emit({ runId: payload.runId, status: 'running', message: `ตั้งค่าโหมด${label}แล้ว` });
-      }
-
-      let videoReferenceAttached = false;
-      const shouldUsePreviousImage = step === 'video' && payload.enabledSteps.includes('image');
-      if (shouldUsePreviousImage) {
+      const runSingleStepAttempt = async (attempt: number, attemptPrompt: string): Promise<FlowResultPoll> => {
         emit({
           event: 'progress',
           runId: payload.runId,
           status: 'running',
           step,
-          stage: 'attach_reference',
+          stage: attempt === 1 ? 'open_project' : 'single_step_retry',
           productId: product.id,
           productName: product.name,
           currentRound: round,
           totalRounds: payload.settings.totalRounds,
           currentProduct: productIndex + 1,
           totalProducts: payload.products.length,
-          message: 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
+          message:
+            attempt === 1
+              ? `เข้า Google Flow project สำหรับ${label}`
+              : `Retry ${label}: ทำ Flow ใหม่ด้วย prompt retry`,
         });
-        await selectRecentImageOrThrow({
+        const newProject = await openGoogleFlowProject({
           handle,
           payload,
           product,
           productIndex,
           round,
-          stage: 'attach_reference',
           step,
         });
-        videoReferenceAttached = true;
-      } else if (product.preview) {
         emit({
-          event: 'progress',
           runId: payload.runId,
           status: 'running',
-          step,
-          stage: 'attach_reference',
-          productId: product.id,
-          productName: product.name,
-          currentRound: round,
-          totalRounds: payload.settings.totalRounds,
-          currentProduct: productIndex + 1,
-          totalProducts: payload.products.length,
-          message: `แนบรูปสินค้า reference สำหรับ${label}`,
+          message: newProject.already ? 'อยู่ใน Google Flow project อยู่แล้ว' : 'เข้า Google Flow project แล้ว',
         });
-        const dataUrl = await loadImageReferenceDataUrl(product.preview);
-        await uploadReferenceImageOrThrow({
+
+        await refreshGoogleFlowProject({
           handle,
           payload,
           product,
           productIndex,
           round,
           step,
-          args: {
-            dataUrl: dataUrl ?? undefined,
-            fileName: getReferenceFileName(product),
-            imageUrl: dataUrl ? undefined : product.preview,
-          },
+          stage: attempt === 1 ? 'refresh_before_config' : 'single_step_retry_refresh',
+          message:
+            attempt === 1
+              ? `รีเฟรชหน้า Flow ก่อนตั้งค่า${label}`
+              : `รีเฟรชหน้า Flow ก่อน retry ${label}`,
         });
-        videoReferenceAttached = step === 'video';
-      }
 
-      let baselineVideoUrls: string[] = [];
-      if (step === 'video') {
-        if (videoReferenceAttached) {
-          await ensureVideoReferenceAttached({
+        const configArgs =
+          step === 'image'
+            ? {
+                targetMode: 'image',
+                aspectRatio: product.settings.image.aspectRatio,
+                outputCount: count,
+                imageModel: imageModelForProduct(product, payload.settings),
+              }
+            : {
+                targetMode: 'video',
+                aspectRatio: product.settings.video.aspectRatio,
+                outputCount: count,
+                videoDuration: videoDurationForProduct(product, payload.settings),
+                videoModel: videoModelForProduct(product, payload.settings),
+              };
+        const config = (await runActionOrThrow(handle, 'configurePopper', configArgs, 70_000)) as {
+          success?: boolean;
+          error?: string;
+        };
+        if (config.success === false) {
+          emit({
+            runId: payload.runId,
+            status: 'running',
+            message: `ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'}`,
+          });
+          throw new Error(`ตั้งค่า Flow ไม่ครบ: ${config.error ?? 'unknown'}`);
+        } else {
+          emit({ runId: payload.runId, status: 'running', message: `ตั้งค่าโหมด${label}แล้ว` });
+        }
+
+        let videoReferenceAttached = false;
+        const shouldUsePreviousImage = step === 'video' && payload.enabledSteps.includes('image');
+        if (shouldUsePreviousImage) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'attach_reference',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
+          });
+          await selectRecentImageOrThrow({
+            handle,
+            payload,
+            product,
+            productIndex,
+            round,
+            stage: 'attach_reference',
+            step,
+          });
+          videoReferenceAttached = true;
+        } else if (product.preview) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'attach_reference',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `แนบรูปสินค้า reference สำหรับ${label}`,
+          });
+          const dataUrl = await loadImageReferenceDataUrl(product.preview);
+          await uploadReferenceImageOrThrow({
             handle,
             payload,
             product,
             productIndex,
             round,
             step,
+            args: {
+              dataUrl: dataUrl ?? undefined,
+              fileName: getReferenceFileName(product),
+              imageUrl: dataUrl ? undefined : product.preview,
+            },
           });
+          videoReferenceAttached = step === 'video';
         }
-        const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
-        baselineVideoUrls = snapshot.videoUrls ?? [];
+
+        let baselineVideoUrls: string[] = [];
+        if (step === 'video') {
+          if (videoReferenceAttached) {
+            await ensureVideoReferenceAttached({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+            });
+          }
+          const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
+          baselineVideoUrls = snapshot.videoUrls ?? [];
+        }
+
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: attempt === 1 ? 'fill_prompt' : 'single_step_retry_fill_prompt',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message:
+            attempt === 1
+              ? `กรอก prompt ${label}: ${(product.name || 'สินค้า').slice(0, 34)}`
+              : `Retry ${label}: กรอก prompt ซ้ำ`,
+        });
+        await fillPromptAndSubmit({
+          baselineVideoUrls,
+          count,
+          handle,
+          payload,
+          product,
+          productIndex,
+          prompt: attemptPrompt,
+          round,
+          step,
+        });
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: attempt === 1 ? 'submitted' : 'single_step_retry_submitted',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: attempt === 1 ? `ส่ง prompt ${label} แล้ว` : `Retry ${label}: ส่ง prompt แล้ว`,
+        });
+
+        return waitForStepResult({
+          baselineVideoUrls,
+          countFailure: attempt > 1,
+          count,
+          handle,
+          payload,
+          product,
+          productIndex,
+          round,
+          step,
+        });
+      };
+
+      let result: FlowResultPoll;
+      try {
+        result = await runSingleStepAttempt(1, prompt);
+      } catch (error) {
+        if (!isRetryableFlowError(error)) {
+          throw error;
+        }
+        const reason = error instanceof Error ? error.message : String(error);
+        let retryPrompt = prompt;
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'warning',
+          step,
+          stage: 'single_step_retry',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `${label} ล้มเหลว จะ retry แบบทำ Flow ใหม่ 1 ครั้ง: ${reason}`,
+        });
+        if (step === 'video' && payload.settings.aiRewritePromptOnAudioFailure !== false) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            level: 'action',
+            step,
+            stage: 'single_step_ai_rewrite',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: isAudioGenerationFailure(reason)
+              ? 'AI กำลังปรับบทพูด/prompt หลังเสียงล้มเหลว ก่อน retry'
+              : 'AI กำลัง rewrite prompt หลัง Google Flow error ก่อน retry',
+          });
+          const rewrite = await rewriteVideoPromptForFlowError({
+            error: reason,
+            originalPrompt: prompt,
+            product,
+          });
+          if (rewrite.prompt?.trim()) {
+            retryPrompt = rewrite.prompt.trim();
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              level: 'success',
+              step,
+              stage: 'single_step_ai_rewrite',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `AI rewrite prompt สำเร็จ (${retryPrompt.length} ตัวอักษร): ${formatPromptPreview(retryPrompt)}`,
+            });
+          } else {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              level: 'warning',
+              step,
+              stage: 'single_step_ai_rewrite',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `AI rewrite prompt ไม่สำเร็จ จะ retry ด้วย prompt เดิม: ${rewrite.error || 'unknown'}`,
+            });
+          }
+        }
+        result = await runSingleStepAttempt(2, retryPrompt);
       }
-
-      emit({
-        event: 'progress',
-        runId: payload.runId,
-        status: 'running',
-        step,
-        stage: 'fill_prompt',
-        productId: product.id,
-        productName: product.name,
-        currentRound: round,
-        totalRounds: payload.settings.totalRounds,
-        currentProduct: productIndex + 1,
-        totalProducts: payload.products.length,
-        message: `กรอก prompt ${label}: ${(product.name || 'สินค้า').slice(0, 34)}`,
-      });
-      await fillPromptAndSubmit({
-        baselineVideoUrls,
-        count,
-        handle,
-        payload,
-        product,
-        productIndex,
-        prompt,
-        round,
-        step,
-      });
-      emit({
-        event: 'progress',
-        runId: payload.runId,
-        status: 'running',
-        step,
-        stage: 'submitted',
-        productId: product.id,
-        productName: product.name,
-        currentRound: round,
-        totalRounds: payload.settings.totalRounds,
-        currentProduct: productIndex + 1,
-        totalProducts: payload.products.length,
-        message: `ส่ง prompt ${label} แล้ว`,
-      });
-
-      const result = await waitForStepResult({
-        baselineVideoUrls,
-        count,
-        handle,
-        payload,
-        product,
-        productIndex,
-        round,
-        step,
-      });
 
       if (step === 'video') {
         const videos = result.videos ?? [];
@@ -2679,6 +2913,7 @@ export default function GoogleFlowWebViewRunnerHost({
         flowStatusRef.current = 'unknown';
         setOverlayLogs([]);
         setVisible(true);
+        flowUrlRef.current = '';
         void runPayload(payload);
         return true;
       },
@@ -2752,8 +2987,12 @@ export default function GoogleFlowWebViewRunnerHost({
             ref={flowRef}
             backgroundColor={theme.screen}
             onActionLog={emitFlowActionLog}
-            onStatusChange={(state) => {
+            onNavigationChange={(href) => {
+              flowUrlRef.current = href;
+            }}
+            onStatusChange={(state, href) => {
               flowStatusRef.current = state;
+              flowUrlRef.current = href;
               setFlowStatus(state);
             }}
           />

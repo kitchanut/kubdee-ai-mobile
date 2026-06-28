@@ -366,6 +366,8 @@ function getRunStageLabel(stage: string | null): string {
       return 'เริ่มสร้างงาน';
     case 'open_project':
       return 'เปิดโปรเจกต์';
+    case 'flow_language_error':
+      return 'ตรวจภาษา Flow';
     case 'wait_flow_ready':
       return 'รอ Flow พร้อม';
     case 'refresh_before_config':
@@ -411,6 +413,16 @@ function getRunStageLabel(stage: string | null): string {
       return 'Retype Prompt';
     case 'retype_start_check':
       return 'ตรวจหลัง Retype';
+    case 'single_step_retry':
+      return 'Retry งานเดี่ยว';
+    case 'single_step_ai_rewrite':
+      return 'AI Rewrite';
+    case 'single_step_retry_refresh':
+      return 'รีเฟรช Retry';
+    case 'single_step_retry_fill_prompt':
+      return 'กรอก Prompt ซ้ำ';
+    case 'single_step_retry_submitted':
+      return 'ส่ง Retry แล้ว';
     case 'waiting_result':
       return 'รอผลจาก Flow';
     case 'downloading_result':
@@ -423,6 +435,8 @@ function getRunStageLabel(stage: string | null): string {
       return 'ได้วิดีโอฉาก';
     case 'voiceover_video_retry':
       return 'Retry ภาพล้วน';
+    case 'flow_failed_detected':
+      return 'Flow แจ้งล้มเหลว';
     case 'voiceover_probe_videos':
       return 'ตรวจความยาวจริง';
     case 'voiceover':

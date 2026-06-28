@@ -22,7 +22,30 @@ export interface FlowActionLogEntry {
   ts: number;
 }
 
-export const FLOW_URL = 'https://labs.google/fx/tools/flow';
+export const FLOW_ENGLISH_URL = 'https://labs.google/fx/en/tools/flow';
+export const FLOW_URL = FLOW_ENGLISH_URL;
+
+export interface FlowLanguageIssue {
+  locale: string;
+  url: string;
+}
+
+export function getFlowLanguageIssue(url: string | null | undefined): FlowLanguageIssue | null {
+  try {
+    const parsedUrl = new URL(url || '');
+    if (parsedUrl.hostname !== 'labs.google') return null;
+
+    const localeMatch = parsedUrl.pathname.match(/^\/fx\/([^/]+)\/tools\/flow(?:\/|$)/i);
+    if (!localeMatch) return null;
+
+    const locale = localeMatch[1] || '';
+    if (/^en(?:-|$)/i.test(locale)) return null;
+
+    return { locale, url: parsedUrl.href };
+  } catch {
+    return null;
+  }
+}
 
 // Pretend to be real mobile Chrome (NO "; wv" token) so Google's WebView sign-in
 // block ("this browser may not be secure") does not trigger.
