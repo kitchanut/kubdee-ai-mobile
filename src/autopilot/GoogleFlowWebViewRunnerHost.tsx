@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Square, X } from 'lucide-react-native';
 
@@ -11,6 +11,7 @@ import { AUTO_PILOT_INFINITE_LOOP_ROUNDS, AUTO_PILOT_INFINITE_ROUNDS } from '@/a
 import { BACKEND_URL } from '@/auth/constants';
 import { getStoredAuthTokens } from '@/auth/storage';
 import type {
+  AutoPilotFlowStats,
   AutoPilotSettings,
   AutoPilotStepType,
   GoogleFlowRunnerLogEntry,
@@ -113,6 +114,18 @@ interface OverlayLogLine {
   id: string;
   message: string;
   ts: number;
+}
+
+interface OverlayProgressState {
+  currentRound: number;
+  totalRounds: number;
+  currentProduct: number;
+  totalProducts: number;
+  step: AutoPilotStepType | null;
+  stage: string | null;
+  productName: string;
+  flowStats?: AutoPilotFlowStats;
+  updatedAt: number;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -981,10 +994,46 @@ export default function GoogleFlowWebViewRunnerHost({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [flowStatus, setFlowStatus] = useState<FlowConnectionState>('unknown');
   const [overlayLogs, setOverlayLogs] = useState<OverlayLogLine[]>([]);
+  const [overlayProgress, setOverlayProgress] = useState<OverlayProgressState | null>(null);
 
   const emit = useCallback((entry: Omit<GoogleFlowRunnerLogEntry, 'ts'> & { ts?: number }): void => {
     const ts = entry.ts ?? Date.now();
+    const terminalStage =
+      entry.status === 'completed' || entry.status === 'stopped' || entry.status === 'error'
+        ? entry.status
+        : null;
     emitGoogleFlowRunnerLog({ ...entry, ts });
+    if (entry.event === 'progress') {
+      setOverlayProgress((current) => ({
+        currentRound: entry.currentRound ?? current?.currentRound ?? 0,
+        totalRounds:
+          entry.totalRounds ??
+          current?.totalRounds ??
+          payloadRef.current?.settings.totalRounds ??
+          0,
+        currentProduct: entry.currentProduct ?? current?.currentProduct ?? 0,
+        totalProducts:
+          entry.totalProducts ??
+          current?.totalProducts ??
+          payloadRef.current?.products.length ??
+          0,
+        step: entry.step ?? current?.step ?? null,
+        stage: entry.stage ?? current?.stage ?? null,
+        productName: entry.productName ?? current?.productName ?? '',
+        flowStats: entry.flowStats ?? current?.flowStats,
+        updatedAt: ts,
+      }));
+    } else if (terminalStage) {
+      setOverlayProgress((current) =>
+        current
+          ? {
+              ...current,
+              stage: terminalStage,
+              updatedAt: ts,
+            }
+          : current
+      );
+    }
     if (entry.message) {
       setOverlayLogs((current) => [
         ...current.slice(-7),
@@ -3145,6 +3194,7 @@ export default function GoogleFlowWebViewRunnerHost({
         setFlowStatus('unknown');
         flowStatusRef.current = 'unknown';
         setOverlayLogs([]);
+        setOverlayProgress(null);
         setVisible(true);
         flowUrlRef.current = '';
         void runPayload(payload);
@@ -3215,6 +3265,39 @@ export default function GoogleFlowWebViewRunnerHost({
             )}
           </TouchableOpacity>
         </View>
+        {overlayProgress ? (
+          <View className="border-b border-kd-border bg-kd-panel px-3 py-2">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6, paddingRight: 8 }}
+            >
+              <OverlayStatChip
+                label="รอบ"
+                theme={theme}
+                value={formatRoundProgress(overlayProgress.currentRound, overlayProgress.totalRounds)}
+              />
+              <OverlayStatChip
+                label="สินค้า"
+                theme={theme}
+                value={`${overlayProgress.currentProduct}/${overlayProgress.totalProducts || '-'}`}
+              />
+              <OverlayStatChip
+                label="ขั้นตอน"
+                theme={theme}
+                value={formatOverlayStep(overlayProgress.step, overlayProgress.stage)}
+              />
+              <OverlayStatChip
+                label="Flow"
+                theme={theme}
+                value={formatOverlayFlowStats(overlayProgress.flowStats)}
+              />
+              {overlayProgress.productName ? (
+                <OverlayStatChip label="งาน" theme={theme} value={overlayProgress.productName} wide />
+              ) : null}
+            </ScrollView>
+          </View>
+        ) : null}
         <View className="relative flex-1">
           <FlowWebView
             ref={flowRef}
@@ -3254,6 +3337,63 @@ export default function GoogleFlowWebViewRunnerHost({
       </SafeAreaView>
     </Modal>
   );
+}
+
+function OverlayStatChip({
+  label,
+  theme,
+  value,
+  wide = false,
+}: {
+  label: string;
+  theme: KubdeeTheme;
+  value: string;
+  wide?: boolean;
+}): React.JSX.Element {
+  return (
+    <View
+      className="rounded-kd-md border px-2 py-1"
+      style={{
+        backgroundColor: theme.cardMuted,
+        borderColor: theme.border,
+        maxWidth: wide ? 220 : undefined,
+      }}
+    >
+      <Text className="text-[9px] font-extrabold uppercase text-kd-text-muted" numberOfLines={1}>
+        {label}
+      </Text>
+      <Text className="text-[10px] font-black text-kd-text" numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function formatOverlayStep(step: AutoPilotStepType | null, stage: string | null): string {
+  const stepText = step ? stepLabel(step) : 'รอเริ่ม';
+  if (!stage) return stepText;
+  if (stage === 'completed') return 'เสร็จสิ้น';
+  if (stage === 'stopped') return 'หยุดแล้ว';
+  if (stage === 'error') return 'เกิดข้อผิดพลาด';
+  if (stage === 'waiting_result') return `${stepText} · รอผล`;
+  if (stage === 'waiting_start') return `${stepText} · รอเริ่ม`;
+  if (stage === 'generated') return `${stepText} · ได้ไฟล์`;
+  if (stage === 'downloading_result') return `${stepText} · บันทึกไฟล์`;
+  if (stage === 'step_started') return stepText;
+  return `${stepText} · ${stage.replace(/^flow_/, '')}`;
+}
+
+function formatOverlayFlowStats(stats?: AutoPilotFlowStats): string {
+  if (!stats) return 'รอข้อมูล';
+  if (stats.progress != null) return `${stats.progress}%`;
+  const parts = [
+    stats.generating > 0 ? `gen ${stats.generating}` : '',
+    stats.queued > 0 ? `queue ${stats.queued}` : '',
+    stats.success > 0 ? `ok ${stats.success}` : '',
+    stats.failed > 0 ? `fail ${stats.failed}` : '',
+    stats.tilesFound ? `tiles ${stats.tilesFound}` : '',
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : 'รอข้อมูล';
 }
 
 function formatOverlayTime(timestamp: number): string {

@@ -701,6 +701,38 @@ const SUBMIT_BODY = `
   await wait(2500);
   var lenAfter = getPromptText().length;
   var clearedPrompt = lenBefore > 0 && lenAfter === 0;
+  if (!clearedPrompt && lenAfter > 0) {
+    setStatus('prompt ยังไม่ถูก clear หลัง submit กำลังลองกด Clear prompt...', 'info');
+    var clearBtn = null;
+    var clearButtons = Array.prototype.slice.call(document.querySelectorAll('button'));
+    for (var cb = 0; cb < clearButtons.length; cb++) {
+      var clearCandidate = clearButtons[cb];
+      if (clearCandidate.closest('[role="menu"]') || clearCandidate.closest('nav')) continue;
+      var clearSpan = clearCandidate.querySelector('span');
+      var clearIcon = clearCandidate.querySelector('i');
+      var spanText = ((clearSpan && clearSpan.textContent) || '').trim().toLowerCase();
+      var iconText = ((clearIcon && clearIcon.textContent) || '').trim().toLowerCase();
+      var buttonText = (clearCandidate.textContent || '').trim().toLowerCase();
+      var isClearPrompt =
+        iconText === 'close' &&
+        (spanText.indexOf('clear prompt') !== -1 ||
+          buttonText.indexOf('clear prompt') !== -1 ||
+          buttonText.indexOf('ล้าง prompt') !== -1 ||
+          buttonText.indexOf('ล้างพรอมป์') !== -1);
+      if (isClearPrompt && !isDisabled(clearCandidate)) {
+        clearBtn = clearCandidate;
+        break;
+      }
+    }
+    if (clearBtn) {
+      await wait(3000);
+      clearBtn.click();
+      await wait(500);
+      lenAfter = getPromptText().length;
+      clearedPrompt = lenAfter === 0;
+      setStatus(clearedPrompt ? 'Clear prompt หลัง submit สำเร็จ' : 'กด Clear prompt แล้ว แต่ยังมีข้อความค้างอยู่', clearedPrompt ? 'success' : 'warning');
+    }
+  }
   setStatus('กดปุ่มสร้างแล้ว (' + method + ')', 'success');
   return { method: method, clearedPrompt: clearedPrompt, lenBefore: lenBefore, lenAfter: lenAfter };
 `;

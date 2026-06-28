@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.13',
+    date: '2026-06-29',
+    highlight: 'ปรับการติดตาม Auto Workflow บน Google Flow ให้ชัดเจนขึ้น',
+    changes: [
+      { type: 'added', text: 'เพิ่มแถบสถานะรอบ สินค้า ขั้นตอน และสถานะ Flow ระหว่างรันงาน' },
+      { type: 'improved', text: 'ปรับการส่งคำสั่งสร้างงานให้ลดปัญหา prompt ค้างหลังเริ่มสร้าง' },
+      { type: 'improved', text: 'แสดงงานที่กำลังทำในหน้าต่าง Google Flow ได้อ่านง่ายขึ้น' },
+    ],
+  },
+  {
     version: '0.1.12',
     date: '2026-06-29',
     highlight: 'ปรับ Auto Workflow ให้ตั้งค่ารอบและติดตามจำนวนงานได้ละเอียดขึ้น',
@@ -152,4 +162,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.12';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.13';
