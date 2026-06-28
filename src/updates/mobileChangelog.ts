@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.29',
+    date: '2026-06-29',
+    highlight: 'วิดีโอหลายฉาก retry ได้เฉพาะฉากที่ล้มเหลว',
+    changes: [
+      { type: 'improved', text: 'ถ้าวิดีโอหลายฉากสร้างบางฉากไม่สำเร็จ ระบบจะลองใหม่เฉพาะฉากนั้นโดยใช้รูปเดิม' },
+      { type: 'improved', text: 'รองรับ AI rewrite prompt ก่อน retry ฉากวิดีโอที่ล้มเหลว เพื่อลดการหยุดทั้งงาน' },
+      { type: 'improved', text: 'เพิ่มสถานะ Activity Log สำหรับ retry วิดีโอหลายฉากให้ตามงานได้ชัดขึ้น' },
+    ],
+  },
+  {
     version: '0.1.28',
     date: '2026-06-29',
     highlight: 'หน้า Auto เลือกตัวละครและฉากจากคลังได้จริง',
@@ -304,4 +314,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.28';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.29';

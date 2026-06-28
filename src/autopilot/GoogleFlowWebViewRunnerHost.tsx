@@ -2886,69 +2886,147 @@ export default function GoogleFlowWebViewRunnerHost({
             });
           };
 
-          let videoResult: FlowResultPoll;
-          try {
-            videoResult = await runSceneVideo(scenePrompt, !useVoiceover);
-          } catch (error) {
-            if (!useVoiceover) {
-              throw error;
-            }
-            const retryReason = error instanceof Error ? error.message : String(error);
-            emit({
-              event: 'progress',
-              runId: payload.runId,
-              status: 'running',
-              step,
-              stage: 'voiceover_video_retry',
-              productId: product.id,
-              productName: product.name,
-              currentRound: round,
-              totalRounds: payload.settings.totalRounds,
-              currentProduct: productIndex + 1,
-              totalProducts: payload.products.length,
-              message: `วิดีโอฉาก ${sceneNumber} ล้มเหลว จะลองใหม่แบบภาพล้วนไม่มีเสียง: ${retryReason}`,
-            });
+          const maxSceneVideoAttempts = 2;
+          let videoResult: FlowResultPoll | null = null;
+          let activeScenePrompt = scenePrompt;
+          let sceneRewriteAttempted = false;
+          for (let sceneAttempt = 1; sceneAttempt <= maxSceneVideoAttempts; sceneAttempt += 1) {
+            const finalSceneAttempt = sceneAttempt >= maxSceneVideoAttempts;
+            try {
+              videoResult = await runSceneVideo(activeScenePrompt, finalSceneAttempt);
+              break;
+            } catch (error) {
+              if (!isRetryableFlowError(error) || finalSceneAttempt) {
+                throw error;
+              }
 
-            await refreshGoogleFlowProject({
-              handle,
-              payload,
-              product,
-              productIndex,
-              round,
-              step,
-              stage: 'voiceover_video_retry_refresh',
-              message: `รีเฟรชหน้า Flow ก่อน retry วิดีโอฉาก ${sceneNumber}/${sceneCount} แบบไม่มีเสียง`,
-            });
+              const retryReason = error instanceof Error ? error.message : String(error);
+              const retryAsSilentVoiceover = useVoiceover;
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'warning',
+                step,
+                stage: retryAsSilentVoiceover ? 'voiceover_video_retry' : 'multi_scene_video_retry',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: retryAsSilentVoiceover
+                  ? `วิดีโอฉาก ${sceneNumber} ล้มเหลว จะลองใหม่แบบภาพล้วนไม่มีเสียง: ${retryReason}`
+                  : `วิดีโอฉาก ${sceneNumber} ล้มเหลว จะ retry เฉพาะฉากนี้โดยใช้รูปเดิม: ${retryReason}`,
+              });
 
-            const retryConfig = (await runActionWithProductContext(
-              'configurePopper',
-              {
-                targetMode: 'video',
-                aspectRatio: product.settings.video.aspectRatio,
-                outputCount: 1,
-                videoDuration,
-                videoModel,
-              },
-              70_000,
-              'voiceover_video_retry_config'
-            )) as { success?: boolean; error?: string };
-            if (retryConfig.success === false) {
-              throw new Error(`ตั้งค่า Flow วิดีโอฉากก่อน retry ไม่ครบ: ${retryConfig.error ?? 'unknown'}`);
-            }
+              if (retryAsSilentVoiceover) {
+                activeScenePrompt = toVoiceoverSilentRetryPrompt(activeScenePrompt);
+              } else if (payload.settings.aiRewritePromptOnAudioFailure !== false && !sceneRewriteAttempted) {
+                sceneRewriteAttempted = true;
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'action',
+                  step,
+                  stage: 'multi_scene_ai_rewrite',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: isAudioGenerationFailure(retryReason)
+                    ? `AI กำลังปรับบทพูด/prompt ของฉาก ${sceneNumber} หลังเสียงล้มเหลว`
+                    : `AI กำลัง rewrite prompt ของฉาก ${sceneNumber} หลัง Google Flow error`,
+                });
+                const rewrite = await rewriteVideoPromptForFlowError({
+                  error: retryReason,
+                  originalPrompt: activeScenePrompt,
+                  product,
+                });
+                if (rewrite.prompt?.trim()) {
+                  activeScenePrompt = rewrite.prompt.trim();
+                  emit({
+                    event: 'progress',
+                    runId: payload.runId,
+                    status: 'running',
+                    level: 'success',
+                    step,
+                    stage: 'multi_scene_ai_rewrite',
+                    productId: product.id,
+                    productName: product.name,
+                    currentRound: round,
+                    totalRounds: payload.settings.totalRounds,
+                    currentProduct: productIndex + 1,
+                    totalProducts: payload.products.length,
+                    message: `AI rewrite prompt ฉาก ${sceneNumber} สำเร็จ (${activeScenePrompt.length} ตัวอักษร): ${formatPromptPreview(activeScenePrompt)}`,
+                  });
+                } else {
+                  emit({
+                    event: 'progress',
+                    runId: payload.runId,
+                    status: 'running',
+                    level: 'warning',
+                    step,
+                    stage: 'multi_scene_ai_rewrite',
+                    productId: product.id,
+                    productName: product.name,
+                    currentRound: round,
+                    totalRounds: payload.settings.totalRounds,
+                    currentProduct: productIndex + 1,
+                    totalProducts: payload.products.length,
+                    message: `AI rewrite prompt ฉาก ${sceneNumber} ไม่สำเร็จ จะ retry ด้วย prompt เดิม: ${rewrite.error || 'unknown'}`,
+                  });
+                }
+              }
 
-            const retryReferenceAttached = await attachSceneReference();
-            if (retryReferenceAttached) {
-              await ensureVideoReferenceAttached({
+              await refreshGoogleFlowProject({
                 handle,
                 payload,
                 product,
                 productIndex,
                 round,
                 step,
-                message: `ตรวจ reference วิดีโอฉาก ${sceneNumber}/${sceneCount} ก่อน retry`,
+                stage: retryAsSilentVoiceover ? 'voiceover_video_retry_refresh' : 'multi_scene_video_retry_refresh',
+                message: retryAsSilentVoiceover
+                  ? `รีเฟรชหน้า Flow ก่อน retry วิดีโอฉาก ${sceneNumber}/${sceneCount} แบบไม่มีเสียง`
+                  : `รีเฟรชหน้า Flow ก่อน retry วิดีโอฉาก ${sceneNumber}/${sceneCount}`,
               });
+
+              const retryConfig = (await runActionWithProductContext(
+                'configurePopper',
+                {
+                  targetMode: 'video',
+                  aspectRatio: product.settings.video.aspectRatio,
+                  outputCount: 1,
+                  videoDuration,
+                  videoModel,
+                },
+                70_000,
+                retryAsSilentVoiceover ? 'voiceover_video_retry_config' : 'multi_scene_video_retry_config'
+              )) as { success?: boolean; error?: string };
+              if (retryConfig.success === false) {
+                throw new Error(`ตั้งค่า Flow วิดีโอฉากก่อน retry ไม่ครบ: ${retryConfig.error ?? 'unknown'}`);
+              }
+
+              const retryReferenceAttached = await attachSceneReference();
+              if (retryReferenceAttached) {
+                await ensureVideoReferenceAttached({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  step,
+                  message: `ตรวจ reference วิดีโอฉาก ${sceneNumber}/${sceneCount} ก่อน retry`,
+                });
+              }
             }
-            videoResult = await runSceneVideo(toVoiceoverSilentRetryPrompt(scenePrompt));
+          }
+          if (!videoResult) {
+            throw new Error(`สร้างวิดีโอฉาก ${sceneNumber} ไม่สำเร็จหลัง retry`);
           }
 
           const [url] = videoResult.videos ?? [];
