@@ -8,6 +8,7 @@ import {
   registerGoogleFlowWebViewRunnerHost,
 } from '@/autopilot/googleFlowRunnerBridge';
 import { AUTO_PILOT_INFINITE_LOOP_ROUNDS, AUTO_PILOT_INFINITE_ROUNDS } from '@/autopilot/defaults';
+import { getAutoPilotStageLabel, isAutoPilotGlobalStage } from '@/autopilot/stageLabels';
 import { BACKEND_URL } from '@/auth/constants';
 import { getStoredAuthTokens } from '@/auth/storage';
 import type {
@@ -1725,12 +1726,29 @@ export default function GoogleFlowWebViewRunnerHost({
         message,
       });
 
-      const result = (await runActionOrThrow(
-        handle,
-        'ensureVideoReferenceAttached',
-        {},
-        20_000
-      )) as { attachedCount?: number };
+      const previousContext = actionLogContextRef.current;
+      const context: FlowActionLogContext = {
+        payload,
+        product,
+        productIndex,
+        round,
+        step,
+        stage: 'ensure_video_reference',
+      };
+      actionLogContextRef.current = context;
+      let result: { attachedCount?: number };
+      try {
+        result = (await runActionOrThrow(
+          handle,
+          'ensureVideoReferenceAttached',
+          {},
+          20_000
+        )) as { attachedCount?: number };
+      } finally {
+        if (actionLogContextRef.current === context) {
+          actionLogContextRef.current = previousContext;
+        }
+      }
 
       emit({
         event: 'progress',
@@ -3323,6 +3341,11 @@ export default function GoogleFlowWebViewRunnerHost({
                 theme={theme}
                 value={formatOverlayFlowStats(overlayProgress.flowStats)}
               />
+              <OverlayStatChip
+                label="ล่าสุด"
+                theme={theme}
+                value={formatOverlayTime(overlayProgress.updatedAt)}
+              />
               {overlayProgress.productName ? (
                 <OverlayStatChip label="งาน" theme={theme} value={overlayProgress.productName} wide />
               ) : null}
@@ -3403,20 +3426,11 @@ function OverlayStatChip({
 function formatOverlayStep(step: AutoPilotStepType | null, stage: string | null): string {
   const stepText = step ? stepLabel(step) : 'รอเริ่ม';
   if (!stage) return stepText;
-  if (stage === 'completed') return 'เสร็จสิ้น';
-  if (stage === 'stopped') return 'หยุดแล้ว';
-  if (stage === 'error') return 'เกิดข้อผิดพลาด';
-  if (stage === 'waiting_result') return `${stepText} · รอผล`;
-  if (stage === 'waiting_start') return `${stepText} · รอเริ่ม`;
-  if (stage === 'generated') return `${stepText} · ได้ไฟล์`;
-  if (stage === 'downloading_result') return `${stepText} · บันทึกไฟล์`;
-  if (stage === 'configure_flow' || stage === 'flow_configurePopper') return `${stepText} · ตั้งค่า Flow`;
-  if (stage === 'single_step_retry_config') return `${stepText} · ตั้งค่า Retry`;
-  if (stage === 'multi_scene_config_image') return 'รูปภาพ · ตั้งค่ารูปฉาก';
-  if (stage === 'multi_scene_config_video') return `${stepText} · ตั้งค่าวิดีโอฉาก`;
-  if (stage === 'voiceover_video_retry_config') return `${stepText} · ตั้งค่า Retry`;
   if (stage === 'step_started') return stepText;
-  return `${stepText} · ${stage.replace(/^flow_/, '')}`;
+  const stageLabel = getAutoPilotStageLabel(stage, stage.replace(/^flow_/, ''));
+  if (!step || isAutoPilotGlobalStage(stage)) return stageLabel;
+  if (stage.startsWith('multi_scene_config_image')) return `รูปภาพ · ${stageLabel}`;
+  return `${stepText} · ${stageLabel}`;
 }
 
 function formatOverlayFlowStats(stats?: AutoPilotFlowStats): string {

@@ -444,11 +444,13 @@ export function useAutoPilotController({
       }
 
       if (entry.event === 'asset' && entry.step && (entry.fileUri || entry.fileName)) {
+        const assetStep = entry.step;
         const preparedProduct = entry.productId ? preparedProductByKeyRef.current.get(entry.productId) : undefined;
         const product = preparedProduct ?? (entry.productId ? productById.get(entry.productId) : undefined);
         const productId = entry.productId || product?.productId || product?.id || 'unknown';
+        const currentStepIndex = Math.max(1, enabledSteps.indexOf(assetStep) + 1);
         void addGeneratedMediaAsset({
-          kind: entry.step === 'image' ? 'images' : 'videos',
+          kind: assetStep === 'image' ? 'images' : 'videos',
           runId: incomingRunId || activeRunId || 'mobile-auto',
           profileLocalId,
           productId,
@@ -469,10 +471,19 @@ export function useAutoPilotController({
           ...current,
           progress: {
             ...current.progress,
+            currentRound: entry.currentRound ?? current.progress.currentRound,
+            totalRounds: entry.totalRounds ?? current.progress.totalRounds,
+            currentProduct: entry.currentProduct ?? current.progress.currentProduct,
+            totalProducts: entry.totalProducts ?? current.progress.totalProducts,
+            currentStep: assetStep,
+            currentStepIndex,
+            totalSteps: enabledSteps.length || current.progress.totalSteps,
+            currentStage: entry.stage ?? 'generated',
+            currentProductName: entry.productName || product?.name || current.progress.currentProductName,
             generatedImages:
-              entry.step === 'image' ? current.progress.generatedImages + 1 : current.progress.generatedImages,
+              assetStep === 'image' ? current.progress.generatedImages + 1 : current.progress.generatedImages,
             generatedVideos:
-              entry.step === 'video' ? current.progress.generatedVideos + 1 : current.progress.generatedVideos,
+              assetStep === 'video' ? current.progress.generatedVideos + 1 : current.progress.generatedVideos,
           },
         }));
       } else if (entry.event === 'asset' && entry.step) {

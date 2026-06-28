@@ -4,6 +4,7 @@ import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { AUTO_PILOT_INFINITE_ROUNDS } from '@/autopilot/defaults';
+import { getAutoPilotStageLabel } from '@/autopilot/stageLabels';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import type { AutoPilotFlowStats, AutoPilotRunState } from '@/autopilot/types';
@@ -453,128 +454,7 @@ function getRunStatusLabel(status: AutoPilotRunState['status']): string {
 }
 
 function getRunStageLabel(stage: string | null): string {
-  switch (stage) {
-    case 'started':
-      return 'เตรียมเปิด Flow';
-    case 'round_started':
-      return 'เริ่มรอบใหม่';
-    case 'product_started':
-      return 'เลือกสินค้า';
-    case 'delay_between_products':
-      return 'หน่วงเวลาสินค้าถัดไป';
-    case 'step_started':
-      return 'เริ่มสร้างงาน';
-    case 'open_project':
-      return 'เปิดโปรเจกต์';
-    case 'flow_home_before_product':
-      return 'เปิด Flow หลัก';
-    case 'flow_language_error':
-      return 'ตรวจภาษา Flow';
-    case 'wait_flow_ready':
-      return 'รอ Flow พร้อม';
-    case 'refresh_before_config':
-    case 'multi_scene_refresh_image':
-    case 'multi_scene_refresh_video':
-    case 'voiceover_video_retry_refresh':
-      return 'รีเฟรช Flow';
-    case 'configure_flow':
-    case 'flow_configurePopper':
-      return 'ตั้งค่า Flow';
-    case 'single_step_retry_config':
-      return 'ตั้งค่า Retry';
-    case 'multi_scene_config_image':
-      return 'ตั้งค่ารูปฉาก';
-    case 'multi_scene_config_video':
-      return 'ตั้งค่าวิดีโอฉาก';
-    case 'voiceover_video_retry_config':
-      return 'ตั้งค่า Retry ภาพล้วน';
-    case 'attach_reference':
-    case 'multi_scene_attach_reference':
-    case 'multi_scene_attach_previous_image':
-    case 'upload_reference':
-      return 'แนบรูปอ้างอิง';
-    case 'ensure_video_reference':
-      return 'ตรวจ reference';
-    case 'upload_reference_retry':
-      return 'Retry อัปโหลดรูป';
-    case 'multi_scene_start':
-      return 'เริ่มหลายฉาก';
-    case 'multi_scene_capture_prior_image':
-      return 'ดึงรูปตั้งต้น';
-    case 'multi_scene_image':
-      return 'สร้างรูปฉาก';
-    case 'multi_scene_prepare_prompts':
-      return 'AI คิดบท';
-    case 'multi_scene_dialogue_ready':
-      return 'ได้บทพูด';
-    case 'multi_scene_video':
-      return 'สร้างวิดีโอฉาก';
-    case 'multi_scene_select_recent_reference':
-      return 'เลือกรูปล่าสุด';
-    case 'multi_scene_upload_reference_fallback':
-      return 'อัปโหลดรูปแทน';
-    case 'fill_prompt':
-      return 'กรอก Prompt';
-    case 'submitted':
-      return 'ส่งคำสั่งสร้างแล้ว';
-    case 'submit_start_check':
-      return 'ตรวจหลัง Submit';
-    case 'waiting_start':
-      return 'รอ Flow เริ่ม';
-    case 'submit_wait_without_retry':
-    case 'submit_wait_after_retype':
-      return 'รอ Flow เริ่ม';
-    case 'retype_prompt_retry':
-      return 'Retype Prompt';
-    case 'retype_start_check':
-      return 'ตรวจหลัง Retype';
-    case 'single_step_retry':
-      return 'Retry งานเดี่ยว';
-    case 'single_step_ai_rewrite':
-      return 'AI Rewrite';
-    case 'single_step_retry_refresh':
-      return 'รีเฟรช Retry';
-    case 'single_step_retry_fill_prompt':
-      return 'กรอก Prompt ซ้ำ';
-    case 'single_step_retry_submitted':
-      return 'ส่ง Retry แล้ว';
-    case 'waiting_result':
-      return 'รอผลจาก Flow';
-    case 'waiting_result_settle':
-      return 'รอ Preview';
-    case 'downloading_result':
-      return 'กำลังดาวน์โหลด';
-    case 'download_triggered':
-      return 'รับไฟล์จาก Flow';
-    case 'generated':
-      return 'บันทึกเข้าคลัง';
-    case 'scene_video_ready':
-      return 'ได้วิดีโอฉาก';
-    case 'voiceover_video_retry':
-      return 'Retry ภาพล้วน';
-    case 'flow_failed_detected':
-      return 'Flow แจ้งล้มเหลว';
-    case 'voiceover_probe_videos':
-      return 'ตรวจความยาวจริง';
-    case 'voiceover':
-      return 'สร้างเสียงพากย์';
-    case 'merge_video':
-      return 'รวมวิดีโอ';
-    case 'multi_scene_done':
-      return 'เสร็จหลายฉาก';
-    case 'failed':
-      return 'สร้างไม่สำเร็จ';
-    case 'download_missing':
-      return 'ยังไม่พบไฟล์ดาวน์โหลด';
-    case 'completed':
-      return 'เสร็จแล้ว';
-    case 'stopped':
-      return 'หยุดแล้ว';
-    case 'error':
-      return 'ผิดพลาด';
-    default:
-      return 'รอเริ่มงาน';
-  }
+  return getAutoPilotStageLabel(stage);
 }
 
 function getLogTextColor(level: AutoPilotRunState['logs'][number]['level'], theme: KubdeeTheme): string {
