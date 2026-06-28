@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.12',
+    date: '2026-06-29',
+    highlight: 'ปรับ Auto Workflow ให้ตั้งค่ารอบและติดตามจำนวนงานได้ละเอียดขึ้น',
+    changes: [
+      { type: 'added', text: 'เพิ่มตัวเลือกจำนวนรอบและหน่วงเวลาให้ยืดหยุ่นกว่าเดิม' },
+      { type: 'added', text: 'เพิ่มการแสดงจำนวนรูปและวิดีโอที่วางแผนไว้ระหว่างรันงาน' },
+      { type: 'improved', text: 'ปรับจำนวนฉากวิดีโอหลายฉากให้ตรงกับ Desktop มากขึ้น' },
+      { type: 'improved', text: 'ปรับสถานะรอบแบบไม่สิ้นสุดให้แสดงผลเข้าใจง่ายขึ้น' },
+    ],
+  },
+  {
     version: '0.1.11',
     date: '2026-06-29',
     highlight: 'ปรับการติดตามผล Google Flow ให้แม่นขึ้นระหว่างสร้างงาน',
@@ -141,4 +152,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.11';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.12';

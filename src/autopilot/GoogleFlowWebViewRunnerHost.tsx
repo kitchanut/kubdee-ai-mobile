@@ -7,6 +7,7 @@ import {
   emitGoogleFlowRunnerLog,
   registerGoogleFlowWebViewRunnerHost,
 } from '@/autopilot/googleFlowRunnerBridge';
+import { AUTO_PILOT_INFINITE_LOOP_ROUNDS, AUTO_PILOT_INFINITE_ROUNDS } from '@/autopilot/defaults';
 import { BACKEND_URL } from '@/auth/constants';
 import { getStoredAuthTokens } from '@/auth/storage';
 import type {
@@ -78,6 +79,19 @@ interface FlowImageDownloadPayload {
 
 type FlowImageDownloadItem = NonNullable<FlowImageDownloadPayload['images']>[number];
 
+function getRoundLoopCount(settings: AutoPilotSettings): number {
+  return settings.totalRounds >= AUTO_PILOT_INFINITE_ROUNDS
+    ? AUTO_PILOT_INFINITE_LOOP_ROUNDS
+    : Math.max(1, settings.totalRounds);
+}
+
+function formatRoundProgress(currentRound: number, totalRounds: number): string {
+  if (totalRounds >= AUTO_PILOT_INFINITE_ROUNDS) {
+    return `${currentRound}/∞`;
+  }
+  return `${currentRound}/${totalRounds}`;
+}
+
 interface PreparedMultiScenePromptResult {
   prompts: string[];
   scenes: Array<{ sceneNumber: number; dialogue: string }>;
@@ -105,9 +119,11 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const AUTO_MULTI_SCENE_TRIM_END_SECONDS = 0.3;
 const VOICEOVER_END_BUFFER_SECONDS = 1;
 const AUTO_RUN_DELAY_PRESETS = {
-  slow: { min: 4, max: 7 },
-  normal: { min: 2, max: 4 },
-  fast: { min: 1, max: 2 },
+  slowest: { min: 180, max: 300 },
+  slow: { min: 30, max: 60 },
+  normal: { min: 5, max: 10 },
+  fast: { min: 2, max: 4 },
+  fastest: { min: 1, max: 2 },
 } as const;
 
 class GoogleFlowWebViewRunnerStopped extends Error {
@@ -2977,7 +2993,9 @@ export default function GoogleFlowWebViewRunnerHost({
           message: 'Google Flow WebView runner เริ่มทำงาน',
         });
 
-        for (let round = 1; round <= payload.settings.totalRounds; round += 1) {
+        const totalRoundLoopCount = getRoundLoopCount(payload.settings);
+
+        for (let round = 1; round <= totalRoundLoopCount; round += 1) {
           checkStop();
           emit({
             event: 'progress',
@@ -2988,7 +3006,7 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: 0,
             totalProducts: payload.products.length,
-            message: `เริ่มรอบ ${round}/${payload.settings.totalRounds}`,
+            message: `เริ่มรอบ ${formatRoundProgress(round, payload.settings.totalRounds)}`,
           });
 
           for (let productIndex = 0; productIndex < payload.products.length; productIndex += 1) {

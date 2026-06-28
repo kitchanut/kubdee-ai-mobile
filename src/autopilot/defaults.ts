@@ -98,12 +98,16 @@ export const AUTO_PILOT_STEPS: Array<{ id: AutoPilotStepType; label: string }> =
 ];
 
 export const AUTO_PILOT_DELAY_OPTIONS: Array<{ value: AutoPilotDelayPreset; label: string }> = [
-  { value: 'slow', label: 'ช้า' },
-  { value: 'normal', label: 'ปกติ' },
-  { value: 'fast', label: 'เร็ว' },
+  { value: 'slowest', label: 'ช้ามาก (3-5 นาที)' },
+  { value: 'slow', label: 'ช้า (30-60 วิ)' },
+  { value: 'normal', label: 'ปกติ (5-10 วิ)' },
+  { value: 'fast', label: 'เร็ว (2-4 วิ)' },
+  { value: 'fastest', label: 'เร็วมาก (1-2 วิ)' },
 ];
 
-export const AUTO_PILOT_ROUND_OPTIONS = [1, 2, 3, 5, 10] as const;
+export const AUTO_PILOT_INFINITE_ROUNDS = 999;
+export const AUTO_PILOT_INFINITE_LOOP_ROUNDS = 9999;
+export const AUTO_PILOT_ROUND_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 50, 100, AUTO_PILOT_INFINITE_ROUNDS] as const;
 
 export const FLOW_IMAGE_MODELS = [
   { value: 'nano_banana_pro', label: 'Nano Banana Pro' },
@@ -187,7 +191,7 @@ export const VIDEO_CHARACTER_MODE_OPTIONS = [
   { value: 'none', label: 'ไม่มี' },
 ] as const;
 
-export const VIDEO_SCENE_OPTIONS = ['1', '2', '3'] as const;
+export const VIDEO_SCENE_OPTIONS = ['1', '2', '3', '4', '5'] as const;
 
 export const VIDEO_METHOD_OPTIONS = [
   { value: 'multi', label: 'หลายฉาก' },

@@ -1,6 +1,6 @@
 import { Pressable, View } from 'react-native';
 import { Copy, FilePlus2, Sparkles, Star, Trash2 } from 'lucide-react-native';
-import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
+import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_INFINITE_ROUNDS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -43,7 +43,10 @@ export function ExtensionBasicSettingsBlock({
         <View className="flex-row gap-2.5">
           <SelectField
             label="จำนวนรอบ"
-            options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({ label: String(round), value: round }))}
+            options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({
+              label: round === AUTO_PILOT_INFINITE_ROUNDS ? '∞ ไม่สิ้นสุด' : `${round} รอบ`,
+              value: round,
+            }))}
             theme={theme}
             value={settings.totalRounds}
             onChange={onRoundChange}
@@ -51,12 +54,7 @@ export function ExtensionBasicSettingsBlock({
           <SelectField
             label="หน่วงเวลา"
             options={AUTO_PILOT_DELAY_OPTIONS.map((option) => ({
-              label:
-                option.value === 'normal'
-                  ? 'ปกติ (2-4 วิ)'
-                  : option.value === 'fast'
-                    ? 'เร็ว (1-2 วิ)'
-                    : 'ช้า (4-7 วิ)',
+              label: option.label,
               value: option.value,
             }))}
             theme={theme}

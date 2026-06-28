@@ -144,7 +144,7 @@ export function VideoProductSettingsForm({
             />
           </View>
           <OptionGroup
-            columns={9}
+            columns={5}
             compact
             label="จำนวนฉาก"
             options={SCENE_OPTIONS}

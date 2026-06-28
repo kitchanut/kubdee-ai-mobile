@@ -7,7 +7,7 @@ export const AUTO_PILOT_STEP_TYPES = {
 
 export type AutoPilotStepType = (typeof AUTO_PILOT_STEP_TYPES)[keyof typeof AUTO_PILOT_STEP_TYPES];
 
-export type AutoPilotDelayPreset = 'slow' | 'normal' | 'fast';
+export type AutoPilotDelayPreset = 'slowest' | 'slow' | 'normal' | 'fast' | 'fastest';
 export type AutoPilotBrowserMode = 'webview' | 'chrome' | 'default';
 export type AutoPilotRunStatus = 'idle' | 'running' | 'completed' | 'stopped' | 'error';
 export type AutoPilotLogLevel = 'info' | 'success' | 'warning' | 'error' | 'action';
@@ -137,6 +137,8 @@ export interface AutoPilotRunProgress {
   totalSteps: number;
   currentStage: string | null;
   currentProductName: string | null;
+  plannedImages: number;
+  plannedVideos: number;
   generatedImages: number;
   generatedVideos: number;
   failedImages: number;

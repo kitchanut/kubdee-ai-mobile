@@ -10,6 +10,7 @@ import {
 } from '@/activity/automationActivityLogStore';
 import {
   DEFAULT_AUTO_PILOT_SETTINGS,
+  AUTO_PILOT_INFINITE_ROUNDS,
   FLOW_IMAGE_MODELS,
   FLOW_VIDEO_MODELS,
 } from '@/autopilot/defaults';
@@ -63,6 +64,8 @@ const initialRunState: AutoPilotRunState = {
     totalSteps: 0,
     currentStage: null,
     currentProductName: null,
+    plannedImages: 0,
+    plannedVideos: 0,
     generatedImages: 0,
     generatedVideos: 0,
     failedImages: 0,
@@ -133,7 +136,11 @@ function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {
     ...input,
     totalRounds: Number.isFinite(totalRounds) && totalRounds > 0 ? totalRounds : DEFAULT_AUTO_PILOT_SETTINGS.totalRounds,
     delayPreset:
-      input.delayPreset === 'fast' || input.delayPreset === 'normal' || input.delayPreset === 'slow'
+      input.delayPreset === 'fastest' ||
+      input.delayPreset === 'fast' ||
+      input.delayPreset === 'normal' ||
+      input.delayPreset === 'slow' ||
+      input.delayPreset === 'slowest'
         ? input.delayPreset
         : DEFAULT_AUTO_PILOT_SETTINGS.delayPreset,
     browserMode:
@@ -188,6 +195,58 @@ function normalizeEnabledSteps(value: unknown): AutoPilotStepType[] {
 
   const steps = value.filter((step): step is AutoPilotStepType => step === 'image' || step === 'video');
   return steps.length > 0 ? Array.from(new Set(steps)) : DEFAULT_ENABLED_STEPS;
+}
+
+function clampAutoSceneCount(value?: string | number | null): number {
+  const parsed = Number.parseInt(String(value ?? '1'), 10);
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+  return Math.min(5, Math.max(1, parsed));
+}
+
+function outputCountForStep(product: AutoPilotProduct, step: AutoPilotStepType): number {
+  const raw = product.settings[step]?.outputCount;
+  const parsed = Number.parseInt(String(raw ?? '1'), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function isAutoMultiSceneVideo(videoSettings: AutoPilotVideoSettings): boolean {
+  return (videoSettings.videoMethod || 'extend') === 'multi' && clampAutoSceneCount(videoSettings.sceneCount) > 1;
+}
+
+function getAutoMultiSceneImageCount(product: AutoPilotProduct, enabledSteps: AutoPilotStepType[]): number {
+  if (!enabledSteps.includes('video') || !isAutoMultiSceneVideo(product.settings.video)) {
+    return 0;
+  }
+  const sceneCount = clampAutoSceneCount(product.settings.video.sceneCount);
+  const useSameAngle = (product.settings.video.multiSceneAngleMode || 'same_angle') === 'same_angle';
+  if (useSameAngle) {
+    return enabledSteps.includes('image') ? 0 : 1;
+  }
+  return enabledSteps.includes('image') ? Math.max(0, sceneCount - 1) : sceneCount;
+}
+
+function getPlannedAutoTotals(
+  products: AutoPilotProduct[],
+  enabledSteps: AutoPilotStepType[],
+  totalRounds: number
+): Pick<AutoPilotRunState['progress'], 'plannedImages' | 'plannedVideos'> {
+  const plannedRounds = totalRounds >= AUTO_PILOT_INFINITE_ROUNDS ? AUTO_PILOT_INFINITE_ROUNDS : Math.max(1, totalRounds);
+  const plannedImages = enabledSteps.includes('image')
+    ? products.reduce((sum, product) => sum + outputCountForStep(product, 'image'), 0) * plannedRounds
+    : 0;
+  const plannedMultiSceneImages = enabledSteps.includes('video')
+    ? products.reduce((sum, product) => sum + getAutoMultiSceneImageCount(product, enabledSteps), 0) * plannedRounds
+    : 0;
+  const plannedVideos = enabledSteps.includes('video')
+    ? products.reduce((sum, product) => sum + outputCountForStep(product, 'video'), 0) * plannedRounds
+    : 0;
+
+  return {
+    plannedImages: plannedImages + plannedMultiSceneImages,
+    plannedVideos,
+  };
 }
 
 export function useAutoPilotController({
@@ -768,6 +827,7 @@ export function useAutoPilotController({
     const runId = createRunId();
     runIdRef.current = runId;
     beginAutomationActivityRun('auto-pilot', `Auto Workflow · ${selectedProducts.length} สินค้า`);
+    const plannedTotals = getPlannedAutoTotals(selectedProducts, enabledSteps, settings.totalRounds);
 
     setRunState({
       runId,
@@ -777,6 +837,7 @@ export function useAutoPilotController({
         totalRounds: settings.totalRounds,
         totalProducts: selectedProducts.length,
         totalSteps: enabledSteps.length,
+        ...plannedTotals,
       },
       logs: [],
     });

@@ -3,6 +3,7 @@ import { Clock3, Image as ImageIcon, Info, Package, RefreshCw, Square, Trash2, V
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { AUTO_PILOT_INFINITE_ROUNDS } from '@/autopilot/defaults';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import type { AutoPilotFlowStats, AutoPilotRunState } from '@/autopilot/types';
@@ -100,10 +101,14 @@ export function RunStatusSummaryBlock({
         </View>
 
         <View className="flex-row gap-2">
-          <ProgressMetric color={theme.blue} icon={RefreshCw} label="รอบ" theme={theme} value={`${progress.currentRound}/${progress.totalRounds}`} />
+          <ProgressMetric color={theme.blue} icon={RefreshCw} label="รอบ" theme={theme} value={formatRoundProgress(progress.currentRound, progress.totalRounds)} />
           <ProgressMetric color={theme.emerald} icon={Package} label="สินค้า" theme={theme} value={`${progress.currentProduct}/${progress.totalProducts}`} />
-          <ProgressMetric color={theme.amber} icon={ImageIcon} label="รูป" theme={theme} value={`${progress.generatedImages}/${progress.failedImages}`} />
-          <ProgressMetric color={theme.red} icon={Video} label="วิดีโอ" theme={theme} value={`${progress.generatedVideos}/${progress.failedVideos}`} />
+          {progress.plannedImages > 0 ? (
+            <ProgressMetric color={theme.amber} icon={ImageIcon} label="รูป" theme={theme} value={formatAssetProgress(progress.generatedImages, progress.failedImages, progress.plannedImages)} />
+          ) : null}
+          {progress.plannedVideos > 0 ? (
+            <ProgressMetric color={theme.red} icon={Video} label="วิดีโอ" theme={theme} value={formatAssetProgress(progress.generatedVideos, progress.failedVideos, progress.plannedVideos)} />
+          ) : null}
         </View>
 
         {flowStats ? (
@@ -323,18 +328,32 @@ function getRunProgressRatio(runState: AutoPilotRunState): number {
   const progress = runState.progress;
   const totalSteps = Math.max(1, progress.totalSteps || 1);
   const totalProducts = Math.max(1, progress.totalProducts);
-  const totalWork = Math.max(1, progress.totalRounds * totalProducts * totalSteps);
+  const isInfinite = progress.totalRounds >= AUTO_PILOT_INFINITE_ROUNDS;
+  const totalRounds = isInfinite ? 1 : progress.totalRounds;
+  const totalWork = Math.max(1, totalRounds * totalProducts * totalSteps);
   const currentWork = Math.min(
     totalWork,
     Math.max(
       0,
-      (Math.max(0, progress.currentRound - 1) * totalProducts * totalSteps) +
+      (isInfinite ? 0 : Math.max(0, progress.currentRound - 1) * totalProducts * totalSteps) +
         (Math.max(0, progress.currentProduct - 1) * totalSteps) +
         Math.max(0, progress.currentStepIndex || (progress.currentStep ? 1 : 0))
     )
   );
 
   return runState.status === 'completed' ? 1 : currentWork / totalWork;
+}
+
+function formatRoundProgress(currentRound: number, totalRounds: number): string {
+  if (totalRounds >= AUTO_PILOT_INFINITE_ROUNDS) {
+    return `${currentRound}/∞`;
+  }
+  return `${currentRound}/${totalRounds}`;
+}
+
+function formatAssetProgress(generated: number, failed: number, planned: number): string {
+  const completed = failed > 0 ? `${generated}·${failed}` : `${generated}`;
+  return `${completed}/${Math.max(0, planned)}`;
 }
 
 function getFirstLog(runState: AutoPilotRunState): AutoPilotRunState['logs'][number] | null {
