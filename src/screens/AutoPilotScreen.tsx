@@ -278,6 +278,14 @@ export default function AutoPilotScreen({
             onToggle={(value) => controller.toggleStep(value)}
           />
 
+          {showRunStatus ? (
+            <RunStatusSummaryBlock
+              runState={controller.runState}
+              theme={theme}
+              onOpenLogs={() => setActivityLogOpen(true)}
+            />
+          ) : null}
+
           <ProductCatalogBlock
             isSyncing={isSyncing}
             profileProducts={profileProducts}
@@ -294,14 +302,6 @@ export default function AutoPilotScreen({
             }}
             onUpdateProductField={controller.updateProductField}
           />
-
-          {showRunStatus ? (
-            <RunStatusSummaryBlock
-              runState={controller.runState}
-              theme={theme}
-              onOpenLogs={() => setActivityLogOpen(true)}
-            />
-          ) : null}
         </View>
       </ScrollView>
 

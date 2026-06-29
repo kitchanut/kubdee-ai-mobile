@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.49',
+    date: '2026-06-29',
+    highlight: 'Auto Mobile เห็นสถานะงานง่ายขึ้น',
+    changes: [
+      { type: 'improved', text: 'ย้ายบล็อกสถานะการทำงาน Auto ขึ้นมาไว้ใต้ขั้นตอนการทำงาน เพื่อเห็นผลล่าสุดและปุ่มรายละเอียดได้ทันที' },
+      { type: 'improved', text: 'ช่วยให้ตรวจ elapsed time, ความคืบหน้า และ log หลังงานจบบนมือถือได้ง่ายขึ้น' },
+    ],
+  },
+  {
     version: '0.1.48',
     date: '2026-06-29',
     highlight: 'Auto Mobile แสดงสถานะงานชัดขึ้น',
@@ -492,4 +501,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.48';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.49';
