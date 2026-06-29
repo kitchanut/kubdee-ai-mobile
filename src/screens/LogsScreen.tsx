@@ -57,6 +57,7 @@ function ActivityRunCard({
   const logs = run.logs.slice(-8);
   const visibleStartIndex = Math.max(0, run.logs.length - logs.length);
   const elapsedMs = getRunElapsedMs(run);
+  const latestFlowStats = getLatestFlowStats(run);
   const statusColor = run.stopping
     ? theme.amber
     : run.running
@@ -87,6 +88,24 @@ function ActivityRunCard({
           <Text className="text-kd-micro font-bold text-kd-text-subtle">{run.logs.length}</Text>
         </View>
       </View>
+
+      {latestFlowStats ? (
+        <View
+          className="gap-1.5 rounded-kd-md border px-2.5 py-2"
+          style={{
+            backgroundColor: alpha(theme.blue, theme.isDark ? 0.12 : 0.06),
+            borderColor: alpha(theme.blue, theme.isDark ? 0.28 : 0.14),
+          }}
+        >
+          <View className="flex-row items-center justify-between gap-2">
+            <Text className="text-kd-micro font-semibold text-kd-text-subtle">สถานะ Google Flow ล่าสุด</Text>
+            {latestFlowStats.progress != null ? (
+              <Text className="text-kd-micro font-semibold text-kd-text">{latestFlowStats.progress}%</Text>
+            ) : null}
+          </View>
+          <ActivityFlowStats stats={latestFlowStats} theme={theme} />
+        </View>
+      ) : null}
 
       {logs.length === 0 ? (
         <View className="rounded-kd-md bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
@@ -213,6 +232,32 @@ function getRunElapsedMs(run: AutomationActivityRun): number | null {
   }
   const latestAt = run.running ? Date.now() : run.updatedAt ?? run.logs[run.logs.length - 1]?.ts ?? startedAt;
   return Math.max(0, latestAt - startedAt);
+}
+
+function getLatestFlowStats(run: AutomationActivityRun): AutoPilotFlowStats | null {
+  for (let index = run.logs.length - 1; index >= 0; index -= 1) {
+    const log = run.logs[index];
+    if (log?.flowStats) {
+      return log.flowStats;
+    }
+
+    const message = log?.message ?? '';
+    const match = message.match(/gen\s+(\d+)\s+queue\s+(\d+)\s+ok\s+(\d+)\s+fail\s+(\d+)(?:\s+(\d+)%?)?/i);
+    if (!match) {
+      continue;
+    }
+
+    const progress = match[5] != null ? Number.parseInt(match[5], 10) : null;
+    return {
+      generating: Number.parseInt(match[1] ?? '0', 10) || 0,
+      queued: Number.parseInt(match[2] ?? '0', 10) || 0,
+      success: Number.parseInt(match[3] ?? '0', 10) || 0,
+      failed: Number.parseInt(match[4] ?? '0', 10) || 0,
+      progress: Number.isFinite(progress) ? progress : null,
+    };
+  }
+
+  return null;
 }
 
 function formatDuration(ms: number): string {
