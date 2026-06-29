@@ -145,9 +145,9 @@ export const VIDEO_RESULTS_BODY = `
     }
     return false;
   }
-  function countVisibleFailures(scope){
+  function collectVisibleFailures(scope){
     var root = scope || document.body;
-    var failed = 0;
+    var failures = [];
     var els = Array.prototype.slice.call(root.querySelectorAll('div, span, button, p'));
     for (var i = 0; i < els.length; i++) {
       var t = (els[i].textContent || '').replace(/\\s+/g, ' ').trim();
@@ -159,11 +159,14 @@ export const VIDEO_RESULTS_BODY = `
       for (var c = 0; c < inner.length; c++) {
         if ((inner[c].textContent || '').replace(/\\s+/g, ' ').trim() === t) { hasChildSame = true; break; }
       }
-      if (!hasChildSame) failed++;
+      if (!hasChildSame) failures.push({ el: els[i], text: t });
     }
-    return failed;
+    return failures;
   }
-  function collectFailedMessages(scope){
+  function countVisibleFailures(scope){
+    return collectVisibleFailures(scope).length;
+  }
+  function collectFailedMessages(scope, skipCount, maxCount){
     var messages = [];
     var seen = {};
     function addMessage(rawText){
@@ -187,13 +190,13 @@ export const VIDEO_RESULTS_BODY = `
       messages.push(message);
     }
     var root = scope || document.body;
-    var els = Array.prototype.slice.call(root.querySelectorAll('div, span, button, p'));
-    for (var i = 0; i < els.length; i++) {
-      if (!isVisible(els[i]) || isHiddenByOpacity(els[i], root)) continue;
-      addMessage(els[i].textContent);
-      if (messages.length >= 3) break;
+    var failures = collectVisibleFailures(root).slice(Math.max(0, skipCount || 0));
+    var limitCount = Math.max(1, maxCount || 3);
+    for (var i = 0; i < failures.length; i++) {
+      addMessage(failures[i].text);
+      if (messages.length >= limitCount) break;
     }
-    return messages.slice(0, 3);
+    return messages.slice(0, limitCount);
   }
   function estimateBlurProgress(scope){
     var blurEls = Array.prototype.slice.call(scope.querySelectorAll('[style*="blur-amount"]'));
@@ -320,7 +323,7 @@ export const VIDEO_RESULTS_BODY = `
     result.failedCount = Math.max(0, Math.min(n, visibleFailedTotal - ignoreFailedCount));
   }
   if (result.failedCount > 0) {
-    result.failedMessages = collectFailedMessages(itemList || document.body);
+    result.failedMessages = collectFailedMessages(itemList || document.body, ignoreFailedCount, Math.min(3, result.failedCount));
   }
   return result;
 `;
