@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.38',
+    date: '2026-06-29',
+    highlight: 'อัปเดตแพ็กเกจ Mobile รุ่นใหม่',
+    changes: [
+      { type: 'improved', text: 'ออก APK เวอร์ชันใหม่ให้ระบบเช็คอัปเดตและดาวน์โหลดได้ต่อเนื่อง' },
+      { type: 'improved', text: 'ปรับข้อมูลเวอร์ชันและ changelog ให้ตรงกับ release ล่าสุด' },
+    ],
+  },
+  {
     version: '0.1.37',
     date: '2026-06-29',
     highlight: 'แท็บ Logs แสดงสถานะ Google Flow ได้ละเอียดขึ้น',
@@ -392,4 +401,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.37';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.38';
