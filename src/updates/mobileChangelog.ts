@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.32',
+    date: '2026-06-29',
+    highlight: 'ปรับจำนวนวิดีโอให้ตรงกับโหมดหลายฉาก',
+    changes: [
+      { type: 'fixed', text: 'เมื่อเลือกวิดีโอหลายฉาก หน้า Auto จะแสดงจำนวนวิดีโอเป็น 1 ให้ตรงกับผลลัพธ์จริง' },
+      { type: 'improved', text: 'ปิดตัวเลือกจำนวนวิดีโอที่ไม่ใช้ในโหมดหลายฉาก เพื่อลดความสับสนตอนสร้างงาน' },
+    ],
+  },
+  {
     version: '0.1.31',
     date: '2026-06-29',
     highlight: 'ปรับเสียงพากย์ให้แสดงเฉพาะโหมดหลายฉากจริง',
@@ -334,4 +343,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.31';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.32';

@@ -70,6 +70,8 @@ export function VideoProductSettingsForm({
   const multiSceneSendImagesToAi = multiSceneAiScriptEnabled && settings.multiSceneSendImagesToAi === true;
   const selectedVideoModel = settings.videoModel || 'veo_31_lite_lower';
   const selectedVideoDuration = settings.videoDuration || 8;
+  const outputCountValue = multiScene ? '1' : settings.outputCount;
+  const multiSceneDisabledOutputCounts = multiScene ? OUTPUT_COUNT_VALUES.filter((value) => value !== '1') : undefined;
   const durationOptions = VIDEO_DURATION_OPTIONS.filter(
     (duration) => selectedVideoModel === 'omni_flash' || duration !== 10
   ).map((duration) => ({ label: `${duration}s`, value: duration }));
@@ -181,7 +183,8 @@ export function VideoProductSettingsForm({
               options={COUNT_OPTIONS}
               theme={theme}
               accent={accent}
-              value={settings.outputCount}
+              value={outputCountValue}
+              disabledValues={multiSceneDisabledOutputCounts}
               onChange={(value) => {
                 if (multiScene) return;
                 onChange('outputCount', String(value));
