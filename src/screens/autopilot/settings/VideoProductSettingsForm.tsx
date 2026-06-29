@@ -65,7 +65,7 @@ export function VideoProductSettingsForm({
   const multiScene = parseInt(settings.sceneCount || '1', 10) > 1;
   const selectedVideoMethod = settings.videoMethod || 'extend';
   const selectedMultiSceneAngleMode = settings.multiSceneAngleMode || 'same_angle';
-  const isVoiceoverMode = selectedMultiSceneAngleMode === 'voiceover';
+  const isVoiceoverMode = multiScene && selectedVideoMethod === 'multi' && selectedMultiSceneAngleMode === 'voiceover';
   const multiSceneAiScriptEnabled = isVoiceoverMode || settings.multiSceneAiScriptEnabled !== false;
   const multiSceneSendImagesToAi = multiSceneAiScriptEnabled && settings.multiSceneSendImagesToAi === true;
   const selectedVideoModel = settings.videoModel || 'veo_31_lite_lower';

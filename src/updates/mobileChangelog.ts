@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.31',
+    date: '2026-06-29',
+    highlight: 'ปรับเสียงพากย์ให้แสดงเฉพาะโหมดหลายฉากจริง',
+    changes: [
+      { type: 'fixed', text: 'ถ้าลดจำนวนฉากกลับเป็น 1 ฉาก ระบบจะไม่แสดงตัวเลือกเสียงพากย์ค้างจากโหมดหลายฉากเดิม' },
+      { type: 'improved', text: 'ยังจำรูปแบบหลายฉากล่าสุดไว้ได้ เมื่อกลับมาเลือกหลายฉากอีกครั้ง' },
+      { type: 'improved', text: 'ลดความสับสนระหว่างเสียงพูดปกติและเสียงพากย์ในหน้า Auto Mobile' },
+    ],
+  },
+  {
     version: '0.1.30',
     date: '2026-06-29',
     highlight: 'รูปฉากหลายฉาก retry เฉพาะฉากที่ล้มเหลว',
@@ -324,4 +334,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.30';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.31';
