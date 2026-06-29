@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.45',
+    date: '2026-06-29',
+    highlight: 'Auto Mobile จับรูปจาก Google Flow แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การตรวจรูปที่สร้างจาก Google Flow ให้ไม่ตัดรูปจริงทิ้งเมื่อไฟล์มาจากโดเมน Google' },
+      { type: 'improved', text: 'ปรับ logic รูปเดิม/รูปใหม่ให้ใกล้ Desktop มากขึ้นตอน poll ผลลัพธ์และดาวน์โหลดรูป' },
+    ],
+  },
+  {
     version: '0.1.44',
     date: '2026-06-29',
     highlight: 'Auto Mobile ตรวจผลรูปภาพแม่นขึ้น',
@@ -455,4 +464,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.44';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.45';

@@ -47,11 +47,11 @@ export const VIDEO_SNAPSHOT_BODY = `
     if (!img || !isVisible(img)) return false;
     var src = normalizeMediaUrl(img.currentSrc || img.src || img.getAttribute('src') || '');
     if (!src) return false;
-    if (/avatar|profile|logo|icon|googleusercontent/i.test(src)) return false;
     var r = img.getBoundingClientRect();
     var alt = (img.getAttribute('alt') || '').toLowerCase();
     if (alt === 'generated image' || alt === 'รูปภาพที่สร้างขึ้น' || alt.indexOf('flow image:') === 0) return true;
     if (r.width < 120 || r.height < 120) return false;
+    if (/avatar|profile|logo|icon/i.test(src) || /avatar|profile|user profile|logo|icon/i.test(alt)) return false;
     if (img.closest('button, [role="button"][aria-label], [data-testid*="prompt"], [data-testid*="composer"]')) return false;
     var top = composerTop();
     if (top != null && r.top > top - 180) return false;

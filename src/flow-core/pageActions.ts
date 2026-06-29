@@ -1716,7 +1716,7 @@ const DOWNLOAD_IMAGES_BODY = `
     if (alt === 'generated image' || alt === 'รูปภาพที่สร้างขึ้น' || alt.indexOf('flow image:') === 0) return true;
     var r = img.getBoundingClientRect();
     if (r.width < 160 || r.height < 160) return false;
-    if (/avatar|profile|logo|icon|googleusercontent/i.test(src)) return false;
+    if (/avatar|profile|logo|icon/i.test(src) || /avatar|profile|user profile|logo|icon/i.test(alt)) return false;
     return !!img.closest('[data-tile-id], [data-testid="virtuoso-item-list"], main');
   }
   function collectImageUrls(){
