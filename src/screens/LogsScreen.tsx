@@ -15,6 +15,7 @@ import {
   type AutomationActivityRun,
   useAutomationActivitySnapshot,
 } from '@/activity/automationActivityLogStore';
+import type { AutoPilotFlowStats } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
 import { alpha, type KubdeeTheme } from '@/theme/tokens';
@@ -120,6 +121,7 @@ function ActivityRunCard({
                   <Text className="text-kd-caption leading-4 text-kd-text" numberOfLines={2}>
                     {parsed.message}
                   </Text>
+                  {log.flowStats ? <ActivityFlowStats stats={log.flowStats} theme={theme} /> : null}
                 </View>
               </View>
             );
@@ -141,6 +143,46 @@ function StageChip({ label, theme }: { label: string; theme: KubdeeTheme }): Rea
     >
       <Text className="text-kd-tiny font-semibold" numberOfLines={1} style={{ color: theme.blue }}>
         {label}
+      </Text>
+    </View>
+  );
+}
+
+function ActivityFlowStats({
+  stats,
+  theme,
+}: {
+  stats: AutoPilotFlowStats;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  return (
+    <View className="mt-1 flex-row flex-wrap gap-1">
+      <ActivityFlowStat label="กำลัง" value={stats.generating} theme={theme} />
+      <ActivityFlowStat label="คิว" value={stats.queued} theme={theme} />
+      <ActivityFlowStat label="สำเร็จ" value={stats.success} theme={theme} />
+      <ActivityFlowStat label="ล้มเหลว" value={stats.failed} theme={theme} warning={stats.failed > 0} />
+      {stats.progress != null ? <ActivityFlowStat label="%" value={stats.progress} theme={theme} /> : null}
+      {stats.tilesFound != null ? <ActivityFlowStat label="ทั้งหมด" value={stats.tilesFound} theme={theme} /> : null}
+    </View>
+  );
+}
+
+function ActivityFlowStat({
+  label,
+  value,
+  theme,
+  warning = false,
+}: {
+  label: string;
+  value: number;
+  theme: KubdeeTheme;
+  warning?: boolean;
+}): React.JSX.Element {
+  return (
+    <View className="flex-row items-center gap-1 rounded-kd-sm bg-kd-panel-muted px-1.5 py-0.5 dark:bg-kd-card-muted">
+      <Text className="text-kd-tiny text-kd-text-subtle">{label}</Text>
+      <Text className="text-kd-tiny font-semibold" style={{ color: warning ? theme.red : theme.textMuted }}>
+        {value}
       </Text>
     </View>
   );

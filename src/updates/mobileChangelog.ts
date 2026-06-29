@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.37',
+    date: '2026-06-29',
+    highlight: 'แท็บ Logs แสดงสถานะ Google Flow ได้ละเอียดขึ้น',
+    changes: [
+      { type: 'improved', text: 'Activity ของ Auto Workflow จะเก็บสถานะ Google Flow ไปพร้อมกับ log ล่าสุด' },
+      { type: 'improved', text: 'แท็บ Logs แสดงตัวเลขกำลังสร้าง คิว สำเร็จ ล้มเหลว เปอร์เซ็นต์ และจำนวน tile เมื่อมีข้อมูล' },
+      { type: 'improved', text: 'ช่วยให้ตามงาน Auto Mobile ได้ต่อเนื่อง แม้ออกจากหน้า Auto ไปดู Activity รวม' },
+    ],
+  },
+  {
     version: '0.1.36',
     date: '2026-06-29',
     highlight: 'Activity Log แสดงผลตรวจ Prompt ชัดขึ้น',
@@ -382,4 +392,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.36';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.37';

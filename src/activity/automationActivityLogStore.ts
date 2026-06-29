@@ -5,12 +5,16 @@ import {
   subscribeShopeePostLogs,
 } from '@/native/AccessibilityBridge';
 import type { NativeShopeeImportLog, NativeShopeePostLog } from '@/native/AccessibilityBridge';
+import type { AutoPilotFlowStats, AutoPilotStepType } from '@/autopilot/types';
 
 export type AutomationActivityKind = 'auto-pilot' | 'shopee-import' | 'shopee-post';
 
 export interface AutomationActivityLogEntry {
   message: string;
   ts: number;
+  flowStats?: AutoPilotFlowStats;
+  step?: AutoPilotStepType;
+  stage?: string;
 }
 
 export interface AutomationActivityRun {
@@ -105,14 +109,15 @@ export function beginAutomationActivityRun(kind: AutomationActivityKind, title =
 export function pushAutomationActivityLog(
   kind: AutomationActivityKind,
   message: string,
-  ts = Date.now()
+  ts = Date.now(),
+  meta?: Pick<AutomationActivityLogEntry, 'flowStats' | 'step' | 'stage'>
 ): void {
   const cleanMessage = message.trim();
   if (!cleanMessage) return;
 
   updateRun(kind, (run) => ({
     ...run,
-    logs: [...run.logs, { message: cleanMessage, ts }].slice(-MAX_LOGS_PER_RUN),
+    logs: [...run.logs, { message: cleanMessage, ts, ...meta }].slice(-MAX_LOGS_PER_RUN),
     startedAt: run.startedAt ?? ts,
     updatedAt: ts,
   }));

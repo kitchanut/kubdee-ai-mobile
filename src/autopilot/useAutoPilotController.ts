@@ -399,7 +399,12 @@ export function useAutoPilotController({
     pushAutomationActivityLog(
       'auto-pilot',
       formatAutomationActivityMessage(message, options?.step, options?.stage),
-      timestamp
+      timestamp,
+      {
+        flowStats: options?.flowStats,
+        step: options?.step,
+        stage: options?.stage,
+      }
     );
   }, []);
 

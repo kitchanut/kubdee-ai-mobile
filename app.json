@@ -2,7 +2,7 @@
   "expo": {
     "name": "Kubdee AI",
     "slug": "kubdee-ai-mobile",
-    "version": "0.1.36",
+    "version": "0.1.37",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "ai.kubdee.mobile",
-      "versionCode": 37,
+      "versionCode": 38,
       "adaptiveIcon": {
         "backgroundColor": "#111827",
         "foregroundImage": "./assets/android-icon-foreground.png",
