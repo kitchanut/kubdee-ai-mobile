@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.34',
+    date: '2026-06-29',
+    highlight: 'ปรับ Changelog เป็น Modal แบบใหม่',
+    changes: [
+      { type: 'improved', text: 'ปรับหน้าตา Changelog ให้ใช้งานใกล้เคียง Desktop มากขึ้น' },
+      { type: 'improved', text: 'จัดรายการอัปเดตเป็น modal พร้อม timeline และกลุ่มประเภทที่อ่านง่ายขึ้น' },
+      { type: 'improved', text: 'ปรับหน้าตาเวอร์ชันและรายละเอียดอัปเดตให้ดูสอดคล้องกันมากขึ้น' },
+    ],
+  },
+  {
     version: '0.1.33',
     date: '2026-06-29',
     highlight: 'ปรับเวลาใน Activity Log ให้แม่นขึ้น',
@@ -352,4 +362,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.33';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.34';
