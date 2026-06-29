@@ -1552,6 +1552,10 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 
     var picked = uploadResult.item;
     if (!picked) {
+      setStatus('ยังไม่พบ signature รูปใหม่ กำลังเลือกรูปบนสุดที่พร้อมเลือกแทน...', 'warning');
+      picked = await waitForStableTopReadyImageItem(dialog);
+    }
+    if (!picked) {
       setStatus('ยังไม่พบรูปใหม่ที่พร้อมเลือก กำลังลองกด Add to Prompt...', 'warning');
       if (await clickAddToPrompt(dialog)) {
         if (await waitForDialogClosed(dialog, 5000)) return { success: true, dataIndex: null, confirmed: true, rateLimitRetried: uploadAttempt > 1 };

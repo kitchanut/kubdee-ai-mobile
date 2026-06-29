@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.50',
+    date: '2026-06-29',
+    highlight: 'วิดีโอหลายฉากแนบรูป reference แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'เสียงพากย์และวิดีโอหลายฉาก: ถ้า Google Flow อัปโหลดรูปแล้วไม่สร้าง signature ใหม่ ระบบจะ fallback ไปเลือกรูปบนสุดที่พร้อมเลือกแทน' },
+      { type: 'improved', text: 'ลดโอกาสเจอ error อัปโหลดรูปแล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก ระหว่างแนบรูป reference เพื่อสร้างวิดีโอ' },
+    ],
+  },
+  {
     version: '0.1.49',
     date: '2026-06-29',
     highlight: 'Auto Mobile เห็นสถานะงานง่ายขึ้น',
@@ -501,4 +510,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.49';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.50';
