@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.44',
+    date: '2026-06-29',
+    highlight: 'Auto Mobile ตรวจผลรูปภาพแม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'Auto Workflow: บันทึกสถานะรูปเดิมก่อนสร้าง และไม่นับรูปเก่าบน Google Flow เป็นผลงานใหม่' },
+      { type: 'improved', text: 'เพิ่ม log สถานะเดิมก่อน submit เพื่อช่วยตรวจงานรูปและวิดีโอได้ใกล้เคียง Desktop มากขึ้น' },
+    ],
+  },
+  {
     version: '0.1.43',
     date: '2026-06-29',
     highlight: 'อัปเดต Mobile Changelog ให้ใช้งานง่ายขึ้น',
@@ -446,4 +455,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.43';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.44';

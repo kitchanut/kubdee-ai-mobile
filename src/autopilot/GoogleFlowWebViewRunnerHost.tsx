@@ -53,6 +53,7 @@ interface FlowResultPoll {
 
 interface FlowSnapshot {
   videoUrls?: string[];
+  imageUrls?: string[];
   tileCount?: number;
 }
 
@@ -1507,14 +1508,14 @@ export default function GoogleFlowWebViewRunnerHost({
   );
 
   const downloadLatestFlowImage = useCallback(
-    async (handle: FlowWebViewHandle, count = 1): Promise<FlowImageDownloadItem | null> => {
+    async (handle: FlowWebViewHandle, count = 1, baselineImageUrls: string[] = []): Promise<FlowImageDownloadItem | null> => {
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         checkStop();
         try {
           const imagePayload = (await runActionOrThrow(
             handle,
             'downloadImages',
-            { count },
+            { count, ignoreImageUrls: baselineImageUrls },
             90_000
           )) as FlowImageDownloadPayload;
           const image = imagePayload.images?.find((item) => item.dataUrl);
@@ -1748,6 +1749,7 @@ export default function GoogleFlowWebViewRunnerHost({
   const waitForStepResult = useCallback(
     async ({
       baselineVideoUrls,
+      baselineImageUrls = [],
       count,
       handle,
       payload,
@@ -1758,6 +1760,7 @@ export default function GoogleFlowWebViewRunnerHost({
       countFailure = true,
     }: {
       baselineVideoUrls: string[];
+      baselineImageUrls?: string[];
       count: number;
       handle: FlowWebViewHandle;
       payload: GoogleFlowRunnerPayload;
@@ -1785,7 +1788,7 @@ export default function GoogleFlowWebViewRunnerHost({
         const result = (await runActionOrThrow(
           handle,
           'videoResults',
-          { count, ignoreUrls: baselineVideoUrls },
+          { count, ignoreUrls: baselineVideoUrls, ignoreImageUrls: baselineImageUrls },
           20_000
         )) as FlowResultPoll;
 
@@ -2054,6 +2057,7 @@ export default function GoogleFlowWebViewRunnerHost({
   const fillPromptAndSubmit = useCallback(
     async ({
       baselineVideoUrls,
+      baselineImageUrls = [],
       count,
       handle,
       payload,
@@ -2064,6 +2068,7 @@ export default function GoogleFlowWebViewRunnerHost({
       step,
     }: {
       baselineVideoUrls: string[];
+      baselineImageUrls?: string[];
       count: number;
       handle: FlowWebViewHandle;
       payload: GoogleFlowRunnerPayload;
@@ -2129,7 +2134,7 @@ export default function GoogleFlowWebViewRunnerHost({
           const result = (await runActionOrThrow(
             handle,
             'videoResults',
-            { count, ignoreUrls: baselineVideoUrls },
+            { count, ignoreUrls: baselineVideoUrls, ignoreImageUrls: baselineImageUrls },
             20_000
           )) as FlowResultPoll;
 
@@ -2665,8 +2670,25 @@ export default function GoogleFlowWebViewRunnerHost({
                 throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
               }
 
+              const imageSnapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
+              const baselineImageUrls = imageSnapshot.imageUrls ?? [];
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step: 'image',
+                stage: 'flow_videoSnapshot',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `บันทึกสถานะเดิมก่อนสร้างรูปฉาก ${sceneNumber}: รูป ${baselineImageUrls.length} · tiles ${imageSnapshot.tileCount ?? 0}`,
+              });
               await fillPromptAndSubmit({
                 baselineVideoUrls: [],
+                baselineImageUrls,
                 count: 1,
                 handle,
                 payload,
@@ -2678,6 +2700,7 @@ export default function GoogleFlowWebViewRunnerHost({
               });
               const imageResult = await waitForStepResult({
                 baselineVideoUrls: [],
+                baselineImageUrls,
                 countFailure: finalImageAttempt,
                 count: 1,
                 handle,
@@ -2688,7 +2711,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 step: 'image',
               });
               const imageCount = Math.max(1, Number(imageResult.images ?? 1) || 1);
-              const firstImage = await downloadLatestFlowImage(handle, imageCount);
+              const firstImage = await downloadLatestFlowImage(handle, imageCount, baselineImageUrls);
               if (!firstImage?.dataUrl) {
                 throw new Error(`ดึงรูปฉาก ${sceneNumber} จากหน้า Flow ไม่สำเร็จ`);
               }
@@ -3331,6 +3354,7 @@ export default function GoogleFlowWebViewRunnerHost({
         return;
       }
 
+      let latestBaselineImageUrls: string[] = [];
       const maxSingleStepAttempts = 3;
       const runSingleStepAttempt = async (attempt: number, attemptPrompt: string): Promise<FlowResultPoll> => {
         const retryAttempt = Math.max(0, attempt - 1);
@@ -3507,6 +3531,7 @@ export default function GoogleFlowWebViewRunnerHost({
         }
 
         let baselineVideoUrls: string[] = [];
+        let baselineImageUrls: string[] = [];
         if (step === 'video') {
           if (videoReferenceAttached) {
             await ensureVideoReferenceAttached({
@@ -3518,9 +3543,25 @@ export default function GoogleFlowWebViewRunnerHost({
               step,
             });
           }
-          const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
-          baselineVideoUrls = snapshot.videoUrls ?? [];
         }
+        const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
+        baselineVideoUrls = snapshot.videoUrls ?? [];
+        baselineImageUrls = snapshot.imageUrls ?? [];
+        latestBaselineImageUrls = baselineImageUrls;
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage: 'flow_videoSnapshot',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `บันทึกสถานะเดิมก่อนสร้าง${label}: วิดีโอ ${baselineVideoUrls.length} · รูป ${baselineImageUrls.length} · tiles ${snapshot.tileCount ?? 0}`,
+        });
 
         emit({
           event: 'progress',
@@ -3541,6 +3582,7 @@ export default function GoogleFlowWebViewRunnerHost({
         });
         await fillPromptAndSubmit({
           baselineVideoUrls,
+          baselineImageUrls,
           count,
           handle,
           payload,
@@ -3567,6 +3609,7 @@ export default function GoogleFlowWebViewRunnerHost({
 
         return waitForStepResult({
           baselineVideoUrls,
+          baselineImageUrls,
           countFailure: attempt >= maxSingleStepAttempts,
           count,
           handle,
@@ -3685,11 +3728,24 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalProducts: payload.products.length,
                 message: `Retry ${label} รอบ 1: ลอง Reuse Prompt จากการ์ดล่าสุดก่อนทำ Flow ใหม่`,
               });
-              const baselineVideoUrls =
-                step === 'video'
-                  ? (((await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot)
-                      .videoUrls ?? [])
-                  : [];
+              const reuseSnapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
+              const baselineVideoUrls = reuseSnapshot.videoUrls ?? [];
+              const baselineImageUrls = reuseSnapshot.imageUrls ?? [];
+              latestBaselineImageUrls = baselineImageUrls;
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step,
+                stage: 'flow_videoSnapshot',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `บันทึกสถานะเดิมก่อน Reuse Prompt: วิดีโอ ${baselineVideoUrls.length} · รูป ${baselineImageUrls.length} · tiles ${reuseSnapshot.tileCount ?? 0}`,
+              });
               await runActionWithProductContext(
                 'reusePromptAndSubmit',
                 {},
@@ -3698,6 +3754,7 @@ export default function GoogleFlowWebViewRunnerHost({
               );
               result = await waitForStepResult({
                 baselineVideoUrls,
+                baselineImageUrls,
                 countFailure: false,
                 count,
                 handle,
@@ -3836,7 +3893,7 @@ export default function GoogleFlowWebViewRunnerHost({
         const imagePayload = (await runActionOrThrow(
           handle,
           'downloadImages',
-          { count: imageCount },
+          { count: imageCount, ignoreImageUrls: latestBaselineImageUrls },
           90_000
         )) as FlowImageDownloadPayload;
         const images = imagePayload.images ?? [];

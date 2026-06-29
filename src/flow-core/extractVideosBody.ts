@@ -17,9 +17,9 @@
  * `countFailedGenerations` opacity filter. Queued is matched broadly
  * (Queue/Queued/in queue/คิว) so a queued tile is treated as "still working".
  *
- * Reads `args`: { count?: number, ignoreUrls?: string[] } — how many leading
- * tiles to inspect, and a snapshot of pre-existing video URLs to ignore (so an
- * old video that predates this generation is not counted as a new output).
+ * Reads `args`: { count?: number, ignoreUrls?: string[], ignoreImageUrls?: string[] } —
+ * how many leading tiles to inspect, and snapshots of pre-existing media URLs
+ * to ignore (so old media that predates this generation is not counted as new).
  * Returns `{ videos, images, failedCount, failedMessages, successCount, generatingCount, queuedCount, tilesFound, progress }`.
  *
  * NOTE: regex backslashes are doubled (\\b, \\s, \\d) so the outer template
@@ -28,6 +28,7 @@
 export const VIDEO_RESULTS_BODY = `
   var n = args.count || 1;
   var ignore = args.ignoreUrls || [];
+  var ignoreImages = args.ignoreImageUrls || args.ignoreImages || [];
   var itemList = document.querySelector('[data-testid="virtuoso-item-list"]');
 
   function normalizeMediaUrl(value){
@@ -42,6 +43,9 @@ export const VIDEO_RESULTS_BODY = `
     for (var i = 0; i < direct.length; i++) { var u = normalizeMediaUrl(direct[i]); if (u) return u; }
     var source = video.querySelector('source');
     return source ? normalizeMediaUrl(source.src || source.getAttribute('src')) : '';
+  }
+  function getImageUrl(img){
+    return normalizeMediaUrl(img.currentSrc || img.src || img.getAttribute('src') || '');
   }
   function isVisible(el){
     var r = el.getBoundingClientRect();
@@ -89,8 +93,8 @@ export const VIDEO_RESULTS_BODY = `
       var list = Array.prototype.slice.call(root.querySelectorAll(selectors[s]));
       for (var i = 0; i < list.length; i++) {
         if (!looksReadyImage(list[i])) continue;
-        var src = normalizeMediaUrl(list[i].currentSrc || list[i].src || list[i].getAttribute('src'));
-        if (!src || seen[src]) continue;
+        var src = getImageUrl(list[i]);
+        if (!src || ignoreImages.indexOf(src) !== -1 || seen[src]) continue;
         seen[src] = true;
         images.push(src);
       }
@@ -239,7 +243,14 @@ export const VIDEO_RESULTS_BODY = `
       var tileImages = collectReadyImages(tile);
       if (tileImages.length > 0) img = tile.querySelector('img');
     }
-    if (img) { result.images++; result.successCount++; continue; }
+    if (img) {
+      var imageUrl = getImageUrl(img);
+      if (imageUrl && ignoreImages.indexOf(imageUrl) === -1) {
+        result.images++;
+        result.successCount++;
+        continue;
+      }
+    }
     // Anything else (tile still rendering, no clear state) — treat as still working
     // so the poller waits instead of declaring failure prematurely.
     result.generatingCount++;

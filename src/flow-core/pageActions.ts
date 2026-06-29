@@ -1694,6 +1694,7 @@ const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
 // --- downloadVideo: read the ready video through the page session and return it as data URL ---
 const DOWNLOAD_IMAGES_BODY = `
   var n = Math.max(1, Number(args.count || 1) || 1);
+  var ignore = args.ignoreImageUrls || args.ignoreUrls || [];
   function normalizeMediaUrl(value){
     var src = (value || '').trim();
     if (!src) return '';
@@ -1733,7 +1734,7 @@ const DOWNLOAD_IMAGES_BODY = `
       for (var i = 0; i < images.length; i++) {
         if (!looksGeneratedImage(images[i])) continue;
         var src = normalizeMediaUrl(images[i].currentSrc || images[i].src || images[i].getAttribute('src') || '');
-        if (!src || seen[src]) continue;
+        if (!src || ignore.indexOf(src) !== -1 || seen[src]) continue;
         seen[src] = true;
         urls.push(src);
       }
