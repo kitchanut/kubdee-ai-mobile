@@ -17,9 +17,10 @@
  * `countFailedGenerations` opacity filter. Queued is matched broadly
  * (Queue/Queued/in queue/คิว) so a queued tile is treated as "still working".
  *
- * Reads `args`: { count?: number, ignoreUrls?: string[], ignoreImageUrls?: string[] } —
+ * Reads `args`: { count?: number, ignoreUrls?: string[], ignoreImageUrls?: string[], ignoreFailedCount?: number } —
  * how many leading tiles to inspect, and snapshots of pre-existing media URLs
- * to ignore (so old media that predates this generation is not counted as new).
+ * / failed cards to ignore (so old results that predate this generation are
+ * not counted as new).
  * Returns `{ videos, images, failedCount, failedMessages, successCount, generatingCount, queuedCount, tilesFound, progress }`.
  *
  * NOTE: regex backslashes are doubled (\\b, \\s, \\d) so the outer template
@@ -29,6 +30,7 @@ export const VIDEO_RESULTS_BODY = `
   var n = args.count || 1;
   var ignore = args.ignoreUrls || [];
   var ignoreImages = args.ignoreImageUrls || args.ignoreImages || [];
+  var ignoreFailedCount = Math.max(0, Number(args.ignoreFailedCount || args.baselineFailedCount || 0) || 0);
   var itemList = document.querySelector('[data-testid="virtuoso-item-list"]');
 
   function normalizeMediaUrl(value){
@@ -142,6 +144,24 @@ export const VIDEO_RESULTS_BODY = `
       if (!hasChildSame) return true;
     }
     return false;
+  }
+  function countVisibleFailures(scope){
+    var root = scope || document.body;
+    var failed = 0;
+    var els = Array.prototype.slice.call(root.querySelectorAll('div, span, button, p'));
+    for (var i = 0; i < els.length; i++) {
+      var t = (els[i].textContent || '').replace(/\\s+/g, ' ').trim();
+      if (!t || t.length > 220) continue;
+      if (!/\\bFailed\\b|generation failed|สร้างไม่สำเร็จ/i.test(t)) continue;
+      if (!isVisible(els[i]) || isHiddenByOpacity(els[i], root)) continue;
+      var inner = els[i].querySelectorAll('*');
+      var hasChildSame = false;
+      for (var c = 0; c < inner.length; c++) {
+        if ((inner[c].textContent || '').replace(/\\s+/g, ' ').trim() === t) { hasChildSame = true; break; }
+      }
+      if (!hasChildSame) failed++;
+    }
+    return failed;
   }
   function collectFailedMessages(scope){
     var messages = [];
@@ -294,6 +314,10 @@ export const VIDEO_RESULTS_BODY = `
       result.images = fallbackImages.length;
       result.successCount = Math.max(result.successCount, fallbackImages.length);
     }
+  }
+  var visibleFailedTotal = countVisibleFailures(itemList || document.body);
+  if (ignoreFailedCount > 0 || visibleFailedTotal > result.failedCount) {
+    result.failedCount = Math.max(0, Math.min(n, visibleFailedTotal - ignoreFailedCount));
   }
   if (result.failedCount > 0) {
     result.failedMessages = collectFailedMessages(itemList || document.body);

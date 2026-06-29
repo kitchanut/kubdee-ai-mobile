@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.46',
+    date: '2026-06-29',
+    highlight: 'Auto Mobile กัน Failed เก่ารบกวนงานใหม่',
+    changes: [
+      { type: 'fixed', text: 'Auto Workflow: บันทึกจำนวน Failed เดิมก่อน submit และไม่นับ Failed เก่าเป็นผลล้มเหลวของงานใหม่' },
+      { type: 'improved', text: 'เพิ่มข้อมูล failed ใน log ก่อนสร้าง เพื่อช่วยตรวจสถานะ Google Flow ได้ใกล้เคียง Desktop มากขึ้น' },
+    ],
+  },
+  {
     version: '0.1.45',
     date: '2026-06-29',
     highlight: 'Auto Mobile จับรูปจาก Google Flow แม่นขึ้น',
@@ -464,4 +473,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.45';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.46';

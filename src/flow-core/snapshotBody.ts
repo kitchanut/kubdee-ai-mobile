@@ -3,11 +3,13 @@
  * results poll can filter out media that already existed (desktop snapshots
  * existing media URLs before submit and passes them to result extraction).
  *
- * Returns `{ videoUrls: string[], imageUrls: string[], tileCount: number }`:
+ * Returns `{ videoUrls: string[], imageUrls: string[], failedCount: number, tileCount: number }`:
  *   - videoUrls: every resolvable <video> URL currently on the page (the "old"
  *     set — any of these that reappears later is NOT a new output).
  *   - imageUrls: every generated-image URL currently on the page (same old set
  *     for image generation; avoids counting previous result cards as new work).
+ *   - failedCount: visible failed cards already present before submit. Desktop
+ *     subtracts this baseline so old failed cards are not counted as this run.
  *   - tileCount: how many top-level result tiles exist now (baseline).
  *
  * NOTE: kept self-contained (its own normalizeMediaUrl/getVideoUrl) so the body
@@ -57,6 +59,41 @@ export const VIDEO_SNAPSHOT_BODY = `
     if (top != null && r.top > top - 180) return false;
     return !!img.closest('[data-tile-id], [data-index], [data-testid="virtuoso-item-list"], main');
   }
+  function isHiddenByOpacity(el, scopeEl){
+    var node = el;
+    while (node && node !== scopeEl) {
+      var style = node.getAttribute('style') || '';
+      if (/(?:^|;)\\s*opacity\\s*:\\s*0\\s*(?:;|$)/.test(style)) return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+  function isVisibleFailureElement(el, scopeEl){
+    var text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+    if (!text || text.length > 80) return false;
+    var lower = text.toLowerCase();
+    var isFailure =
+      lower === 'failed' ||
+      lower === 'failed generation' ||
+      text === 'สร้างไม่สำเร็จ' ||
+      /\\bFailed\\b|generation failed|สร้างไม่สำเร็จ/i.test(text);
+    if (!isFailure) return false;
+    if (!isVisible(el) || isHiddenByOpacity(el, scopeEl)) return false;
+    var inner = el.querySelectorAll('*');
+    for (var i = 0; i < inner.length; i++) {
+      if ((inner[i].textContent || '').replace(/\\s+/g, ' ').trim() === text) return false;
+    }
+    return true;
+  }
+  function countVisibleFailures(scope){
+    var root = scope || document.body;
+    var failed = 0;
+    var els = Array.prototype.slice.call(root.querySelectorAll('div, span, button, p'));
+    for (var i = 0; i < els.length; i++) {
+      if (isVisibleFailureElement(els[i], root)) failed++;
+    }
+    return failed;
+  }
 
   var urls = [];
   var videos = document.querySelectorAll('video');
@@ -90,5 +127,5 @@ export const VIDEO_SNAPSHOT_BODY = `
     tileCount = all.filter(function(el){ return !(el.parentElement && el.parentElement.closest('[data-tile-id]')); }).length;
   }
 
-  return { videoUrls: urls, imageUrls: imageUrls, tileCount: tileCount };
+  return { videoUrls: urls, imageUrls: imageUrls, failedCount: countVisibleFailures(itemList || document.body), tileCount: tileCount };
 `;

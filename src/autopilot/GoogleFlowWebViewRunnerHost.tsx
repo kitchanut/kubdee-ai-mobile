@@ -54,6 +54,7 @@ interface FlowResultPoll {
 interface FlowSnapshot {
   videoUrls?: string[];
   imageUrls?: string[];
+  failedCount?: number;
   tileCount?: number;
 }
 
@@ -1750,6 +1751,7 @@ export default function GoogleFlowWebViewRunnerHost({
     async ({
       baselineVideoUrls,
       baselineImageUrls = [],
+      baselineFailedCount = 0,
       count,
       handle,
       payload,
@@ -1761,6 +1763,7 @@ export default function GoogleFlowWebViewRunnerHost({
     }: {
       baselineVideoUrls: string[];
       baselineImageUrls?: string[];
+      baselineFailedCount?: number;
       count: number;
       handle: FlowWebViewHandle;
       payload: GoogleFlowRunnerPayload;
@@ -1788,7 +1791,7 @@ export default function GoogleFlowWebViewRunnerHost({
         const result = (await runActionOrThrow(
           handle,
           'videoResults',
-          { count, ignoreUrls: baselineVideoUrls, ignoreImageUrls: baselineImageUrls },
+          { count, ignoreUrls: baselineVideoUrls, ignoreImageUrls: baselineImageUrls, ignoreFailedCount: baselineFailedCount },
           20_000
         )) as FlowResultPoll;
 
@@ -2058,6 +2061,7 @@ export default function GoogleFlowWebViewRunnerHost({
     async ({
       baselineVideoUrls,
       baselineImageUrls = [],
+      baselineFailedCount = 0,
       count,
       handle,
       payload,
@@ -2069,6 +2073,7 @@ export default function GoogleFlowWebViewRunnerHost({
     }: {
       baselineVideoUrls: string[];
       baselineImageUrls?: string[];
+      baselineFailedCount?: number;
       count: number;
       handle: FlowWebViewHandle;
       payload: GoogleFlowRunnerPayload;
@@ -2134,7 +2139,7 @@ export default function GoogleFlowWebViewRunnerHost({
           const result = (await runActionOrThrow(
             handle,
             'videoResults',
-            { count, ignoreUrls: baselineVideoUrls, ignoreImageUrls: baselineImageUrls },
+            { count, ignoreUrls: baselineVideoUrls, ignoreImageUrls: baselineImageUrls, ignoreFailedCount: baselineFailedCount },
             20_000
           )) as FlowResultPoll;
 
@@ -2672,6 +2677,7 @@ export default function GoogleFlowWebViewRunnerHost({
 
               const imageSnapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
               const baselineImageUrls = imageSnapshot.imageUrls ?? [];
+              const baselineFailedCount = imageSnapshot.failedCount ?? 0;
               emit({
                 event: 'progress',
                 runId: payload.runId,
@@ -2684,11 +2690,12 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalRounds: payload.settings.totalRounds,
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
-                message: `บันทึกสถานะเดิมก่อนสร้างรูปฉาก ${sceneNumber}: รูป ${baselineImageUrls.length} · tiles ${imageSnapshot.tileCount ?? 0}`,
+                message: `บันทึกสถานะเดิมก่อนสร้างรูปฉาก ${sceneNumber}: รูป ${baselineImageUrls.length} · failed ${baselineFailedCount} · tiles ${imageSnapshot.tileCount ?? 0}`,
               });
               await fillPromptAndSubmit({
                 baselineVideoUrls: [],
                 baselineImageUrls,
+                baselineFailedCount,
                 count: 1,
                 handle,
                 payload,
@@ -2701,6 +2708,7 @@ export default function GoogleFlowWebViewRunnerHost({
               const imageResult = await waitForStepResult({
                 baselineVideoUrls: [],
                 baselineImageUrls,
+                baselineFailedCount,
                 countFailure: finalImageAttempt,
                 count: 1,
                 handle,
@@ -3012,8 +3020,12 @@ export default function GoogleFlowWebViewRunnerHost({
           const runSceneVideo = async (nextPrompt: string, countFailure = true): Promise<FlowResultPoll> => {
             const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
             const baselineVideoUrls = snapshot.videoUrls ?? [];
+            const baselineImageUrls = snapshot.imageUrls ?? [];
+            const baselineFailedCount = snapshot.failedCount ?? 0;
             await fillPromptAndSubmit({
               baselineVideoUrls,
+              baselineImageUrls,
+              baselineFailedCount,
               count: 1,
               handle,
               payload,
@@ -3025,6 +3037,8 @@ export default function GoogleFlowWebViewRunnerHost({
             });
             return waitForStepResult({
               baselineVideoUrls,
+              baselineImageUrls,
+              baselineFailedCount,
               countFailure,
               count: 1,
               handle,
@@ -3532,6 +3546,7 @@ export default function GoogleFlowWebViewRunnerHost({
 
         let baselineVideoUrls: string[] = [];
         let baselineImageUrls: string[] = [];
+        let baselineFailedCount = 0;
         if (step === 'video') {
           if (videoReferenceAttached) {
             await ensureVideoReferenceAttached({
@@ -3547,6 +3562,7 @@ export default function GoogleFlowWebViewRunnerHost({
         const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
         baselineVideoUrls = snapshot.videoUrls ?? [];
         baselineImageUrls = snapshot.imageUrls ?? [];
+        baselineFailedCount = snapshot.failedCount ?? 0;
         latestBaselineImageUrls = baselineImageUrls;
         emit({
           event: 'progress',
@@ -3560,7 +3576,7 @@ export default function GoogleFlowWebViewRunnerHost({
           totalRounds: payload.settings.totalRounds,
           currentProduct: productIndex + 1,
           totalProducts: payload.products.length,
-          message: `บันทึกสถานะเดิมก่อนสร้าง${label}: วิดีโอ ${baselineVideoUrls.length} · รูป ${baselineImageUrls.length} · tiles ${snapshot.tileCount ?? 0}`,
+          message: `บันทึกสถานะเดิมก่อนสร้าง${label}: วิดีโอ ${baselineVideoUrls.length} · รูป ${baselineImageUrls.length} · failed ${baselineFailedCount} · tiles ${snapshot.tileCount ?? 0}`,
         });
 
         emit({
@@ -3583,6 +3599,7 @@ export default function GoogleFlowWebViewRunnerHost({
         await fillPromptAndSubmit({
           baselineVideoUrls,
           baselineImageUrls,
+          baselineFailedCount,
           count,
           handle,
           payload,
@@ -3610,6 +3627,7 @@ export default function GoogleFlowWebViewRunnerHost({
         return waitForStepResult({
           baselineVideoUrls,
           baselineImageUrls,
+          baselineFailedCount,
           countFailure: attempt >= maxSingleStepAttempts,
           count,
           handle,
@@ -3731,6 +3749,7 @@ export default function GoogleFlowWebViewRunnerHost({
               const reuseSnapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
               const baselineVideoUrls = reuseSnapshot.videoUrls ?? [];
               const baselineImageUrls = reuseSnapshot.imageUrls ?? [];
+              const baselineFailedCount = reuseSnapshot.failedCount ?? 0;
               latestBaselineImageUrls = baselineImageUrls;
               emit({
                 event: 'progress',
@@ -3744,7 +3763,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalRounds: payload.settings.totalRounds,
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
-                message: `บันทึกสถานะเดิมก่อน Reuse Prompt: วิดีโอ ${baselineVideoUrls.length} · รูป ${baselineImageUrls.length} · tiles ${reuseSnapshot.tileCount ?? 0}`,
+                message: `บันทึกสถานะเดิมก่อน Reuse Prompt: วิดีโอ ${baselineVideoUrls.length} · รูป ${baselineImageUrls.length} · failed ${baselineFailedCount} · tiles ${reuseSnapshot.tileCount ?? 0}`,
               });
               await runActionWithProductContext(
                 'reusePromptAndSubmit',
@@ -3755,6 +3774,7 @@ export default function GoogleFlowWebViewRunnerHost({
               result = await waitForStepResult({
                 baselineVideoUrls,
                 baselineImageUrls,
+                baselineFailedCount,
                 countFailure: false,
                 count,
                 handle,
