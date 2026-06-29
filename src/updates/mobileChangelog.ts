@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.42',
+    date: '2026-06-29',
+    highlight: 'วิดีโอหลายฉากบน Mobile คุมบทและเสียงพากย์ตรงขึ้น',
+    changes: [
+      { type: 'fixed', text: 'วิดีโอหลายฉาก: ถ้าปิด AI คิดบท ระบบจะไม่แทรกบทพูดเอง แต่ให้ Google Flow คิดบทจาก prompt และรูปฉากตามปกติ' },
+      { type: 'fixed', text: 'เสียงพากย์: ถ้า AI ส่งบทแยกฉากมาแต่ไม่มีบทพากย์รวม ระบบจะรวมบทฉากที่ AI คิดไว้จริงไปสร้างเสียงแทนการ fallback ไปใช้บททั่วไป' },
+    ],
+  },
+  {
     version: '0.1.41',
     date: '2026-06-29',
     highlight: 'อัปเดตแพ็กเกจ Mobile รุ่นใหม่',
@@ -428,4 +437,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.41';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.42';

@@ -940,6 +940,53 @@ function buildDesktopLikeVideoPrompts({
   });
 }
 
+function stripPresetDialogueLine(prompt: string): string {
+  return prompt
+    .split(/;\s*|\n+/)
+    .map((part) => part.trim())
+    .filter((part) => part && !/^บทพูด\/ข้อความประกอบ\s*:/i.test(part))
+    .join('\n');
+}
+
+function buildGoogleFlowSelfScriptVideoPrompts({
+  product,
+  sceneCount,
+  videoDuration,
+}: {
+  product: GoogleFlowRunnerProduct;
+  sceneCount: number;
+  videoDuration: number;
+}): string[] {
+  const video = product.settings.video;
+  const rawBasePrompt = promptForStep(product, 'video');
+  const basePrompt = video.promptMode === 'auto' ? stripPresetDialogueLine(rawBasePrompt) : rawBasePrompt;
+  const style = video.presetStyleCustom || video.presetStyle || 'natural product review footage with clear product-first composition';
+  const cameraMotion = video.cameraMotionCustom || video.cameraMotion;
+  const noSpeech = video.voiceCharacter === 'none' || video.dialogueMode === 'none';
+
+  return Array.from({ length: sceneCount }, (_, index) => {
+    const sceneNumber = index + 1;
+    return [
+      basePrompt,
+      `สร้างวิดีโอโฆษณาสินค้าภาษาไทยฉากที่ ${sceneNumber}/${sceneCount} จากรูป reference นี้`,
+      'ใช้ฉาก พื้นหลัง สถานที่ สินค้า ตัวละคร หรือมือจากภาพที่แนบมาเท่านั้น ห้ามสร้างฉากใหม่ ห้ามเปลี่ยนสถานที่ ห้ามเพิ่มคนใหม่',
+      product.name ? `สินค้า "${product.name}" ต้องเห็นชัดในเฟรมหลักตลอดฉาก` : 'สินค้าต้องเห็นชัดในเฟรมหลักตลอดฉาก',
+      'ถ้าในภาพ reference เห็นใบหน้า ต้องรักษาให้ใบหน้าชัดเจน เปิดโล่ง ไม่ถูกสินค้า มือ ผม หมวก แว่น เงา ขอบภาพ หรือวัตถุใดๆ บัง ถ้าไม่เห็นหน้า ห้าม reveal หน้าใหม่',
+      `สไตล์วิดีโอ: ${style}`,
+      cameraMotion ? `การเคลื่อนกล้อง: ${cameraMotion}` : '',
+      noSpeech
+        ? 'เสียง: ไม่มีเสียงพูด ไม่มีบทสนทนา ไม่มีคำบรรยายเสียง'
+        : `เสียง: ให้ Google Flow คิดบทพูดภาษาไทยเองจากสินค้าและภาพฉากนี้ ไม่ต้องใช้บทพูดที่กำหนดไว้ล่วงหน้า เสียงควรพอดีกับคลิปประมาณ ${videoDuration} วินาที เป็นรีวิวสินค้าแบบ TikTok ที่พูดธรรมชาติและกระชับ`,
+      video.musicSfxMode === 'none' ? 'เสียงดนตรีและเอฟเฟค: ห้ามมีเสียงดนตรีหรือเสียงเอฟเฟค' : '',
+      video.musicSfxMode === 'custom' && video.musicSfxCustom ? `เสียงดนตรีและเอฟเฟค: ${video.musicSfxCustom}` : '',
+      'ข้อห้าม: ห้ามมี subtitle ห้ามมีข้อความบนจอ ห้ามมีขอบดำ วิดีโอต้องเต็มจอ',
+      video.systemPrompt ? `คำสั่งเพิ่มเติม: ${video.systemPrompt}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  });
+}
+
 function createFallbackMultiScenePromptResult({
   product,
   sceneCount,
@@ -1130,6 +1177,7 @@ function resolveGeminiTtsVoice(voiceCharacter?: string, voiceGender?: string): s
 async function generateVoiceoverAudioDataUrl({
   durationSeconds,
   product,
+  sceneDialogues,
   sceneCount,
   voiceStyleInstruction,
   voiceoverScript,
@@ -1137,15 +1185,18 @@ async function generateVoiceoverAudioDataUrl({
 }: {
   durationSeconds: number;
   product: GoogleFlowRunnerProduct;
+  sceneDialogues?: string[];
   sceneCount: number;
   voiceStyleInstruction?: string;
   voiceoverScript?: string;
   voiceGender?: string;
 }): Promise<string | null> {
-  const script = voiceoverScript?.trim() || Array.from({ length: sceneCount }, (_, index) => dialogueForScene(product, index + 1))
+  const aiSceneScript = sceneDialogues?.map((line) => line.trim()).filter(Boolean).join(' ') ?? '';
+  const fallbackScript = Array.from({ length: sceneCount }, (_, index) => dialogueForScene(product, index + 1))
     .map((line) => line.trim())
     .filter(Boolean)
     .join(' ');
+  const script = voiceoverScript?.trim() || aiSceneScript || fallbackScript;
   if (!script) {
     return null;
   }
@@ -2732,6 +2783,18 @@ export default function GoogleFlowWebViewRunnerHost({
             videoDuration,
             voiceover: useVoiceover,
           });
+        } else {
+          promptResult = {
+            prompts: buildGoogleFlowSelfScriptVideoPrompts({
+              product,
+              sceneCount,
+              videoDuration,
+            }),
+            scenes: [],
+            voiceStyleInstruction: '',
+            voiceoverScript: '',
+            voiceGender: 'neutral',
+          };
         }
 
         for (const scene of promptResult.scenes) {
@@ -3206,11 +3269,15 @@ export default function GoogleFlowWebViewRunnerHost({
           voiceoverDataUrl = await generateVoiceoverAudioDataUrl({
             durationSeconds: voiceoverTargetDuration,
             product,
+            sceneDialogues: promptResult.scenes.map((scene) => scene.dialogue),
             sceneCount,
             voiceStyleInstruction: promptResult.voiceStyleInstruction,
             voiceoverScript: promptResult.voiceoverScript,
             voiceGender: promptResult.voiceGender,
           });
+          if (!voiceoverDataUrl) {
+            throw new Error('สร้างเสียงพากษ์ไม่สำเร็จ: ไม่มีบทพูดหรือไฟล์เสียงสำหรับรวมวิดีโอ');
+          }
         }
 
         emit({
