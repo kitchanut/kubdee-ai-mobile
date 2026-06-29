@@ -5,7 +5,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: 'Kubdee AI',
   slug: 'kubdee-ai-mobile',
   scheme: 'kubdeeai',
-  version: '0.1.47',
+  version: '0.1.48',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/icon.png',
@@ -17,7 +17,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     ...config.android,
     package: 'ai.kubdee.mobile',
-    versionCode: 48,
+    versionCode: 49,
     predictiveBackGestureEnabled: false,
     permissions: [
       'android.permission.INTERNET',
