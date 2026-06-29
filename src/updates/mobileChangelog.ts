@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.39',
+    date: '2026-06-29',
+    highlight: 'Activity Log แสดงขั้นตอนตั้งค่า Google Flow ชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'แสดง log ระหว่างตั้งค่า Google Flow เช่น model, สัดส่วน, จำนวน และความยาววิดีโอแบบละเอียดขึ้น' },
+      { type: 'improved', text: 'ช่วยให้ตามปัญหาตอนสร้างงาน Auto Mobile ได้ใกล้เคียง Desktop มากขึ้น' },
+    ],
+  },
+  {
     version: '0.1.38',
     date: '2026-06-29',
     highlight: 'อัปเดตแพ็กเกจ Mobile รุ่นใหม่',
@@ -401,4 +410,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.38';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.39';

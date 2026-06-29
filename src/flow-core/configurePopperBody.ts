@@ -26,7 +26,13 @@ export const CONFIGURE_POPPER_BODY = `
   var hSettings = !!(ratio || count || duration);
   var isImageMode = hMode && (mode === 'image');
   var logs = [];
-  function sendLog(message, level){ logs.push({ level: level || 'info', message: message }); }
+  function sendLog(message, level){
+    var entry = { level: level || 'info', message: String(message || '') };
+    logs.push(entry);
+    try {
+      if (typeof __flowLog === 'function') __flowLog(entry.message, entry.level);
+    } catch (e) {}
+  }
 
   function wait(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
   function heavyClick(element){ if (!element) return; element.click(); }
