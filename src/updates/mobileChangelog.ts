@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.30',
+    date: '2026-06-29',
+    highlight: 'รูปฉากหลายฉาก retry เฉพาะฉากที่ล้มเหลว',
+    changes: [
+      { type: 'improved', text: 'ถ้ารูปฉากในวิดีโอหลายฉากสร้างไม่สำเร็จ ระบบจะลองใหม่เฉพาะฉากนั้นโดยแนบ reference เดิม' },
+      { type: 'improved', text: 'ลดโอกาสงานหลายฉากหยุดทั้งงานจาก error ชั่วคราวของ Google Flow' },
+      { type: 'improved', text: 'เพิ่มสถานะ Activity Log สำหรับ retry รูปฉากให้ตามงานได้ชัดขึ้น' },
+    ],
+  },
+  {
     version: '0.1.29',
     date: '2026-06-29',
     highlight: 'วิดีโอหลายฉาก retry ได้เฉพาะฉากที่ล้มเหลว',
@@ -314,4 +324,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.29';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.30';
