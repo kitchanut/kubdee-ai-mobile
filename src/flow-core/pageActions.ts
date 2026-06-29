@@ -358,6 +358,11 @@ const FILL_PROMPT_BODY = `
   function wasInserted() {
     return promptLooksInserted(getCurrentPromptText());
   }
+  function assertInserted(message) {
+    if (wasInserted()) return;
+    var detail = buildFillResult('verify');
+    throw new Error(message + ' (' + detail.actualLength + '/' + detail.expectedLength + ' ตัวอักษร)');
+  }
   function hasEnabledSubmitButton() {
     return !!findSubmitButton(false);
   }
@@ -399,7 +404,7 @@ const FILL_PROMPT_BODY = `
   if (preferredField && preferredField.offsetParent) {
     fillTextField(preferredField);
     await wait(500);
-    if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+    assertInserted('กรอก Prompt ไม่ครบ');
     setStatus('กรอก prompt สำเร็จด้วยช่อง text field', 'success');
     return buildFillResult('textarea-preferred');
   }
@@ -421,7 +426,7 @@ const FILL_PROMPT_BODY = `
     if (!field || !field.offsetParent) throw new Error('ไม่พบช่อง Prompt (Slate editor)');
     fillTextField(field);
     await wait(500);
-    if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+    assertInserted('กรอก Prompt ไม่ครบ');
     setStatus('กรอก prompt สำเร็จด้วย fallback text field', 'success');
     return buildFillResult('textarea');
   }
@@ -470,7 +475,7 @@ const FILL_PROMPT_BODY = `
       }
       slateEditor.insertText(promptText);
       await wait(500);
-      if (!wasInserted()) throw new Error('Slate insertText ไม่ติด');
+      assertInserted('Slate insertText กรอก Prompt ไม่ครบ');
       setStatus('กรอก prompt สำเร็จด้วย Slate editor', 'success');
       return buildFillResult('slate-fiber');
     }
@@ -498,7 +503,7 @@ const FILL_PROMPT_BODY = `
       }
       slateEditor.insertText(promptText);
       await wait(500);
-      if (!wasInserted()) throw new Error('Slate deep insertText ไม่ติด');
+      assertInserted('Slate deep insertText กรอก Prompt ไม่ครบ');
       setStatus('กรอก prompt สำเร็จด้วย Slate editor deep fallback', 'success');
       return buildFillResult('slate-fiber-deep');
     }
@@ -530,7 +535,7 @@ const FILL_PROMPT_BODY = `
     }
     await wait(500);
   }
-  if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
+  assertInserted('กรอก Prompt ไม่ครบ');
   setStatus('กรอก prompt สำเร็จด้วย execCommand fallback', 'success');
   return buildFillResult('slate-execCommand');
 `;

@@ -2048,6 +2048,29 @@ export default function GoogleFlowWebViewRunnerHost({
           }
         }
       };
+      const emitPromptFillVerification = (result: Record<string, unknown>, stage: string): void => {
+        const expectedLength = typeof result.expectedLength === 'number' ? result.expectedLength : null;
+        const actualLength = typeof result.actualLength === 'number' ? result.actualLength : null;
+        const fillType = typeof result.type === 'string' ? result.type : 'unknown';
+        if (expectedLength == null || actualLength == null) {
+          return;
+        }
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'success',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `ตรวจ prompt สำเร็จ (${fillType}) ${actualLength}/${expectedLength} ตัวอักษร`,
+        });
+      };
 
       const checkFlowStarted = async (maxChecks: number, stage: string): Promise<boolean> => {
         for (let startCheck = 1; startCheck <= maxChecks; startCheck += 1) {
@@ -2103,7 +2126,8 @@ export default function GoogleFlowWebViewRunnerHost({
         return false;
       };
 
-      await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'fill_prompt');
+      const fillPromptResult = await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'fill_prompt');
+      emitPromptFillVerification(fillPromptResult, 'fill_prompt_verified');
       await runActionWithLogContext('submit', {}, 45_000, 'submitted');
       await sleep(step === 'video' ? 10_000 : 8_000);
 
@@ -2126,7 +2150,8 @@ export default function GoogleFlowWebViewRunnerHost({
         message: `ยังไม่เห็น Flow เริ่มสร้าง${stepLabel(step)} จะ retype prompt แล้ว submit ซ้ำ 1 ครั้ง`,
       });
 
-      await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'retype_prompt_retry');
+      const retypePromptResult = await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'retype_prompt_retry');
+      emitPromptFillVerification(retypePromptResult, 'retype_prompt_verified');
       await runActionWithLogContext('submit', {}, 45_000, 'retype_submitted');
       await sleep(step === 'video' ? 10_000 : 8_000);
 

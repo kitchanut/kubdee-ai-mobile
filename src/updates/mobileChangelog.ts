@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.36',
+    date: '2026-06-29',
+    highlight: 'Activity Log แสดงผลตรวจ Prompt ชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'เพิ่ม log แสดงผลตรวจ prompt หลังกรอกใน Google Flow ว่ากรอกได้ครบกี่ตัวอักษร' },
+      { type: 'improved', text: 'ถ้า Google Flow รับ prompt ไม่ครบ ระบบจะแจ้งจำนวนที่กรอกได้ เพื่อช่วยวิเคราะห์และ retype ได้ชัดขึ้น' },
+      { type: 'improved', text: 'ช่วยให้การติดตามปัญหาตอนกดสร้างรูปหรือวิดีโอใน Auto Mobile ทำได้ง่ายขึ้น' },
+    ],
+  },
+  {
     version: '0.1.35',
     date: '2026-06-29',
     highlight: 'ตรวจ Prompt ก่อนสร้างงานแม่นขึ้น',
@@ -372,4 +382,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.35';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.36';
