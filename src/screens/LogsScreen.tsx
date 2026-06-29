@@ -307,14 +307,14 @@ function formatDuration(ms: number): string {
 
 function getLogIcon(message: string): typeof Info {
   if (/ไม่สำเร็จ|ผิดพลาด|error|failed|ล้มเหลว/i.test(message)) return CircleX;
-  if (/เตือน|warning|กำลังหยุด|ยังไม่/i.test(message)) return CircleAlert;
+  if (/เตือน|warning|กำลังหยุด|ถูกหยุด|ขาดตอน|ยังไม่/i.test(message)) return CircleAlert;
   if (/สำเร็จ|เสร็จ|พร้อมใช้|รับงานแล้ว/i.test(message)) return CircleCheck;
   return Info;
 }
 
 function getLogColor(message: string, theme: KubdeeTheme): string {
   if (/ไม่สำเร็จ|ผิดพลาด|error|failed|ล้มเหลว/i.test(message)) return theme.red;
-  if (/เตือน|warning|กำลังหยุด|ยังไม่/i.test(message)) return theme.amber;
+  if (/เตือน|warning|กำลังหยุด|ถูกหยุด|ขาดตอน|ยังไม่/i.test(message)) return theme.amber;
   if (/สำเร็จ|เสร็จ|พร้อมใช้|รับงานแล้ว/i.test(message)) return theme.emerald;
   return theme.cyan;
 }

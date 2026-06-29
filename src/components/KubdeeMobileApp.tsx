@@ -57,6 +57,10 @@ function uniqueProductIds(productIds: string[]): string[] {
   return Array.from(new Set(productIds.map((productId) => productId.trim()).filter(Boolean)));
 }
 
+function uniqueVideoIds(videoIds: string[]): string[] {
+  return Array.from(new Set(videoIds.map((videoId) => videoId.trim()).filter(Boolean)));
+}
+
 function areSameProductIds(first: string[], second: string[]): boolean {
   if (first.length !== second.length) {
     return false;
@@ -85,6 +89,9 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     useState<Record<string, string[]>>({});
   const [autoPilotSelectionRequest, setAutoPilotSelectionRequest] =
     useState<AutoPilotProductSelectionRequest | null>(null);
+  const [pendingShopeeVideoIds, setPendingShopeeVideoIds] = useState<string[]>([]);
+  const [libraryTabRequest, setLibraryTabRequest] =
+    useState<{ tab: 'videos'; requestId: number } | null>(null);
   const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
   const [isCheckingMobileUpdate, setIsCheckingMobileUpdate] = useState(false);
   const [changelogVisible, setChangelogVisible] = useState(false);
@@ -252,6 +259,27 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       requestId: Date.now(),
     });
     setActiveTab('pipeline');
+  }, []);
+
+  const sendVideosToShopee = useCallback((videoIds: string[]): void => {
+    const cleanVideoIds = uniqueVideoIds(videoIds);
+    if (cleanVideoIds.length === 0) {
+      return;
+    }
+
+    setPendingShopeeVideoIds((current) => {
+      const existing = new Set(current);
+      return [...current, ...cleanVideoIds.filter((videoId) => !existing.has(videoId))];
+    });
+    setActiveTab('shopee');
+  }, []);
+
+  const removePendingShopeeVideo = useCallback((videoId: string): void => {
+    setPendingShopeeVideoIds((current) => current.filter((id) => id !== videoId));
+  }, []);
+
+  const clearPendingShopeeVideos = useCallback((): void => {
+    setPendingShopeeVideoIds([]);
   }, []);
 
   const handleAutoPilotSelectedProductIdsChange = useCallback((productIds: string[], profileLocalId: string): void => {
@@ -510,10 +538,15 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'shopee':
         return (
           <ShopeeScreen
+            pendingVideoIds={pendingShopeeVideoIds}
             selectedProfileId={selectedProfileId}
             theme={theme}
-            selectedCount={1}
-            onImportFinished={() => setActiveTab('library')}
+            onClearPendingVideos={clearPendingShopeeVideos}
+            onOpenVideoLibrary={() => {
+              setLibraryTabRequest({ tab: 'videos', requestId: Date.now() });
+              setActiveTab('library');
+            }}
+            onRemovePendingVideo={removePendingShopeeVideo}
           />
         );
       case 'logs':
@@ -535,9 +568,11 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'library':
         return (
           <LibraryScreen
+            initialTabRequest={libraryTabRequest}
             selectedProfileId={selectedProfileId}
             theme={theme}
             onSendProductsToAutoPilot={sendProductsToAutoPilot}
+            onSendVideosToShopee={sendVideosToShopee}
           />
         );
       default:

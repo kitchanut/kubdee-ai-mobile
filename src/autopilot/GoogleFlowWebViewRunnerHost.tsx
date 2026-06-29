@@ -1597,9 +1597,59 @@ export default function GoogleFlowWebViewRunnerHost({
           };
           actionLogContextRef.current = context;
           try {
-            return await runActionOrThrow(handle, 'newProject', {}, 35_000);
+            const projectResult = await runActionOrThrow(handle, 'newProject', {}, 35_000);
+            const prepareContext: FlowActionLogContext = {
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              stage: 'prepare_project_ui',
+            };
+            actionLogContextRef.current = prepareContext;
+            try {
+              const prepareResult = (await runActionOrThrow(handle, 'prepareProjectUi', {}, 20_000)) as {
+                success?: boolean;
+                closeError?: string;
+                agentError?: string;
+              };
+              if (prepareResult.success === false) {
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'warning',
+                  step,
+                  stage: 'prepare_project_ui',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: `เตรียมหน้า Flow ไม่ครบ: ${prepareResult.closeError || prepareResult.agentError || 'unknown'}`,
+                });
+              }
+            } catch (prepareError) {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                level: 'warning',
+                step,
+                stage: 'prepare_project_ui',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `เตรียมหน้า Flow ไม่สำเร็จ: ${prepareError instanceof Error ? prepareError.message : String(prepareError)}`,
+              });
+            }
+            return projectResult;
           } finally {
-            if (actionLogContextRef.current === context) {
+            if (actionLogContextRef.current === context || actionLogContextRef.current?.stage === 'prepare_project_ui') {
               actionLogContextRef.current = previousContext;
             }
           }
@@ -2757,13 +2807,14 @@ export default function GoogleFlowWebViewRunnerHost({
           if (downloaded?.uri) {
             emit({
               event: 'asset',
-              runId: payload.runId,
-              status: 'running',
-              step: 'image',
-              stage: 'generated',
-              productId: product.id,
-              productName: product.name,
-              fileUri: downloaded.uri,
+            runId: payload.runId,
+            status: 'running',
+            step: 'image',
+            stage: 'generated',
+            profileLocalId: payload.profileLocalId,
+            productId: product.id,
+            productName: product.name,
+            fileUri: downloaded.uri,
               fileName: downloaded.fileName,
               mimeType: downloaded.mimeType || sceneImage.mimeType || 'image/png',
               sizeBytes: downloaded.sizeBytes || sceneImage.sizeBytes || undefined,
@@ -3341,6 +3392,7 @@ export default function GoogleFlowWebViewRunnerHost({
           status: 'running',
           step,
           stage: 'generated',
+          profileLocalId: payload.profileLocalId,
           productId: product.id,
           productName: product.name,
           fileUri: merged.uri,
@@ -3937,6 +3989,7 @@ export default function GoogleFlowWebViewRunnerHost({
             status: 'running',
             step,
             stage: 'generated',
+            profileLocalId: payload.profileLocalId,
             productId: product.id,
             productName: product.name,
             fileUri: downloaded.uri,

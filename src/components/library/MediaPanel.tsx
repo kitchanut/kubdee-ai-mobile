@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
-import { Alert, Image as NativeImage, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Image as NativeImage, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import {
   ChevronDown,
   ChevronRight,
@@ -20,11 +21,13 @@ import {
   Video,
   X,
 } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 
 import Text from '@/components/ui/KubdeeText';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
+import { deleteGoogleFlowAssets } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
@@ -60,6 +63,7 @@ interface MediaSubItem {
   warnings: string[];
   uri?: string | null;
   mimeType?: string | null;
+  thumbnailUri?: string | null;
 }
 
 interface MediaGroupRecord {
@@ -161,19 +165,100 @@ async function openGeneratedFile(uri: string, kind: MediaKind, mimeType?: string
 }
 
 async function deleteLocalFiles(assets: GeneratedMediaAsset[]): Promise<number> {
+  const fileUris = assets
+    .map((asset) => asset.fileUri)
+    .filter((uri): uri is string => !!uri && (uri.startsWith('content://') || uri.startsWith('file://')));
+  if (fileUris.length === 0) {
+    return 0;
+  }
+
+  try {
+    const result = await deleteGoogleFlowAssets(fileUris);
+    if (result.deleted > 0 || result.failed < fileUris.length) {
+      return result.failed;
+    }
+  } catch {
+    // Fallback below covers legacy file:// paths.
+  }
+
   let failedCount = 0;
-  for (const asset of assets) {
-    if (!asset.fileUri?.startsWith('file://')) {
+  for (const uri of fileUris) {
+    if (!uri.startsWith('file://')) {
+      failedCount += 1;
       continue;
     }
-
     try {
-      await FileSystem.deleteAsync(asset.fileUri, { idempotent: true });
+      await FileSystem.deleteAsync(uri, { idempotent: true });
     } catch {
       failedCount += 1;
     }
   }
   return failedCount;
+}
+
+function LocalVideoPlaceholder({
+  theme,
+  compact = false,
+  thumbnailUri,
+}: {
+  theme: KubdeeTheme;
+  compact?: boolean;
+  thumbnailUri?: string | null;
+}): React.JSX.Element {
+  return (
+    <View className="h-full w-full items-center justify-center bg-kd-border dark:bg-kd-card-muted">
+      {thumbnailUri ? (
+        <NativeImage source={{ uri: thumbnailUri }} className="h-full w-full" resizeMode="cover" />
+      ) : (
+        <Video size={compact ? 18 : 28} color={theme.textSubtle} strokeWidth={1.5} />
+      )}
+      <View className="absolute inset-0 bg-black/10" />
+      <View
+        className={`absolute items-center justify-center rounded-full bg-black/35 ${
+          compact ? 'h-7 w-7' : 'h-11 w-11'
+        }`}
+      >
+        <Play size={compact ? 14 : 20} color={theme.white} strokeWidth={2.2} />
+      </View>
+    </View>
+  );
+}
+
+function LocalVideoPlayer({
+  media,
+  theme,
+}: {
+  media: MediaSubItem;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  const player = useVideoPlayer(
+    media.uri ? { uri: media.uri, metadata: { title: media.title, artist: media.productName } } : null,
+    (nextPlayer) => {
+      nextPlayer.loop = false;
+      nextPlayer.muted = false;
+      nextPlayer.play();
+    }
+  );
+  if (!media.uri) {
+    return (
+      <View className="items-center gap-2">
+        <Video size={36} color="rgba(255,255,255,0.5)" strokeWidth={1.5} />
+        <Text className="text-kd-caption text-white/60">ไม่พบไฟล์วิดีโอ</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View className="w-full overflow-hidden rounded-[18px] bg-black" style={{ aspectRatio: media.portrait ? 9 / 16 : 16 / 9 }}>
+      <VideoView
+        player={player}
+        nativeControls
+        contentFit="contain"
+        useExoShutter={false}
+        style={StyleSheet.absoluteFill}
+      />
+    </View>
+  );
 }
 
 function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Array<{ item: MediaGroupRecord; media: MediaSubItem[] }> {
@@ -205,6 +290,7 @@ function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Arra
       warnings: [],
       uri: asset.fileUri,
       mimeType: asset.mimeType,
+      thumbnailUri: asset.thumbnailUri,
     });
 
     groupsByProduct.set(groupId, group);
@@ -220,12 +306,22 @@ export default function MediaPanel({
   theme,
   kind,
   selectedProfileId,
+  onSendVideosToShopee,
 }: {
   theme: KubdeeTheme;
   kind: MediaKind;
   selectedProfileId: string;
+  onSendVideosToShopee?: (videoIds: string[]) => void;
 }): React.JSX.Element {
-  const { deleteGeneratedMediaAssets, getAssetsByKind, updateGeneratedMediaAsset } = useGeneratedMedia();
+  const insets = useSafeAreaInsets();
+  const {
+    deleteGeneratedMediaAssets,
+    ensureGeneratedVideoThumbnails,
+    getAssetsByKind,
+    importGeneratedMediaAssets,
+    refreshGeneratedMediaAssets,
+    updateGeneratedMediaAsset,
+  } = useGeneratedMedia();
   const copy = panelCopy[kind];
   const accentColor = kind === 'images' ? theme.amber : theme.red;
   const accent = getAccentTone(theme, accentColor);
@@ -246,8 +342,21 @@ export default function MediaPanel({
   const [previewMedia, setPreviewMedia] = useState<MediaSubItem | null>(null);
   const [editMedia, setEditMedia] = useState<MediaSubItem | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const ensuringVideoThumbnailsRef = useRef(false);
 
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
+  useEffect(() => {
+    if (kind !== 'videos' || ensuringVideoThumbnailsRef.current) {
+      return;
+    }
+    ensuringVideoThumbnailsRef.current = true;
+    void ensureGeneratedVideoThumbnails(selectedProfileId).finally(() => {
+      ensuringVideoThumbnailsRef.current = false;
+    });
+  }, [ensureGeneratedVideoThumbnails, kind, selectedProfileId]);
+
   const generatedAssetById = useMemo(
     () => new Map(generatedAssets.map((asset) => [asset.id, asset])),
     [generatedAssets]
@@ -321,22 +430,29 @@ export default function MediaPanel({
     confirmDelete(ids);
   };
 
+  const sendSelectedVideosToShopee = (): void => {
+    if (kind !== 'videos' || !onSendVideosToShopee) {
+      return;
+    }
+
+    const ids = Array.from(selectedIds).filter((id) => generatedAssetById.has(id));
+    if (ids.length === 0) {
+      toast.warning('เลือกวิดีโอก่อนส่งไป Shopee');
+      return;
+    }
+
+    onSendVideosToShopee(ids);
+    setSelectedIds(new Set());
+    toast.success(`ส่งไป Shopee ${ids.length} วิดีโอ`);
+  };
+
   const openMedia = async (media: MediaSubItem): Promise<void> => {
     if (!media.uri) {
       toast.warning('ไม่พบไฟล์สำหรับเปิด');
       return;
     }
 
-    if (kind === 'images') {
-      setPreviewMedia(media);
-      return;
-    }
-
-    try {
-      await openGeneratedFile(media.uri, kind, media.mimeType);
-    } catch {
-      toast.error('เปิดวิดีโอไม่สำเร็จ');
-    }
+    setPreviewMedia(media);
   };
 
   const openEdit = (media: MediaSubItem): void => {
@@ -432,6 +548,37 @@ export default function MediaPanel({
     ]);
   };
 
+  const refreshMedia = async (): Promise<void> => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refreshGeneratedMediaAssets();
+      toast.success('รีเฟรชคลังแล้ว');
+    } catch {
+      toast.error('รีเฟรชคลังไม่สำเร็จ');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const importMedia = async (): Promise<void> => {
+    if (isImporting) return;
+    setIsImporting(true);
+    try {
+      const imported = await importGeneratedMediaAssets(kind, selectedProfileId);
+      await refreshGeneratedMediaAssets();
+      if (imported > 0) {
+        toast.success(`นำเข้าแล้ว ${imported} ${copy.unit}`);
+        return;
+      }
+      toast.info('ไม่พบไฟล์ใหม่ใน Downloads/Kubdee AI');
+    } catch {
+      toast.error('นำเข้าไฟล์ไม่สำเร็จ');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <View className="flex-1">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
@@ -447,14 +594,14 @@ export default function MediaPanel({
               <HeaderIconButton
                 theme={theme}
                 icon={Upload}
-                label="อัพโหลด"
-                onPress={() => toast.info('อัพโหลดเข้าคลังจะเพิ่มในเวอร์ชันถัดไป')}
+                label={isImporting ? 'กำลังนำเข้า' : 'นำเข้าไฟล์'}
+                onPress={() => void importMedia()}
               />
               <HeaderIconButton
                 theme={theme}
                 icon={RefreshCw}
-                label="รีเฟรช"
-                onPress={() => toast.success('รีเฟรชคลังแล้ว')}
+                label={isRefreshing ? 'กำลังรีเฟรช' : 'รีเฟรช'}
+                onPress={() => void refreshMedia()}
               />
             </>
           }
@@ -656,10 +803,13 @@ export default function MediaPanel({
         <SelectionBar
           theme={theme}
           accent={accentColor}
+          bottomInset={insets.bottom}
           count={selectedIds.size}
+          showShopee={kind === 'videos'}
           onClear={() => setSelectedIds(new Set())}
           onDelete={() => void deleteSelected()}
           onEdit={editSelected}
+          onShopee={kind === 'videos' ? sendSelectedVideosToShopee : undefined}
         />
       ) : null}
 
@@ -669,7 +819,13 @@ export default function MediaPanel({
         visible={!!previewMedia}
         onRequestClose={() => setPreviewMedia(null)}
       >
-        <View className="flex-1 bg-black/90 px-4 py-8">
+        <View
+          className="flex-1 bg-black/90 px-4"
+          style={{
+            paddingBottom: Math.max(insets.bottom + 16, 24),
+            paddingTop: Math.max(insets.top + 12, 32),
+          }}
+        >
           <View className="mb-3 flex-row items-center justify-between gap-3">
             <View className="min-w-0 flex-1">
               <Text numberOfLines={1} className="text-kd-body font-semibold text-white">
@@ -691,11 +847,21 @@ export default function MediaPanel({
 
           <View className="flex-1 items-center justify-center">
             {previewMedia?.uri ? (
-              <NativeImage source={{ uri: previewMedia.uri }} className="h-full w-full" resizeMode="contain" />
+              kind === 'images' ? (
+                <NativeImage source={{ uri: previewMedia.uri }} className="h-full w-full" resizeMode="contain" />
+              ) : (
+                <LocalVideoPlayer media={previewMedia} theme={theme} />
+              )
             ) : (
               <View className="items-center gap-2">
-                <ImageIcon size={36} color="rgba(255,255,255,0.5)" strokeWidth={1.5} />
-                <Text className="text-kd-caption text-white/60">ไม่พบไฟล์รูปภาพ</Text>
+                {kind === 'images' ? (
+                  <ImageIcon size={36} color="rgba(255,255,255,0.5)" strokeWidth={1.5} />
+                ) : (
+                  <Video size={36} color="rgba(255,255,255,0.5)" strokeWidth={1.5} />
+                )}
+                <Text className="text-kd-caption text-white/60">
+                  ไม่พบไฟล์{kind === 'images' ? 'รูปภาพ' : 'วิดีโอ'}
+                </Text>
               </View>
             )}
           </View>
@@ -728,7 +894,10 @@ export default function MediaPanel({
         onRequestClose={() => setEditMedia(null)}
       >
         <View className="flex-1 justify-end bg-black/45">
-          <View className="gap-3 rounded-t-[20px] border border-kd-border bg-kd-panel p-4 pb-6">
+          <View
+            className="gap-3 rounded-t-[20px] border border-kd-border bg-kd-panel p-4"
+            style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}
+          >
             <View className="flex-row items-center justify-between gap-3">
               <Text className="text-kd-title font-semibold text-kd-text">
                 แก้ไข{kind === 'images' ? 'รูปภาพ' : 'วิดีโอ'}
@@ -1046,7 +1215,7 @@ function VideoRow({
           media.portrait ? 'h-16 w-12' : 'h-12 w-20'
         }`}
       >
-        <Play size={16} color={theme.textSubtle} strokeWidth={1.5} />
+        <LocalVideoPlaceholder theme={theme} compact thumbnailUri={media.thumbnailUri} />
       </Pressable>
 
       <View className="min-w-0 flex-1">

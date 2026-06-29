@@ -19,6 +19,8 @@ export const AUTO_PILOT_STAGE_LABELS: Record<string, string> = {
   step_started: 'เริ่มสร้างงาน',
   open_project: 'เปิดโปรเจกต์',
   flow_newProject: 'เปิดโปรเจกต์',
+  prepare_project_ui: 'เตรียมหน้า Flow',
+  flow_prepareProjectUi: 'เตรียมหน้า Flow',
   flow_deleteLatestProject: 'ลบโปรเจกต์ล่าสุด',
   flow_home_before_product: 'เปิด Flow หลัก',
   flow_language_error: 'ตรวจภาษา Flow',
@@ -100,6 +102,7 @@ export const AUTO_PILOT_STAGE_LABELS: Record<string, string> = {
   stopping: 'กำลังหยุด',
   completed: 'เสร็จแล้ว',
   stopped: 'หยุดแล้ว',
+  interrupted: 'ขาดตอน',
   error: 'ผิดพลาด',
 };
 

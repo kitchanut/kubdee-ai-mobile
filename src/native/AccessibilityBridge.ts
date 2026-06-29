@@ -57,7 +57,6 @@ export interface NativeShopeePostingResult {
     videoIndex: number;
     success: boolean;
     error?: string;
-    dryRun?: boolean;
   }>;
 }
 
@@ -65,8 +64,14 @@ export interface NativeGoogleFlowDownloadedAsset {
   uri: string;
   fileName: string;
   mimeType: string;
+  thumbnailUri?: string | null;
   sizeBytes: number;
   createdAt: number;
+}
+
+export interface NativeDeleteGoogleFlowAssetsResult {
+  deleted: number;
+  failed: number;
 }
 
 export interface NativeGoogleFlowVideoProbe {
@@ -90,7 +95,6 @@ type NativeAccessibilityModule = {
   clickByText?: (text: string) => Promise<boolean>;
   inputText?: (text: string) => Promise<boolean>;
   pressImeEnter?: () => Promise<boolean>;
-  runShopeeSearch?: (keyword: string) => Promise<boolean>;
   importShopeeLikedProducts?: (
     maxItems: number,
     profileLocalId?: string | null
@@ -109,6 +113,16 @@ type NativeAccessibilityModule = {
     dataUrl: string,
     fileName?: string | null
   ) => Promise<NativeGoogleFlowDownloadedAsset | null>;
+  listGoogleFlowAssets?: (
+    step: 'image' | 'video',
+    limit: number
+  ) => Promise<NativeGoogleFlowDownloadedAsset[]>;
+  createGoogleFlowVideoThumbnail?: (
+    uriString: string
+  ) => Promise<string | null>;
+  deleteGoogleFlowAssets?: (
+    uriStrings: string[]
+  ) => Promise<NativeDeleteGoogleFlowAssetsResult>;
   mergeGoogleFlowVideos?: (
     videoUris: string[],
     voiceoverDataUrl?: string | null
@@ -204,14 +218,6 @@ export async function pressImeEnter(): Promise<boolean> {
   return false;
 }
 
-export async function runShopeeSearch(keyword: string): Promise<boolean> {
-  if (Platform.OS === 'android' && nativeModule?.runShopeeSearch) {
-    return nativeModule.runShopeeSearch(keyword);
-  }
-
-  return false;
-}
-
 export async function importShopeeLikedProducts(
   maxItems = 40,
   profileLocalId?: string | null
@@ -242,14 +248,10 @@ export async function clearPendingShopeeImportProducts(): Promise<boolean> {
   return true;
 }
 
-export async function postShopeeVideos(
-  videos: NativeShopeePostingVideoInput[],
-  settings: { postAction?: 'publish' | 'dryRun' } = {}
-): Promise<NativeShopeePostingResult> {
+export async function postShopeeVideos(videos: NativeShopeePostingVideoInput[]): Promise<NativeShopeePostingResult> {
   if (Platform.OS === 'android' && nativeModule?.postShopeeVideos) {
     const payloadJson = await nativeModule.postShopeeVideos(JSON.stringify({
       videos,
-      postAction: settings.postAction || 'publish',
     }));
     try {
       return JSON.parse(payloadJson) as NativeShopeePostingResult;
@@ -291,6 +293,33 @@ export async function saveGoogleFlowDataUrlAsset(
   }
 
   return null;
+}
+
+export async function listGoogleFlowAssets(
+  step: 'image' | 'video',
+  limit = 200
+): Promise<NativeGoogleFlowDownloadedAsset[]> {
+  if (Platform.OS === 'android' && nativeModule?.listGoogleFlowAssets) {
+    return nativeModule.listGoogleFlowAssets(step, limit);
+  }
+
+  return [];
+}
+
+export async function createGoogleFlowVideoThumbnail(uriString: string): Promise<string | null> {
+  if (Platform.OS === 'android' && nativeModule?.createGoogleFlowVideoThumbnail) {
+    return nativeModule.createGoogleFlowVideoThumbnail(uriString);
+  }
+
+  return null;
+}
+
+export async function deleteGoogleFlowAssets(uriStrings: string[]): Promise<NativeDeleteGoogleFlowAssetsResult> {
+  if (Platform.OS === 'android' && nativeModule?.deleteGoogleFlowAssets) {
+    return nativeModule.deleteGoogleFlowAssets(uriStrings);
+  }
+
+  return { deleted: 0, failed: uriStrings.length };
 }
 
 export async function mergeGoogleFlowVideos(

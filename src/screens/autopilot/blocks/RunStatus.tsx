@@ -32,7 +32,7 @@ export function RunStatusSummaryBlock({
   const firstLog = getFirstLog(runState);
   const latestLog = getLatestLog(runState);
   const elapsedMs = getRunElapsedMs(runState);
-  const flowStats = runState.status === 'running' ? getLatestFlowStats(runState) : null;
+  const flowStats = getLatestFlowStats(runState);
 
   return (
     <SectionCard theme={theme} icon={Clock3} title="สถานะการทำงาน">

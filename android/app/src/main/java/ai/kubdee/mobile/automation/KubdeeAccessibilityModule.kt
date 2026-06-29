@@ -7,6 +7,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.net.Uri
 import android.media.MediaMetadataRetriever
 import android.os.Build
@@ -42,6 +43,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
@@ -322,17 +324,6 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
-  fun runShopeeSearch(keyword: String, promise: Promise) {
-    val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
-      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
-      return
-    }
-
-    promise.resolve(service.runShopeeSearch(TARGET_PACKAGE_SHOPEE, keyword))
-  }
-
-  @ReactMethod
   fun importShopeeLikedProducts(maxItems: Double, profileLocalId: String?, promise: Promise) {
     val cleanProfileLocalId = profileLocalId?.trim()?.takeIf { it.isNotEmpty() }
     val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
@@ -474,6 +465,70 @@ class KubdeeAccessibilityModule(
       }
     }.also { thread ->
       thread.name = "KubdeeFlowDataUrlSave"
+      thread.start()
+    }
+  }
+
+  @ReactMethod
+  fun listGoogleFlowAssets(step: String, limit: Int, promise: Promise) {
+    Thread {
+      try {
+        val assets = listSavedGoogleFlowAssets(step, limit)
+        val array = Arguments.createArray()
+        assets.forEach { asset -> array.pushMap(asset.toWritableMap()) }
+        promise.resolve(array)
+      } catch (error: Exception) {
+        promise.reject("FLOW_ASSET_LIST_FAILED", error.message, error)
+      }
+    }.also { thread ->
+      thread.name = "KubdeeFlowAssetList"
+      thread.start()
+    }
+  }
+
+  @ReactMethod
+  fun createGoogleFlowVideoThumbnail(uriString: String, promise: Promise) {
+    Thread {
+      try {
+        val uri = Uri.parse(uriString.trim())
+        promise.resolve(createVideoThumbnail(uri))
+      } catch (error: Exception) {
+        promise.reject("FLOW_VIDEO_THUMBNAIL_FAILED", error.message, error)
+      }
+    }.also { thread ->
+      thread.name = "KubdeeFlowVideoThumbnail"
+      thread.start()
+    }
+  }
+
+  @ReactMethod
+  fun deleteGoogleFlowAssets(uriStrings: ReadableArray, promise: Promise) {
+    Thread {
+      var deleted = 0
+      var failed = 0
+      try {
+        for (index in 0 until uriStrings.size()) {
+          val raw = uriStrings.getString(index)?.trim().orEmpty()
+          if (raw.isBlank()) {
+            continue
+          }
+          val uri = Uri.parse(raw)
+          val ok = when (uri.scheme?.lowercase(Locale.ROOT)) {
+            "content" -> reactContext.contentResolver.delete(uri, null, null) > 0
+            "file" -> File(uri.path.orEmpty()).delete()
+            else -> false
+          }
+          if (ok) deleted += 1 else failed += 1
+        }
+        promise.resolve(Arguments.createMap().apply {
+          putInt("deleted", deleted)
+          putInt("failed", failed)
+        })
+      } catch (error: Exception) {
+        promise.reject("FLOW_ASSET_DELETE_FAILED", error.message, error)
+      }
+    }.also { thread ->
+      thread.name = "KubdeeFlowAssetDelete"
       thread.start()
     }
   }
@@ -718,16 +773,153 @@ class KubdeeAccessibilityModule(
         if (sizeBytes <= 0L) {
           continue
         }
+        val uri = ContentUris.withAppendedId(collection, id)
         return@use GoogleFlowDownloadAsset(
-          uri = ContentUris.withAppendedId(collection, id).toString(),
+          uri = uri.toString(),
           fileName = fileName,
           mimeType = mimeType.ifBlank { if (normalizedStep == "video") "video/mp4" else "image/png" },
+          thumbnailUri = videoThumbnailForStep(normalizedStep, uri, generate = true),
           sizeBytes = sizeBytes,
           createdAt = dateAdded * 1000L
         )
       }
       null
     }
+  }
+
+  private fun listSavedGoogleFlowAssets(step: String, limit: Int): List<GoogleFlowDownloadAsset> {
+    val normalizedStep = step.lowercase(Locale.ROOT)
+    val maxItems = limit.coerceIn(1, 300)
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+      val projection = arrayOf(
+        MediaStore.MediaColumns._ID,
+        MediaStore.MediaColumns.DISPLAY_NAME,
+        MediaStore.MediaColumns.MIME_TYPE,
+        MediaStore.MediaColumns.SIZE,
+        MediaStore.MediaColumns.DATE_ADDED,
+        MediaStore.MediaColumns.RELATIVE_PATH
+      )
+      val mimePrefix = if (normalizedStep == "video") "video/%" else "image/%"
+      val primaryExt = if (normalizedStep == "video") "%.mp4" else "%.png"
+      val fallbackExt = if (normalizedStep == "video") "%.webm" else "%.jpg"
+      val altExt = if (normalizedStep == "video") "%.mov" else "%.jpeg"
+      val selection =
+        "(" +
+          "${MediaStore.MediaColumns.MIME_TYPE} LIKE ? OR " +
+          "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR " +
+          "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR " +
+          "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?" +
+        ") AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+      val selectionArgs = arrayOf(
+        mimePrefix,
+        primaryExt,
+        fallbackExt,
+        altExt,
+        "%Kubdee AI%"
+      )
+      val sortOrder = "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+      val result = mutableListOf<GoogleFlowDownloadAsset>()
+
+      reactContext.contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+        while (cursor.moveToNext() && result.size < maxItems) {
+          val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+          val fileName = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)).orEmpty()
+          val mimeType = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)).orEmpty()
+          val sizeBytes = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE))
+          val dateAdded = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED))
+          if (sizeBytes <= 0L) {
+            continue
+          }
+          val uri = ContentUris.withAppendedId(collection, id)
+          result.add(
+            GoogleFlowDownloadAsset(
+              uri = uri.toString(),
+              fileName = fileName,
+              mimeType = mimeType.ifBlank { if (normalizedStep == "video") "video/mp4" else "image/png" },
+              thumbnailUri = videoThumbnailForStep(normalizedStep, uri, generate = false),
+              sizeBytes = sizeBytes,
+              createdAt = dateAdded * 1000L
+            )
+          )
+        }
+      }
+      return result
+    }
+
+    val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Kubdee AI")
+    if (!directory.exists() || !directory.isDirectory) {
+      return emptyList()
+    }
+    val extensions = if (normalizedStep == "video") {
+      setOf("mp4", "webm", "mov", "3gp")
+    } else {
+      setOf("png", "jpg", "jpeg", "webp", "gif")
+    }
+    return directory
+      .listFiles()
+      .orEmpty()
+      .filter { file -> file.isFile && file.extension.lowercase(Locale.ROOT) in extensions && file.length() > 0L }
+      .sortedByDescending { file -> file.lastModified() }
+      .take(maxItems)
+      .map { file ->
+        GoogleFlowDownloadAsset(
+          uri = Uri.fromFile(file).toString(),
+          fileName = file.name,
+          mimeType = if (normalizedStep == "video") "video/mp4" else "image/png",
+          thumbnailUri = videoThumbnailForStep(normalizedStep, Uri.fromFile(file), generate = false),
+          sizeBytes = file.length(),
+          createdAt = file.lastModified()
+        )
+      }
+  }
+
+  private fun cachedVideoThumbnailUri(uri: Uri): String? {
+    val file = videoThumbnailFile(uri)
+    return if (file.exists() && file.length() > 0L) Uri.fromFile(file).toString() else null
+  }
+
+  private fun createVideoThumbnail(uri: Uri): String? {
+    val cached = cachedVideoThumbnailUri(uri)
+    if (cached != null) {
+      return cached
+    }
+
+    val target = videoThumbnailFile(uri)
+    val retriever = MediaMetadataRetriever()
+    val bitmap = try {
+      when (uri.scheme?.lowercase(Locale.ROOT)) {
+        "content" -> retriever.setDataSource(reactContext, uri)
+        "file" -> retriever.setDataSource(uri.path.orEmpty())
+        else -> retriever.setDataSource(uri.toString())
+      }
+      retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+        ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
+    } finally {
+      retriever.release()
+    } ?: return null
+
+    target.parentFile?.mkdirs()
+    FileOutputStream(target).use { output ->
+      bitmap.compress(Bitmap.CompressFormat.JPEG, 82, output)
+    }
+    bitmap.recycle()
+    return Uri.fromFile(target).toString()
+  }
+
+  private fun videoThumbnailFile(uri: Uri): File {
+    val digest = MessageDigest.getInstance("SHA-256")
+      .digest(uri.toString().toByteArray(Charsets.UTF_8))
+      .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    return File(File(reactContext.cacheDir, "kubdee-video-thumbnails"), "$digest.jpg")
+  }
+
+  private fun videoThumbnailForStep(step: String, uri: Uri, generate: Boolean): String? {
+    if (!step.equals("video", ignoreCase = true)) {
+      return null
+    }
+    return if (generate) createVideoThumbnail(uri) else cachedVideoThumbnailUri(uri)
   }
 
   private fun saveGoogleFlowDataUrl(
@@ -795,6 +987,7 @@ class KubdeeAccessibilityModule(
           uri = uri.toString(),
           fileName = fileName,
           mimeType = mimeType,
+          thumbnailUri = videoThumbnailForStep(step, uri, generate = true),
           sizeBytes = sizeBytes,
           createdAt = createdAt
         )
@@ -815,6 +1008,7 @@ class KubdeeAccessibilityModule(
         uri = Uri.fromFile(target).toString(),
         fileName = fileName,
         mimeType = mimeType,
+        thumbnailUri = videoThumbnailForStep(step, Uri.fromFile(target), generate = true),
         sizeBytes = sizeBytes,
         createdAt = createdAt
       )
@@ -1113,6 +1307,7 @@ private data class GoogleFlowDownloadAsset(
   val uri: String,
   val fileName: String,
   val mimeType: String,
+  val thumbnailUri: String? = null,
   val sizeBytes: Long,
   val createdAt: Long
 )
@@ -1122,6 +1317,7 @@ private fun GoogleFlowDownloadAsset.toWritableMap() =
     putString("uri", uri)
     putString("fileName", fileName)
     putString("mimeType", mimeType)
+    putNullableString("thumbnailUri", thumbnailUri)
     putDouble("sizeBytes", sizeBytes.toDouble())
     putDouble("createdAt", createdAt.toDouble())
   }

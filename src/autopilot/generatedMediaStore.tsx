@@ -4,6 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
+import type { CreativeMediaAsset } from '@/library/CreativeLibraryContext';
+import { createGoogleFlowVideoThumbnail, listGoogleFlowAssets } from '@/native/AccessibilityBridge';
 
 export type GeneratedMediaKind = 'images' | 'videos';
 export type GeneratedMediaSource = 'auto-pilot-google-flow';
@@ -24,6 +26,7 @@ export interface GeneratedMediaAsset {
   fileUri: string | null;
   fileName: string | null;
   mimeType: string | null;
+  thumbnailUri: string | null;
   sizeBytes: number | null;
   createdAt: number;
   source: GeneratedMediaSource;
@@ -43,6 +46,7 @@ export interface AddGeneratedMediaAssetInput {
   fileUri?: string | null;
   fileName?: string | null;
   mimeType?: string | null;
+  thumbnailUri?: string | null;
   sizeBytes?: number | null;
   createdAt?: number;
 }
@@ -52,7 +56,13 @@ interface GeneratedMediaContextType {
   addGeneratedMediaAsset: (input: AddGeneratedMediaAssetInput) => Promise<GeneratedMediaAsset>;
   deleteGeneratedMediaAssets: (ids: string[]) => Promise<void>;
   getAssetsByKind: (kind: GeneratedMediaKind, profileLocalId?: string) => GeneratedMediaAsset[];
-  updateGeneratedMediaAsset: (id: string, patch: Partial<Pick<GeneratedMediaAsset, 'title'>>) => Promise<GeneratedMediaAsset | null>;
+  importGeneratedMediaAssets: (kind: GeneratedMediaKind, profileLocalId?: string | null) => Promise<number>;
+  ensureGeneratedVideoThumbnails: (profileLocalId?: string | null) => Promise<number>;
+  refreshGeneratedMediaAssets: () => Promise<void>;
+  updateGeneratedMediaAsset: (
+    id: string,
+    patch: Partial<Pick<GeneratedMediaAsset, 'title' | 'thumbnailUri'>>
+  ) => Promise<GeneratedMediaAsset | null>;
 }
 
 const GENERATED_MEDIA_STORE_KEY = 'kubdee_ai_mobile_generated_media_v1';
@@ -102,10 +112,49 @@ function normalizeAsset(input: AddGeneratedMediaAssetInput): GeneratedMediaAsset
     fileUri: cleanText(input.fileUri) || null,
     fileName,
     mimeType: cleanText(input.mimeType) || null,
+    thumbnailUri: cleanText(input.thumbnailUri) || null,
     sizeBytes: typeof input.sizeBytes === 'number' && Number.isFinite(input.sizeBytes) ? input.sizeBytes : null,
     createdAt,
     source: 'auto-pilot-google-flow',
   };
+}
+
+function creativeMediaToGeneratedAsset(asset: CreativeMediaAsset): GeneratedMediaAsset {
+  return {
+    id: asset.id,
+    kind: asset.kind,
+    runId: asset.runId ?? '',
+    profileLocalId: asset.profileLocalId ?? '',
+    productId: asset.productId ?? '',
+    productName: asset.productName ?? 'สินค้า',
+    productCode: asset.productCode ?? asset.productId ?? 'unknown',
+    productUrl: asset.productUrl,
+    caption: asset.caption,
+    hashtags: asset.hashtags,
+    platform: asset.platform,
+    title: asset.title,
+    fileUri: asset.fileUri,
+    fileName: asset.fileName,
+    mimeType: asset.mimeType,
+    thumbnailUri: asset.thumbnailUri ?? null,
+    sizeBytes: asset.sizeBytes,
+    createdAt: asset.createdAt,
+    source: 'auto-pilot-google-flow',
+  };
+}
+
+function dedupeGeneratedAssets(input: GeneratedMediaAsset[]): GeneratedMediaAsset[] {
+  const seenKeys = new Set<string>();
+  const result: GeneratedMediaAsset[] = [];
+  for (const asset of input) {
+    const key = asset.fileUri || asset.id;
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    result.push(asset);
+  }
+  return result;
 }
 
 function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
@@ -119,7 +168,7 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
       return [];
     }
 
-    return parsed
+    return dedupeGeneratedAssets(parsed
       .filter((item): item is GeneratedMediaAsset => {
         if (!item || typeof item !== 'object') {
           return false;
@@ -138,8 +187,9 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
         caption: cleanText(asset.caption) || null,
         hashtags: cleanText(asset.hashtags) || null,
         platform: cleanText(asset.platform) || null,
+        thumbnailUri: cleanText(asset.thumbnailUri) || null,
       }))
-      .slice(0, MAX_GENERATED_MEDIA_ASSETS);
+    ).slice(0, MAX_GENERATED_MEDIA_ASSETS);
   } catch {
     return [];
   }
@@ -168,90 +218,63 @@ async function loadStoredAssets(): Promise<GeneratedMediaAsset[]> {
 }
 
 export function GeneratedMediaProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const { addMediaAsset, deleteMediaAssets, getMediaAssets } = useCreativeLibrary();
+  const {
+    addMediaAsset,
+    deleteMediaAssets,
+    mediaAssets,
+    refreshCreativeLibrary,
+  } = useCreativeLibrary();
   const [assets, setAssets] = useState<GeneratedMediaAsset[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     void loadStoredAssets().then(async (storedAssets) => {
-      if (!cancelled) {
-        for (const storedAsset of storedAssets) {
-          await addMediaAsset({
-            id: storedAsset.id,
-            kind: storedAsset.kind,
-            runId: storedAsset.runId,
-            profileLocalId: storedAsset.profileLocalId,
-            productId: storedAsset.productId,
-            productName: storedAsset.productName,
-            productCode: storedAsset.productCode,
-            productUrl: storedAsset.productUrl,
-            caption: storedAsset.caption,
-            hashtags: storedAsset.hashtags,
-            platform: storedAsset.platform,
-            title: storedAsset.title,
-            fileUri: storedAsset.fileUri,
-            fileName: storedAsset.fileName,
-            mimeType: storedAsset.mimeType,
-            sizeBytes: storedAsset.sizeBytes,
-            width: null,
-            height: null,
-            durationMs: null,
-            source: storedAsset.source,
-            createdAt: storedAsset.createdAt,
-          });
-        }
-        const dbAssets = [...getMediaAssets('images'), ...getMediaAssets('videos')];
-        setAssets(dbAssets.map((asset) => ({
-          id: asset.id,
-          kind: asset.kind,
-          runId: asset.runId ?? '',
-          profileLocalId: asset.profileLocalId ?? '',
-          productId: asset.productId ?? '',
-          productName: asset.productName ?? 'สินค้า',
-          productCode: asset.productCode ?? asset.productId ?? 'unknown',
-          productUrl: asset.productUrl,
-          caption: asset.caption,
-          hashtags: asset.hashtags,
-          platform: asset.platform,
-          title: asset.title,
-          fileUri: asset.fileUri,
-          fileName: asset.fileName,
-          mimeType: asset.mimeType,
-          sizeBytes: asset.sizeBytes,
-          createdAt: asset.createdAt,
-          source: 'auto-pilot-google-flow',
-        })));
+      if (cancelled) {
+        return;
+      }
+
+      for (const storedAsset of storedAssets) {
+        await addMediaAsset({
+          id: storedAsset.id,
+          kind: storedAsset.kind,
+          runId: storedAsset.runId,
+          profileLocalId: storedAsset.profileLocalId,
+          productId: storedAsset.productId,
+          productName: storedAsset.productName,
+          productCode: storedAsset.productCode,
+          productUrl: storedAsset.productUrl,
+          caption: storedAsset.caption,
+          hashtags: storedAsset.hashtags,
+          platform: storedAsset.platform,
+          title: storedAsset.title,
+          fileUri: storedAsset.fileUri,
+          fileName: storedAsset.fileName,
+          mimeType: storedAsset.mimeType,
+          thumbnailUri: storedAsset.thumbnailUri,
+          sizeBytes: storedAsset.sizeBytes,
+          width: null,
+          height: null,
+          durationMs: null,
+          source: storedAsset.source,
+          createdAt: storedAsset.createdAt,
+        });
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [addMediaAsset, getMediaAssets]);
+  }, [addMediaAsset]);
 
   useEffect(() => {
-    const dbAssets = [...getMediaAssets('images'), ...getMediaAssets('videos')];
-    setAssets(dbAssets.map((asset) => ({
-      id: asset.id,
-      kind: asset.kind,
-      runId: asset.runId ?? '',
-      profileLocalId: asset.profileLocalId ?? '',
-      productId: asset.productId ?? '',
-      productName: asset.productName ?? 'สินค้า',
-      productCode: asset.productCode ?? asset.productId ?? 'unknown',
-      productUrl: asset.productUrl,
-      caption: asset.caption,
-      hashtags: asset.hashtags,
-      platform: asset.platform,
-      title: asset.title,
-      fileUri: asset.fileUri,
-      fileName: asset.fileName,
-      mimeType: asset.mimeType,
-      sizeBytes: asset.sizeBytes,
-      createdAt: asset.createdAt,
-      source: 'auto-pilot-google-flow',
-    })));
-  }, [getMediaAssets]);
+    const nextAssets = dedupeGeneratedAssets(
+      mediaAssets
+        .map(creativeMediaToGeneratedAsset)
+        .sort((first, second) => second.createdAt - first.createdAt)
+    ).slice(0, MAX_GENERATED_MEDIA_ASSETS);
+    setAssets(nextAssets);
+    void persistAssets(nextAssets);
+  }, [mediaAssets]);
 
   const addGeneratedMediaAsset = useCallback(async (input: AddGeneratedMediaAssetInput): Promise<GeneratedMediaAsset> => {
     const asset = normalizeAsset(input);
@@ -272,6 +295,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       fileName: asset.fileName,
       mimeType: asset.mimeType,
       sizeBytes: asset.sizeBytes,
+      thumbnailUri: asset.thumbnailUri,
       width: null,
       height: null,
       durationMs: null,
@@ -291,7 +315,10 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
   }, [addMediaAsset]);
 
   const updateGeneratedMediaAsset = useCallback(
-    async (id: string, patch: Partial<Pick<GeneratedMediaAsset, 'title'>>): Promise<GeneratedMediaAsset | null> => {
+    async (
+      id: string,
+      patch: Partial<Pick<GeneratedMediaAsset, 'title' | 'thumbnailUri'>>
+    ): Promise<GeneratedMediaAsset | null> => {
       const cleanId = id.trim();
       const currentAsset = assets.find((asset) => asset.id === cleanId);
       if (!currentAsset) {
@@ -300,7 +327,8 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
 
       const nextAsset: GeneratedMediaAsset = {
         ...currentAsset,
-        title: cleanText(patch.title) || currentAsset.title,
+        title: patch.title === undefined ? currentAsset.title : cleanText(patch.title) || currentAsset.title,
+        thumbnailUri: patch.thumbnailUri === undefined ? currentAsset.thumbnailUri : cleanText(patch.thumbnailUri) || null,
       };
 
       await addMediaAsset({
@@ -319,6 +347,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
         fileUri: nextAsset.fileUri,
         fileName: nextAsset.fileName,
         mimeType: nextAsset.mimeType,
+        thumbnailUri: nextAsset.thumbnailUri,
         sizeBytes: nextAsset.sizeBytes,
         width: null,
         height: null,
@@ -368,15 +397,128 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
     [assets]
   );
 
+  const importGeneratedMediaAssets = useCallback(
+    async (kind: GeneratedMediaKind, profileLocalId?: string | null): Promise<number> => {
+      const step = kind === 'images' ? 'image' : 'video';
+      const deviceAssets = await listGoogleFlowAssets(step, MAX_GENERATED_MEDIA_ASSETS);
+      if (deviceAssets.length === 0) {
+        return 0;
+      }
+
+      const existingUris = new Set(assets.map((asset) => asset.fileUri).filter(Boolean));
+      let imported = 0;
+      for (const deviceAsset of deviceAssets) {
+        if (!deviceAsset.uri || existingUris.has(deviceAsset.uri)) {
+          continue;
+        }
+        const thumbnailUri =
+          kind === 'videos'
+            ? deviceAsset.thumbnailUri ?? await createGoogleFlowVideoThumbnail(deviceAsset.uri).catch(() => null)
+            : null;
+        await addGeneratedMediaAsset({
+          kind,
+          runId: 'mobile-device-import',
+          profileLocalId: profileLocalId ?? '',
+          productId: 'device-import',
+          productName: 'ไฟล์นำเข้า',
+          productCode: 'device-import',
+          productUrl: null,
+          caption: null,
+          hashtags: null,
+          platform: null,
+          fileUri: deviceAsset.uri,
+          fileName: deviceAsset.fileName,
+          mimeType: deviceAsset.mimeType,
+          thumbnailUri,
+          sizeBytes: deviceAsset.sizeBytes,
+          createdAt: deviceAsset.createdAt || Date.now(),
+        });
+        existingUris.add(deviceAsset.uri);
+        imported += 1;
+      }
+      return imported;
+    },
+    [addGeneratedMediaAsset, assets]
+  );
+
+  const ensureGeneratedVideoThumbnails = useCallback(
+    async (profileLocalId?: string | null): Promise<number> => {
+      const cleanProfileLocalId = profileLocalId?.trim();
+      const candidates = assets.filter(
+        (asset) =>
+          asset.kind === 'videos' &&
+          !!asset.fileUri &&
+          !asset.thumbnailUri &&
+          (!cleanProfileLocalId || asset.profileLocalId === cleanProfileLocalId)
+      );
+      let updated = 0;
+      for (const asset of candidates) {
+        const thumbnailUri = await createGoogleFlowVideoThumbnail(asset.fileUri!).catch(() => null);
+        if (!thumbnailUri) {
+          continue;
+        }
+        const nextAsset = { ...asset, thumbnailUri };
+        await addMediaAsset({
+          id: nextAsset.id,
+          kind: nextAsset.kind,
+          runId: nextAsset.runId,
+          profileLocalId: nextAsset.profileLocalId,
+          productId: nextAsset.productId,
+          productName: nextAsset.productName,
+          productCode: nextAsset.productCode,
+          productUrl: nextAsset.productUrl,
+          caption: nextAsset.caption,
+          hashtags: nextAsset.hashtags,
+          platform: nextAsset.platform,
+          title: nextAsset.title,
+          fileUri: nextAsset.fileUri,
+          fileName: nextAsset.fileName,
+          mimeType: nextAsset.mimeType,
+          thumbnailUri: nextAsset.thumbnailUri,
+          sizeBytes: nextAsset.sizeBytes,
+          width: null,
+          height: null,
+          durationMs: null,
+          source: nextAsset.source,
+          createdAt: nextAsset.createdAt,
+        });
+        setAssets((current) => {
+          const next = current.map((item) => (item.id === nextAsset.id ? nextAsset : item));
+          void persistAssets(next);
+          return next;
+        });
+        updated += 1;
+      }
+      return updated;
+    },
+    [addMediaAsset, assets]
+  );
+
+  const refreshGeneratedMediaAssets = useCallback(async (): Promise<void> => {
+    await refreshCreativeLibrary();
+  }, [refreshCreativeLibrary]);
+
   const value = useMemo(
     () => ({
       addGeneratedMediaAsset,
       assets,
       deleteGeneratedMediaAssets,
+      ensureGeneratedVideoThumbnails,
       getAssetsByKind,
+      importGeneratedMediaAssets,
+      refreshGeneratedMediaAssets,
       updateGeneratedMediaAsset,
     }),
-    [addGeneratedMediaAsset, assets, deleteGeneratedMediaAssets, getAssetsByKind, updateGeneratedMediaAsset]
+    [
+      addGeneratedMediaAsset,
+      assets,
+      deleteGeneratedMediaAssets,
+      ensureGeneratedVideoThumbnails,
+      getAssetsByKind,
+      importGeneratedMediaAssets,
+      refreshGeneratedMediaAssets,
+      updateGeneratedMediaAsset,
+    ]
   );
 
   return <GeneratedMediaContext.Provider value={value}>{children}</GeneratedMediaContext.Provider>;

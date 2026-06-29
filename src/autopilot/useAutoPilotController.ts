@@ -299,9 +299,14 @@ export function useAutoPilotController({
   >({});
   const [productSettingsById, setProductSettingsById] = useState<Record<string, AutoPilotProductSettings>>({});
   const [runState, setRunState] = useState<AutoPilotRunState>(initialRunState);
+  const [isStartingRun, setIsStartingRun] = useState(false);
   const runIdRef = useRef<string | null>(null);
   const preparedProductByKeyRef = useRef<Map<string, AutoPilotProduct>>(new Map());
   const runtimeSettingsLoadedRef = useRef(false);
+  const startRunStartingRef = useRef(false);
+  const runnerStartingRef = useRef(false);
+  const runnerStartedRef = useRef(false);
+  const preflightStopRequestedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -406,6 +411,21 @@ export function useAutoPilotController({
         stage: options?.stage,
       }
     );
+  }, []);
+
+  const finishRunAsStopped = useCallback((): void => {
+    runnerStartingRef.current = false;
+    runnerStartedRef.current = false;
+    setAutomationActivityRunning('auto-pilot', false);
+    setAutomationActivityStopping('auto-pilot', false);
+    setRunState((current) => ({
+      ...current,
+      status: 'stopped',
+      progress: {
+        ...current.progress,
+        currentStage: 'stopped',
+      },
+    }));
   }, []);
 
   useEffect(() => {
@@ -539,6 +559,9 @@ export function useAutoPilotController({
       }
 
       if (terminalStatus) {
+        runnerStartingRef.current = false;
+        runnerStartedRef.current = false;
+        preflightStopRequestedRef.current = false;
         setAutomationActivityRunning('auto-pilot', false);
         setAutomationActivityStopping('auto-pilot', false);
         setRunState((current) => ({
@@ -869,154 +892,233 @@ export function useAutoPilotController({
   }, []);
 
   const startRun = useCallback(async (): Promise<void> => {
-    if (!profileLocalId) {
-      appendLog('error', 'ยังไม่ได้เลือกโปรไฟล์');
+    if (startRunStartingRef.current || runState.status === 'running') {
+      appendLog('warning', 'Auto Pilot กำลังทำงานอยู่แล้ว');
       return;
     }
 
-    if (enabledSteps.length === 0) {
-      appendLog('error', 'ยังไม่ได้เลือกขั้นตอน');
-      return;
-    }
-
-    if (selectedProducts.length === 0) {
-      appendLog('error', 'ยังไม่ได้เลือกสินค้า');
-      return;
-    }
-
-    const catalogResult = await loadPromptCatalog();
-    if (!catalogResult.catalog) {
-      appendLog('error', 'โหลดชุด prompt ไม่สำเร็จ');
-      return;
-    }
-
-    const runId = createRunId();
-    runIdRef.current = runId;
-    beginAutomationActivityRun('auto-pilot', `Auto Workflow · ${selectedProducts.length} สินค้า`);
-    const plannedTotals = getPlannedAutoTotals(selectedProducts, enabledSteps, settings.totalRounds);
-
-    setRunState({
-      runId,
-      status: 'running',
-      progress: {
-        ...initialRunState.progress,
-        totalRounds: settings.totalRounds,
-        totalProducts: selectedProducts.length,
-        totalSteps: enabledSteps.length,
-        ...plannedTotals,
-      },
-      logs: [],
-    });
-
-    const catalogSourceLabel =
-      catalogResult.source === 'remote'
-        ? 'เว็บ'
-        : catalogResult.source === 'cache'
-          ? 'cache'
-          : 'fallback ในแอป';
-    appendLog('info', `ใช้ชุด prompt จาก${catalogSourceLabel} v${catalogResult.version ?? '-'}`);
-
-    const aiContentLabels = getAutoPilotAiContentLabels(settings);
-    let preparedProducts = selectedProducts;
-    if (aiContentLabels) {
-      appendLog('action', `AI กำลังคิด ${aiContentLabels} สำหรับ ${selectedProducts.length} สินค้า...`);
-      const preparedResults = await Promise.all(
-        selectedProducts.map(async (product) => {
-          const result = await generateAutoPilotProductContent({ product, settings });
-          if (!result.success) {
-            appendLog(
-              'warning',
-              `AI ${aiContentLabels} ไม่สำเร็จ (${product.name || 'สินค้า'}): ${result.error || 'unknown'} — ใช้ค่าเดิม`
-            );
-            return {
-              product,
-              updates: {} as Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>,
-            };
-          }
-
-          const updates: Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>> = {};
-          if (settings.aiGenerateCaption && result.caption) {
-            updates.caption = result.caption;
-          }
-          if (settings.aiGenerateHashtags && result.hashtags) {
-            updates.hashtags = result.hashtags;
-          }
-          if (settings.aiGenerateCta && result.cta) {
-            updates.cta = result.cta;
-          }
-          appendLog('success', `AI ${aiContentLabels} สำเร็จ: ${product.name || 'สินค้า'}`);
-          if (updates.caption) {
-            appendLog('info', `AI Caption: ${updates.caption.slice(0, 120)}`);
-          }
-          if (updates.hashtags) {
-            appendLog('info', `AI Hashtags: ${updates.hashtags}`);
-          }
-          if (updates.cta) {
-            appendLog('info', `AI CTA: ${updates.cta}`);
-          }
-          return { product, updates };
-        })
-      );
-
-      preparedProducts = preparedResults.map(({ product, updates }) => ({ ...product, ...updates }));
-      const fieldUpdates = preparedResults.reduce<
-        Record<string, Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>>
-      >((acc, { product, updates }) => {
-        if (Object.keys(updates).length > 0) {
-          acc[product.id] = updates;
-        }
-        return acc;
-      }, {});
-
-      if (Object.keys(fieldUpdates).length > 0) {
-        setProductFieldsById((current) => {
-          const next = { ...current };
-          for (const [productId, updates] of Object.entries(fieldUpdates)) {
-            next[productId] = {
-              ...next[productId],
-              ...updates,
-            };
-          }
-          return next;
-        });
+    startRunStartingRef.current = true;
+    runnerStartingRef.current = false;
+    runnerStartedRef.current = false;
+    preflightStopRequestedRef.current = false;
+    setIsStartingRun(true);
+    try {
+      if (!profileLocalId) {
+        appendLog('error', 'ยังไม่ได้เลือกโปรไฟล์');
+        return;
       }
-    }
 
-    const payload = createGoogleFlowRunnerPayload({
-      enabledSteps,
-      promptCatalog: catalogResult.catalog,
-      promptCatalogSource: catalogResult.source,
-      promptCatalogVersion: catalogResult.version,
-      products: preparedProducts,
-      profileLocalId,
-      runId,
-      settings,
-    });
-    preparedProductByKeyRef.current = new Map();
-    for (const product of preparedProducts) {
-      for (const key of [product.id, product.productId, product.catalogId]) {
-        if (key) {
-          preparedProductByKeyRef.current.set(key, product);
+      if (enabledSteps.length === 0) {
+        appendLog('error', 'ยังไม่ได้เลือกขั้นตอน');
+        return;
+      }
+
+      if (selectedProducts.length === 0) {
+        appendLog('error', 'ยังไม่ได้เลือกสินค้า');
+        return;
+      }
+
+      const runId = createRunId();
+      runIdRef.current = runId;
+      beginAutomationActivityRun('auto-pilot', `Auto Workflow · ${selectedProducts.length} สินค้า`);
+      const plannedTotals = getPlannedAutoTotals(selectedProducts, enabledSteps, settings.totalRounds);
+
+      setRunState({
+        runId,
+        status: 'running',
+        progress: {
+          ...initialRunState.progress,
+          totalRounds: settings.totalRounds,
+          totalProducts: selectedProducts.length,
+          totalSteps: enabledSteps.length,
+          ...plannedTotals,
+        },
+        logs: [],
+      });
+
+      const catalogResult = await loadPromptCatalog();
+      if (!catalogResult.catalog) {
+        appendLog('error', 'โหลดชุด prompt ไม่สำเร็จ');
+        setRunState((current) => ({
+          ...current,
+          status: 'error',
+          progress: {
+            ...current.progress,
+            currentStage: 'error',
+          },
+        }));
+        setAutomationActivityRunning('auto-pilot', false);
+        setAutomationActivityStopping('auto-pilot', false);
+        return;
+      }
+
+      if (preflightStopRequestedRef.current) {
+        finishRunAsStopped();
+        return;
+      }
+
+      const catalogSourceLabel =
+        catalogResult.source === 'remote'
+          ? 'เว็บ'
+          : catalogResult.source === 'cache'
+            ? 'cache'
+            : 'fallback ในแอป';
+      appendLog('info', `ใช้ชุด prompt จาก${catalogSourceLabel} v${catalogResult.version ?? '-'}`);
+
+      const aiContentLabels = getAutoPilotAiContentLabels(settings);
+      let preparedProducts = selectedProducts;
+      if (aiContentLabels) {
+        appendLog('action', `AI กำลังคิด ${aiContentLabels} สำหรับ ${selectedProducts.length} สินค้า...`);
+        const preparedResults = await Promise.all(
+          selectedProducts.map(async (product) => {
+            const result = await generateAutoPilotProductContent({ product, settings });
+            if (!result.success) {
+              appendLog(
+                'warning',
+                `AI ${aiContentLabels} ไม่สำเร็จ (${product.name || 'สินค้า'}): ${result.error || 'unknown'} — ใช้ค่าเดิม`
+              );
+              return {
+                product,
+                updates: {} as Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>,
+              };
+            }
+
+            const updates: Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>> = {};
+            if (settings.aiGenerateCaption && result.caption) {
+              updates.caption = result.caption;
+            }
+            if (settings.aiGenerateHashtags && result.hashtags) {
+              updates.hashtags = result.hashtags;
+            }
+            if (settings.aiGenerateCta && result.cta) {
+              updates.cta = result.cta;
+            }
+            appendLog('success', `AI ${aiContentLabels} สำเร็จ: ${product.name || 'สินค้า'}`);
+            if (updates.caption) {
+              appendLog('info', `AI Caption: ${updates.caption.slice(0, 120)}`);
+            }
+            if (updates.hashtags) {
+              appendLog('info', `AI Hashtags: ${updates.hashtags}`);
+            }
+            if (updates.cta) {
+              appendLog('info', `AI CTA: ${updates.cta}`);
+            }
+            return { product, updates };
+          })
+        );
+
+        preparedProducts = preparedResults.map(({ product, updates }) => ({ ...product, ...updates }));
+        const fieldUpdates = preparedResults.reduce<
+          Record<string, Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>>
+        >((acc, { product, updates }) => {
+          if (Object.keys(updates).length > 0) {
+            acc[product.id] = updates;
+          }
+          return acc;
+        }, {});
+
+        if (Object.keys(fieldUpdates).length > 0) {
+          setProductFieldsById((current) => {
+            const next = { ...current };
+            for (const [productId, updates] of Object.entries(fieldUpdates)) {
+              next[productId] = {
+                ...next[productId],
+                ...updates,
+              };
+            }
+            return next;
+          });
         }
       }
+
+      if (preflightStopRequestedRef.current) {
+        finishRunAsStopped();
+        return;
+      }
+
+      const payload = createGoogleFlowRunnerPayload({
+        enabledSteps,
+        promptCatalog: catalogResult.catalog,
+        promptCatalogSource: catalogResult.source,
+        promptCatalogVersion: catalogResult.version,
+        products: preparedProducts,
+        profileLocalId,
+        runId,
+        settings,
+      });
+      preparedProductByKeyRef.current = new Map();
+      for (const product of preparedProducts) {
+        for (const key of [product.id, product.productId, product.catalogId]) {
+          if (key) {
+            preparedProductByKeyRef.current.set(key, product);
+          }
+        }
+      }
+
+      if (preflightStopRequestedRef.current) {
+        finishRunAsStopped();
+        return;
+      }
+
+      appendLog('action', `ส่งงานไป Google Flow WebView: ${preparedProducts.length} สินค้า`);
+      runnerStartingRef.current = true;
+      const result = await startGoogleFlowRunner(payload);
+      runnerStartingRef.current = false;
+
+      if (!result.success) {
+        if (preflightStopRequestedRef.current) {
+          appendLog('warning', 'หยุด Auto Pilot ก่อน Google Flow runner เริ่มสำเร็จ');
+          finishRunAsStopped();
+          return;
+        }
+        appendLog('error', result.error || 'เริ่ม Auto Pilot บนมือถือไม่สำเร็จ');
+        setRunState((current) => ({ ...current, status: 'error' }));
+        setAutomationActivityRunning('auto-pilot', false);
+        setAutomationActivityStopping('auto-pilot', false);
+        return;
+      }
+
+      runnerStartedRef.current = true;
+      if (preflightStopRequestedRef.current) {
+        appendLog('warning', 'Google Flow runner รับงานแล้ว กำลังหยุดตามคำสั่งล่าสุด');
+        setAutomationActivityStopping('auto-pilot', true);
+        const stopResult = await stopGoogleFlowRunner(runId);
+        if (!stopResult.success) {
+          appendLog('error', stopResult.error || 'หยุด Auto Pilot บนมือถือไม่สำเร็จ');
+          setAutomationActivityStopping('auto-pilot', false);
+          return;
+        }
+        appendLog('success', stopResult.message || 'ส่งคำสั่งหยุดแล้ว');
+        preflightStopRequestedRef.current = false;
+        finishRunAsStopped();
+        return;
+      }
+
+      appendLog('success', result.message || 'Google Flow runner บนมือถือรับงานแล้ว');
+    } finally {
+      runnerStartingRef.current = false;
+      startRunStartingRef.current = false;
+      setIsStartingRun(false);
     }
-
-    appendLog('action', `ส่งงานไป Google Flow WebView: ${preparedProducts.length} สินค้า`);
-    const result = await startGoogleFlowRunner(payload);
-
-    if (!result.success) {
-      appendLog('error', result.error || 'เริ่ม Auto Pilot บนมือถือไม่สำเร็จ');
-      setRunState((current) => ({ ...current, status: 'error' }));
-      setAutomationActivityRunning('auto-pilot', false);
-      return;
-    }
-
-    appendLog('success', result.message || 'Google Flow runner บนมือถือรับงานแล้ว');
-  }, [appendLog, enabledSteps, profileLocalId, selectedProducts, settings]);
+  }, [appendLog, enabledSteps, finishRunAsStopped, profileLocalId, runState.status, selectedProducts, settings]);
 
   const stopRun = useCallback(async (): Promise<void> => {
     const runId = runState.runId;
     if (!runId) {
+      return;
+    }
+
+    if (!runnerStartedRef.current && !runnerStartingRef.current) {
+      preflightStopRequestedRef.current = true;
+      appendLog('warning', 'หยุด Auto Pilot ก่อนเริ่ม Google Flow WebView');
+      finishRunAsStopped();
+      return;
+    }
+
+    if (runnerStartingRef.current && !runnerStartedRef.current) {
+      preflightStopRequestedRef.current = true;
+      appendLog('warning', 'รับคำสั่งหยุดแล้ว จะหยุดทันทีเมื่อ Google Flow runner พร้อม');
+      setAutomationActivityStopping('auto-pilot', true);
       return;
     }
 
@@ -1030,10 +1132,9 @@ export function useAutoPilotController({
     }
 
     appendLog('success', result.message || 'ส่งคำสั่งหยุดแล้ว');
-    setAutomationActivityRunning('auto-pilot', false);
-    setAutomationActivityStopping('auto-pilot', false);
-    setRunState((current) => ({ ...current, status: 'stopped' }));
-  }, [appendLog, runState.runId]);
+    preflightStopRequestedRef.current = false;
+    finishRunAsStopped();
+  }, [appendLog, finishRunAsStopped, runState.runId]);
 
   return {
     appendLog,
@@ -1041,6 +1142,7 @@ export function useAutoPilotController({
     clearLogs,
     clearProducts,
     enabledSteps,
+    isStartingRun,
     products,
     runState,
     selectedProductIds,

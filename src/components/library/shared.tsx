@@ -1,8 +1,9 @@
 import type { ComponentType, ReactNode } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Check, ChevronDown, ChevronUp, Pencil, Search, Star, Trash2, X } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
+import { ShopeeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -388,8 +389,11 @@ export function SelectionBar({
   theme,
   accent,
   count,
+  bottomInset = 0,
   showAuto = false,
+  showShopee = false,
   onAuto,
+  onShopee,
   onClear,
   onDelete,
   onEdit,
@@ -397,16 +401,24 @@ export function SelectionBar({
   theme: KubdeeTheme;
   accent: string;
   count: number;
+  bottomInset?: number;
   showAuto?: boolean;
+  showShopee?: boolean;
   onAuto?: () => void;
+  onShopee?: () => void;
   onClear: () => void;
   onDelete?: () => void;
   onEdit?: () => void;
 }): React.JSX.Element {
   const inverseText = theme.isDark ? '#000000' : theme.white;
+  const floatingBottom = Platform.OS === 'android' ? 12 : Math.max(bottomInset + 12, 12);
 
   return (
-    <View pointerEvents="box-none" className="absolute bottom-3 left-3 right-3">
+    <View
+      pointerEvents="box-none"
+      className="absolute left-3 right-3"
+      style={{ bottom: floatingBottom }}
+    >
       <View
         className="flex-row items-center justify-between rounded-full border border-kd-border bg-kd-panel px-2 py-1.5"
         style={{
@@ -439,6 +451,17 @@ export function SelectionBar({
             >
               <Star size={11} color={inverseText} strokeWidth={2.5} />
               <Text className="text-kd-micro font-bold text-white dark:text-black">ออโต้</Text>
+            </Pressable>
+          ) : null}
+          {showShopee ? (
+            <Pressable
+              accessibilityLabel="ส่งไป Shopee"
+              accessibilityRole="button"
+              disabled={!onShopee}
+              onPress={onShopee}
+              className="h-7 w-7 items-center justify-center rounded-full bg-kd-orange"
+            >
+              <ShopeeLogo size={14} color={theme.white} cutoutColor="#EE4D2D" />
             </Pressable>
           ) : null}
           <Pressable

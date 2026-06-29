@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
   Image as ImageIcon,
@@ -21,13 +21,16 @@ type IconProps = {
   strokeWidth?: number;
 };
 
+type LibraryTabId = 'products' | 'images' | 'videos' | 'characters' | 'scenes';
+type LibraryTabRequest = { tab: LibraryTabId; requestId: number };
+
 interface LibraryScreenProps {
+  initialTabRequest?: LibraryTabRequest | null;
   selectedProfileId: string;
   theme: KubdeeTheme;
   onSendProductsToAutoPilot?: (productIds: string[], profileLocalId: string) => void;
+  onSendVideosToShopee?: (videoIds: string[]) => void;
 }
-
-type LibraryTabId = 'products' | 'images' | 'videos' | 'characters' | 'scenes';
 
 /**
  * Tab set mirrors extension GalleryPanel.jsx:
@@ -47,11 +50,19 @@ const libraryTabs: Array<{
 ];
 
 export default function LibraryScreen({
+  initialTabRequest,
   selectedProfileId,
   theme,
   onSendProductsToAutoPilot,
+  onSendVideosToShopee,
 }: LibraryScreenProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<LibraryTabId>('products');
+
+  useEffect(() => {
+    if (initialTabRequest) {
+      setActiveTab(initialTabRequest.tab);
+    }
+  }, [initialTabRequest]);
 
   return (
     <View className="flex-1 bg-kd-panel">
@@ -80,7 +91,12 @@ export default function LibraryScreen({
         <MediaPanel selectedProfileId={selectedProfileId} theme={theme} kind="images" />
       ) : null}
       {activeTab === 'videos' ? (
-        <MediaPanel selectedProfileId={selectedProfileId} theme={theme} kind="videos" />
+        <MediaPanel
+          selectedProfileId={selectedProfileId}
+          theme={theme}
+          kind="videos"
+          onSendVideosToShopee={onSendVideosToShopee}
+        />
       ) : null}
       {activeTab === 'characters' ? (
         <SimpleListPanel theme={theme} kind="characters" selectedProfileId={selectedProfileId} />

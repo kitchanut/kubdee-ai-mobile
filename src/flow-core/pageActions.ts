@@ -24,6 +24,7 @@ import { FLOW_SELECTORS } from './selectors';
 export type FlowActionName =
   | 'newProject'
   | 'deleteLatestProject'
+  | 'prepareProjectUi'
   | 'configurePopper'
   | 'selectRecentImage'
   | 'uploadReferenceImage'
@@ -223,6 +224,138 @@ const DELETE_LATEST_PROJECT_BODY = `
   }
 
   throw new Error('กดยืนยันลบแล้ว แต่ยังยืนยันผลลบโปรเจกต์ไม่ได้');
+`;
+
+// --- prepareProjectUi: close Google Flow Agent panel/toggle like desktop/extension. ---
+const PREPARE_PROJECT_UI_BODY = `
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
+  function waitLocal(ms){ return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
+  function isFlowProjectPage(){
+    var href = window.location.href || '';
+    return href.indexOf('/project/') !== -1 && href.indexOf('/edit/') === -1;
+  }
+  function isVisible(el){
+    if (!el || typeof el.getBoundingClientRect !== 'function') return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    var style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    return rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+  }
+  function clickVisible(el){
+    if (!el) return;
+    try { el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }); } catch (e) {}
+    el.click();
+  }
+  function hasAgentPanelText(el){
+    var node = el;
+    for (var depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      var text = (node.textContent || '').replace(/\\s+/g, ' ').trim();
+      if (
+        text.indexOf('Untitled session') !== -1 ||
+        text.indexOf('What would you like to do?') !== -1 ||
+        text.indexOf('Hi ') !== -1 ||
+        (text.indexOf('History') !== -1 && text.indexOf('New session') !== -1)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function findAgentPanelCloseButton(){
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"]')).filter(isVisible);
+    for (var i = 0; i < buttons.length; i += 1) {
+      var btn = buttons[i];
+      var iconText = Array.prototype.slice.call(btn.querySelectorAll('i'))
+        .map(function(icon){ return (icon.textContent || '').trim().toLowerCase(); })
+        .filter(Boolean)[0] || '';
+      var text = (btn.textContent || '').trim().toLowerCase();
+      var label = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
+      var looksLikeClose =
+        iconText === 'close' ||
+        text === 'close' ||
+        text === 'x' ||
+        text === '×' ||
+        label === 'close' ||
+        label.indexOf('close') !== -1 ||
+        label.indexOf('dismiss') !== -1 ||
+        label.indexOf('ปิด') !== -1;
+      if (looksLikeClose && hasAgentPanelText(btn)) return btn;
+    }
+    return null;
+  }
+  async function closeAgentPanelIfOpen(){
+    var clicked = false;
+    for (var i = 0; i < 3; i += 1) {
+      var closeBtn = findAgentPanelCloseButton();
+      if (!closeBtn) {
+        if (clicked) setStatus('ปิด Agent panel สำเร็จ', 'success');
+        return { success: true, closed: clicked };
+      }
+      setStatus('ปิด Agent panel ที่บัง prompt toolbar...', 'info');
+      clickVisible(closeBtn);
+      clicked = true;
+      await waitLocal(600);
+    }
+    if (findAgentPanelCloseButton()) {
+      setStatus('ปิด Agent panel ไม่สำเร็จหลังลอง 3 ครั้ง', 'warning');
+      return { success: false, closed: false, error: 'agent_panel_close_failed' };
+    }
+    setStatus('ปิด Agent panel สำเร็จ', 'success');
+    return { success: true, closed: true };
+  }
+  function findAgentButton(){
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button[aria-pressed]'));
+    for (var i = 0; i < buttons.length; i += 1) {
+      var btn = buttons[i];
+      if (!isVisible(btn)) continue;
+      if (btn.closest('[role="menu"]') || btn.closest('[role="dialog"]')) continue;
+      var span = btn.querySelector('span.content');
+      if (span && (span.textContent || '').trim() === 'Agent') return btn;
+      if ((btn.textContent || '').trim() === 'Agent') return btn;
+    }
+    return null;
+  }
+  async function ensureAgentOff(){
+    var btn = findAgentButton();
+    if (!btn) return { success: true, changed: false };
+    var isOn = btn.getAttribute('aria-pressed') === 'true';
+    if (!isOn) return { success: true, changed: false };
+    setStatus('ปิด Agent toggle เพื่อไม่ให้บังการตั้งค่า Flow...', 'info');
+    clickVisible(btn);
+    await waitLocal(800);
+    var updated = findAgentButton();
+    if (updated && updated.getAttribute('aria-pressed') === 'true') {
+      setStatus('ปิด Agent toggle ไม่สำเร็จ', 'warning');
+      return { success: false, changed: false, error: 'agent_toggle_still_on' };
+    }
+    setStatus('ปิด Agent toggle สำเร็จ', 'success');
+    return { success: true, changed: true };
+  }
+
+  setStatus('เตรียมหน้า Google Flow project...', 'info');
+  for (var waitAttempt = 0; waitAttempt < 10; waitAttempt += 1) {
+    if (isFlowProjectPage() || findAgentPanelCloseButton() || findAgentButton()) break;
+    await waitLocal(500);
+  }
+  var hasAgentUi = !!findAgentPanelCloseButton() || !!findAgentButton();
+  if (!hasAgentUi && !isFlowProjectPage()) {
+    setStatus('ไม่พบ Agent UI ที่ต้องจัดการ ข้ามการเตรียมหน้า Flow', 'info');
+    return { success: true, skipped: true, reason: 'no_agent_ui_detected' };
+  }
+  var closeResult = await closeAgentPanelIfOpen();
+  var agentResult = await ensureAgentOff();
+  return {
+    success: closeResult.success && agentResult.success,
+    closedPanel: closeResult.closed,
+    disabledAgent: agentResult.changed,
+    closeError: closeResult.error,
+    agentError: agentResult.error
+  };
 `;
 
 // --- fillPrompt: write into the Slate editor via its React fiber instance ---
@@ -1959,6 +2092,7 @@ const DOWNLOAD_VIDEO_BODY = `
 const ACTION_BODIES: Record<FlowActionName, string> = {
   newProject: NEW_PROJECT_BODY,
   deleteLatestProject: DELETE_LATEST_PROJECT_BODY,
+  prepareProjectUi: PREPARE_PROJECT_UI_BODY,
   configurePopper: CONFIGURE_POPPER_BODY,
   selectRecentImage: SELECT_RECENT_IMAGE_BODY,
   uploadReferenceImage: UPLOAD_REFERENCE_IMAGE_BODY,

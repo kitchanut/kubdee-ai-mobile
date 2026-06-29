@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Sparkles, Square } from 'lucide-react-native';
 
+import {
+  clearAutomationActivityRun,
+  useAutomationActivitySnapshot,
+  type AutomationActivityLogEntry,
+  type AutomationActivityRun,
+} from '@/activity/automationActivityLogStore';
 import {
   getAutoPilotProductPresets,
   saveAutoPilotProductPreset,
@@ -15,7 +21,7 @@ import {
 } from '@/autopilot/settingsPresetStore';
 import { useAutoPilotController } from '@/autopilot/useAutoPilotController';
 import type { AutoPilotProductSelectionRequest } from '@/autopilot/selectionRequest';
-import type { AutoPilotProductSettings } from '@/autopilot/types';
+import type { AutoPilotLogLevel, AutoPilotProductSettings, AutoPilotRunState } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -65,6 +71,7 @@ export default function AutoPilotScreen({
   const [settingsPresetMessage, setSettingsPresetMessage] = useState<string | null>(null);
   const [settingsPresets, setSettingsPresets] = useState<AutoPilotSettingsPreset[]>([]);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
+  const activitySnapshot = useAutomationActivitySnapshot();
 
   const profileProducts = useMemo(() => {
     if (!selectedProfileId) {
@@ -122,14 +129,26 @@ export default function AutoPilotScreen({
     ? controller.products.find((product) => product.id === editingProductId)
     : null;
   const isRunning = controller.runState.status === 'running';
-  const showRunStatus = isRunning || controller.runState.logs.length > 0;
+  const isPreparingRun = controller.isStartingRun;
+  const persistedAutoRun = activitySnapshot.runs['auto-pilot'];
+  const persistedRunState = useMemo(
+    () => createRunStateFromActivityRun(persistedAutoRun),
+    [persistedAutoRun]
+  );
+  const displayRunState =
+    controller.runState.logs.length > 0 || isRunning
+      ? controller.runState
+      : persistedRunState;
+  const showingPersistedRunState = displayRunState !== controller.runState;
+  const showRunStatus = isRunning || displayRunState.logs.length > 0;
   const canStart =
     !isRunning &&
+    !isPreparingRun &&
     selectedProfileId.length > 0 &&
     controller.selectedProducts.length > 0 &&
     controller.enabledSteps.length > 0;
   // ยังไม่ได้เลือกสินค้าจากคลัง → ซ่อนปุ่มเริ่มสร้าง (แต่ตอนกำลังรันยังต้องเห็นปุ่มหยุด)
-  const showStartBar = controller.selectedProducts.length > 0 || isRunning;
+  const showStartBar = controller.selectedProducts.length > 0 || isRunning || isPreparingRun;
   const startButtonBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 8;
   // bottom bar = pt-3 (12) + start button (50) + bottom padding, plus breathing room
   const startButtonScrollPadding = showStartBar
@@ -280,7 +299,7 @@ export default function AutoPilotScreen({
 
           {showRunStatus ? (
             <RunStatusSummaryBlock
-              runState={controller.runState}
+              runState={displayRunState}
               theme={theme}
               onOpenLogs={() => setActivityLogOpen(true)}
             />
@@ -384,11 +403,20 @@ export default function AutoPilotScreen({
       {activityLogOpen ? (
         <ActivityLogSheet
           bottomInset={insets.bottom}
-          runState={controller.runState}
+          runState={displayRunState}
           theme={theme}
-          onClear={controller.clearLogs}
+          onClear={() => {
+            if (showingPersistedRunState) {
+              clearAutomationActivityRun('auto-pilot');
+              return;
+            }
+            controller.clearLogs();
+          }}
           onClose={() => setActivityLogOpen(false)}
           onStop={() => {
+            if (showingPersistedRunState) {
+              return;
+            }
             void controller.stopRun();
           }}
         />
@@ -401,8 +429,11 @@ export default function AutoPilotScreen({
         >
           <Button
             accessibilityRole="button"
-            disabled={!canStart && !isRunning}
+            disabled={isPreparingRun || (!canStart && !isRunning)}
             onPress={() => {
+              if (isPreparingRun) {
+                return;
+              }
               if (isRunning) {
                 void controller.stopRun();
                 return;
@@ -415,15 +446,75 @@ export default function AutoPilotScreen({
           >
             {isRunning ? (
               <Square size={14} color={theme.white} fill={theme.white} strokeWidth={2} />
+            ) : isPreparingRun ? (
+              <ActivityIndicator color={theme.textSubtle} size="small" />
             ) : (
               <Sparkles size={16} color={canStart ? (theme.isDark ? '#000000' : theme.white) : theme.textSubtle} strokeWidth={2.2} />
             )}
             <Text className={`text-[13px] font-semibold ${isRunning ? 'text-white' : canStart ? (theme.isDark ? 'text-black' : 'text-white') : 'text-kd-text-subtle'}`}>
-              {isRunning ? 'หยุด Auto Pilot' : 'เริ่มสร้าง'}
+              {isRunning ? 'หยุด Auto Pilot' : isPreparingRun ? 'กำลังเตรียมงาน' : 'เริ่มสร้าง'}
             </Text>
           </Button>
         </View>
       ) : null}
     </View>
   );
+}
+
+function createRunStateFromActivityRun(run: AutomationActivityRun): AutoPilotRunState {
+  const logs = run.logs.map((entry, index) => ({
+    id: `persisted-${entry.ts}-${index}`,
+    level: inferActivityLogLevel(entry),
+    message: stripActivityStagePrefix(entry.message),
+    timestamp: entry.ts,
+    step: entry.step,
+    stage: entry.stage,
+    flowStats: entry.flowStats,
+  }));
+  const latestLog = logs[logs.length - 1] ?? null;
+
+  return {
+    runId: null,
+    status: getActivityRunStatus(run),
+    progress: {
+      currentRound: logs.length > 0 ? 1 : 0,
+      totalRounds: 1,
+      currentProduct: logs.length > 0 ? 1 : 0,
+      totalProducts: 1,
+      currentStep: latestLog?.step ?? null,
+      currentStepIndex: latestLog?.step ? 1 : 0,
+      totalSteps: latestLog?.step ? 1 : 0,
+      currentStage: latestLog?.stage ?? null,
+      currentProductName: null,
+      plannedImages: 0,
+      plannedVideos: 0,
+      generatedImages: 0,
+      generatedVideos: 0,
+      failedImages: 0,
+      failedVideos: 0,
+    },
+    logs,
+  };
+}
+
+function getActivityRunStatus(run: AutomationActivityRun): AutoPilotRunState['status'] {
+  if (run.running) return 'running';
+  const latestMessage = run.logs[run.logs.length - 1]?.message ?? '';
+  if (/ไม่สำเร็จ|ผิดพลาด|error|failed|ล้มเหลว/i.test(latestMessage)) return 'error';
+  if (/ถูกหยุด|ขาดตอน|stopped|interrupted/i.test(latestMessage)) return 'stopped';
+  if (run.logs.length > 0) return 'completed';
+  return 'idle';
+}
+
+function inferActivityLogLevel(entry: AutomationActivityLogEntry): AutoPilotLogLevel {
+  const message = entry.message;
+  if (/ไม่สำเร็จ|ผิดพลาด|error|failed|ล้มเหลว/i.test(message)) return 'error';
+  if (/เตือน|warning|กำลังหยุด|ถูกหยุด|ขาดตอน|ยังไม่/i.test(message)) return 'warning';
+  if (/สำเร็จ|เสร็จ|พร้อมใช้|รับงานแล้ว/i.test(message)) return 'success';
+  return 'info';
+}
+
+function stripActivityStagePrefix(message: string): string {
+  const match = message.match(/^\[[^\]]+]\s*(.*)$/);
+  return match?.[1]?.trim() || message;
 }

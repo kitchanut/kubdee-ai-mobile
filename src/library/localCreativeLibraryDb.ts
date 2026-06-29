@@ -19,6 +19,7 @@ export interface CreativeMediaAsset {
   fileUri: string | null;
   fileName: string | null;
   mimeType: string | null;
+  thumbnailUri: string | null;
   sizeBytes: number | null;
   width: number | null;
   height: number | null;
@@ -74,6 +75,19 @@ function intToBool(value: number | null | undefined): boolean {
   return value === 1;
 }
 
+async function ensureColumn(
+  db: SQLite.SQLiteDatabase,
+  tableName: string,
+  columnName: string,
+  columnType: string
+): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+  await db.execAsync(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`);
+}
+
 async function openDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = SQLite.openDatabaseAsync(DATABASE_NAME).then(async (db) => {
@@ -102,6 +116,7 @@ async function openDb(): Promise<SQLite.SQLiteDatabase> {
           file_uri TEXT,
           file_name TEXT,
           mime_type TEXT,
+          thumbnail_uri TEXT,
           size_bytes INTEGER,
           width INTEGER,
           height INTEGER,
@@ -134,6 +149,7 @@ async function openDb(): Promise<SQLite.SQLiteDatabase> {
         CREATE INDEX IF NOT EXISTS idx_creative_library_profile_kind
           ON creative_library_items(profile_local_id, kind, created_at);
       `);
+      await ensureColumn(db, 'creative_media_assets', 'thumbnail_uri', 'TEXT');
       await db.runAsync(
         `INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)`,
         'schema_version',
@@ -173,6 +189,7 @@ function mapMediaRow(row: Record<string, unknown>): CreativeMediaAsset {
     fileUri: cleanText(row.file_uri as string | null),
     fileName: cleanText(row.file_name as string | null),
     mimeType: cleanText(row.mime_type as string | null),
+    thumbnailUri: cleanText(row.thumbnail_uri as string | null),
     sizeBytes: typeof row.size_bytes === 'number' ? row.size_bytes : null,
     width: typeof row.width === 'number' ? row.width : null,
     height: typeof row.height === 'number' ? row.height : null,
@@ -237,6 +254,7 @@ export async function upsertCreativeMediaAsset(
     fileUri: cleanText(input.fileUri),
     fileName: cleanText(input.fileName),
     mimeType: cleanText(input.mimeType),
+    thumbnailUri: cleanText(input.thumbnailUri),
     updatedAt: timestamp,
   };
 
@@ -246,9 +264,9 @@ export async function upsertCreativeMediaAsset(
         INSERT INTO creative_media_assets (
           id, kind, run_id, profile_local_id, product_id, product_name, product_code,
           product_url, caption, hashtags, platform, title, file_uri, file_name,
-          mime_type, size_bytes, width, height, duration_ms, source, created_at, updated_at
+          mime_type, thumbnail_uri, size_bytes, width, height, duration_ms, source, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           run_id = excluded.run_id,
           profile_local_id = excluded.profile_local_id,
@@ -263,6 +281,7 @@ export async function upsertCreativeMediaAsset(
           file_uri = excluded.file_uri,
           file_name = excluded.file_name,
           mime_type = excluded.mime_type,
+          thumbnail_uri = excluded.thumbnail_uri,
           size_bytes = excluded.size_bytes,
           width = excluded.width,
           height = excluded.height,
@@ -285,6 +304,7 @@ export async function upsertCreativeMediaAsset(
       asset.fileUri,
       asset.fileName,
       asset.mimeType,
+      asset.thumbnailUri,
       asset.sizeBytes,
       asset.width,
       asset.height,

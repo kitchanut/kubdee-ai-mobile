@@ -47,6 +47,7 @@
     "expo-sqlite": "~56.0.5",
     "expo-status-bar": "~56.0.4",
     "expo-system-ui": "~56.0.5",
+    "expo-video": "~56.1.4",
     "lucide-react-native": "^1.17.0",
     "nativewind": "^4.2.5",
     "react": "19.2.3",

@@ -598,61 +598,6 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return true
   }
 
-  fun runShopeeSearch(targetPackage: String, keyword: String): Boolean {
-    val normalizedKeyword = keyword.ifBlank { "สินค้า" }
-
-    Thread {
-      try {
-        resetAutomationLog()
-        configureAutomationStats("Shopee Search", "STEP", 6)
-        logStep("รีเซ็ต Shopee ก่อนเริ่มงาน")
-        if (!launchPackage(targetPackage, resetTask = true)) {
-          logStep("เปิด Shopee ไม่สำเร็จ")
-          return@Thread
-        }
-
-        sleepStep(3500)
-        logStep("ไปหน้าแรก Shopee")
-        if (!clickByText("หน้าแรก")) {
-          tapBlocking(72f, 1460f)
-        }
-
-        sleepStep(2800)
-        logStep("แตะช่องค้นหา")
-        tapBlocking(150f, 120f)
-        sleepStep(1600)
-        tapBlocking(320f, 116f)
-
-        sleepStep(350)
-        logStep("พิมพ์ keyword: $normalizedKeyword")
-        if (!inputText(normalizedKeyword)) {
-          logStep("พิมพ์ keyword ไม่สำเร็จ")
-          return@Thread
-        }
-
-        sleepStep(650)
-        logStep("กดค้นหาบน keyboard")
-        if (!pressImeEnter()) {
-          tapBlocking(650f, 1460f)
-        }
-
-        sleepStep(2800)
-        logStep("เลื่อนผลลัพธ์")
-        swipeBlocking(360f, 1320f, 360f, 560f, 540L)
-        logStep("รัน Shopee Search test เสร็จแล้ว")
-      } catch (error: Exception) {
-        Log.e(TAG, "Shopee search runner failed", error)
-      } finally {
-        hideAutomationOverlay(2500L)
-      }
-    }.also { thread ->
-      thread.name = "KubdeeShopeeSearch"
-      thread.start()
-    }
-
-    return true
-  }
-
   private fun startShopeeImportAsync(maxItems: Int, runId: String, profileLocalId: String?) {
     val runningThread = shopeeImportThread
     if (runningThread?.isAlive == true) {
@@ -826,7 +771,6 @@ class KubdeeAccessibilityService : AccessibilityService() {
       beginAutomationForeground("กำลังโพสต์วิดีโอ Shopee")
 
       val payload = JSONObject(payloadJson)
-      val postAction = payload.optString("postAction", "publish").ifBlank { "publish" }
       videos = parseShopeePostingVideos(payload.optJSONArray("videos") ?: JSONArray())
       configureAutomationStats("Shopee Post", "CLIP", videos.size)
 
@@ -849,28 +793,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
           val preparedVideo = prepareShopeePostingVideoUri(video.fileUri, index)
           logShopeePostStep("เตรียมวิดีโอเข้าคลังมือถือแล้ว: ${preparedVideo.displayName}")
 
-          runShopeeVideoPostingFlow(video, preparedVideo, postAction)
+          runShopeeVideoPostingFlow(video, preparedVideo)
 
-          if (postAction == "dryRun") {
-            successCount += 1
-            updateAutomationStats(successCount = successCount)
-            results.put(JSONObject().apply {
-              put("videoIndex", index)
-              put("success", true)
-              put("dryRun", true)
-            })
-            logShopeePostStep("Dry run: เตรียมข้อมูลโพสต์ Shopee สำเร็จ")
-          } else {
-            postedCount += 1
-            successCount += 1
-            updateAutomationStats(successCount = successCount)
-            results.put(JSONObject().apply {
-              put("videoIndex", index)
-              put("success", true)
-            })
-            logShopeePostStep("ส่งโพสต์คลิป ${index + 1} แล้ว")
-            sleepStep(6000L)
-          }
+          postedCount += 1
+          successCount += 1
+          updateAutomationStats(successCount = successCount)
+          results.put(JSONObject().apply {
+            put("videoIndex", index)
+            put("success", true)
+          })
+          logShopeePostStep("ส่งโพสต์คลิป ${index + 1} แล้ว")
+          sleepStep(6000L)
         } catch (error: ShopeeAutomationStoppedException) {
           throw error
         } catch (error: Exception) {
@@ -950,7 +883,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return value.ifBlank { null }
   }
 
-  private fun runShopeeVideoPostingFlow(video: ShopeePostingVideo, preparedVideo: PreparedShopeeVideo, postAction: String) {
+  private fun runShopeeVideoPostingFlow(video: ShopeePostingVideo, preparedVideo: PreparedShopeeVideo) {
     logShopeePostStep("รีเซ็ต Shopee เพื่อโพสต์วิดีโอ")
     if (!launchPackage(TARGET_PACKAGE_SHOPEE, resetTask = true)) {
       throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
@@ -974,11 +907,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     sleepStep(4000L)
     fillShopeePostingCaption(video)
     attachShopeePostingProductBestEffort(video)
-
-    if (postAction == "dryRun") {
-      logShopeePostStep("Dry run: หยุดก่อนกดโพสต์")
-      return
-    }
+    disableShopeeContentReusePermissionBestEffort()
+    enableShopeeAiGeneratedLabelBestEffort()
 
     tapShopeePostButton()
   }
@@ -1084,7 +1014,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun attachShopeePostingProductBestEffort(video: ShopeePostingVideo) {
-    val productUrl = video.productUrl?.trim().orEmpty()
+    val productUrl = normalizeShopeeProductUrl(video.productUrl.orEmpty())
     val productName = video.productName?.trim().orEmpty()
     if (productUrl.isBlank() && productName.isBlank()) {
       logShopeePostStep("ไม่มีข้อมูลสินค้า ข้ามการแนบสินค้า")
@@ -1107,11 +1037,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
       if (
         productUrl.isNotBlank() &&
-        clickByAnyText(
-          listOf("ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"),
-          exact = false,
-          allowedPackageName = TARGET_PACKAGE_SHOPEE
-        )
+        tapShopeeProductLinkEntry()
       ) {
         sleepStep(1200L)
         val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
@@ -1138,9 +1064,18 @@ class KubdeeAccessibilityService : AccessibilityService() {
             return
           }
         }
+        logShopeePostStep("แนบสินค้าด้วยลิงก์ไม่สำเร็จ จะกลับไปค้นหาด้วยชื่อสินค้า")
+        performBack()
+        sleepStep(900L)
       }
 
       if (productName.isNotBlank()) {
+        clickByAnyText(
+          listOf("กดถูกใจ", "ถูกใจ", "Liked", "ค้นหา", "Search"),
+          exact = false,
+          allowedPackageName = TARGET_PACKAGE_SHOPEE
+        )
+        sleepStep(800L)
         val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
         if (edit != null) {
           clickNode(edit)
@@ -1156,6 +1091,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
             )
           ) {
             sleepStep(1800L)
+            clickByAnyText(
+              listOf("เสร็จสิ้น", "เสร็จ", "Done"),
+              exact = false,
+              allowedPackageName = TARGET_PACKAGE_SHOPEE
+            )
+            sleepStep(1600L)
             logShopeePostStep("แนบสินค้าด้วยชื่อสินค้าแล้ว")
             return
           }
@@ -1172,6 +1113,73 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
   }
 
+  private fun normalizeShopeeProductUrl(value: String): String {
+    val url = value.trim()
+    if (url.isBlank()) return ""
+    if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) return ""
+    return if (Regex("""(^https?://)?([^/]+\.)?shopee\.""", RegexOption.IGNORE_CASE).containsMatchIn(url)) url else ""
+  }
+
+  private fun tapShopeeProductLinkEntry(): Boolean {
+    if (
+      clickByAnyText(
+        listOf("กรอกลิงก์สินค้า", "ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"),
+        exact = false,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      )
+    ) {
+      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยข้อความ")
+      return true
+    }
+
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val target = findShopeeProductLinkNode(root, screen)
+      if (target != null && tapNodeCenter(target)) {
+        logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วย icon")
+        return true
+      }
+    }
+
+    logShopeePostStep("ไม่พบทางเข้าเมนูลิงก์สินค้า")
+    return false
+  }
+
+  private fun findShopeeProductLinkNode(
+    node: AccessibilityNodeInfo?,
+    screen: Rect
+  ): AccessibilityNodeInfo? {
+    if (node == null || !isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) return null
+    if (node.isVisibleToUser) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val raw = listOfNotNull(
+        node.text?.toString(),
+        node.contentDescription?.toString(),
+        node.viewIdResourceName
+      ).joinToString(" ").lowercase(Locale.ROOT)
+      val looksLikeLink =
+        "link" in raw ||
+          "ลิงก์" in raw ||
+          "ลิงค์" in raw
+      if (
+        looksLikeLink &&
+          bounds.width() > 0 &&
+          bounds.height() > 0 &&
+          bounds.left >= screen.left + (screen.width() * 0.5f).toInt() &&
+          bounds.top <= screen.top + (screen.height() * 0.24f).toInt()
+      ) {
+        return node
+      }
+    }
+
+    for (index in 0 until node.childCount) {
+      val found = findShopeeProductLinkNode(node.getChild(index), screen)
+      if (found != null) return found
+    }
+    return null
+  }
+
   private fun tapShopeePostButton() {
     logShopeePostStep("กดโพสต์")
     if (!clickByAnyText(listOf("โพสต์", "Post"), exact = true, allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
@@ -1180,6 +1188,193 @@ class KubdeeAccessibilityService : AccessibilityService() {
     logShopeePostStep("กดโพสต์แล้ว รอ Shopee รับคำสั่ง")
     sleepStep(2000L)
   }
+
+  private fun disableShopeeContentReusePermissionBestEffort() {
+    try {
+      logShopeePostStep("ปิดการอนุญาต reuse/เผยแพร่ต่อ")
+      val target = findShopeeContentReuseToggleTarget()
+      if (target == null) {
+        logShopeePostStep("ไม่พบ toggle reuse/เผยแพร่ต่อ ข้ามขั้นตอนนี้")
+        return
+      }
+
+      if (!target.node.isCheckable) {
+        logShopeePostStep("toggle reuse/เผยแพร่ต่อไม่มีสถานะชัดเจน ข้ามเพื่อไม่พลิกค่าผิด")
+        return
+      }
+
+      if (!target.node.isChecked) {
+        logShopeePostStep("reuse/เผยแพร่ต่อปิดอยู่แล้ว")
+        return
+      }
+
+      if (!clickShopeeToggleTarget(target)) {
+        logShopeePostStep("กด toggle reuse/เผยแพร่ต่อไม่สำเร็จ ข้ามขั้นตอนนี้")
+        return
+      }
+      sleepStep(800L)
+      logShopeePostStep("ส่งคำสั่งปิด reuse/เผยแพร่ต่อแล้ว")
+    } catch (error: Exception) {
+      logShopeePostStep("ปิด reuse/เผยแพร่ต่อไม่สำเร็จ: ${error.message ?: "unknown"}")
+    }
+  }
+
+  private fun enableShopeeAiGeneratedLabelBestEffort() {
+    try {
+      logShopeePostStep("เปิดป้ายกำกับ AI")
+      val target = findShopeeAiGeneratedLabelToggleTarget()
+      if (target == null) {
+        logShopeePostStep("ไม่พบ toggle ป้ายกำกับ AI ข้ามขั้นตอนนี้")
+        return
+      }
+
+      if (!target.node.isCheckable) {
+        logShopeePostStep("toggle ป้ายกำกับ AI ไม่มีสถานะชัดเจน ข้ามเพื่อไม่พลิกค่าผิด")
+        return
+      }
+
+      if (target.node.isChecked) {
+        logShopeePostStep("ป้ายกำกับ AI เปิดอยู่แล้ว")
+        return
+      }
+
+      if (!clickShopeeToggleTarget(target)) {
+        logShopeePostStep("กด toggle ป้ายกำกับ AI ไม่สำเร็จ ข้ามขั้นตอนนี้")
+        return
+      }
+      sleepStep(800L)
+      logShopeePostStep("ส่งคำสั่งเปิดป้ายกำกับ AI แล้ว")
+    } catch (error: Exception) {
+      logShopeePostStep("เปิดป้ายกำกับ AI ไม่สำเร็จ: ${error.message ?: "unknown"}")
+    }
+  }
+
+  private fun findShopeeContentReuseToggleTarget(): ShopeeToggleTarget? {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val labels = mutableListOf<Rect>()
+      val toggles = mutableListOf<ShopeeToggleTarget>()
+      collectShopeePostingToggleCandidates(root, screen, labels, toggles) { textKey, _, _ ->
+        "นำเนื้อหาไปใช้ซ้ำ" in textKey ||
+          "เผยแพร่ต่อ" in textKey ||
+          ("duet" in textKey && "ตัดต่อ" in textKey) ||
+          ("duet" in textKey && "sticker" in textKey) ||
+          ("reuse" in textKey && "content" in textKey)
+      }
+      findNearbyShopeeToggle(labels, toggles, screen)?.let { return it }
+    }
+    return null
+  }
+
+  private fun findShopeeAiGeneratedLabelToggleTarget(): ShopeeToggleTarget? {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val labels = mutableListOf<Rect>()
+      val panels = mutableListOf<Rect>()
+      val toggles = mutableListOf<ShopeeToggleTarget>()
+      collectShopeePostingToggleCandidates(root, screen, labels, toggles) { textKey, resourceId, bounds ->
+        if (resourceId.endsWith("ai_generated_label_panel")) {
+          panels.add(Rect(bounds))
+        }
+        resourceId.endsWith("tv_ai_generated_title") ||
+          resourceId.endsWith("tv_ai_generated_desc") ||
+          "ป้ายกำกับ ai" in textKey ||
+          "เนื้อหาที่สร้างขึ้น" in textKey ||
+          ("ai" in textKey && "เนื้อหา" in textKey)
+      }
+
+      toggles
+        .filter { it.resourceId.endsWith("ai_generated_toggle") }
+        .minWithOrNull(compareBy<ShopeeToggleTarget> { it.bounds.top }.thenBy { it.bounds.left })
+        ?.let { return it }
+
+      for (panel in panels) {
+        toggles
+          .filter { toggle ->
+            toggle.bounds.left >= panel.left &&
+              toggle.bounds.right <= panel.right &&
+              toggle.bounds.top >= panel.top &&
+              toggle.bounds.bottom <= panel.bottom
+          }
+          .minWithOrNull(compareBy<ShopeeToggleTarget> { it.bounds.top }.thenBy { it.bounds.left })
+          ?.let { return it }
+      }
+
+      findNearbyShopeeToggle(labels, toggles, screen)?.let { return it }
+    }
+    return null
+  }
+
+  private fun collectShopeePostingToggleCandidates(
+    node: AccessibilityNodeInfo?,
+    screen: Rect,
+    labelBounds: MutableList<Rect>,
+    toggles: MutableList<ShopeeToggleTarget>,
+    isLabel: (textKey: String, resourceId: String, bounds: Rect) -> Boolean
+  ) {
+    if (node == null || !isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) return
+    if (node.isVisibleToUser) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      if (bounds.width() > 0 && bounds.height() > 0) {
+        val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
+        val className = node.className?.toString().orEmpty().lowercase(Locale.ROOT)
+        val textKey = cleanNodeText(readNodeText(node)).lowercase(Locale.ROOT)
+
+        if (isLabel(textKey, resourceId, bounds)) {
+          labelBounds.add(Rect(bounds))
+        }
+
+        val looksToggleLike = node.isCheckable &&
+          (
+            resourceId.endsWith("toggle") ||
+              resourceId.contains("toggle") ||
+              className.contains("switch")
+          )
+        if (
+          looksToggleLike &&
+            bounds.left >= screen.left + (screen.width() * 0.5f).toInt() &&
+            bounds.top >= screen.top + (screen.height() * 0.05f).toInt() &&
+            bounds.top <= screen.top + (screen.height() * 0.82f).toInt()
+        ) {
+          toggles.add(ShopeeToggleTarget(node, Rect(bounds), resourceId))
+        }
+      }
+    }
+
+    for (index in 0 until node.childCount) {
+      collectShopeePostingToggleCandidates(node.getChild(index), screen, labelBounds, toggles, isLabel)
+    }
+  }
+
+  private fun findNearbyShopeeToggle(
+    labels: List<Rect>,
+    toggles: List<ShopeeToggleTarget>,
+    screen: Rect
+  ): ShopeeToggleTarget? {
+    for (label in labels) {
+      val nearby = toggles
+        .filter { toggle ->
+          toggle.bounds.left >= maxOf(screen.left + (screen.width() * 0.5f).toInt(), label.right - dp(24)) &&
+            toggle.bounds.top <= label.bottom + dp(120) &&
+            toggle.bounds.bottom >= label.top - dp(24)
+        }
+        .minWithOrNull(
+          compareBy<ShopeeToggleTarget> {
+            kotlin.math.abs(toggleCenterY(it.bounds) - toggleCenterY(label))
+          }.thenBy { it.bounds.top }
+        )
+      if (nearby != null) return nearby
+    }
+    return null
+  }
+
+  private fun clickShopeeToggleTarget(target: ShopeeToggleTarget): Boolean {
+    if (clickNode(target.node)) return true
+    return tapBlocking(target.bounds.centerX().toFloat(), target.bounds.centerY().toFloat())
+  }
+
+  private fun toggleCenterY(bounds: Rect): Int = (bounds.top + bounds.bottom) / 2
 
   private fun tapShopeeVideoComposerButton(): Boolean {
     if (clickByAnyText(SHOPEE_VIDEO_COMPOSER_TEXTS, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
@@ -6397,6 +6592,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val bounds: Rect,
     val label: String,
     val rank: Int
+  )
+
+  private data class ShopeeToggleTarget(
+    val node: AccessibilityNodeInfo,
+    val bounds: Rect,
+    val resourceId: String
   )
 
   private data class AutomationStatsSnapshot(
