@@ -158,6 +158,7 @@ export function ActivityLogSheet({
 }): React.JSX.Element {
   const isRunning = runState.status === 'running';
   const logs = runState.logs.slice(-80);
+  const visibleStartIndex = Math.max(0, runState.logs.length - logs.length);
   const firstLog = getFirstLog(runState);
   const latestLog = getLatestLog(runState);
   const elapsedMs = getRunElapsedMs(runState);
@@ -239,7 +240,8 @@ export function ActivityLogSheet({
               </View>
             ) : (
               logs.map((log, index) => {
-                const previousLog = index > 0 ? logs[index - 1] : null;
+                const absoluteIndex = visibleStartIndex + index;
+                const previousLog = absoluteIndex > 0 ? runState.logs[absoluteIndex - 1] : null;
                 const deltaMs = previousLog ? Math.max(0, log.timestamp - previousLog.timestamp) : 0;
                 const sinceStartMs = firstLog ? Math.max(0, log.timestamp - firstLog.timestamp) : 0;
                 return (
@@ -247,7 +249,7 @@ export function ActivityLogSheet({
                     <View className="w-[68px]">
                       <Text className="text-kd-micro font-medium text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
                       <Text className="mt-0.5 text-kd-tiny text-kd-text-subtle">
-                        {index === 0 ? '+0s' : `+${formatDuration(deltaMs)}`} · {formatDuration(sinceStartMs)}
+                        +{formatDuration(deltaMs)} · {formatDuration(sinceStartMs)}
                       </Text>
                     </View>
                     <View className="min-w-0 flex-1">

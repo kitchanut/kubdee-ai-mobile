@@ -54,6 +54,7 @@ function ActivityRunCard({
   const firstLog = run.logs[0] ?? null;
   const latestLog = run.logs[run.logs.length - 1] ?? null;
   const logs = run.logs.slice(-8);
+  const visibleStartIndex = Math.max(0, run.logs.length - logs.length);
   const elapsedMs = getRunElapsedMs(run);
   const statusColor = run.stopping
     ? theme.amber
@@ -93,7 +94,8 @@ function ActivityRunCard({
       ) : (
         <View className="gap-1.5">
           {logs.map((log, index) => {
-            const previousLog = index > 0 ? logs[index - 1] : null;
+            const absoluteIndex = visibleStartIndex + index;
+            const previousLog = absoluteIndex > 0 ? run.logs[absoluteIndex - 1] : null;
             const deltaMs = previousLog ? Math.max(0, log.ts - previousLog.ts) : 0;
             const sinceStartMs = firstLog ? Math.max(0, log.ts - firstLog.ts) : 0;
             const parsed =
@@ -110,7 +112,7 @@ function ActivityRunCard({
                     {formatLogTime(log.ts)}
                   </Text>
                   <Text className="text-kd-tiny text-kd-text-subtle">
-                    {index === 0 ? '+0s' : `+${formatDuration(deltaMs)}`} · {formatDuration(sinceStartMs)}
+                    +{formatDuration(deltaMs)} · {formatDuration(sinceStartMs)}
                   </Text>
                 </View>
                 <View className="min-w-0 flex-1">

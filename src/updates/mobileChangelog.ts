@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.33',
+    date: '2026-06-29',
+    highlight: 'ปรับเวลาใน Activity Log ให้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'Activity Log ที่แสดงเฉพาะรายการท้าย ๆ จะคำนวณเวลาห่างจาก log ก่อนหน้าจริง ไม่เริ่มเป็น +0s ผิดตำแหน่ง' },
+      { type: 'improved', text: 'รายละเอียด Auto และหน้า Activity ใช้เวลา elapsed ต่อรอบได้ตรงขึ้นเวลาไล่ดูงานย้อนหลัง' },
+    ],
+  },
+  {
     version: '0.1.32',
     date: '2026-06-29',
     highlight: 'ปรับจำนวนวิดีโอให้ตรงกับโหมดหลายฉาก',
@@ -343,4 +352,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.32';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.33';
