@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.43',
+    date: '2026-06-29',
+    highlight: 'อัปเดต Mobile Changelog ให้ใช้งานง่ายขึ้น',
+    changes: [
+      { type: 'improved', text: 'ปรับหน้าตา Changelog เป็น modal กลางจอให้ใกล้เคียง Desktop มากขึ้น' },
+      { type: 'improved', text: 'ออก APK เวอร์ชันใหม่ให้ระบบเช็คอัปเดตและดาวน์โหลดได้ต่อเนื่อง' },
+    ],
+  },
+  {
     version: '0.1.42',
     date: '2026-06-29',
     highlight: 'วิดีโอหลายฉากบน Mobile คุมบทและเสียงพากย์ตรงขึ้น',
@@ -437,4 +446,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.42';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.43';
