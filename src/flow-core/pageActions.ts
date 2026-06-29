@@ -325,13 +325,38 @@ const FILL_PROMPT_BODY = `
     sortBySubmitProximity(fields);
     return fields[0] || null;
   }
-  function wasInserted() {
-    var exp = promptText.trim().slice(0, Math.min(24, promptText.trim().length));
-    if (!exp) return true;
+  function normalizePromptText(value) {
+    return String(value || '').replace(/\\s+/g, ' ').trim();
+  }
+  function getCurrentPromptText() {
     var f2 = getVisibleTextarea();
-    if (((f2 && f2.value) || '').trim().indexOf(exp) !== -1) return true;
+    if (f2 && f2.value) return f2.value;
     var e2 = getVisibleSlate();
-    return ((e2 && e2.textContent) || '').trim().indexOf(exp) !== -1;
+    return (e2 && e2.textContent) || '';
+  }
+  function promptLooksInserted(currentValue) {
+    var expected = normalizePromptText(promptText);
+    var current = normalizePromptText(currentValue);
+    if (!expected) return true;
+    if (!current) return false;
+
+    var head = expected.slice(0, Math.min(32, expected.length));
+    var tail = expected.length > 72 ? expected.slice(-32) : '';
+    var minLen = Math.min(expected.length, Math.max(12, Math.floor(expected.length * 0.88)));
+
+    if (current.indexOf(head) === -1) return false;
+    if (tail && current.indexOf(tail) === -1 && current.length < Math.floor(expected.length * 0.95)) return false;
+    return current.length >= minLen;
+  }
+  function buildFillResult(type) {
+    return {
+      type: type,
+      expectedLength: normalizePromptText(promptText).length,
+      actualLength: normalizePromptText(getCurrentPromptText()).length
+    };
+  }
+  function wasInserted() {
+    return promptLooksInserted(getCurrentPromptText());
   }
   function hasEnabledSubmitButton() {
     return !!findSubmitButton(false);
@@ -376,7 +401,7 @@ const FILL_PROMPT_BODY = `
     await wait(500);
     if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
     setStatus('กรอก prompt สำเร็จด้วยช่อง text field', 'success');
-    return { type: 'textarea-preferred' };
+    return buildFillResult('textarea-preferred');
   }
 
   var el = null;
@@ -398,7 +423,7 @@ const FILL_PROMPT_BODY = `
     await wait(500);
     if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
     setStatus('กรอก prompt สำเร็จด้วย fallback text field', 'success');
-    return { type: 'textarea' };
+    return buildFillResult('textarea');
   }
 
   el.scrollIntoView({ behavior: 'instant', block: 'center' });
@@ -447,7 +472,7 @@ const FILL_PROMPT_BODY = `
       await wait(500);
       if (!wasInserted()) throw new Error('Slate insertText ไม่ติด');
       setStatus('กรอก prompt สำเร็จด้วย Slate editor', 'success');
-      return { type: 'slate-fiber' };
+      return buildFillResult('slate-fiber');
     }
     var deepFiber = el[fiberKey];
     for (var d = 0; d < 50 && deepFiber; d++) {
@@ -475,7 +500,7 @@ const FILL_PROMPT_BODY = `
       await wait(500);
       if (!wasInserted()) throw new Error('Slate deep insertText ไม่ติด');
       setStatus('กรอก prompt สำเร็จด้วย Slate editor deep fallback', 'success');
-      return { type: 'slate-fiber-deep' };
+      return buildFillResult('slate-fiber-deep');
     }
   }
 
@@ -507,7 +532,7 @@ const FILL_PROMPT_BODY = `
   }
   if (!wasInserted()) throw new Error('กรอก Prompt ไม่สำเร็จ');
   setStatus('กรอก prompt สำเร็จด้วย execCommand fallback', 'success');
-  return { type: 'slate-execCommand' };
+  return buildFillResult('slate-execCommand');
 `;
 
 // --- submit: click the arrow_forward button via its React onClick handler ---

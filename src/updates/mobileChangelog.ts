@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.1.35',
+    date: '2026-06-29',
+    highlight: 'ตรวจ Prompt ก่อนสร้างงานแม่นขึ้น',
+    changes: [
+      { type: 'improved', text: 'เพิ่มการตรวจสอบ prompt หลังกรอกใน Google Flow ให้จับกรณีกรอกไม่ครบได้ดีขึ้น' },
+      { type: 'improved', text: 'ลดโอกาสกดสร้างงานด้วย prompt ที่ขาดบางส่วนในหน้า Auto Mobile' },
+      { type: 'improved', text: 'ช่วยให้ระบบ retype prompt ทำงานได้ถูกจังหวะมากขึ้นเมื่อ Google Flow รับข้อความไม่ครบ' },
+    ],
+  },
+  {
     version: '0.1.34',
     date: '2026-06-29',
     highlight: 'ปรับ Changelog เป็น Modal แบบใหม่',
@@ -362,4 +372,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.34';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.35';
