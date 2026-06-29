@@ -1,5 +1,6 @@
 import { Modal, ScrollView, View } from 'react-native';
 import { Clock3, Image as ImageIcon, Info, Package, RefreshCw, Square, Trash2, Video, X } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -20,6 +21,7 @@ export function RunStatusSummaryBlock({
   theme: KubdeeTheme;
   onOpenLogs: () => void;
 }): React.JSX.Element {
+  useActivityNowTick(runState.status === 'running');
   const progress = runState.progress;
   const progressRatio = getRunProgressRatio(runState);
   const currentStepLabel = getCurrentStepLabel(progress.currentStep);
@@ -156,6 +158,7 @@ export function ActivityLogSheet({
   onClose: () => void;
   onStop: () => void;
 }): React.JSX.Element {
+  useActivityNowTick(runState.status === 'running');
   const isRunning = runState.status === 'running';
   const logs = runState.logs.slice(-80);
   const visibleStartIndex = Math.max(0, runState.logs.length - logs.length);
@@ -268,6 +271,22 @@ export function ActivityLogSheet({
       </View>
     </Modal>
   );
+}
+
+function useActivityNowTick(active: boolean): void {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      setTick((value) => value + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [active]);
 }
 
 function LogStageMeta({

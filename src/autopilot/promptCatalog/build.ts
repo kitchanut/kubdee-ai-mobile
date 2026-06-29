@@ -16,6 +16,12 @@ export type BuildSettings = Record<string, string | string[] | number | boolean 
 
 const CUSTOM_TOKENS = new Set(['custom', '__custom__']);
 const EMPTY_TOKENS = new Set(['', 'auto']);
+const FALLBACK_OPTION_PROMPTS: Record<string, string> = {
+  ภาพถ่ายจากมือถือ:
+    'ภาพถ่ายด้วยมือถือ iPhone รายละเอียดชัดสมจริง โฟกัสคมชัด สีและแสงเป็นธรรมชาติ มุมมองคนใช้งานจริงแบบ casual snapshot ไม่จัดไฟสตูดิโอ ไม่แต่งภาพหนัก ให้ความรู้สึกเหมือนรีวิวสินค้าในชีวิตประจำวัน',
+  'ภาพถ่ายด้วยมือถือ iPhone รายละเอียดชัดสมจริง':
+    'ภาพถ่ายด้วยมือถือ iPhone รายละเอียดชัดสมจริง โฟกัสคมชัด สีและแสงเป็นธรรมชาติ มุมมองคนใช้งานจริงแบบ casual snapshot ไม่จัดไฟสตูดิโอ ไม่แต่งภาพหนัก ให้ความรู้สึกเหมือนรีวิวสินค้าในชีวิตประจำวัน',
+};
 
 function resolveCategory(category: Category, settings: BuildSettings): string {
   const value = settingValue(settings[category.settingsKey]);
@@ -28,7 +34,7 @@ function resolveCategory(category: Category, settings: BuildSettings): string {
   }
 
   const option = categoryOptions(category).find((item) => item.value === value);
-  return option ? option.prompt || option.value : value;
+  return option ? option.prompt || option.value : FALLBACK_OPTION_PROMPTS[value] || value;
 }
 
 function settingValue(value: string | string[] | number | boolean | null | undefined): string {

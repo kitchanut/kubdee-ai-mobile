@@ -8,6 +8,7 @@ import {
   Send,
   ShoppingBag,
 } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import {
@@ -15,7 +16,8 @@ import {
   type AutomationActivityRun,
   useAutomationActivitySnapshot,
 } from '@/activity/automationActivityLogStore';
-import type { AutoPilotFlowStats } from '@/autopilot/types';
+import { getAutoPilotStageLabel } from '@/autopilot/stageLabels';
+import type { AutoPilotFlowStats, AutoPilotStepType } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
 import SectionHeader from '@/components/ui/SectionHeader';
 import { alpha, type KubdeeTheme } from '@/theme/tokens';
@@ -28,6 +30,8 @@ const ACTIVITY_ORDER: AutomationActivityKind[] = ['auto-pilot', 'shopee-import',
 
 export default function LogsScreen({ theme }: LogsScreenProps): React.JSX.Element {
   const snapshot = useAutomationActivitySnapshot();
+  const hasRunningActivity = ACTIVITY_ORDER.some((kind) => snapshot.runs[kind].running);
+  useActivityNowTick(hasRunningActivity);
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-2 p-2">
@@ -37,6 +41,22 @@ export default function LogsScreen({ theme }: LogsScreenProps): React.JSX.Elemen
       ))}
     </ScrollView>
   );
+}
+
+function useActivityNowTick(active: boolean): void {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      setTick((value) => value + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [active]);
 }
 
 function ActivityRunCard({
@@ -122,6 +142,10 @@ function ActivityRunCard({
               run.kind === 'auto-pilot'
                 ? parseStagePrefix(log.message)
                 : { stage: null, message: log.message };
+            const stageLabel =
+              run.kind === 'auto-pilot'
+                ? getActivityStageLabel(log.step, log.stage, parsed.stage)
+                : parsed.stage;
             const IconForLine = getLogIcon(log.message);
             const color = getLogColor(log.message, theme);
             return (
@@ -136,7 +160,7 @@ function ActivityRunCard({
                   </Text>
                 </View>
                 <View className="min-w-0 flex-1">
-                  {parsed.stage ? <StageChip label={parsed.stage} theme={theme} /> : null}
+                  {stageLabel ? <StageChip label={stageLabel} theme={theme} /> : null}
                   <Text className="text-kd-caption leading-4 text-kd-text" numberOfLines={2}>
                     {parsed.message}
                   </Text>
@@ -223,6 +247,17 @@ function parseStagePrefix(message: string): { stage: string | null; message: str
     stage: match[1]?.trim() || null,
     message: match[2]?.trim() || message,
   };
+}
+
+function getActivityStageLabel(
+  step: AutoPilotStepType | undefined,
+  stage: string | undefined,
+  fallbackLabel: string | null
+): string | null {
+  const stepLabel = step === 'image' ? 'รูปภาพ' : step === 'video' ? 'วิดีโอ' : '';
+  const stageLabel = stage ? getAutoPilotStageLabel(stage, '') : '';
+  const label = [stepLabel, stageLabel].filter(Boolean).join(' · ');
+  return label || fallbackLabel;
 }
 
 function getRunElapsedMs(run: AutomationActivityRun): number | null {
