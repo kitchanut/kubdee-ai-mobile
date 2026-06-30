@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.2',
+    date: '2026-06-30',
+    highlight: 'Auto Workflow แนบรูปอ้างอิงจากคลังได้ครบขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การแนบรูปตัวละครและฉากจากคลังในขั้นตอนสร้างภาพและวิดีโอให้ทำงานถูกต้องขึ้น' },
+      { type: 'improved', text: 'ปรับหน้าต่างทำงาน Google Flow ให้แสดงชื่องานและสถานะระหว่างสร้างคลิปชัดเจนขึ้น' },
+      { type: 'improved', text: 'เพิ่มปุ่มปิดการ์ดสถานะงานหลังสร้างเสร็จ หยุดงาน หรือเกิดข้อผิดพลาด' },
+    ],
+  },
+  {
     version: '0.2.1',
     date: '2026-06-30',
     highlight: 'Auto Workflow ใช้รูปอ้างอิงตรงสินค้ามากขึ้น',

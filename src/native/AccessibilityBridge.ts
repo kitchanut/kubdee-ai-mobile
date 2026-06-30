@@ -114,6 +114,9 @@ type NativeAccessibilityModule = {
     dataUrl: string,
     fileName?: string | null
   ) => Promise<NativeGoogleFlowDownloadedAsset | null>;
+  readUriAsDataUrl?: (
+    uriString: string
+  ) => Promise<string | null>;
   listGoogleFlowAssets?: (
     step: 'image' | 'video',
     limit: number
@@ -291,6 +294,14 @@ export async function saveGoogleFlowDataUrlAsset(
 ): Promise<NativeGoogleFlowDownloadedAsset | null> {
   if (Platform.OS === 'android' && nativeModule?.saveGoogleFlowDataUrlAsset) {
     return nativeModule.saveGoogleFlowDataUrlAsset(step, dataUrl, fileName ?? null);
+  }
+
+  return null;
+}
+
+export async function readUriAsDataUrl(uriString: string): Promise<string | null> {
+  if (Platform.OS === 'android' && nativeModule?.readUriAsDataUrl) {
+    return nativeModule.readUriAsDataUrl(uriString);
   }
 
   return null;

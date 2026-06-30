@@ -15,10 +15,12 @@ import { ProgressMetric, SectionCard } from '../primitives';
 export function RunStatusSummaryBlock({
   runState,
   theme,
+  onDismiss,
   onOpenLogs,
 }: {
   runState: AutoPilotRunState;
   theme: KubdeeTheme;
+  onDismiss?: () => void;
   onOpenLogs: () => void;
 }): React.JSX.Element {
   useActivityNowTick(runState.status === 'running');
@@ -34,8 +36,28 @@ export function RunStatusSummaryBlock({
   const elapsedMs = getRunElapsedMs(runState);
   const flowStats = getLatestFlowStats(runState);
 
+  const dismissible = runState.status !== 'running' && Boolean(onDismiss);
+
   return (
-    <SectionCard theme={theme} icon={Clock3} title="สถานะการทำงาน">
+    <SectionCard
+      theme={theme}
+      icon={Clock3}
+      title="สถานะการทำงาน"
+      action={
+        dismissible ? (
+          <Button
+            accessibilityLabel="ปิดสถานะการทำงาน"
+            accessibilityRole="button"
+            variant="ghost"
+            size="icon"
+            onPress={onDismiss}
+            className="h-7 w-7 rounded-full bg-kd-panel-muted dark:bg-kd-card-muted"
+          >
+            <X size={14} color={theme.textMuted} strokeWidth={2.2} />
+          </Button>
+        ) : undefined
+      }
+    >
       <View className="gap-2.5">
         <View className="flex-row items-start justify-between gap-2">
           <View className="min-w-0 flex-1">

@@ -14,11 +14,13 @@ import { alpha } from '@/theme/tokens';
 import { SettingsAccentContext, type OptionValue } from './constants';
 
 export function SectionCard({
+  action,
   children,
   icon: Icon,
   theme,
   title,
 }: {
+  action?: React.ReactNode;
   children: React.ReactNode;
   icon: typeof Bot;
   theme: KubdeeTheme;
@@ -26,11 +28,16 @@ export function SectionCard({
 }): React.JSX.Element {
   return (
     <View className="gap-3 rounded-[14px] border border-kd-border bg-kd-card px-3 py-3">
-      <View className="flex-row items-center gap-2">
-        <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
-          <Icon size={15} color={theme.textMuted} strokeWidth={2} />
+      <View className="flex-row items-center justify-between gap-2">
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+            <Icon size={15} color={theme.textMuted} strokeWidth={2} />
+          </View>
+          <Text numberOfLines={1} className="text-[13px] font-semibold text-kd-text">
+            {title}
+          </Text>
         </View>
-        <Text className="text-[13px] font-semibold text-kd-text">{title}</Text>
+        {action ? <View className="shrink-0">{action}</View> : null}
       </View>
       {children}
     </View>

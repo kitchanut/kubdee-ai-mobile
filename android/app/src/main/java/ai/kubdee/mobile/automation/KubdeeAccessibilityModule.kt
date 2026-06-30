@@ -503,6 +503,33 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
+  fun readUriAsDataUrl(uriString: String, promise: Promise) {
+    Thread {
+      try {
+        val cleanUri = uriString.trim()
+        if (cleanUri.isEmpty()) {
+          promise.resolve(null)
+          return@Thread
+        }
+        val uri = Uri.parse(cleanUri)
+        val bytes = openUriInputStream(uri)?.use { input -> input.readBytes() }
+        if (bytes == null || bytes.isEmpty()) {
+          promise.resolve(null)
+          return@Thread
+        }
+        val mimeType = resolveUriImageMimeType(uri, cleanUri)
+        val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        promise.resolve("data:$mimeType;base64,$encoded")
+      } catch (error: Exception) {
+        promise.reject("URI_DATA_URL_READ_FAILED", error.message, error)
+      }
+    }.also { thread ->
+      thread.name = "KubdeeUriDataUrlRead"
+      thread.start()
+    }
+  }
+
+  @ReactMethod
   fun listGoogleFlowAssets(step: String, limit: Int, promise: Promise) {
     Thread {
       try {
@@ -1059,6 +1086,29 @@ class KubdeeAccessibilityModule(
     }
     output.flush()
     return total
+  }
+
+  private fun openUriInputStream(uri: Uri): InputStream? {
+    return when (uri.scheme?.lowercase(Locale.ROOT)) {
+      "content" -> reactContext.contentResolver.openInputStream(uri)
+      "file" -> FileInputStream(File(uri.path ?: return null))
+      null, "" -> FileInputStream(File(uri.toString()))
+      else -> null
+    }
+  }
+
+  private fun resolveUriImageMimeType(uri: Uri, fallbackName: String): String {
+    val resolverType = runCatching { reactContext.contentResolver.getType(uri) }.getOrNull()
+    if (!resolverType.isNullOrBlank() && resolverType.startsWith("image/")) {
+      return resolverType
+    }
+    val lowerName = fallbackName.lowercase(Locale.ROOT)
+    return when {
+      lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") -> "image/jpeg"
+      lowerName.endsWith(".webp") -> "image/webp"
+      lowerName.endsWith(".gif") -> "image/gif"
+      else -> "image/png"
+    }
   }
 
   private fun saveDataUrlToCacheFile(dataUrl: String, prefix: String, fallbackExtension: String): File {

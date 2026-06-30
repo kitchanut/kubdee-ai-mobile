@@ -71,6 +71,7 @@ export default function AutoPilotScreen({
   const [settingsPresetMessage, setSettingsPresetMessage] = useState<string | null>(null);
   const [settingsPresets, setSettingsPresets] = useState<AutoPilotSettingsPreset[]>([]);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
+  const [dismissedRunStatusKey, setDismissedRunStatusKey] = useState<string | null>(null);
   const activitySnapshot = useAutomationActivitySnapshot();
 
   const profileProducts = useMemo(() => {
@@ -140,7 +141,10 @@ export default function AutoPilotScreen({
       ? controller.runState
       : persistedRunState;
   const showingPersistedRunState = displayRunState !== controller.runState;
-  const showRunStatus = isRunning || displayRunState.logs.length > 0;
+  const displayRunStatusKey = getRunStatusDismissKey(displayRunState, persistedAutoRun);
+  const showRunStatus =
+    (isRunning || displayRunState.logs.length > 0) &&
+    (isRunning || dismissedRunStatusKey !== displayRunStatusKey);
   const canStart =
     !isRunning &&
     !isPreparingRun &&
@@ -159,6 +163,11 @@ export default function AutoPilotScreen({
     setEditingProductId(productId);
     setProductSettingsTab(controller.enabledSteps.includes('image') ? 'image' : 'video');
   };
+
+  const dismissRunStatus = useCallback((): void => {
+    setDismissedRunStatusKey(displayRunStatusKey);
+    clearAutomationActivityRun('auto-pilot');
+  }, [displayRunStatusKey]);
 
   const refreshProductPresets = useCallback(async (): Promise<void> => {
     if (!selectedProfileId) {
@@ -301,6 +310,7 @@ export default function AutoPilotScreen({
             <RunStatusSummaryBlock
               runState={displayRunState}
               theme={theme}
+              onDismiss={displayRunState.status === 'running' ? undefined : dismissRunStatus}
               onOpenLogs={() => setActivityLogOpen(true)}
             />
           ) : null}
@@ -495,6 +505,18 @@ function createRunStateFromActivityRun(run: AutomationActivityRun): AutoPilotRun
     },
     logs,
   };
+}
+
+function getRunStatusDismissKey(runState: AutoPilotRunState, persistedRun: AutomationActivityRun): string {
+  if (runState.runId) {
+    return `run:${runState.runId}`;
+  }
+
+  const firstLogTs = runState.logs[0]?.timestamp ?? null;
+  const latestLogTs = runState.logs[runState.logs.length - 1]?.timestamp ?? null;
+  const startedAt = persistedRun.startedAt ?? firstLogTs ?? 'none';
+  const updatedAt = persistedRun.updatedAt ?? latestLogTs ?? 'none';
+  return `persisted:${startedAt}:${updatedAt}:${runState.logs.length}`;
 }
 
 function getActivityRunStatus(run: AutomationActivityRun): AutoPilotRunState['status'] {

@@ -31,6 +31,7 @@ import type { KubdeeTheme } from '@/theme/tokens';
 import {
   mergeGoogleFlowVideos,
   probeGoogleFlowVideos,
+  readUriAsDataUrl,
   saveGoogleFlowDataUrlAsset,
   waitForGoogleFlowDownload,
 } from '@/native/AccessibilityBridge';
@@ -1272,19 +1273,16 @@ function getSafeReferenceName(value: string | null | undefined, fallback: string
   return clean.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || fallback;
 }
 
-function getAdditionalImageReferences(product: GoogleFlowRunnerProduct): Array<{
+type AdditionalImageReference = {
   fileName: string;
   label: string;
   stage: string;
   uri: string;
-}> {
+};
+
+function getAdditionalImageReferences(product: GoogleFlowRunnerProduct): AdditionalImageReference[] {
   const imageSettings = product.settings.image;
-  const references: Array<{
-    fileName: string;
-    label: string;
-    stage: string;
-    uri: string;
-  }> = [];
+  const references: AdditionalImageReference[] = [];
   const usedUris = new Set<string>();
   const productPreview = product.preview?.trim();
   if (productPreview) {
@@ -1334,6 +1332,14 @@ function getAdditionalImageReferences(product: GoogleFlowRunnerProduct): Array<{
   return references;
 }
 
+function getAdditionalVideoReferences(product: GoogleFlowRunnerProduct): AdditionalImageReference[] {
+  const references = getAdditionalImageReferences(product);
+  if (product.settings.video.characterMode === 'none') {
+    return references.filter((reference) => reference.stage !== 'attach_character_reference');
+  }
+  return references;
+}
+
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1351,6 +1357,12 @@ async function loadImageReferenceDataUrl(uri: string): Promise<string | null> {
   if (cleanUri.startsWith('data:image/')) {
     return cleanUri;
   }
+  if (isLocalReferenceUri(cleanUri)) {
+    const localDataUrl = await readUriAsDataUrl(cleanUri).catch(() => null);
+    if (localDataUrl?.startsWith('data:image/')) {
+      return localDataUrl;
+    }
+  }
 
   try {
     const response = await fetch(cleanUri);
@@ -1365,6 +1377,10 @@ async function loadImageReferenceDataUrl(uri: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function isLocalReferenceUri(uri: string): boolean {
+  return uri.startsWith('content://') || uri.startsWith('file://') || uri.startsWith('/');
 }
 
 export default function GoogleFlowWebViewRunnerHost({
@@ -3581,6 +3597,40 @@ export default function GoogleFlowWebViewRunnerHost({
           videoReferenceAttached = step === 'video';
         }
 
+        if (step === 'video' && !shouldUsePreviousImage) {
+          for (const reference of getAdditionalVideoReferences(product)) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: reference.stage,
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `แนบรูป${reference.label}เป็น reference สำหรับ${label}`,
+            });
+            const referenceDataUrl = await loadImageReferenceDataUrl(reference.uri);
+            await uploadReferenceImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              args: {
+                dataUrl: referenceDataUrl ?? undefined,
+                fileName: reference.fileName,
+                imageUrl: referenceDataUrl ? undefined : reference.uri,
+              },
+            });
+            videoReferenceAttached = true;
+          }
+        }
+
         if (step === 'image') {
           for (const reference of getAdditionalImageReferences(product)) {
             emit({
@@ -4348,17 +4398,18 @@ export default function GoogleFlowWebViewRunnerHost({
         : flowStatus === 'loggedout'
           ? 'ยังไม่เชื่อมต่อ'
           : 'กำลังโหลด';
+  const overlayTitle = overlayProgress?.productName?.trim() || 'Google Flow';
 
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={requestStop}>
       <SafeAreaView className="flex-1 bg-kd-panel">
-        <View className="h-14 flex-row items-center justify-between border-b border-kd-border bg-kd-panel px-4">
+        <View className="h-12 flex-row items-center justify-between border-b border-kd-border bg-kd-panel px-4">
           <View className="min-w-0 flex-1">
-            <Text numberOfLines={1} className="text-kd-title font-semibold text-kd-text">
-              Google Flow WebView
+            <Text numberOfLines={1} className="text-[13px] font-semibold leading-4 text-kd-text">
+              {overlayTitle}
             </Text>
-            <Text numberOfLines={1} className="text-kd-caption text-kd-text-muted">
-              {activeRunId ? `run ${activeRunId.slice(-8)} · ${flowStatusLabel}` : flowStatusLabel}
+            <Text numberOfLines={1} className="text-[10px] leading-3 text-kd-text-muted">
+              {activeRunId ? `run ${activeRunId.slice(-8)}` : 'Auto Workflow'}
             </Text>
           </View>
           <TouchableOpacity
@@ -4383,16 +4434,6 @@ export default function GoogleFlowWebViewRunnerHost({
               contentContainerStyle={{ gap: 6, paddingRight: 8 }}
             >
               <OverlayStatChip
-                label="รอบ"
-                theme={theme}
-                value={formatRoundProgress(overlayProgress.currentRound, overlayProgress.totalRounds)}
-              />
-              <OverlayStatChip
-                label="สินค้า"
-                theme={theme}
-                value={`${overlayProgress.currentProduct}/${overlayProgress.totalProducts || '-'}`}
-              />
-              <OverlayStatChip
                 label="ขั้นตอน"
                 theme={theme}
                 value={formatOverlayStep(overlayProgress.step, overlayProgress.stage)}
@@ -4401,6 +4442,21 @@ export default function GoogleFlowWebViewRunnerHost({
                 label="Flow"
                 theme={theme}
                 value={formatOverlayFlowStats(overlayProgress.flowStats)}
+              />
+              <OverlayStatChip
+                label="WebView"
+                theme={theme}
+                value={flowStatusLabel}
+              />
+              <OverlayStatChip
+                label="รอบ"
+                theme={theme}
+                value={formatRoundProgress(overlayProgress.currentRound, overlayProgress.totalRounds)}
+              />
+              <OverlayStatChip
+                label="สินค้า"
+                theme={theme}
+                value={`${overlayProgress.currentProduct}/${overlayProgress.totalProducts || '-'}`}
               />
               {overlayProgress.assetStats.plannedImages > 0 ? (
                 <OverlayStatChip
@@ -4434,9 +4490,6 @@ export default function GoogleFlowWebViewRunnerHost({
                 theme={theme}
                 value={formatOverlayDuration(overlayProgress.updatedAt - overlayProgress.startedAt)}
               />
-              {overlayProgress.productName ? (
-                <OverlayStatChip label="งาน" theme={theme} value={overlayProgress.productName} wide />
-              ) : null}
             </ScrollView>
           </View>
         ) : null}
