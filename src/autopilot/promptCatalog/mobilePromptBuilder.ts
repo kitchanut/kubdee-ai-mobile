@@ -69,11 +69,28 @@ function createImageReferenceInstructionLines(imageSettings: AutoPilotProduct['s
   const lines: string[] = [];
   const characterDescription = compactText(imageSettings.characterDescription);
   const sceneDescription = compactText(imageSettings.sceneDescription);
+  const characterMode = imageSettings.characterMode;
+  const hasCharacterReference = characterMode !== 'auto' && characterMode !== 'none';
 
-  if (imageSettings.characterMode === 'none') {
+  if (characterMode === 'none') {
     lines.push('ตัวละคร: ไม่ต้องมีคนหรือตัวละครในภาพ ให้เน้นสินค้าเป็นหลัก');
-  } else if (characterDescription && imageSettings.characterMode !== 'auto') {
+  } else if (characterDescription && hasCharacterReference) {
     lines.push(`ตัวละคร reference: ${characterDescription}`);
+  }
+
+  if (characterMode !== 'none') {
+    const outfit = imageSettings.characterOutfit || 'auto';
+    if (outfit === 'original') {
+      lines.push('ชุดตัวละคร: ให้ตัวละครใส่ชุดเดิมตามรูปตัวละคร reference');
+    } else if (outfit === 'custom' && compactText(imageSettings.characterOutfitCustom)) {
+      lines.push(`ชุดตัวละคร: ${compactText(imageSettings.characterOutfitCustom)}`);
+    } else if (hasCharacterReference) {
+      lines.push(
+        'ชุดตัวละคร: ใช้รูปตัวละคร reference เพื่อรักษาใบหน้า ทรงผม บุคลิก และตัวตนเท่านั้น ไม่ต้องคงชุดเดิม ให้เปลี่ยนชุดให้เหมาะกับสินค้า ฉาก และบริบทการใช้งานจริง'
+      );
+    } else {
+      lines.push('ชุดตัวละคร: ให้ตัวละครใส่ชุดที่เหมาะสมกับสินค้า ฉาก และบริบทการใช้งานจริง');
+    }
   }
 
   if (imageSettings.sceneMode === 'none') {

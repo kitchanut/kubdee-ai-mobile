@@ -1435,7 +1435,6 @@ export default function GoogleFlowWebViewRunnerHost({
   const latestGeneratedImageDataUrlsRef = useRef<Map<string, string[]>>(new Map());
   const [visible, setVisible] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [flowStatus, setFlowStatus] = useState<FlowConnectionState>('unknown');
   const [flowWebViewKey, setFlowWebViewKey] = useState(0);
   const [overlayLogs, setOverlayLogs] = useState<OverlayLogLine[]>([]);
   const [overlayProgress, setOverlayProgress] = useState<OverlayProgressState | null>(null);
@@ -4574,7 +4573,6 @@ export default function GoogleFlowWebViewRunnerHost({
         payloadRef.current = payload;
         latestGeneratedImageDataUrlsRef.current.clear();
         setActiveRunId(payload.runId);
-        setFlowStatus('unknown');
         flowStatusRef.current = 'unknown';
         setOverlayLogs([]);
         setOverlayProgress(null);
@@ -4619,20 +4617,12 @@ export default function GoogleFlowWebViewRunnerHost({
     });
   };
 
-  const flowStatusLabel =
-    flowStatus === 'connected'
-      ? 'เชื่อมต่อแล้ว'
-      : flowStatus === 'signin'
-        ? 'รอเข้าสู่ระบบ'
-        : flowStatus === 'loggedout'
-          ? 'ยังไม่เชื่อมต่อ'
-          : 'กำลังโหลด';
   const overlayTitle = overlayProgress?.productName?.trim() || 'Google Flow';
   const overlaySubtitle = overlayProgress
     ? `${formatOverlayStep(overlayProgress.step, overlayProgress.stage)} · Flow ${formatOverlayFlowStats(
         overlayProgress.flowStats
-      )} · ${flowStatusLabel}`
-    : flowStatusLabel;
+      )}`
+    : 'รอเริ่ม';
 
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={requestStop}>
@@ -4743,7 +4733,6 @@ export default function GoogleFlowWebViewRunnerHost({
             onStatusChange={(state, href) => {
               flowStatusRef.current = state;
               flowUrlRef.current = href;
-              setFlowStatus(state);
             }}
           />
           {overlayLogs.length > 0 ? (

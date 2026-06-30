@@ -10,7 +10,8 @@ class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
     when (intent.action) {
       KubdeeAutomationIpc.ACTION_START_SHOPEE_IMPORT -> {
         val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
-        val maxItems = intent.getIntExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, 40).coerceIn(1, 120)
+        val requestedMaxItems = intent.getIntExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, 40)
+        val maxItems = if (requestedMaxItems <= 0) 0 else requestedMaxItems
         val profileLocalId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID)
         if (runId.isBlank()) {
           Log.w(TAG, "Missing Shopee import run id")

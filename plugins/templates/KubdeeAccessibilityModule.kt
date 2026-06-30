@@ -357,6 +357,13 @@ class KubdeeAccessibilityModule(
   @ReactMethod
   fun importShopeeLikedProducts(maxItems: Double, profileLocalId: String?, promise: Promise) {
     val cleanProfileLocalId = profileLocalId?.trim()?.takeIf { it.isNotEmpty() }
+    val requestedMaxItems = maxItems.toInt()
+    val normalizedMaxItems = if (requestedMaxItems <= 0) 0 else requestedMaxItems
+    val timeoutMs = if (normalizedMaxItems == 0) {
+      45 * 60 * 1000L
+    } else {
+      maxOf(10 * 60 * 1000L, minOf(45 * 60 * 1000L, normalizedMaxItems.toLong() * 30_000L))
+    }
     val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
     if (!isAccessibilityServiceEnabled(reactContext, component)) {
       promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
@@ -370,11 +377,11 @@ class KubdeeAccessibilityModule(
         "SHOPEE_IMPORT_TIMEOUT",
         "Shopee import ใช้เวลานานเกินไป"
       )
-    }, 10 * 60 * 1000L)
+    }, timeoutMs)
 
     sendAutomationCommand(KubdeeAutomationIpc.ACTION_START_SHOPEE_IMPORT) {
       putExtra(KubdeeAutomationIpc.EXTRA_RUN_ID, runId)
-      putExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, maxItems.toInt().coerceIn(1, 120))
+      putExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, normalizedMaxItems)
       if (!cleanProfileLocalId.isNullOrBlank()) {
         putExtra(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID, cleanProfileLocalId)
       }

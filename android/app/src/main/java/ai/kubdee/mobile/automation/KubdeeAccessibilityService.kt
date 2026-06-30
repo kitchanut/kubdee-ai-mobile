@@ -412,9 +412,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
       var importedCount = 0
       var errorMessage: String? = null
       try {
+        val normalizedMaxItems = if (maxItems <= 0) 0 else maxItems
         importedCount = importShopeeLikedProducts(
           TARGET_PACKAGE_SHOPEE,
-          maxItems.coerceIn(1, 120),
+          normalizedMaxItems,
           profileLocalId
         )
       } catch (error: Exception) {
@@ -498,12 +499,14 @@ class KubdeeAccessibilityService : AccessibilityService() {
   ): Int {
     val importedKeys = mutableSetOf<String>()
     val seenCandidateKeys = mutableSetOf<String>()
+    val importAllLikedItems = maxItems <= 0
+    val targetImportCount = if (importAllLikedItems) Int.MAX_VALUE else maxItems.coerceAtLeast(1)
     try {
       clearStopShopeeAutomation()
       resetAutomationLog()
-      configureAutomationStats("Shopee Import", "ITEM", maxItems)
+      configureAutomationStats("Shopee Import", "ITEM", if (importAllLikedItems) 0 else targetImportCount)
       beginAutomationForeground("กำลังดึงสินค้า Shopee")
-      logStep("เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ")
+      logStep(if (importAllLikedItems) "เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ (ดึงทั้งหมด)" else "เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ (${targetImportCount} รายการ)")
       closeShopeeBeforeFreshLaunch(targetPackage)
       if (!launchPackage(targetPackage, resetTask = true)) {
         throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
@@ -531,7 +534,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       }
 
       var noNewRounds = 0
-      val maxRounds = 12
+      val maxRounds = if (importAllLikedItems) 240 else maxOf(12, targetImportCount)
       var detailAttemptCount = 0
 
       for (round in 1..maxRounds) {
@@ -561,7 +564,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
             updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
             logStep("บันทึกสินค้าแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
             KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
-            if (importedKeys.size >= maxItems) break
+            if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
           }
           if (!isShopeeLikedListVisible()) {
             logStep("ยังไม่อยู่หน้ารายการถูกใจหลังเปิด detail")
@@ -579,7 +582,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           logStep("เจอหัวข้อ คุณอาจจะชอบสิ่งนี้ จบรายการถูกใจ")
           break
         }
-        if (importedKeys.size >= maxItems) break
+        if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
 
         noNewRounds = if (added == 0) noNewRounds + 1 else 0
         if (noNewRounds >= 3) break

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import {
   Cloud,
   Image as ImageIcon,
@@ -7,7 +7,9 @@ import {
   ShoppingBag,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toast } from 'sonner-native';
 
@@ -46,9 +48,20 @@ import {
 } from './shared';
 
 type SortKey = 'name' | 'code' | 'date';
+type ShopeeImportSource = 'liked' | 'offers';
+type ShopeeImportAmount = 10 | 20 | 50 | 100 | 'all' | 'custom';
 
 /** Shopee brand orange — matches the ShopeeLogo default fill */
 const SHOPEE_ORANGE = '#EE4D2D';
+const SHOPEE_IMPORT_ALL_SENTINEL = 0;
+const SHOPEE_IMPORT_AMOUNT_OPTIONS: Array<{ label: string; value: ShopeeImportAmount }> = [
+  { label: '10', value: 10 },
+  { label: '20', value: 20 },
+  { label: '50', value: 50 },
+  { label: '100', value: 100 },
+  { label: 'ทั้งหมด', value: 'all' },
+  { label: 'กำหนดเอง', value: 'custom' },
+];
 
 function getProductKey(product: AffiliateProduct): string {
   return String(product.id ?? product.localId);
@@ -87,6 +100,32 @@ function formatStock(stock: number | null): string {
   }
 
   return `${new Intl.NumberFormat('th-TH').format(stock)} ชิ้น`;
+}
+
+function getShopeeImportLimit(amount: ShopeeImportAmount, customAmount: string): number | null {
+  if (amount === 'all') {
+    return SHOPEE_IMPORT_ALL_SENTINEL;
+  }
+
+  if (amount === 'custom') {
+    const parsed = Number.parseInt(customAmount.replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  return amount;
+}
+
+function getShopeeImportAmountLabel(amount: ShopeeImportAmount, customAmount: string): string {
+  if (amount === 'all') {
+    return 'ทั้งหมด';
+  }
+
+  if (amount === 'custom') {
+    const limit = getShopeeImportLimit(amount, customAmount);
+    return limit ? `${limit} รายการ` : 'กำหนดเอง';
+  }
+
+  return `${amount} รายการ`;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -193,6 +232,7 @@ export default function ProductPanel({
   onSendProductsToAutoPilot?: (productIds: string[], profileLocalId: string) => void;
 }): React.JSX.Element {
   const accent = getAccentTone(theme, theme.emerald);
+  const insets = useSafeAreaInsets();
   const {
     products: allProducts,
     isSyncing,
@@ -219,6 +259,10 @@ export default function ProductPanel({
   const [sortAscending, setSortAscending] = useState(true);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isShopeeImporting, setIsShopeeImporting] = useState(false);
+  const [shopeeImportModalOpen, setShopeeImportModalOpen] = useState(false);
+  const [shopeeImportSource, setShopeeImportSource] = useState<ShopeeImportSource>('liked');
+  const [shopeeImportAmount, setShopeeImportAmount] = useState<ShopeeImportAmount>(50);
+  const [customShopeeImportAmount, setCustomShopeeImportAmount] = useState('50');
 
   const appendShopeeLog = useCallback((message: string, ts = Date.now()): void => {
     pushAutomationActivityLog('shopee-import', message, ts);
@@ -354,6 +398,10 @@ export default function ProductPanel({
     void syncProducts().then(showSyncResult);
   };
 
+  const handleTikTokComingSoon = useCallback((): void => {
+    Alert.alert('กำลังพัฒนา', 'ฟีเจอร์ TikTok กำลังพัฒนา');
+  }, []);
+
   const syncShopeeImportQueue = useCallback(async (): Promise<void> => {
     const result = await syncProducts();
     if (!result) {
@@ -369,7 +417,7 @@ export default function ProductPanel({
     appendShopeeLog(result.error || 'ซิงก์ cloud ยังไม่สำเร็จ จะลองใหม่รอบถัดไป');
   }, [appendShopeeLog, syncProducts]);
 
-  const handleShopeeImport = useCallback(async (): Promise<void> => {
+  const runShopeeImport = useCallback(async (maxItems: number): Promise<void> => {
     if (!selectedProfileId) {
       toast.error('เลือกโปรไฟล์ก่อนนำเข้า Shopee');
       return;
@@ -382,7 +430,7 @@ export default function ProductPanel({
     setIsShopeeImporting(true);
     beginAutomationActivityRun('shopee-import');
     shopeeProductSaver.startSession(selectedProfileId);
-    appendShopeeLog('เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ');
+    appendShopeeLog(`เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ (${maxItems <= 0 ? 'ทั้งหมด' : `${maxItems} รายการ`})`);
 
     try {
       await shopeeProductSaver.savePendingProducts();
@@ -406,7 +454,7 @@ export default function ProductPanel({
       }
 
       await storePendingTab('library');
-      const scrapedProducts = await runNativeShopeeLikedImport(50, selectedProfileId);
+      const scrapedProducts = await runNativeShopeeLikedImport(maxItems, selectedProfileId);
       await shopeeProductSaver.waitForIdle();
       await shopeeProductSaver.savePendingProducts();
       await shopeeProductSaver.waitForIdle();
@@ -461,6 +509,46 @@ export default function ProductPanel({
     shopeeProductSaver,
     syncShopeeImportQueue,
   ]);
+
+  const openShopeeImportModal = useCallback((): void => {
+    if (!selectedProfileId) {
+      toast.error('เลือกโปรไฟล์ก่อนนำเข้า Shopee');
+      return;
+    }
+
+    if (isShopeeImporting || isSyncing) {
+      return;
+    }
+
+    setShopeeImportModalOpen(true);
+  }, [isShopeeImporting, isSyncing, selectedProfileId]);
+
+  const startShopeeImportFromModal = useCallback((): void => {
+    if (shopeeImportSource === 'offers') {
+      toast.info('ข้อเสนอกำลังพัฒนา');
+      return;
+    }
+
+    const limit = getShopeeImportLimit(shopeeImportAmount, customShopeeImportAmount);
+    if (limit === null) {
+      toast.error('กรุณากรอกจำนวนที่ต้องการดึง');
+      return;
+    }
+
+    setShopeeImportModalOpen(false);
+    void runShopeeImport(limit);
+  }, [customShopeeImportAmount, runShopeeImport, shopeeImportAmount, shopeeImportSource]);
+
+  const shopeeImportAmountOptions = useMemo(
+    () => SHOPEE_IMPORT_AMOUNT_OPTIONS.filter((option) => shopeeImportSource === 'liked' || option.value !== 'all'),
+    [shopeeImportSource]
+  );
+
+  useEffect(() => {
+    if (shopeeImportSource !== 'liked' && shopeeImportAmount === 'all') {
+      setShopeeImportAmount(50);
+    }
+  }, [shopeeImportAmount, shopeeImportSource]);
 
   const handlePullRefresh = (): void => {
     if (isSyncing) {
@@ -539,6 +627,7 @@ export default function ProductPanel({
                 iconOnly
                 label="ShowCase"
                 leading={<TikTokLogo size={12} color={darkButtonContentColor(theme)} />}
+                onPress={handleTikTokComingSoon}
               />
               <DarkActionButton
                 theme={theme}
@@ -554,7 +643,7 @@ export default function ProductPanel({
                     <ShopeeLogo size={12} color={theme.white} cutoutColor={SHOPEE_ORANGE} />
                   )
                 }
-                onPress={handleShopeeImport}
+                onPress={openShopeeImportModal}
               />
             </>
           }
@@ -679,6 +768,110 @@ export default function ProductPanel({
         ) : null}
       </ScrollView>
 
+      <Modal
+        animationType="fade"
+        transparent
+        visible={shopeeImportModalOpen}
+        onRequestClose={() => setShopeeImportModalOpen(false)}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <Pressable
+            accessibilityLabel="ปิดตัวเลือก Shopee"
+            accessibilityRole="button"
+            className="flex-1"
+            onPress={() => setShopeeImportModalOpen(false)}
+          />
+          <View
+            className="rounded-t-[20px] border border-kd-border bg-kd-panel px-4 pt-4"
+            style={{ paddingBottom: Math.max(insets.bottom + 12, 20) }}
+          >
+            <View className="flex-row items-center justify-between gap-3">
+              <View className="min-w-0 flex-1">
+                <Text className="text-kd-title font-semibold text-kd-text">ดึงสินค้า Shopee</Text>
+                <Text className="mt-0.5 text-kd-caption text-kd-text-subtle">
+                  เลือกแหล่งสินค้าและจำนวนที่จะนำเข้า
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                onPress={() => setShopeeImportModalOpen(false)}
+                className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted"
+              >
+                <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+
+            <View className="mt-4 gap-2">
+              <Text className="text-kd-caption font-semibold text-kd-text-subtle">แหล่งสินค้า</Text>
+              <View className="flex-row gap-2">
+                <ShopeeImportOptionButton
+                  active={shopeeImportSource === 'liked'}
+                  label="ถูกใจ"
+                  onPress={() => setShopeeImportSource('liked')}
+                />
+                <ShopeeImportOptionButton
+                  active={shopeeImportSource === 'offers'}
+                  disabled
+                  label="ข้อเสนอ"
+                  soon
+                  onPress={() => setShopeeImportSource('offers')}
+                />
+              </View>
+            </View>
+
+            <View className="mt-4 gap-2">
+              <Text className="text-kd-caption font-semibold text-kd-text-subtle">จำนวนที่จะดึง</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {shopeeImportAmountOptions.map((option) => (
+                  <ShopeeImportOptionButton
+                    key={String(option.value)}
+                    active={shopeeImportAmount === option.value}
+                    compact
+                    label={option.label}
+                    onPress={() => setShopeeImportAmount(option.value)}
+                  />
+                ))}
+              </View>
+
+              {shopeeImportAmount === 'custom' ? (
+                <View className="mt-1 gap-1.5">
+                  <TextInput
+                    value={customShopeeImportAmount}
+                    onChangeText={(value) => setCustomShopeeImportAmount(value.replace(/[^\d]/g, ''))}
+                    keyboardType="number-pad"
+                    placeholder="จำนวนสินค้า"
+                    placeholderTextColor={theme.textMuted}
+                    className="h-11 rounded-kd-lg border border-kd-border bg-kd-input px-3 text-kd-body text-kd-text"
+                  />
+                  <Text className="text-kd-caption text-kd-text-muted">ระบบจะดึงตามจำนวนที่กรอก</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View className="mt-5 flex-row gap-2">
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setShopeeImportModalOpen(false)}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card"
+              >
+                <Text className="text-kd-body font-medium text-kd-text-subtle">ยกเลิก</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={startShopeeImportFromModal}
+                className="h-11 flex-[1.2] items-center justify-center rounded-kd-lg"
+                style={{ backgroundColor: SHOPEE_ORANGE }}
+              >
+                <Text className="text-kd-body font-semibold text-white">
+                  เริ่มดึง {getShopeeImportAmountLabel(shopeeImportAmount, customShopeeImportAmount)}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {selectedIds.size > 0 ? (
         <SelectionBar
           theme={theme}
@@ -691,6 +884,50 @@ export default function ProductPanel({
         />
       ) : null}
     </View>
+  );
+}
+
+function ShopeeImportOptionButton({
+  active,
+  disabled = false,
+  label,
+  compact = false,
+  soon = false,
+  onPress,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  label: string;
+  compact?: boolean;
+  soon?: boolean;
+  onPress: () => void;
+}): React.JSX.Element {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected: active }}
+      disabled={disabled}
+      onPress={onPress}
+      className={`min-h-10 flex-row items-center justify-center gap-1.5 rounded-kd-lg border px-3 ${
+        compact ? 'min-w-[78px] flex-grow' : 'flex-1'
+      } ${
+        active
+          ? 'border-kd-orange/80 bg-kd-orange/10'
+          : 'border-kd-border bg-kd-card'
+      } ${disabled ? 'opacity-45' : ''}`}
+    >
+      <Text
+        numberOfLines={1}
+        className={`text-kd-body font-semibold ${active ? 'text-kd-orange' : 'text-kd-text-subtle'}`}
+      >
+        {label}
+      </Text>
+      {soon ? (
+        <View className="rounded-full bg-kd-card-muted px-1.5 py-px">
+          <Text className="text-[8px] font-bold text-kd-text-muted">SOON</Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
