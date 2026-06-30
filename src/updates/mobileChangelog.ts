@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.6',
+    date: '2026-06-30',
+    highlight: 'คลังสินค้าและการดึง Shopee ลื่นขึ้น',
+    changes: [
+      { type: 'improved', text: 'ปรับคลังสินค้าให้เลื่อนรายการจำนวนมากได้ลื่นขึ้น' },
+      { type: 'improved', text: 'ลดการโหลดข้อมูลซ้ำระหว่างดึงสินค้าจาก Shopee' },
+      { type: 'fixed', text: 'ลดข้อความแจ้งเตือนซิงก์ที่อาจทำให้เข้าใจผิดระหว่างบันทึกสินค้าในเครื่อง' },
+    ],
+  },
+  {
     version: '0.2.5',
     date: '2026-06-30',
     highlight: 'Auto Workflow ใช้รูป Google Flow ล่าสุดแม่นขึ้น',

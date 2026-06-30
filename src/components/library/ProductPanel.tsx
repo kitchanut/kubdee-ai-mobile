@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, RefreshControl, TextInput, View } from 'react-native';
+import type { ListRenderItem } from 'react-native';
 import {
   Cloud,
   Image as ImageIcon,
@@ -365,38 +366,38 @@ export default function ProductPanel({
   const allSelected =
     visibleProducts.length > 0 && visibleProducts.every((product) => selectedIds.has(getProductKey(product)));
 
-  const toggleSelect = (id: string): void => {
+  const toggleSelect = useCallback((id: string): void => {
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const toggleAll = (): void => {
+  const toggleAll = useCallback((): void => {
     setSelectedIds(() => {
       if (allSelected) return new Set();
       return new Set(visibleProducts.map((product) => getProductKey(product)));
     });
-  };
+  }, [allSelected, visibleProducts]);
 
-  const changeSort = (next: SortKey): void => {
+  const changeSort = useCallback((next: SortKey): void => {
     if (sortKey === next) {
       setSortAscending((current) => !current);
       return;
     }
     setSortKey(next);
     setSortAscending(next !== 'date');
-  };
+  }, [sortKey]);
 
-  const handleSync = (): void => {
+  const handleSync = useCallback((): void => {
     if (isSyncing) {
       return;
     }
 
     void syncProducts().then(showSyncResult);
-  };
+  }, [isSyncing, showSyncResult, syncProducts]);
 
   const handleTikTokComingSoon = useCallback((): void => {
     Alert.alert('กำลังพัฒนา', 'ฟีเจอร์ TikTok กำลังพัฒนา');
@@ -589,11 +590,41 @@ export default function ProductPanel({
     toast.success(`ส่งสินค้า ${productIds.length} รายการไป Auto Pilot`);
   };
 
+  const renderProductItem = useCallback<ListRenderItem<AffiliateProduct>>(
+    ({ item }) => {
+      const key = getProductKey(item);
+
+      return (
+        <ProductCard
+          product={item}
+          selected={selectedIds.has(key)}
+          theme={theme}
+          onPress={() => toggleSelect(key)}
+          onDelete={() => confirmDelete([item.localId])}
+        />
+      );
+    },
+    [confirmDelete, selectedIds, theme, toggleSelect]
+  );
+
+  const productItemSeparator = useCallback(() => <View className="h-2" />, []);
+
   return (
     <View className="flex-1">
-      <ScrollView
+      <FlatList
+        data={visibleProducts}
+        extraData={selectedIds}
+        keyExtractor={getProductKey}
+        renderItem={renderProductItem}
+        ItemSeparatorComponent={productItemSeparator}
+        initialNumToRender={12}
+        keyboardShouldPersistTaps="handled"
+        maxToRenderPerBatch={10}
+        removeClippedSubviews
         showsVerticalScrollIndicator={false}
-        contentContainerClassName="gap-3 px-3 pb-20 pt-3"
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        contentContainerClassName="px-3 pb-20 pt-3"
         refreshControl={
           <RefreshControl
             refreshing={isPullRefreshing}
@@ -602,171 +633,156 @@ export default function ProductPanel({
             colors={[theme.emerald]}
           />
         }
-      >
-        <LibraryPanelHeader
-          theme={theme}
-          title="คลังสินค้า"
-          count={visibleProducts.length}
-          total={products.length}
-          suffix={lastSyncedAt ? ` · ซิงก์ล่าสุด ${formatSyncTime(lastSyncedAt)}` : ''}
-          icon={ShoppingBag}
-          tone={accent}
-          actions={
-            <>
-              {isSyncing ? (
-                <View className="h-7 w-7 items-center justify-center">
-                  <ActivityIndicator color={accent.color} size="small" />
-                </View>
-              ) : (
-                <HeaderIconButton theme={theme} icon={Cloud} label="ซิงก์คลังสินค้า" onPress={handleSync} />
-              )}
-              <HeaderIconButton theme={theme} icon={Upload} label="อัพโหลดสินค้า" />
-              <DarkActionButton
-                theme={theme}
-                small
-                iconOnly
-                label="ShowCase"
-                leading={<TikTokLogo size={12} color={darkButtonContentColor(theme)} />}
-                onPress={handleTikTokComingSoon}
-              />
-              <DarkActionButton
-                theme={theme}
-                small
-                iconOnly
-                label="Shopee"
-                color={SHOPEE_ORANGE}
-                disabled={isShopeeImporting || isSyncing}
-                leading={
-                  isShopeeImporting ? (
-                    <ActivityIndicator color={theme.white} size="small" />
-                  ) : (
-                    <ShopeeLogo size={12} color={theme.white} cutoutColor={SHOPEE_ORANGE} />
-                  )
-                }
-                onPress={openShopeeImportModal}
-              />
-            </>
-          }
-        />
-
-        {syncError && products.length > 0 ? (
-          <View className="rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
-            <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{syncError}</Text>
-          </View>
-        ) : null}
-
-        {products.length > 0 ? (
-          <View className="gap-2">
-            <SearchBox
+        ListHeaderComponent={
+          <View className="gap-3 pb-2">
+            <LibraryPanelHeader
               theme={theme}
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="ค้นหาชื่อ/รหัสสินค้า..."
+              title="คลังสินค้า"
+              count={visibleProducts.length}
+              total={products.length}
+              suffix={lastSyncedAt ? ` · ซิงก์ล่าสุด ${formatSyncTime(lastSyncedAt)}` : ''}
+              icon={ShoppingBag}
+              tone={accent}
+              actions={
+                <>
+                  {isSyncing ? (
+                    <View className="h-7 w-7 items-center justify-center">
+                      <ActivityIndicator color={accent.color} size="small" />
+                    </View>
+                  ) : (
+                    <HeaderIconButton theme={theme} icon={Cloud} label="ซิงก์คลังสินค้า" onPress={handleSync} />
+                  )}
+                  <HeaderIconButton theme={theme} icon={Upload} label="อัพโหลดสินค้า" />
+                  <DarkActionButton
+                    theme={theme}
+                    small
+                    iconOnly
+                    label="ShowCase"
+                    leading={<TikTokLogo size={12} color={darkButtonContentColor(theme)} />}
+                    onPress={handleTikTokComingSoon}
+                  />
+                  <DarkActionButton
+                    theme={theme}
+                    small
+                    iconOnly
+                    label="Shopee"
+                    color={SHOPEE_ORANGE}
+                    disabled={isShopeeImporting || isSyncing}
+                    leading={
+                      isShopeeImporting ? (
+                        <ActivityIndicator color={theme.white} size="small" />
+                      ) : (
+                        <ShopeeLogo size={12} color={theme.white} cutoutColor={SHOPEE_ORANGE} />
+                      )
+                    }
+                    onPress={openShopeeImportModal}
+                  />
+                </>
+              }
             />
 
-            <View className="flex-row items-center justify-between">
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: allSelected }}
-                onPress={toggleAll}
-                className="min-h-6 flex-row items-center gap-1.5"
-              >
-                <SelectCircle theme={theme} selected={allSelected} accent={theme.emerald} size={15} />
-                <Text className="text-kd-caption text-kd-text-subtle">
-                  ทั้งหมด ({visibleProducts.length})
-                </Text>
-              </Pressable>
-
-              <View className="flex-row items-center gap-1">
-                <SortPill
-                  theme={theme}
-                  accent={theme.emerald}
-                  active={sortKey === 'name'}
-                  ascending={sortAscending}
-                  label="ชื่อ"
-                  onPress={() => changeSort('name')}
-                />
-                <SortPill
-                  theme={theme}
-                  accent={theme.emerald}
-                  active={sortKey === 'code'}
-                  ascending={sortAscending}
-                  label="รหัส"
-                  onPress={() => changeSort('code')}
-                />
-                <SortPill
-                  theme={theme}
-                  accent={theme.emerald}
-                  active={sortKey === 'date'}
-                  ascending={sortAscending}
-                  label="วันที่"
-                  onPress={() => changeSort('date')}
-                />
+            {syncError && products.length > 0 ? (
+              <View className="rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
+                <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{syncError}</Text>
               </View>
-            </View>
+            ) : null}
+
+            {products.length > 0 ? (
+              <View className="gap-2">
+                <SearchBox
+                  theme={theme}
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  placeholder="ค้นหาชื่อ/รหัสสินค้า..."
+                />
+
+                <View className="flex-row items-center justify-between">
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: allSelected }}
+                    onPress={toggleAll}
+                    className="min-h-6 flex-row items-center gap-1.5"
+                  >
+                    <SelectCircle theme={theme} selected={allSelected} accent={theme.emerald} size={15} />
+                    <Text className="text-kd-caption text-kd-text-subtle">
+                      ทั้งหมด ({visibleProducts.length})
+                    </Text>
+                  </Pressable>
+
+                  <View className="flex-row items-center gap-1">
+                    <SortPill
+                      theme={theme}
+                      accent={theme.emerald}
+                      active={sortKey === 'name'}
+                      ascending={sortAscending}
+                      label="ชื่อ"
+                      onPress={() => changeSort('name')}
+                    />
+                    <SortPill
+                      theme={theme}
+                      accent={theme.emerald}
+                      active={sortKey === 'code'}
+                      ascending={sortAscending}
+                      label="รหัส"
+                      onPress={() => changeSort('code')}
+                    />
+                    <SortPill
+                      theme={theme}
+                      accent={theme.emerald}
+                      active={sortKey === 'date'}
+                      ascending={sortAscending}
+                      label="วันที่"
+                      onPress={() => changeSort('date')}
+                    />
+                  </View>
+                </View>
+              </View>
+            ) : null}
           </View>
-        ) : null}
-
-        <View className="gap-2">
-          {visibleProducts.map((product) => {
-            const key = getProductKey(product);
-
-            return (
-              <ProductCard
-                key={key}
-                product={product}
-                selected={selectedIds.has(key)}
-                theme={theme}
-                onPress={() => toggleSelect(key)}
-                onDelete={() => confirmDelete([product.localId])}
-              />
-            );
-          })}
-        </View>
-
-        {products.length === 0 ? (
-          isSyncing ? (
-            <View className="items-center gap-2 px-6 py-11">
-              <ActivityIndicator color={theme.emerald} size="small" />
-              <Text className="text-kd-caption text-kd-text-subtle">กำลังซิงก์คลังสินค้า...</Text>
-            </View>
-          ) : syncError ? (
-            <View className="items-center gap-2 px-6 py-11">
-              <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-red/5 dark:bg-kd-red/10">
-                <ShoppingBag size={30} color={theme.red} strokeWidth={1.5} />
+        }
+        ListEmptyComponent={
+          products.length === 0 ? (
+            isSyncing ? (
+              <View className="items-center gap-2 px-6 py-11">
+                <ActivityIndicator color={theme.emerald} size="small" />
+                <Text className="text-kd-caption text-kd-text-subtle">กำลังซิงก์คลังสินค้า...</Text>
               </View>
-              <Text className="mt-1.5 max-w-[240px] text-center text-kd-caption leading-4 text-kd-red">
-                {syncError}
-              </Text>
-              <View className="mt-1">
-                <DarkActionButton theme={theme} label="ลองใหม่" onPress={handleSync} />
+            ) : syncError ? (
+              <View className="items-center gap-2 px-6 py-11">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-red/5 dark:bg-kd-red/10">
+                  <ShoppingBag size={30} color={theme.red} strokeWidth={1.5} />
+                </View>
+                <Text className="mt-1.5 max-w-[240px] text-center text-kd-caption leading-4 text-kd-red">
+                  {syncError}
+                </Text>
+                <View className="mt-1">
+                  <DarkActionButton theme={theme} label="ลองใหม่" onPress={handleSync} />
+                </View>
               </View>
-            </View>
+            ) : (
+              <View className="items-center gap-2 px-6 py-11">
+                <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
+                  <ShoppingBag size={30} color={theme.textSubtle} strokeWidth={1.5} />
+                </View>
+                <Text className="mt-1.5 text-[13px] font-semibold text-kd-text-muted">ยังไม่มีสินค้า</Text>
+                <Text className="max-w-[220px] text-center text-kd-caption leading-4 text-kd-text-subtle">
+                  ดึงจาก Shopee บนมือถือ หรือซิงก์จาก Cloud ได้เลย
+                </Text>
+                <View className="mt-1">
+                  <DarkActionButton
+                    theme={theme}
+                    label="ซิงก์คลังสินค้า"
+                    leading={<Cloud size={12} color={darkButtonContentColor(theme)} strokeWidth={2} />}
+                    onPress={handleSync}
+                  />
+                </View>
+              </View>
+            )
           ) : (
-            <View className="items-center gap-2 px-6 py-11">
-              <View className="h-16 w-16 items-center justify-center rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
-                <ShoppingBag size={30} color={theme.textSubtle} strokeWidth={1.5} />
-              </View>
-              <Text className="mt-1.5 text-[13px] font-semibold text-kd-text-muted">ยังไม่มีสินค้า</Text>
-              <Text className="max-w-[220px] text-center text-kd-caption leading-4 text-kd-text-subtle">
-                ดึงจาก Shopee บนมือถือ หรือซิงก์จาก Cloud ได้เลย
-              </Text>
-              <View className="mt-1">
-                <DarkActionButton
-                  theme={theme}
-                  label="ซิงก์คลังสินค้า"
-                  leading={<Cloud size={12} color={darkButtonContentColor(theme)} strokeWidth={2} />}
-                  onPress={handleSync}
-                />
-              </View>
-            </View>
+            <EmptyHint theme={theme} label="ไม่พบสินค้าที่ตรงกับคำค้นหา" />
           )
-        ) : null}
-
-        {products.length > 0 && visibleProducts.length === 0 ? (
-          <EmptyHint theme={theme} label="ไม่พบสินค้าที่ตรงกับคำค้นหา" />
-        ) : null}
-      </ScrollView>
+        }
+      />
 
       <Modal
         animationType="fade"

@@ -5,6 +5,8 @@ import type {
   ProductImportResult,
   ShopeeImportProductInput,
 } from '@/library/LibraryContext';
+import { getLocalProducts } from '@/library/localProductDb';
+import type { AffiliateProduct } from '@/library/types';
 import {
   clearPendingShopeeImportProducts,
   getPendingShopeeImportProducts,
@@ -95,6 +97,8 @@ export function useShopeeIncrementalProductSaver({
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingRecoveryRef = useRef<Promise<number> | null>(null);
   const pendingProductBatchesRef = useRef<Map<string, QueuedShopeeProduct[]>>(new Map());
+  const existingProductsByProfileRef = useRef<Map<string, AffiliateProduct[]>>(new Map());
+  const existingProductsLoadByProfileRef = useRef<Map<string, Promise<AffiliateProduct[]>>>(new Map());
   const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -124,6 +128,29 @@ export function useShopeeIncrementalProductSaver({
     }
   }, []);
 
+  const getExistingProductsForProfile = useCallback(async (profileId: string): Promise<AffiliateProduct[]> => {
+    const cleanProfileId = profileId.trim();
+    if (!cleanProfileId) return [];
+
+    const cached = existingProductsByProfileRef.current.get(cleanProfileId);
+    if (cached) return cached;
+
+    const pending = existingProductsLoadByProfileRef.current.get(cleanProfileId);
+    if (pending) return pending;
+
+    const load = getLocalProducts({ profileLocalId: cleanProfileId })
+      .then((products) => {
+        existingProductsByProfileRef.current.set(cleanProfileId, products);
+        return products;
+      })
+      .finally(() => {
+        existingProductsLoadByProfileRef.current.delete(cleanProfileId);
+      });
+
+    existingProductsLoadByProfileRef.current.set(cleanProfileId, load);
+    return load;
+  }, []);
+
   const flushQueuedProducts = useCallback((): void => {
     clearBatchTimer();
 
@@ -142,10 +169,11 @@ export function useShopeeIncrementalProductSaver({
 
         for (const [profileId, batchProducts] of batches.entries()) {
           try {
+            const existingProducts = await getExistingProductsForProfile(profileId);
             const result = await importShopeeProducts(
               profileId,
               batchProducts.map((entry) => entry.product),
-              { refresh: false, sync: false }
+              { existingProducts, refresh: false, sync: false }
             );
 
             if (result?.success) {
@@ -163,7 +191,7 @@ export function useShopeeIncrementalProductSaver({
           }
         }
       });
-  }, [appendLog, clearBatchTimer, importShopeeProducts]);
+  }, [appendLog, clearBatchTimer, getExistingProductsForProfile, importShopeeProducts]);
 
   const scheduleQueuedProductFlush = useCallback((): void => {
     if (getPendingBatchSize() >= PRODUCT_SAVE_BATCH_SIZE) {
@@ -246,13 +274,21 @@ export function useShopeeIncrementalProductSaver({
     sessionProfileIdRef.current = cleanText(profileId) || selectedProfileIdRef.current.trim();
     queuedKeysRef.current.clear();
     savedKeysRef.current.clear();
+    existingProductsByProfileRef.current.clear();
+    existingProductsLoadByProfileRef.current.clear();
     pendingProductBatchesRef.current = new Map();
     saveQueueRef.current = Promise.resolve();
   }, [clearBatchTimer]);
 
   const stopSession = useCallback((): void => {
+    clearBatchTimer();
     activeRef.current = false;
-  }, []);
+    queuedKeysRef.current.clear();
+    savedKeysRef.current.clear();
+    existingProductsByProfileRef.current.clear();
+    existingProductsLoadByProfileRef.current.clear();
+    pendingProductBatchesRef.current = new Map();
+  }, [clearBatchTimer]);
 
   const savePendingProducts = useCallback(async (): Promise<number> => {
     if (pendingRecoveryRef.current) {
@@ -338,7 +374,8 @@ export function useShopeeIncrementalProductSaver({
       };
 
       for (const [profileId, profileProducts] of productsByProfile) {
-        const result = await importShopeeProducts(profileId, profileProducts);
+        const existingProducts = await getExistingProductsForProfile(profileId);
+        const result = await importShopeeProducts(profileId, profileProducts, { existingProducts });
         if (!result) continue;
 
         combined.imported += result.imported;
@@ -359,7 +396,7 @@ export function useShopeeIncrementalProductSaver({
 
       return combined.imported > 0 || combined.error ? combined : null;
     },
-    [appendLog, importShopeeProducts, resolveProductProfileId, waitForIdle]
+    [appendLog, getExistingProductsForProfile, importShopeeProducts, resolveProductProfileId, waitForIdle]
   );
 
   const getSavedCount = useCallback((): number => savedKeysRef.current.size, []);

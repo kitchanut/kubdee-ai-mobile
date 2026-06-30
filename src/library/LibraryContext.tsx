@@ -53,6 +53,7 @@ export interface ProductImportResult {
 }
 
 export interface ProductImportOptions {
+  existingProducts?: AffiliateProduct[];
   refresh?: boolean;
   sync?: boolean;
 }
@@ -627,11 +628,12 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
         return null;
       }
 
-      const localExistingProducts = await getLocalProducts({ profileLocalId: cleanProfileLocalId });
-      const existingProducts = mergeProductsByLocalId([
-        ...localExistingProducts,
-        ...products.filter((product) => product.profileLocalId === cleanProfileLocalId),
-      ]);
+      const existingProducts = options.existingProducts
+        ? mergeProductsByLocalId(options.existingProducts)
+        : mergeProductsByLocalId([
+          ...(await getLocalProducts({ profileLocalId: cleanProfileLocalId })),
+          ...products.filter((product) => product.profileLocalId === cleanProfileLocalId),
+        ]);
       const deviceId = await getOrCreateSyncDeviceId();
       const syncPayloadProducts = toShopeeSyncProducts(
         cleanProfileLocalId,
@@ -658,7 +660,6 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       }
 
       if (options.sync === false) {
-        setSyncError(token ? 'บันทึกไว้ในเครื่องแล้ว รอซิงก์ขึ้น cloud' : 'บันทึกไว้ในเครื่องแล้ว รอเข้าสู่ระบบเพื่อซิงก์ cloud');
         return {
           error: null,
           imported: localProducts.length,
