@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.12',
+    date: '2026-07-01',
+    highlight: 'ตรวจ reference ใน Google Flow ละเอียดขึ้น',
+    changes: [
+      { type: 'improved', text: 'เพิ่ม log ระหว่างอัปโหลดรูปอ้างอิงให้เห็นสถานะ progress การเช็ครูป และจุดที่หา reference ไม่เจอชัดขึ้น' },
+      { type: 'improved', text: 'ปรับการตรวจรูป reference ก่อนสร้างวิดีโอหลายฉากให้รอและตรวจ media card ได้ยืดหยุ่นขึ้น' },
+      { type: 'fixed', text: 'ลดโอกาสที่วิดีโอหลายฉากหลายมุมจะหยุดเพราะเช็ครูปฉากแรกไม่เจอหลังอัปโหลดเสร็จแล้ว' },
+    ],
+  },
+  {
     version: '0.2.11',
     date: '2026-07-01',
     highlight: 'วิดีโอหลายฉากและ Cloud Transfer ใช้งานนิ่งขึ้น',

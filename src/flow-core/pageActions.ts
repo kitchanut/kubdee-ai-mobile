@@ -1396,6 +1396,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
   var imageUrl = String(args.imageUrl || '');
   var fileName = String(args.fileName || 'kubdee-reference.png');
   var referenceLabel = String(args.referenceLabel || 'รูป reference');
+  var allowTopReadyFallback = args.allowTopReadyFallback === true;
   function blobToDataUrl(blob){
     return new Promise(function(resolve, reject){
       var reader = new FileReader();
@@ -1554,16 +1555,19 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
     for (var attempt = 0; attempt < 90; attempt++) {
       var activeDialog = getOpenDialog() || dialog;
-      if (!isDialogOpen(activeDialog)) return { autoAttached: true, item: null };
+      if (!isDialogOpen(activeDialog)) {
+        setStatus('Dialog รูปปิดแล้วหลังอัปโหลด' + referenceLabel + ' — Google Flow น่าจะแนบรูปอัตโนมัติ', 'success');
+        return { autoAttached: true, item: null };
+      }
       var uploadActivity = getUploadActivity(activeDialog);
       if (uploadActivity.item) {
         lastUploadItem = uploadActivity.item;
         sawUploadActivity = true;
       }
       if (uploadActivity.active) {
-        logUploadStatus(uploadActivity.percent ? ('กำลังอัปโหลด' + referenceLabel + ': ' + uploadActivity.percent) : referenceLabel + ' กำลังอัปโหลด/ประมวลผลใน Google Flow...');
+        logUploadStatus(uploadActivity.percent ? ('ยังเห็น progress/blur ของ' + referenceLabel + ': ' + uploadActivity.percent) : 'ยังเห็น progress/blur ของ' + referenceLabel + ' — Google Flow กำลังอัปโหลด/ประมวลผล...');
       } else {
-        logUploadStatus('กำลังรอ' + referenceLabel + ' ที่อัปโหลดเสร็จพร้อมเลือก...');
+        logUploadStatus((sawUploadActivity ? 'progress/blur หายไปแล้ว ' : '') + 'กำลังเช็ค' + referenceLabel + ' ในรายการรูป...');
       }
       if (!uploadActivity.active) {
         var uploadedItem = findReadyUploadedImageItem(activeDialog, knownSignatures, knownItems, lastUploadItem, sawUploadActivity);
@@ -1574,8 +1578,15 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
             stableSignature = sig;
             stableCount = 1;
           }
+          if (stableCount === 1) {
+            setStatus('เจอ' + referenceLabel + ' ที่พร้อมเลือกแล้ว กำลังรอให้รายการนิ่งอีกครั้ง [' + (uploadedItem.getAttribute('data-index') || '?') + ']', 'info');
+          }
           if (stableCount >= 2) return { autoAttached: false, item: uploadedItem };
         } else {
+          if (attempt === 0 || attempt % 5 === 0) {
+            var readyCount = sortImageItemsByTop(imageItems(activeDialog).filter(readyImageItem)).length;
+            setStatus((sawUploadActivity ? 'progress/blur หายแล้ว แต่' : '') + 'ยังเช็คไม่เจอ' + referenceLabel + ' ใหม่ที่พร้อมเลือก (รอบ ' + (attempt + 1) + '/90, รูปพร้อมเลือกทั้งหมด ' + readyCount + ')', 'warning');
+          }
           stableSignature = '';
           stableCount = 0;
         }
@@ -1585,6 +1596,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       }
       await wait(1000);
     }
+    setStatus('รอครบเวลาแล้วยังเช็คไม่เจอ' + referenceLabel + ' ใหม่ที่พร้อมเลือก จะคืนผลล่าสุดให้ขั้นตอน fallback จัดการต่อ', 'warning');
     return { autoAttached: false, item: findReadyUploadedImageItem(getOpenDialog() || dialog, knownSignatures, knownItems, lastUploadItem, sawUploadActivity) };
   }
   async function waitBeforeUploadRetry(){
@@ -1700,6 +1712,13 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     if (!picked) {
       setStatus('อัปโหลด' + referenceLabel + ' แล้ว แต่ยังยืนยันรูปที่อัปโหลดใหม่ไม่ได้ จึงไม่เลือกจากรายการบนสุดเพื่อเลี่ยงเลือกผิด', 'warning');
     }
+    if (!picked && allowTopReadyFallback) {
+      setStatus('ยังยืนยัน' + referenceLabel + ' ใหม่ไม่ได้ แต่โหมดนี้อนุญาตให้เลือกรูปบนสุดหลังอัปโหลดได้ กำลังรอรายการนิ่ง...', 'warning');
+      picked = await waitForStableTopReadyImageItem(dialog);
+      if (picked) {
+        setStatus('เลือกรูปบนสุดหลังอัปโหลดเป็น' + referenceLabel + ' ตาม fallback ของวิดีโอหลายฉาก', 'warning');
+      }
+    }
     if (!picked) {
       setStatus('ยังไม่พบ' + referenceLabel + ' ใหม่ที่พร้อมเลือก กำลังลองกด Add to Prompt...', 'warning');
       if (await clickAddToPrompt(dialog)) {
@@ -1723,6 +1742,11 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 `;
 
 const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
+  function setStatus(message, level){
+    try {
+      if (typeof __flowLog === 'function') __flowLog(String(message || ''), level || 'info');
+    } catch (e) {}
+  }
   function isVisible(el){
     if (!el || !el.isConnected) return false;
     var rect = el.getBoundingClientRect();
@@ -1779,10 +1803,71 @@ const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
     for (var i = 0; i < icons.length; i++) {
       if ((icons[i].textContent || '').trim().toLowerCase() === 'swap_horiz') {
         var button = icons[i].closest('button');
+        var node = button && button.parentElement;
+        for (var depth = 0; node && depth < 6; depth += 1, node = node.parentElement) {
+          var text = (node.textContent || '').replace(/\\s+/g, ' ').trim();
+          var mediaCount = node.querySelectorAll('img, canvas, video, [data-card-open]').length;
+          var dialogButtonCount = node.querySelectorAll('[aria-haspopup="dialog"]').length;
+          if (mediaCount > 0 || dialogButtonCount >= 2 || /\\bstart\\b|\\bend\\b|เริ่ม|จบ/i.test(text)) {
+            return node;
+          }
+        }
         return (button && button.parentElement) || composer;
       }
     }
     return composer;
+  }
+  function hasBackgroundImage(el){
+    try {
+      var bg = window.getComputedStyle(el).backgroundImage || '';
+      return bg && bg !== 'none' && /url\\(/i.test(bg);
+    } catch (e) {
+      return false;
+    }
+  }
+  function hasVisualMedia(el){
+    if (!el || !isVisible(el)) return false;
+    if (el.tagName && /^(IMG|CANVAS|VIDEO)$/i.test(el.tagName)) {
+      if (el.tagName.toUpperCase() === 'IMG') {
+        var src = el.currentSrc || el.src || el.getAttribute('src') || '';
+        return !!String(src || '').trim();
+      }
+      return true;
+    }
+    if (hasBackgroundImage(el)) return true;
+    var media = Array.prototype.slice.call(el.querySelectorAll('img, canvas, video'));
+    for (var m = 0; m < media.length; m += 1) {
+      if (hasVisualMedia(media[m])) return true;
+    }
+    var bgNodes = Array.prototype.slice.call(el.querySelectorAll('*')).slice(0, 80);
+    for (var b = 0; b < bgNodes.length; b += 1) {
+      if (isVisible(bgNodes[b]) && hasBackgroundImage(bgNodes[b])) return true;
+    }
+    return false;
+  }
+  function countAttachedMedia(scope){
+    var visibleImages = Array.prototype.slice.call(scope.querySelectorAll('img')).filter(function(img){
+      if (!isVisible(img)) return false;
+      var src = img.currentSrc || img.src || img.getAttribute('src') || '';
+      return !!String(src || '').trim();
+    });
+    var visibleCanvases = Array.prototype.slice.call(scope.querySelectorAll('canvas, video')).filter(isVisible);
+    var visibleBackgrounds = Array.prototype.slice.call(scope.querySelectorAll('*')).filter(function(el){
+      return isVisible(el) && hasBackgroundImage(el);
+    });
+    var visibleMediaCards = Array.prototype.slice.call(scope.querySelectorAll('[data-card-open], button, [role="button"], [aria-label]')).filter(function(card){
+      if (!isVisible(card)) return false;
+      if (card.hasAttribute('aria-haspopup')) return false;
+      var label = (card.getAttribute('aria-label') || '').toLowerCase();
+      if (card.hasAttribute('aria-label') && label && label.indexOf('image') === -1 && label.indexOf('รูป') === -1 && !hasVisualMedia(card)) return false;
+      return hasVisualMedia(card);
+    });
+    return Math.max(
+      visibleImages.length,
+      visibleCanvases.length,
+      visibleBackgrounds.length,
+      visibleMediaCards.length
+    );
   }
   function checkOnce(){
     var createButton = findCreateButton();
@@ -1795,18 +1880,7 @@ const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
     }
 
     var frameScope = findFrameScope(composer);
-    var visibleImages = Array.prototype.slice.call(frameScope.querySelectorAll('img')).filter(function(img){
-      if (!isVisible(img)) return false;
-      var src = img.currentSrc || img.src || img.getAttribute('src') || '';
-      return !!String(src || '').trim();
-    });
-    var visibleMediaCards = Array.prototype.slice.call(frameScope.querySelectorAll('[data-card-open], button, [role="button"]')).filter(function(card){
-      if (!isVisible(card)) return false;
-      if (card.hasAttribute('aria-haspopup')) return false;
-      return !!card.querySelector('img');
-    });
-
-    var attachedCount = Math.max(visibleImages.length, visibleMediaCards.length);
+    var attachedCount = Math.max(countAttachedMedia(frameScope), countAttachedMedia(composer));
     if (attachedCount > 0) {
       return { ok: true, attachedCount: attachedCount };
     }
@@ -1830,11 +1904,20 @@ const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
   }
 
   var result = checkOnce();
-  for (var attempt = 1; !result.ok && attempt < 10; attempt++) {
-    await wait(500);
+  if (!result.ok) {
+    setStatus('กำลังเช็ค reference ใน composer ก่อนสร้างวิดีโอ — ยังไม่เจอรูปที่แนบ: ' + (result.detail || result.error || 'ไม่พบ media card'), 'info');
+  }
+  for (var attempt = 1; !result.ok && attempt < 24; attempt++) {
+    await wait(750);
     result = checkOnce();
+    if (result.ok) {
+      setStatus('เจอรูป reference ใน composer แล้ว พร้อมกดสร้างวิดีโอ (' + (result.attachedCount || 1) + ' รูป)', 'success');
+    } else if (attempt === 1 || attempt % 4 === 0 || attempt >= 20) {
+      setStatus('กำลังเช็ค reference ใน composer รอบ ' + (attempt + 1) + '/24 — ยังไม่เจอรูปที่แนบ: ' + (result.detail || result.error || 'ไม่พบ media card'), 'warning');
+    }
   }
   if (!result.ok) {
+    setStatus('เช็ค reference ครบแล้วแต่ยังไม่เจอรูปใน composer: ' + (result.detail || result.error || 'ไม่พบ media card'), 'error');
     throw new Error(result.error || 'ยังไม่มีรูป reference แนบในช่องวิดีโอ');
   }
   return { success: true, attachedCount: result.attachedCount || 1 };

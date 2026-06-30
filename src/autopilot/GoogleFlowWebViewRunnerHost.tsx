@@ -3146,6 +3146,7 @@ export default function GoogleFlowWebViewRunnerHost({
                     dataUrl: sceneReferenceDataUrl,
                     fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
                     referenceLabel: 'รูปฉากมุมเดียว',
+                    allowTopReadyFallback: true,
                   },
                 });
               }
@@ -3178,6 +3179,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   dataUrl: sceneReferenceDataUrl,
                   fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
                   referenceLabel: `รูปฉาก ${sceneNumber}`,
+                  allowTopReadyFallback: true,
                 },
               });
               return true;
@@ -3220,6 +3222,7 @@ export default function GoogleFlowWebViewRunnerHost({
 
           const sceneReferenceAttached = await attachSceneReference();
           if (sceneReferenceAttached) {
+            await sleep(1500);
             await ensureVideoReferenceAttached({
               handle,
               payload,
