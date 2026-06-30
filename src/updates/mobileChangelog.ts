@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.5',
+    date: '2026-06-30',
+    highlight: 'Auto Workflow ใช้รูป Google Flow ล่าสุดแม่นขึ้น',
+    changes: [
+      { type: 'improved', text: 'วิดีโอหลายฉากมุมเดียวจะเลือกรูปล่าสุดจาก Google Flow ก่อน เพื่อลดการอัปโหลดรูปซ้ำ' },
+      { type: 'improved', text: 'วิดีโอหลายมุมใช้รูปฉากก่อนหน้าจากรายการล่าสุดก่อนสร้างฉากถัดไป ทำให้ความต่อเนื่องของภาพดีขึ้น' },
+      { type: 'changed', text: 'ปรับ Auto Workflow ให้ใช้ระบบ WebView เป็นหลักสำหรับ Google Flow ลดขั้นตอนที่ซ้ำซ้อนบนมือถือ' },
+    ],
+  },
+  {
     version: '0.2.4',
     date: '2026-06-30',
     highlight: 'Auto Workflow ดูสถานะและแนบรูปอ้างอิงชัดขึ้น',

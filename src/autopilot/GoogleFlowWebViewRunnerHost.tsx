@@ -2825,21 +2825,49 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   currentProduct: productIndex + 1,
                   totalProducts: payload.products.length,
-                  message: `แนบรูปฉากก่อนหน้าเป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
+                  message: `เลือกรูปฉากก่อนหน้าจากรายการบนสุดใน Flow เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
                 });
-                await uploadReferenceImageOrThrow({
-                  handle,
-                  payload,
-                  product,
-                  productIndex,
-                  round,
-                  step: 'image',
-                  args: {
-                    dataUrl: previousSceneImageDataUrl,
-                    fileName: `kubdee-scene-reference-${sceneNumber}.png`,
-                    referenceLabel: 'รูปฉากก่อนหน้า',
-                  },
-                });
+                try {
+                  await selectRecentImageOrThrow({
+                    handle,
+                    payload,
+                    product,
+                    productIndex,
+                    round,
+                    stage: 'multi_scene_select_recent_reference',
+                    step: 'image',
+                  });
+                } catch (selectError) {
+                  const reason = selectError instanceof Error ? selectError.message : String(selectError);
+                  emit({
+                    event: 'progress',
+                    runId: payload.runId,
+                    status: 'running',
+                    level: 'warning',
+                    step: 'image',
+                    stage: 'multi_scene_upload_reference_fallback',
+                    productId: product.id,
+                    productName: product.name,
+                    currentRound: round,
+                    totalRounds: payload.settings.totalRounds,
+                    currentProduct: productIndex + 1,
+                    totalProducts: payload.products.length,
+                    message: `เลือกรูปฉากก่อนหน้าล่าสุดไม่สำเร็จ: ${reason || 'unknown'} — จะอัปโหลดรูปฉากก่อนหน้าแทน`,
+                  });
+                  await uploadReferenceImageOrThrow({
+                    handle,
+                    payload,
+                    product,
+                    productIndex,
+                    round,
+                    step: 'image',
+                    args: {
+                      dataUrl: previousSceneImageDataUrl,
+                      fileName: `kubdee-scene-reference-${sceneNumber}.png`,
+                      referenceLabel: 'รูปฉากก่อนหน้า',
+                    },
+                  });
+                }
               } else if (sceneNumber > 1 || hasPriorImageStep) {
                 throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
               }
@@ -3080,21 +3108,50 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalRounds: payload.settings.totalRounds,
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
-                message: `แนบรูปฉากมุมเดียวเป็น reference สำหรับวิดีโอฉาก ${sceneNumber}`,
+                message: `เลือกรูปฉากมุมเดียวล่าสุดจากรายการบนสุดเป็น reference สำหรับวิดีโอฉาก ${sceneNumber}`,
               });
-              await uploadReferenceImageOrThrow({
-                handle,
-                payload,
-                product,
-                productIndex,
-                round,
-                step,
-                args: {
-                  dataUrl: sceneReferenceDataUrl,
-                  fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
-                  referenceLabel: 'รูปฉากมุมเดียว',
-                },
-              });
+
+              try {
+                await selectRecentImageOrThrow({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  stage: 'multi_scene_select_recent_reference',
+                  step,
+                });
+              } catch (selectError) {
+                const reason = selectError instanceof Error ? selectError.message : String(selectError);
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'warning',
+                  step,
+                  stage: 'multi_scene_upload_reference_fallback',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: `เลือกรูปฉากมุมเดียวล่าสุดไม่สำเร็จ: ${reason || 'unknown'} — จะอัปโหลดรูปฉากมุมเดียวแทน`,
+                });
+                await uploadReferenceImageOrThrow({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  step,
+                  args: {
+                    dataUrl: sceneReferenceDataUrl,
+                    fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
+                    referenceLabel: 'รูปฉากมุมเดียว',
+                  },
+                });
+              }
               return true;
             } else if (sceneReferenceDataUrl) {
               emit({
@@ -3635,32 +3692,17 @@ export default function GoogleFlowWebViewRunnerHost({
             runId: payload.runId,
             status: 'running',
             step,
-            stage: cachedImageDataUrl ? 'attach_generated_image_reference' : 'attach_recent_image_reference',
+            stage: 'attach_recent_image_reference',
             productId: product.id,
             productName: product.name,
             currentRound: round,
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: cachedImageDataUrl
-              ? 'แนบรูปที่สร้างไว้ของสินค้านี้เป็น reference สำหรับวิดีโอ'
-              : 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference สำหรับวิดีโอ',
+            message: 'เลือกรูปที่เพิ่งสร้างจากรายการบนสุดใน Google Flow เป็น reference สำหรับวิดีโอ',
           });
-          if (cachedImageDataUrl) {
-            await uploadReferenceImageOrThrow({
-              handle,
-              payload,
-              product,
-              productIndex,
-              round,
-              step,
-              args: {
-                dataUrl: cachedImageDataUrl,
-                fileName: getGeneratedImageReferenceFileName(product, round),
-                referenceLabel: 'รูปที่สร้างไว้',
-              },
-            });
-          } else {
+
+          try {
             await selectRecentImageOrThrow({
               handle,
               payload,
@@ -3670,6 +3712,62 @@ export default function GoogleFlowWebViewRunnerHost({
               stage: 'attach_recent_image_reference',
               step,
             });
+          } catch (selectError) {
+            const reason = selectError instanceof Error ? selectError.message : String(selectError);
+            const fallbackStage = cachedImageDataUrl
+              ? 'attach_generated_image_reference'
+              : product.preview
+                ? 'attach_product_reference'
+                : 'attach_recent_image_reference';
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              level: 'warning',
+              step,
+              stage: fallbackStage,
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `เลือกรูปล่าสุดไม่สำเร็จ: ${reason || 'unknown'} — จะอัปโหลดรูป fallback แทน`,
+            });
+
+            if (cachedImageDataUrl) {
+              await uploadReferenceImageOrThrow({
+                handle,
+                payload,
+                product,
+                productIndex,
+                round,
+                step,
+                args: {
+                  dataUrl: cachedImageDataUrl,
+                  fileName: getGeneratedImageReferenceFileName(product, round),
+                  referenceLabel: 'รูปที่สร้างไว้',
+                },
+              });
+            } else if (product.preview) {
+              const dataUrl = await loadImageReferenceDataUrl(product.preview);
+              await uploadReferenceImageOrThrow({
+                handle,
+                payload,
+                product,
+                productIndex,
+                round,
+                step,
+                args: {
+                  dataUrl: dataUrl ?? undefined,
+                  fileName: getProductReferenceFileName(product, productIndex, round, step),
+                  imageUrl: dataUrl ? undefined : product.preview,
+                  referenceLabel: getProductReferenceLabel(productIndex),
+                },
+              });
+            } else {
+              throw new Error(`เลือกรูปล่าสุดไม่สำเร็จ และไม่มีรูป fallback ให้อัปโหลด: ${reason || 'unknown'}`);
+            }
           }
           videoReferenceAttached = true;
         } else if (product.preview) {

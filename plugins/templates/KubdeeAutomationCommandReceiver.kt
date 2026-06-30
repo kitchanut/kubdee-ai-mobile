@@ -8,22 +8,43 @@ import android.util.Log
 class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     when (intent.action) {
-      ACTION_START_GOOGLE_FLOW -> {
-        val payloadJson = intent.getStringExtra(EXTRA_PAYLOAD_JSON)
-        if (payloadJson.isNullOrBlank()) {
-          Log.w(TAG, "Missing Google Flow payload")
+      KubdeeAutomationIpc.ACTION_START_SHOPEE_IMPORT -> {
+        val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
+        val maxItems = intent.getIntExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, 40).coerceIn(1, 120)
+        val profileLocalId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID)
+        if (runId.isBlank()) {
+          Log.w(TAG, "Missing Shopee import run id")
           return
         }
-        val started = KubdeeAccessibilityService.dispatchGoogleFlowStart(payloadJson)
+
+        val started = KubdeeAccessibilityService.dispatchShopeeImportStart(maxItems, runId, profileLocalId)
         if (!started) {
-          Log.w(TAG, "Accessibility service is not connected yet; queued Google Flow start")
+          Log.w(TAG, "Accessibility service is not connected yet; queued Shopee import")
         }
       }
 
-      ACTION_STOP_GOOGLE_FLOW -> {
-        val stopped = KubdeeAccessibilityService.dispatchGoogleFlowStop()
+      KubdeeAutomationIpc.ACTION_START_SHOPEE_POST -> {
+        val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
+        val payloadJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON).orEmpty()
+        if (runId.isBlank()) {
+          Log.w(TAG, "Missing Shopee post run id")
+          return
+        }
+        if (payloadJson.isBlank()) {
+          Log.w(TAG, "Missing Shopee post payload")
+          return
+        }
+
+        val started = KubdeeAccessibilityService.dispatchShopeePostStart(payloadJson, runId)
+        if (!started) {
+          Log.w(TAG, "Accessibility service is not connected yet; queued Shopee post")
+        }
+      }
+
+      KubdeeAutomationIpc.ACTION_STOP_SHOPEE -> {
+        val stopped = KubdeeAccessibilityService.dispatchShopeeStop()
         if (!stopped) {
-          Log.w(TAG, "Accessibility service is not connected yet; queued Google Flow stop")
+          Log.w(TAG, "Accessibility service is not connected yet; queued Shopee stop")
         }
       }
     }
@@ -31,8 +52,5 @@ class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
 
   companion object {
     private const val TAG = "KubdeeAutomationCommand"
-    const val ACTION_START_GOOGLE_FLOW = "__PACKAGE_NAME__.automation.START_GOOGLE_FLOW"
-    const val ACTION_STOP_GOOGLE_FLOW = "__PACKAGE_NAME__.automation.STOP_GOOGLE_FLOW"
-    const val EXTRA_PAYLOAD_JSON = "payloadJson"
   }
 }
