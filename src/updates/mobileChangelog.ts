@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.1',
+    date: '2026-06-30',
+    highlight: 'Auto Workflow ใช้รูปอ้างอิงตรงสินค้ามากขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้กรณีสร้างหลายสินค้าในงานเดียวแล้ววิดีโออาจใช้รูป reference ของสินค้าก่อนหน้า' },
+      { type: 'improved', text: 'ปรับการส่งรูปจากขั้นตอนสร้างภาพไปขั้นตอนสร้างวิดีโอให้ผูกกับสินค้าปัจจุบันชัดเจนขึ้น' },
+    ],
+  },
+  {
     version: '0.2.0',
     date: '2026-06-30',
     highlight: 'Shopee Post ผูกสินค้าและคิวโพสต์ชัดขึ้น',

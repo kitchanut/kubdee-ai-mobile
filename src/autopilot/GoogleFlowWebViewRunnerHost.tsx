@@ -1253,6 +1253,20 @@ function getReferenceFileName(product: GoogleFlowRunnerProduct): string {
   return `kubdee-reference-${code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 48)}.png`;
 }
 
+function getGeneratedImageCacheKey(product: GoogleFlowRunnerProduct, round: number): string {
+  return `${round}:${product.id || product.productId || product.catalogId || 'product'}`;
+}
+
+function getGeneratedImageReferenceFileName(
+  product: GoogleFlowRunnerProduct,
+  round: number,
+  index = 0
+): string {
+  const code = product.productId || product.catalogId || product.id || 'product';
+  const safeCode = code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 42) || 'product';
+  return `kubdee-generated-${safeCode}-r${round}-${index + 1}.png`;
+}
+
 function getSafeReferenceName(value: string | null | undefined, fallback: string): string {
   const clean = value?.trim() || fallback;
   return clean.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || fallback;
@@ -1363,6 +1377,7 @@ export default function GoogleFlowWebViewRunnerHost({
   const flowStatusRef = useRef<FlowConnectionState>('unknown');
   const flowUrlRef = useRef('');
   const actionLogContextRef = useRef<FlowActionLogContext | null>(null);
+  const latestGeneratedImageDataUrlsRef = useRef<Map<string, string[]>>(new Map());
   const [visible, setVisible] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [flowStatus, setFlowStatus] = useState<FlowConnectionState>('unknown');
@@ -2548,6 +2563,10 @@ export default function GoogleFlowWebViewRunnerHost({
         const sceneImageDataUrls: string[] = [];
 
         if (hasPriorImageStep) {
+          const cachedPriorImages = latestGeneratedImageDataUrlsRef.current.get(
+            getGeneratedImageCacheKey(product, round)
+          );
+          const cachedPriorImage = cachedPriorImages?.[0];
           emit({
             event: 'progress',
             runId: payload.runId,
@@ -2560,13 +2579,19 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: 'ดึงรูปที่เพิ่งสร้างจากหน้า Flow เพื่อใช้ต่อในวิดีโอหลายฉาก',
+            message: cachedPriorImage
+              ? 'ใช้รูปที่บันทึกไว้ของสินค้านี้เป็น reference วิดีโอหลายฉาก'
+              : 'ดึงรูปที่เพิ่งสร้างจากหน้า Flow เพื่อใช้ต่อในวิดีโอหลายฉาก',
           });
-          const priorImage = await downloadLatestFlowImage(handle, 1);
-          if (!priorImage?.dataUrl) {
-            throw new Error('ดึงรูปที่เพิ่งสร้างจากหน้า Flow ไม่สำเร็จ');
+          if (cachedPriorImage) {
+            sceneImageDataUrls.push(cachedPriorImage);
+          } else {
+            const priorImage = await downloadLatestFlowImage(handle, 1);
+            if (!priorImage?.dataUrl) {
+              throw new Error('ดึงรูปที่เพิ่งสร้างจากหน้า Flow ไม่สำเร็จ');
+            }
+            sceneImageDataUrls.push(priorImage.dataUrl);
           }
-          sceneImageDataUrls.push(priorImage.dataUrl);
         }
 
         for (let sceneIndex = 0; sceneIndex < neededSceneImages; sceneIndex += 1) {
@@ -2952,56 +2977,28 @@ export default function GoogleFlowWebViewRunnerHost({
                 runId: payload.runId,
                 status: 'running',
                 step,
-                stage: 'multi_scene_select_recent_reference',
+                stage: 'multi_scene_attach_same_angle_reference',
                 productId: product.id,
                 productName: product.name,
                 currentRound: round,
                 totalRounds: payload.settings.totalRounds,
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
-                message: `เลือกรูปล่าสุดจาก Flow เป็น reference วิดีโอฉาก ${sceneNumber}`,
+                message: `แนบรูปมุมเดียวที่บันทึกไว้เป็น reference วิดีโอฉาก ${sceneNumber}`,
               });
-              try {
-                await selectRecentImageOrThrow({
-                  handle,
-                  payload,
-                  product,
-                  productIndex,
-                  round,
-                  stage: 'multi_scene_select_recent_reference',
-                  step,
-                });
-                return true;
-              } catch (error) {
-                const fallbackMessage = error instanceof Error ? error.message : String(error);
-                emit({
-                  event: 'progress',
-                  runId: payload.runId,
-                  status: 'running',
-                  step,
-                  stage: 'multi_scene_upload_reference_fallback',
-                  productId: product.id,
-                  productName: product.name,
-                  currentRound: round,
-                  totalRounds: payload.settings.totalRounds,
-                  currentProduct: productIndex + 1,
-                  totalProducts: payload.products.length,
-                  message: `เลือกรูปล่าสุดไม่สำเร็จ จะอัปโหลดรูปแรกแทน: ${fallbackMessage}`,
-                });
-                await uploadReferenceImageOrThrow({
-                  handle,
-                  payload,
-                  product,
-                  productIndex,
-                  round,
-                  step,
-                  args: {
-                    dataUrl: sceneReferenceDataUrl,
-                    fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
-                  },
-                });
-                return true;
-              }
+              await uploadReferenceImageOrThrow({
+                handle,
+                payload,
+                product,
+                productIndex,
+                round,
+                step,
+                args: {
+                  dataUrl: sceneReferenceDataUrl,
+                  fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
+                },
+              });
+              return true;
             } else if (sceneReferenceDataUrl) {
               emit({
                 event: 'progress',
@@ -3507,6 +3504,10 @@ export default function GoogleFlowWebViewRunnerHost({
         let videoReferenceAttached = false;
         const shouldUsePreviousImage = step === 'video' && payload.enabledSteps.includes('image');
         if (shouldUsePreviousImage) {
+          const cachedImages = latestGeneratedImageDataUrlsRef.current.get(
+            getGeneratedImageCacheKey(product, round)
+          );
+          const cachedImageDataUrl = cachedImages?.[0];
           emit({
             event: 'progress',
             runId: payload.runId,
@@ -3519,17 +3520,34 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
+            message: cachedImageDataUrl
+              ? 'แนบรูปที่บันทึกไว้ของสินค้านี้เป็น reference วิดีโอ'
+              : 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
           });
-          await selectRecentImageOrThrow({
-            handle,
-            payload,
-            product,
-            productIndex,
-            round,
-            stage: 'attach_reference',
-            step,
-          });
+          if (cachedImageDataUrl) {
+            await uploadReferenceImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              args: {
+                dataUrl: cachedImageDataUrl,
+                fileName: getGeneratedImageReferenceFileName(product, round),
+              },
+            });
+          } else {
+            await selectRecentImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              stage: 'attach_reference',
+              step,
+            });
+          }
           videoReferenceAttached = true;
         } else if (product.preview) {
           emit({
@@ -3975,6 +3993,7 @@ export default function GoogleFlowWebViewRunnerHost({
           );
         }
 
+        const generatedImageDataUrls: string[] = [];
         for (const [index, image] of images.entries()) {
           if (!image.dataUrl) {
             continue;
@@ -3983,6 +4002,7 @@ export default function GoogleFlowWebViewRunnerHost({
           if (!downloaded?.uri) {
             throw new Error('บันทึกรูปภาพลงมือถือไม่สำเร็จ');
           }
+          generatedImageDataUrls.push(image.dataUrl);
           emit({
             event: 'asset',
             runId: payload.runId,
@@ -4003,6 +4023,26 @@ export default function GoogleFlowWebViewRunnerHost({
             creativeItemDescription: product.creativeItemDescription,
             creativeItemTags: product.creativeItemTags,
             message: `ได้รูปภาพจาก Google Flow แล้ว (${index + 1}/${images.length})`,
+          });
+        }
+        if (generatedImageDataUrls.length > 0) {
+          latestGeneratedImageDataUrlsRef.current.set(
+            getGeneratedImageCacheKey(product, round),
+            generatedImageDataUrls
+          );
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'image_reference_cached',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `บันทึกรูป reference ของสินค้านี้ไว้ใช้สร้างวิดีโอแล้ว (${generatedImageDataUrls.length})`,
           });
         }
       }
@@ -4239,6 +4279,7 @@ export default function GoogleFlowWebViewRunnerHost({
         runningRef.current = false;
         stopRequestedRef.current = false;
         payloadRef.current = null;
+        latestGeneratedImageDataUrlsRef.current.clear();
         setActiveRunId(null);
       }
     },
@@ -4254,6 +4295,7 @@ export default function GoogleFlowWebViewRunnerHost({
         runningRef.current = true;
         stopRequestedRef.current = false;
         payloadRef.current = payload;
+        latestGeneratedImageDataUrlsRef.current.clear();
         setActiveRunId(payload.runId);
         setFlowStatus('unknown');
         flowStatusRef.current = 'unknown';
