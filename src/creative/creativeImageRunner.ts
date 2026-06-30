@@ -6,22 +6,51 @@ import {
 import type { GoogleFlowRunnerPayload, GoogleFlowRunnerProduct } from '@/autopilot/types';
 
 export type CreativeImageKind = 'characters' | 'scenes';
+export type CharacterReferenceLayout = 'single' | 'grid3x3';
+
+type CreativeImagePromptOptions = {
+  characterReferenceLayout?: CharacterReferenceLayout;
+};
+
+function buildSingleCharacterReferencePrompt(name: string, description: string | null): string {
+  return [
+    `สร้างรูปตัวละครสำหรับใช้เป็น reference ในวิดีโอสินค้า ชื่อตัวละคร "${name}"`,
+    description
+      ? `รายละเอียดตัวละคร: ${description}`
+      : 'ตัวละครควรดูเป็นคนไทยร่วมสมัย น่าเชื่อถือ เป็นธรรมชาติ เหมาะกับคอนเทนต์รีวิวสินค้า',
+    'ภาพต้องเป็น portrait reference ชัดเจน เห็นใบหน้าเต็ม ไม่ถูกบัง แสงธรรมชาติ รายละเอียดเสื้อผ้าและบุคลิกชัด',
+    'ให้เป็นตัวละครคนเดียวในภาพเดียว ไม่ทำเป็นตาราง ไม่ทำ collage ไม่แบ่งช่อง',
+    'ห้ามใส่ข้อความ โลโก้ ลายน้ำ subtitle หรือกรอบภาพ',
+    'สไตล์ภาพสมจริง คุณภาพสูง ใช้ต่อยอดเป็น reference ใน Google Flow ได้',
+  ].join('\n');
+}
+
+function buildCharacterGridSheetPrompt(name: string, description: string | null): string {
+  return [
+    `Create a 3x3 photorealistic character reference grid sheet (Master Sheet) for character "${name}".`,
+    description
+      ? `Character identity and details to preserve in every square: ${description}`
+      : 'Character identity: contemporary Thai reviewer, realistic Thai-Asian facial features, natural skin texture, credible and approachable personality.',
+    'All 9 squares must feature the exact same character with the same facial identity, same hair, same body proportions, same skin tone, and consistent clothing. This is a consistency master sheet for future product videos.',
+    'Use a clean neutral cream studio background in every square. No product, no text, no logo, no watermark, no subtitles, no black bars.',
+    'Photorealistic commercial reference quality, sharp focus, realistic skin pores, realistic fabric texture, high detail, vertical 9:16 master sheet.',
+    '[Top row, L-R]: 1) Close-up face, direct front view, subtle warm approachable smile. 2) Extreme close-up face, looking up dramatically with a surprised wow expression. 3) Close-up face, left profile view, laughing naturally.',
+    '[Middle row, L-R]: 4) Close-up face, looking down with focused thoughtful expression as if assessing a product. 5) Half body portrait, direct front view, confident friendly smile, clearly showing body build and clothing. 6) Close-up face, right 45-degree angle, kind smile and eye contact.',
+    '[Bottom row, L-R]: 7) Full body shot, direct front view, casual standing pose, showing body proportions. 8) Close-up face, direct front view, playful wink with confident smile. 9) Half body shot, back view looking over the shoulder, showing hair and back clothing details.',
+    'The grid is only for character consistency reference. Make every square look like the same real person, not different models.',
+  ].join('\n');
+}
 
 export function buildCreativeImagePrompt(
   kind: CreativeImageKind,
   name: string,
-  description: string | null
+  description: string | null,
+  options: CreativeImagePromptOptions = {}
 ): string {
   if (kind === 'characters') {
-    return [
-      `สร้างรูปตัวละครสำหรับใช้เป็น reference ในวิดีโอสินค้า ชื่อตัวละคร "${name}"`,
-      description
-        ? `รายละเอียดตัวละคร: ${description}`
-        : 'ตัวละครควรดูเป็นคนไทยร่วมสมัย น่าเชื่อถือ เป็นธรรมชาติ เหมาะกับคอนเทนต์รีวิวสินค้า',
-      'ภาพต้องเป็น portrait reference ชัดเจน เห็นใบหน้าเต็ม ไม่ถูกบัง แสงธรรมชาติ รายละเอียดเสื้อผ้าและบุคลิกชัด',
-      'ห้ามใส่ข้อความ โลโก้ ลายน้ำ subtitle หรือกรอบภาพ',
-      'สไตล์ภาพสมจริง คุณภาพสูง ใช้ต่อยอดเป็น reference ใน Google Flow ได้',
-    ].join('\n');
+    return options.characterReferenceLayout === 'grid3x3'
+      ? buildCharacterGridSheetPrompt(name, description)
+      : buildSingleCharacterReferencePrompt(name, description);
   }
 
   return [

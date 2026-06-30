@@ -478,5 +478,12 @@ export function ImageProductSettingsForm({
 
 function formatLibraryReferenceDescription(item: CreativeLibraryItem): string {
   const detail = item.description?.trim();
-  return detail ? `${item.name}: ${detail}` : item.name;
+  const base = detail ? `${item.name}: ${detail}` : item.name;
+  if (item.kind === 'characters' && item.tags?.includes('character-sheet-3x3')) {
+    return [
+      base,
+      'ภาพนี้เป็น character master sheet 3x3 ใช้เพื่ออ้างอิงใบหน้า รูปร่าง ทรงผม สีผิว บุคลิก และชุดเท่านั้น ห้ามสร้างภาพเป็นตาราง ห้ามแบ่งช่อง ห้ามทำ collage ให้สร้างเป็นตัวละครคนเดียวในฉากจริง',
+    ].join('\n');
+  }
+  return base;
 }

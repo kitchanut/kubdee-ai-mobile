@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
+import { BlurView } from 'expo-blur';
 import {
   BriefcaseBusiness,
   ChevronDown,
@@ -22,7 +23,11 @@ import {
 import { startGoogleFlowRunner } from '@/autopilot/googleFlowRunnerBridge';
 import type { GoogleFlowRunnerPayload, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
-import { buildCreativeImagePrompt, type CreativeImageKind } from '@/creative/creativeImageRunner';
+import {
+  buildCreativeImagePrompt,
+  type CharacterReferenceLayout,
+  type CreativeImageKind,
+} from '@/creative/creativeImageRunner';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -67,6 +72,22 @@ const ASPECT_OPTIONS = [
 ] as const;
 
 const COUNT_OPTIONS = ['1', '2', '3', '4'] as const;
+const CHARACTER_REFERENCE_LAYOUT_OPTIONS: Array<{
+  value: CharacterReferenceLayout;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'single',
+    label: 'ภาพเดียว',
+    description: 'ใช้เร็ว เหมาะกับตัวละคร reference ปกติ',
+  },
+  {
+    value: 'grid3x3',
+    label: 'ชีท 3x3',
+    description: 'หลายมุม หลายสีหน้า ช่วยให้ตัวละครนิ่งขึ้น',
+  },
+];
 const CHARACTER_PRESET_TABS: CharacterPresetTabKey[] = ['ไม่มี', 'ทั่วไป', 'ไลฟ์สไตล์', 'อาชีพ', 'ครอบครัว'];
 const CHARACTER_PRESET_ITEMS: Record<CharacterPresetTabKey, CharacterPresetItem[]> = {
   ไม่มี: [],
@@ -266,6 +287,7 @@ function buildControlSummary(kind: CreativeImageKind, controls: ControlMap): str
   if (kind === 'characters') {
     return [
       `ประเภทตัวละคร: ${controls.characterType}`,
+      `รูปแบบรูปตัวละคร: ${controls.characterReferenceLayout}`,
       `คาแรกเตอร์: ${controls.characterPreset}`,
       controls.characterPresetItem ? `คาแรกเตอร์ย่อย: ${controls.characterPresetItem}` : '',
       `เพศ: ${controls.gender}`,
@@ -285,6 +307,10 @@ function buildControlSummary(kind: CreativeImageKind, controls: ControlMap): str
     `แสง: ${controls.sceneLight}`,
     `มุมกล้อง: ${controls.sceneCamera}`,
   ].join('\n');
+}
+
+function getCharacterReferenceLayoutLabel(value: CharacterReferenceLayout): string {
+  return CHARACTER_REFERENCE_LAYOUT_OPTIONS.find((option) => option.value === value)?.label ?? 'ภาพเดียว';
 }
 
 function Chip({
@@ -645,6 +671,7 @@ export default function ImageWorkspaceLibraryStyleScreen({
   const [characterDrafts, setCharacterDrafts] = useState<DraftItem[]>(() => [createDraft('characters', 0)]);
   const [sceneDrafts, setSceneDrafts] = useState<DraftItem[]>(() => [createDraft('scenes', 0)]);
   const [characterType, setCharacterType] = useState('คนจริง (เหมือนจริง)');
+  const [characterReferenceLayout, setCharacterReferenceLayout] = useState<CharacterReferenceLayout>('single');
   const [characterPreset, setCharacterPreset] = useState<CharacterPresetTabKey>('ไม่มี');
   const [selectedCharacterPreset, setSelectedCharacterPreset] = useState<CharacterPresetItem | null>(null);
   const [gender, setGender] = useState('ไม่ระบุ');
@@ -668,6 +695,7 @@ export default function ImageWorkspaceLibraryStyleScreen({
       mode === 'characters'
         ? {
             characterType,
+            characterReferenceLayout: getCharacterReferenceLayoutLabel(characterReferenceLayout),
             characterPreset,
             characterPresetItem: selectedCharacterPreset?.label,
             characterPresetPrompt: selectedCharacterPreset?.prompt,
@@ -687,6 +715,7 @@ export default function ImageWorkspaceLibraryStyleScreen({
           },
     [
       age,
+      characterReferenceLayout,
       characterPreset,
       characterType,
       ethnicity,
@@ -764,10 +793,23 @@ export default function ImageWorkspaceLibraryStyleScreen({
         const draft = drafts[index];
         const itemId = `${mode}-${now}-${index}`;
         const name = draft.name.trim() || `${label}ใหม่`;
+        const cleanDraftDescription = draft.description.trim();
+        const libraryDescription =
+          mode === 'characters' && characterReferenceLayout === 'grid3x3'
+            ? [
+                cleanDraftDescription,
+                'รูปแบบรูปตัวละคร: ชีทอ้างอิง 3x3 สำหรับคงใบหน้า รูปร่าง ชุด และบุคลิก ห้ามใช้เป็นคำสั่งให้สร้างภาพเป็นตารางเมื่อเอาไปใช้ต่อ',
+              ].filter(Boolean).join('\n')
+            : cleanDraftDescription || null;
+        const creativeItemTags = mode === 'characters'
+          ? `character,mobile-google-flow,${characterReferenceLayout === 'grid3x3' ? 'character-sheet-3x3' : 'single-reference'}`
+          : 'scene,mobile-google-flow';
         const description = [draft.description.trim(), summary, additionalInstruction.trim()]
           .filter(Boolean)
           .join('\n\n');
-        const prompt = buildCreativeImagePrompt(mode, name, description);
+        const prompt = buildCreativeImagePrompt(mode, name, description, {
+          characterReferenceLayout: mode === 'characters' ? characterReferenceLayout : undefined,
+        });
 
         if (saveToLibrary) {
           await saveLibraryItem({
@@ -775,9 +817,9 @@ export default function ImageWorkspaceLibraryStyleScreen({
             kind: mode,
             profileLocalId: selectedProfileId,
             name,
-            description: draft.description.trim() || null,
+            description: libraryDescription,
             imageUri: null,
-            tags: mode === 'characters' ? 'character,mobile-google-flow' : 'scene,mobile-google-flow',
+            tags: creativeItemTags,
             source: 'mobile-google-flow',
             createdAt: now + index,
           });
@@ -810,12 +852,8 @@ export default function ImageWorkspaceLibraryStyleScreen({
           creativeAssetKind: saveToLibrary ? mode : undefined,
           creativeItemId: saveToLibrary ? itemId : undefined,
           creativeItemName: saveToLibrary ? name : undefined,
-          creativeItemDescription: saveToLibrary ? draft.description.trim() || null : undefined,
-          creativeItemTags: saveToLibrary
-            ? mode === 'characters'
-              ? 'character,mobile-google-flow'
-              : 'scene,mobile-google-flow'
-            : undefined,
+          creativeItemDescription: saveToLibrary ? libraryDescription : undefined,
+          creativeItemTags: saveToLibrary ? creativeItemTags : undefined,
         });
       }
 
@@ -910,6 +948,42 @@ export default function ImageWorkspaceLibraryStyleScreen({
                 onChange={setCharacterType}
                 theme={theme}
               />
+              <View className="gap-1.5">
+                <SectionHeader
+                  icon={<ImageIcon size={15} color={accent} strokeWidth={2} />}
+                  title="รูปแบบรูปตัวละคร"
+                  theme={theme}
+                />
+                <View className="flex-row gap-2">
+                  {CHARACTER_REFERENCE_LAYOUT_OPTIONS.map((option) => {
+                    const selected = characterReferenceLayout === option.value;
+
+                    return (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        key={option.value}
+                        onPress={() => setCharacterReferenceLayout(option.value)}
+                        className="min-h-[74px] flex-1 rounded-kd-lg border px-3 py-2"
+                        style={{
+                          borderColor: selected ? accent : theme.border,
+                          backgroundColor: selected ? getAccentTone(theme, accent).soft : theme.card,
+                        }}
+                      >
+                        <Text
+                          className="text-kd-body font-semibold"
+                          style={{ color: selected ? accent : theme.text }}
+                        >
+                          {option.label}
+                        </Text>
+                        <Text className="mt-1 text-kd-micro text-kd-text-subtle">
+                          {option.description}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
               <SectionHeader icon={<Users size={15} color={accent} strokeWidth={2} />} title="เลือกคาแรกเตอร์" theme={theme} />
               <SegmentedGroup
                 options={CHARACTER_PRESET_TABS}
@@ -988,9 +1062,26 @@ export default function ImageWorkspaceLibraryStyleScreen({
 
       <View
         pointerEvents="box-none"
-        className="absolute bottom-0 left-0 right-0 border-t border-kd-border bg-kd-panel px-3 pt-2"
+        className="absolute bottom-0 left-0 right-0 overflow-hidden px-3 pt-3"
         style={{ paddingBottom: Math.max(12, insets.bottom + 8) }}
       >
+        <BlurView
+          pointerEvents="none"
+          intensity={theme.isDark ? 28 : 42}
+          tint={theme.isDark ? 'dark' : 'light'}
+          style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+        />
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            backgroundColor: theme.isDark ? 'rgba(17, 24, 39, 0.52)' : 'rgba(255, 255, 255, 0.62)',
+          }}
+        />
         <Pressable
           accessibilityRole="button"
           disabled={isStarting}

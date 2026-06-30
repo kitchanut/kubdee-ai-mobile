@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.9',
+    date: '2026-06-30',
+    highlight: 'สร้างตัวละครได้ยืดหยุ่นขึ้น',
+    changes: [
+      { type: 'added', text: 'เพิ่มรูปแบบสร้างตัวละครแบบภาพเดียวและชีทอ้างอิง 3x3 เพื่อช่วยคุมหน้าตาและบุคลิกให้สม่ำเสมอขึ้น' },
+      { type: 'improved', text: 'ปรับปุ่มเริ่มสร้างตัวละครให้ติดล่างจอ เผื่อ safe area และใช้พื้นหลังเบลอให้อ่านง่ายขึ้น' },
+      { type: 'improved', text: 'เมื่อนำชีทตัวละครไปใช้ต่อ ระบบจะระบุให้ใช้เป็น reference โดยไม่สร้างภาพเป็นตารางซ้ำ' },
+    ],
+  },
+  {
     version: '0.2.8',
     date: '2026-06-30',
     highlight: 'เพิ่มรูปและวิดีโอเข้าคลังได้ละเอียดขึ้น',
