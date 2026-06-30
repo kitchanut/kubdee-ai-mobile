@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { colorScheme as nativeWindColorScheme } from 'nativewind';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, useColorScheme, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -14,6 +14,7 @@ import { useAuth } from '@/auth/AuthContext';
 import MobileChangelogModal from '@/components/MobileChangelogModal';
 import MobileHeader from '@/components/MobileHeader';
 import TopIconTabs from '@/components/TopIconTabs';
+import Text from '@/components/ui/KubdeeText';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
 import { consumePendingTab, tabFromUrl } from '@/navigation/pendingNavigation';
@@ -29,6 +30,12 @@ import MobileDevicesScreen from '@/screens/MobileDevicesScreen';
 import PlanRequiredScreen from '@/screens/PlanRequiredScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import ShopeeScreen from '@/screens/ShopeeScreen';
+import {
+  isThemeMode,
+  resolveThemeMode,
+  THEME_MODE_SEQUENCE,
+  type ThemeMode,
+} from '@/theme/mode';
 import { darkTheme, lightTheme } from '@/theme/tokens';
 import type { TabId } from '@/types/navigation';
 import { CURRENT_CHANGELOG_VERSION } from '@/updates/mobileChangelog';
@@ -42,8 +49,6 @@ import {
   type MobileUpdateResult,
 } from '@/updates/mobileUpdate';
 
-type ThemeMode = 'dark' | 'light';
-
 interface UpdateDownloadState {
   visible: boolean;
   progress: number | null;
@@ -52,6 +57,7 @@ interface UpdateDownloadState {
 
 const SELECTED_PROFILE_STORAGE_KEY = 'kubdee_ai_mobile_selected_profile_id';
 const SEEN_CHANGELOG_STORAGE_KEY = 'kubdee_ai_mobile_seen_changelog_version';
+const THEME_MODE_STORAGE_KEY = 'kubdee_ai_mobile_theme_mode';
 
 function uniqueProductIds(productIds: string[]): string[] {
   return Array.from(new Set(productIds.map((productId) => productId.trim()).filter(Boolean)));
@@ -71,17 +77,19 @@ function areSameProductIds(first: string[], second: string[]): boolean {
 
 export default function KubdeeMobileApp(): React.JSX.Element {
   const colorScheme = useColorScheme();
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() =>
-    colorScheme === 'light' ? 'light' : 'dark'
+  const [themeMode, setThemeMode] = useState<ThemeMode>('system');
+  const resolvedThemeMode = useMemo(
+    () => resolveThemeMode(themeMode, colorScheme),
+    [colorScheme, themeMode]
   );
-  const theme = useMemo(() => (themeMode === 'light' ? lightTheme : darkTheme), [themeMode]);
+  const theme = useMemo(() => (resolvedThemeMode === 'light' ? lightTheme : darkTheme), [resolvedThemeMode]);
   useAutomationActivityNativeBridge();
 
   // Keep NativeWind's dark: variants and CSS vars in sync with the
   // in-app theme toggle (single source of truth stays in themeMode).
   useEffect(() => {
-    nativeWindColorScheme.set(themeMode);
-  }, [themeMode]);
+    nativeWindColorScheme.set(resolvedThemeMode);
+  }, [resolvedThemeMode]);
 
   const [activeTab, setActiveTab] = useState<TabId>('pipeline');
   const [selectedProfileId, setSelectedProfileId] = useState('');
@@ -116,8 +124,36 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     appendLog: appendRecoveredShopeeLog,
   });
 
+  useEffect(() => {
+    let active = true;
+
+    AsyncStorage.getItem(THEME_MODE_STORAGE_KEY)
+      .then((storedMode) => {
+        if (active && isThemeMode(storedMode)) {
+          setThemeMode(storedMode);
+        }
+      })
+      .catch(() => {
+        // Keep system mode when stored preference is unavailable.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const updateThemeMode = useCallback((nextMode: ThemeMode): void => {
+    setThemeMode(nextMode);
+    void AsyncStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
+  }, []);
+
   const toggleThemeMode = (): void => {
-    setThemeMode((current) => (current === 'dark' ? 'light' : 'dark'));
+    setThemeMode((current) => {
+      const currentIndex = THEME_MODE_SEQUENCE.indexOf(current);
+      const nextMode = THEME_MODE_SEQUENCE[(currentIndex + 1) % THEME_MODE_SEQUENCE.length] ?? 'system';
+      void AsyncStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
+      return nextMode;
+    });
   };
 
   const hasAttemptedProfileSync = auth.lastProfilesSyncedAt !== null || auth.profileDataError !== null;
@@ -592,6 +628,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
               authError={auth.authError}
               isLoggingIn={auth.isLoggingIn}
               theme={theme}
+              themeMode={themeMode}
               onLogin={auth.login}
               onThemeModeToggle={toggleThemeMode}
             />
@@ -614,6 +651,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 runningCount={0}
                 selectedProfileId={selectedProfileId}
                 theme={theme}
+                themeMode={themeMode}
                 versionLabel={mobileVersionLabel}
                 onChangelogPress={openMobileChangelog}
                 onLogsPress={() => setActiveTab('logs')}
@@ -622,7 +660,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 }}
                 onProfilePress={() => setActiveTab('profile')}
                 onSelectedProfileChange={setSelectedProfileId}
-                onThemeModeToggle={toggleThemeMode}
+                onThemeModeChange={updateThemeMode}
               />
               <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />
               <View className="min-h-0 flex-1">{renderScreen()}</View>
@@ -638,23 +676,29 @@ export default function KubdeeMobileApp(): React.JSX.Element {
         onClose={closeMobileChangelog}
       />
       <Modal animationType="fade" transparent visible={updateDownloadState.visible}>
-        <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
+        <View className="flex-1 items-center justify-center bg-black/60 px-6">
           <View
-            className="w-full max-w-[320px] rounded-3xl border p-5"
-            style={{ backgroundColor: theme.card, borderColor: theme.border }}
+            className="w-full max-w-[320px] rounded-[12px] border border-kd-border bg-kd-panel p-5"
+            style={{
+              shadowColor: theme.shadow,
+              shadowOffset: { width: 0, height: 18 },
+              shadowOpacity: 0.24,
+              shadowRadius: 28,
+              elevation: 18,
+            }}
           >
             <View className="mb-4 flex-row items-center gap-3">
               <ActivityIndicator color={theme.emerald} />
               <View className="min-w-0 flex-1">
-                <Text className="font-semibold" style={{ color: theme.text, fontSize: 16 }}>
+                <Text className="text-base font-semibold text-kd-text">
                   กำลังอัปเดตแอป
                 </Text>
-                <Text className="mt-1" style={{ color: theme.textSubtle, fontSize: 12 }}>
+                <Text className="mt-1 text-kd-caption leading-[17px] text-kd-text-subtle">
                   {updateDownloadState.detail || 'กำลังดำเนินการ...'}
                 </Text>
               </View>
             </View>
-            <View className="h-2 overflow-hidden rounded-full" style={{ backgroundColor: theme.panelMuted }}>
+            <View className="h-2 overflow-hidden rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
               <View
                 className="h-full rounded-full"
                 style={{

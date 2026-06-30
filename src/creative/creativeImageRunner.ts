@@ -10,7 +10,31 @@ export type CharacterReferenceLayout = 'single' | 'grid3x3';
 
 type CreativeImagePromptOptions = {
   characterReferenceLayout?: CharacterReferenceLayout;
+  hasReferenceImage?: boolean;
 };
+
+const CHARACTER_REFERENCE_IMAGE_INSTRUCTION =
+  'ใช้รูปตัวละครต้นแบบที่แนบมาเป็น reference หลัก รักษาใบหน้า โครงหน้า สีผิว ทรงผม สัดส่วน บุคลิก และเอกลักษณ์ตัวละครให้ใกล้เคียงภาพต้นแบบมากที่สุด สามารถปรับท่าทาง เสื้อผ้า แสง และองค์ประกอบให้เหมาะกับคอนเทนต์ได้ แต่ห้ามเปลี่ยนตัวตนของตัวละคร';
+
+const SCENE_REFERENCE_IMAGE_INSTRUCTION =
+  'ใช้รูปฉากต้นแบบที่แนบมาเป็น reference หลัก รักษาโครงสร้างพื้นที่ layout วัสดุ ทิศทางแสง โทนสี บรรยากาศ และมุมมองหลักให้ใกล้เคียงภาพต้นแบบมากที่สุด สามารถปรับความสะอาด องค์ประกอบ และรายละเอียดให้เหมาะกับการถ่ายสินค้าได้ แต่ห้ามเปลี่ยนสถานที่หลักของฉาก';
+
+function appendReferenceImageInstruction(
+  prompt: string,
+  kind: CreativeImageKind,
+  hasReferenceImage: boolean | undefined
+): string {
+  if (!hasReferenceImage) {
+    return prompt;
+  }
+
+  return [
+    prompt,
+    kind === 'characters'
+      ? CHARACTER_REFERENCE_IMAGE_INSTRUCTION
+      : SCENE_REFERENCE_IMAGE_INSTRUCTION,
+  ].join('\n');
+}
 
 function buildSingleCharacterReferencePrompt(name: string, description: string | null): string {
   return [
@@ -48,12 +72,13 @@ export function buildCreativeImagePrompt(
   options: CreativeImagePromptOptions = {}
 ): string {
   if (kind === 'characters') {
-    return options.characterReferenceLayout === 'grid3x3'
+    const prompt = options.characterReferenceLayout === 'grid3x3'
       ? buildCharacterGridSheetPrompt(name, description)
       : buildSingleCharacterReferencePrompt(name, description);
+    return appendReferenceImageInstruction(prompt, kind, options.hasReferenceImage);
   }
 
-  return [
+  const prompt = [
     `สร้างรูปฉากสำหรับใช้เป็น reference ในวิดีโอสินค้า ชื่อฉาก "${name}"`,
     description
       ? `รายละเอียดฉาก: ${description}`
@@ -62,6 +87,7 @@ export function buildCreativeImagePrompt(
     'ไม่ต้องมีตัวละครหลักถ้าไม่ได้ระบุ ห้ามใส่ข้อความ โลโก้ ลายน้ำ subtitle หรือกรอบภาพ',
     'สไตล์ภาพสมจริง คุณภาพสูง มุมกล้องเหมาะกับวิดีโอแนวตั้ง',
   ].join('\n');
+  return appendReferenceImageInstruction(prompt, kind, options.hasReferenceImage);
 }
 
 export function createCreativeImageRunnerPayload({
@@ -79,7 +105,9 @@ export function createCreativeImageRunnerPayload({
   name: string;
   profileLocalId: string;
 }): GoogleFlowRunnerPayload {
-  const prompt = buildCreativeImagePrompt(kind, name, description);
+  const prompt = buildCreativeImagePrompt(kind, name, description, {
+    hasReferenceImage: Boolean(imageUri?.trim()),
+  });
   const runId = `creative-${kind}-${Date.now()}`;
   const product: GoogleFlowRunnerProduct = {
     id: itemId,

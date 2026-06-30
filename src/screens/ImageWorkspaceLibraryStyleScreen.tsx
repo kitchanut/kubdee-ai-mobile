@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { BlurView } from 'expo-blur';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
 import {
   BriefcaseBusiness,
   ChevronDown,
+  ImagePlus,
   Image as ImageIcon,
   List,
   Plus,
@@ -12,6 +15,7 @@ import {
   Sparkles,
   User,
   Users,
+  X,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -45,6 +49,7 @@ type DraftItem = {
   id: string;
   name: string;
   description: string;
+  referenceUri: string | null;
 };
 
 type ControlMap = Partial<Record<string, string>>;
@@ -62,8 +67,8 @@ type CharacterPresetItem = {
 };
 
 const MODE_TABS: Array<{ key: CreativeImageKind; label: string }> = [
-  { key: 'characters', label: 'ตัวละคร' },
-  { key: 'scenes', label: 'ฉาก' },
+  { key: 'characters', label: 'สร้างตัวละคร' },
+  { key: 'scenes', label: 'สร้างฉาก' },
 ];
 
 const ASPECT_OPTIONS = [
@@ -267,11 +272,37 @@ const SCENE_MOODS = ['ออโต้', 'อบอุ่น', 'มืออา�
 const SCENE_LIGHTS = ['ออโต้', 'ธรรมชาติ', 'สตูดิโอ', 'แสงทอง', 'นีออน', 'ร้านค้า'];
 const SCENE_CAMERAS = ['ออโต้', 'ระดับสายตา', 'โคลสอัพ', 'มุมกว้าง', 'มุมสูง'];
 
+function getPickedImageExtension(uri: string, fileName?: string | null): string {
+  const source = fileName || uri.split('?')[0]?.split('/').pop() || '';
+  const match = source.match(/\.([a-z0-9]{2,5})$/i);
+  const ext = match?.[1]?.toLowerCase();
+  return ext && /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
+}
+
+async function copyPickedReferenceImageToLibrary(
+  uri: string,
+  kind: CreativeImageKind,
+  fileName?: string | null
+): Promise<string> {
+  if (!FileSystem.documentDirectory) {
+    throw new Error('ไม่พบพื้นที่จัดเก็บของแอป');
+  }
+
+  const directory = `${FileSystem.documentDirectory}creative-reference/${kind}/`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+
+  const extension = getPickedImageExtension(uri, fileName);
+  const targetUri = `${directory}${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+  await FileSystem.copyAsync({ from: uri, to: targetUri });
+  return targetUri;
+}
+
 function createDraft(kind: CreativeImageKind, index: number): DraftItem {
   return {
     id: `${kind}-${Date.now()}-${index}`,
     name: '',
     description: '',
+    referenceUri: null,
   };
 }
 
@@ -613,12 +644,14 @@ function DraftCard({
   index,
   kind,
   onChange,
+  onPickReference,
   theme,
 }: {
   draft: DraftItem;
   index: number;
   kind: CreativeImageKind;
   onChange: (next: DraftItem) => void;
+  onPickReference: () => void;
   theme: KubdeeTheme;
 }): React.JSX.Element {
   return (
@@ -627,10 +660,36 @@ function DraftCard({
         <Text className="text-kd-caption font-bold text-kd-text-muted">{index + 1}</Text>
       </View>
       <View className="flex-row gap-2.5">
-        <Pressable className="h-[86px] w-[86px] items-center justify-center gap-1.5 rounded-kd-lg border border-dashed border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted">
-          <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.8} />
-          <Text className="text-kd-micro font-medium text-kd-text-subtle">ต้นแบบ</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onPickReference}
+          className="h-[86px] w-[86px] overflow-hidden rounded-kd-lg border border-dashed border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted"
+        >
+          {draft.referenceUri ? (
+            <>
+              <Image source={{ uri: draft.referenceUri }} className="h-full w-full" resizeMode="cover" />
+              <View className="absolute bottom-0 left-0 right-0 bg-black/45 px-1.5 py-1">
+                <Text numberOfLines={1} className="text-center text-kd-micro font-semibold text-white">
+                  เปลี่ยนรูป
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View className="h-full w-full items-center justify-center gap-1.5">
+              <ImagePlus size={20} color={theme.textSubtle} strokeWidth={1.8} />
+              <Text className="text-kd-micro font-medium text-kd-text-subtle">ต้นแบบ</Text>
+            </View>
+          )}
         </Pressable>
+        {draft.referenceUri ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onChange({ ...draft, referenceUri: null })}
+            className="absolute left-[68px] top-1 z-10 h-7 w-7 items-center justify-center rounded-full bg-black/60"
+          >
+            <X size={14} color="#ffffff" strokeWidth={2.4} />
+          </Pressable>
+        ) : null}
 
         <View className="min-w-0 flex-1 overflow-hidden rounded-kd-lg border border-kd-border bg-kd-input">
           <TextInput
@@ -638,7 +697,8 @@ function DraftCard({
             onChangeText={(name) => onChange({ ...draft, name })}
             placeholder={kind === 'characters' ? 'ชื่อตัวละคร...' : 'ชื่อฉาก...'}
             placeholderTextColor={theme.textSubtle}
-            className="h-10 border-b border-kd-border px-3 text-kd-body font-medium text-kd-text"
+            className="h-10 border-b border-kd-border px-3 text-kd-body text-kd-text"
+            style={{ fontFamily: kubdeeFontFamilies.thai.medium }}
           />
           <TextInput
             value={draft.description}
@@ -648,6 +708,7 @@ function DraftCard({
             multiline
             textAlignVertical="top"
             className="min-h-[46px] px-3 pt-2 text-kd-caption text-kd-text"
+            style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
           />
         </View>
       </View>
@@ -660,14 +721,16 @@ export default function ImageWorkspaceLibraryStyleScreen({
   theme,
 }: ImageWorkspaceLibraryStyleScreenProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const startButtonBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 8;
+  const startButtonScrollPadding = 12 + 44 + startButtonBottomPadding + 16;
   const { saveLibraryItem } = useCreativeLibrary();
   const accent = theme.amber;
   const tone = getAccentTone(theme, accent);
   const [mode, setMode] = useState<CreativeImageKind>('characters');
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
   const [outputCount, setOutputCount] = useState<'1' | '2' | '3' | '4'>('1');
-  const [saveToLibrary, setSaveToLibrary] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
+  const [pickingDraftId, setPickingDraftId] = useState<string | null>(null);
   const [characterDrafts, setCharacterDrafts] = useState<DraftItem[]>(() => [createDraft('characters', 0)]);
   const [sceneDrafts, setSceneDrafts] = useState<DraftItem[]>(() => [createDraft('scenes', 0)]);
   const [characterType, setCharacterType] = useState('คนจริง (เหมือนจริง)');
@@ -751,6 +814,40 @@ export default function ImageWorkspaceLibraryStyleScreen({
     }
   };
 
+  const pickDraftReference = async (index: number): Promise<void> => {
+    const draft = drafts[index];
+    if (!draft || pickingDraftId) return;
+
+    setPickingDraftId(draft.id);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('ยังไม่ได้อนุญาตรูปภาพ', 'กรุณาอนุญาตให้แอปเข้าถึงรูปภาพก่อนแนบรูปต้นแบบ');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: false,
+        mediaTypes: ['images'],
+        quality: 1,
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (!asset?.uri) {
+        Alert.alert('เลือกรูปไม่สำเร็จ', 'ไม่พบไฟล์รูปภาพที่เลือก');
+        return;
+      }
+
+      const referenceUri = await copyPickedReferenceImageToLibrary(asset.uri, mode, asset.fileName);
+      updateDraft(index, { ...draft, referenceUri });
+    } catch (error) {
+      Alert.alert('แนบรูปไม่สำเร็จ', error instanceof Error ? error.message : 'กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setPickingDraftId(null);
+    }
+  };
+
   const selectPresetTab = (tab: string): void => {
     const nextTab = CHARACTER_PRESET_TABS.includes(tab as CharacterPresetTabKey)
       ? (tab as CharacterPresetTabKey)
@@ -809,26 +906,25 @@ export default function ImageWorkspaceLibraryStyleScreen({
           .join('\n\n');
         const prompt = buildCreativeImagePrompt(mode, name, description, {
           characterReferenceLayout: mode === 'characters' ? characterReferenceLayout : undefined,
+          hasReferenceImage: Boolean(draft.referenceUri),
         });
 
-        if (saveToLibrary) {
-          await saveLibraryItem({
-            id: itemId,
-            kind: mode,
-            profileLocalId: selectedProfileId,
-            name,
-            description: libraryDescription,
-            imageUri: null,
-            tags: creativeItemTags,
-            source: 'mobile-google-flow',
-            createdAt: now + index,
-          });
-        }
+        await saveLibraryItem({
+          id: itemId,
+          kind: mode,
+          profileLocalId: selectedProfileId,
+          name,
+          description: libraryDescription,
+          imageUri: draft.referenceUri,
+          tags: creativeItemTags,
+          source: 'mobile-google-flow',
+          createdAt: now + index,
+        });
 
         products.push({
           id: itemId,
           catalogId: itemId,
-          preview: null,
+          preview: draft.referenceUri,
           name,
           description,
           productId: itemId,
@@ -844,16 +940,24 @@ export default function ImageWorkspaceLibraryStyleScreen({
               outputCount,
               promptMode: 'custom',
               customPrompt: prompt,
+              characterMode: mode === 'characters' && draft.referenceUri ? 'upload' : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.characterMode,
+              selectedCharacterId: mode === 'characters' && draft.referenceUri ? itemId : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.selectedCharacterId,
+              customCharacterUri: mode === 'characters' ? draft.referenceUri : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.customCharacterUri,
+              customCharacterPreview: mode === 'characters' ? draft.referenceUri ?? '' : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.customCharacterPreview,
+              sceneMode: mode === 'scenes' && draft.referenceUri ? 'upload' : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.sceneMode,
+              selectedSceneId: mode === 'scenes' && draft.referenceUri ? itemId : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.selectedSceneId,
+              customSceneUri: mode === 'scenes' ? draft.referenceUri : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.customSceneUri,
+              customScenePreview: mode === 'scenes' ? draft.referenceUri ?? '' : DEFAULT_AUTO_PILOT_IMAGE_SETTINGS.customScenePreview,
               systemPrompt: '',
             },
             video: { ...DEFAULT_AUTO_PILOT_VIDEO_SETTINGS },
           },
           prompts: { image: prompt },
-          creativeAssetKind: saveToLibrary ? mode : undefined,
-          creativeItemId: saveToLibrary ? itemId : undefined,
-          creativeItemName: saveToLibrary ? name : undefined,
-          creativeItemDescription: saveToLibrary ? libraryDescription : undefined,
-          creativeItemTags: saveToLibrary ? creativeItemTags : undefined,
+          creativeAssetKind: mode,
+          creativeItemId: itemId,
+          creativeItemName: name,
+          creativeItemDescription: libraryDescription,
+          creativeItemTags,
         });
       }
 
@@ -891,7 +995,7 @@ export default function ImageWorkspaceLibraryStyleScreen({
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerClassName="gap-4 px-3 pt-4"
-        contentContainerStyle={{ paddingBottom: Math.max(88, insets.bottom + 88) }}
+        contentContainerStyle={{ paddingBottom: startButtonScrollPadding }}
       >
         <View className="gap-3">
           <SectionHeader icon={<List size={15} color={accent} strokeWidth={2} />} title="ข้อมูลพื้นฐาน" theme={theme} />
@@ -933,6 +1037,7 @@ export default function ImageWorkspaceLibraryStyleScreen({
               index={index}
               kind={mode}
               onChange={(next) => updateDraft(index, next)}
+              onPickReference={() => void pickDraftReference(index)}
               theme={theme}
             />
           ))}
@@ -1041,29 +1146,15 @@ export default function ImageWorkspaceLibraryStyleScreen({
             multiline
             textAlignVertical="top"
             className="min-h-[72px] rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2 text-kd-caption text-kd-text"
+            style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
           />
         </View>
-
-        <Pressable
-          accessibilityRole="switch"
-          accessibilityState={{ checked: saveToLibrary }}
-          onPress={() => setSaveToLibrary((current) => !current)}
-          className="flex-row items-center justify-between rounded-kd-xl border border-kd-border bg-kd-card p-3"
-        >
-          <View className="flex-row items-center gap-2">
-            <HeaderIcon size={15} color={accent} strokeWidth={2} />
-            <Text className="text-kd-body font-semibold text-kd-text">บันทึกลงคลัง{label}</Text>
-          </View>
-          <View className={`h-5 w-9 justify-center rounded-full px-0.5 ${saveToLibrary ? '' : 'bg-kd-border-strong'}`} style={saveToLibrary ? { backgroundColor: accent } : undefined}>
-            <View className={`h-4 w-4 rounded-full bg-white ${saveToLibrary ? 'self-end' : 'self-start'}`} />
-          </View>
-        </Pressable>
       </ScrollView>
 
       <View
         pointerEvents="box-none"
         className="absolute bottom-0 left-0 right-0 overflow-hidden px-3 pt-3"
-        style={{ paddingBottom: Math.max(12, insets.bottom + 8) }}
+        style={{ paddingBottom: startButtonBottomPadding }}
       >
         <BlurView
           pointerEvents="none"

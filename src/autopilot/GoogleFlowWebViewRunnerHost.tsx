@@ -1272,12 +1272,23 @@ function getProductReferenceFileName(
   round: number,
   step: AutoPilotStepType
 ): string {
-  const code = product.productId || product.catalogId || product.id || 'product';
-  const safeCode = code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 38) || 'product';
-  return `kubdee-product-reference-${safeCode}-p${productIndex + 1}-r${round}-${step}.png`;
+  const kind = product.creativeAssetKind === 'characters'
+    ? 'character'
+    : product.creativeAssetKind === 'scenes'
+      ? 'scene'
+      : 'product';
+  const code = product.productId || product.catalogId || product.id || kind;
+  const safeCode = code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 38) || kind;
+  return `kubdee-${kind}-reference-${safeCode}-p${productIndex + 1}-r${round}-${step}.png`;
 }
 
-function getProductReferenceLabel(productIndex: number): string {
+function getProductReferenceLabel(product: GoogleFlowRunnerProduct, productIndex: number): string {
+  if (product.creativeAssetKind === 'characters') {
+    return `รูปตัวละครต้นแบบ ลำดับ ${productIndex + 1}`;
+  }
+  if (product.creativeAssetKind === 'scenes') {
+    return `รูปฉากต้นแบบ ลำดับ ${productIndex + 1}`;
+  }
   return `รูปสินค้า ลำดับ ${productIndex + 1}`;
 }
 
@@ -2743,7 +2754,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   currentProduct: productIndex + 1,
                   totalProducts: payload.products.length,
-                  message: `แนบ${getProductReferenceLabel(productIndex)}เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}/${sceneCount}: ${product.name || 'สินค้า'}`,
+                  message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}/${sceneCount}: ${product.name || 'สินค้า'}`,
                 });
                 const productReferenceDataUrl = await loadImageReferenceDataUrl(product.preview);
                 await uploadReferenceImageOrThrow({
@@ -2757,7 +2768,7 @@ export default function GoogleFlowWebViewRunnerHost({
                     dataUrl: productReferenceDataUrl ?? undefined,
                     fileName: getProductReferenceFileName(product, productIndex, round, 'image'),
                     imageUrl: productReferenceDataUrl ? undefined : product.preview,
-                    referenceLabel: getProductReferenceLabel(productIndex),
+                    referenceLabel: getProductReferenceLabel(product, productIndex),
                   },
                 });
               } else {
@@ -3198,7 +3209,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalRounds: payload.settings.totalRounds,
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
-                message: `แนบ${getProductReferenceLabel(productIndex)}เป็น reference สำหรับวิดีโอฉาก ${sceneNumber}: ${product.name || 'สินค้า'}`,
+                message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับวิดีโอฉาก ${sceneNumber}: ${product.name || 'สินค้า'}`,
               });
               const dataUrl = await loadImageReferenceDataUrl(product.preview);
               await uploadReferenceImageOrThrow({
@@ -3212,7 +3223,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   dataUrl: dataUrl ?? undefined,
                   fileName: getProductReferenceFileName(product, productIndex, round, step),
                   imageUrl: dataUrl ? undefined : product.preview,
-                  referenceLabel: getProductReferenceLabel(productIndex),
+                  referenceLabel: getProductReferenceLabel(product, productIndex),
                 },
               });
               return true;
@@ -3761,7 +3772,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   dataUrl: dataUrl ?? undefined,
                   fileName: getProductReferenceFileName(product, productIndex, round, step),
                   imageUrl: dataUrl ? undefined : product.preview,
-                  referenceLabel: getProductReferenceLabel(productIndex),
+                  referenceLabel: getProductReferenceLabel(product, productIndex),
                 },
               });
             } else {
@@ -3782,7 +3793,7 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: `แนบ${getProductReferenceLabel(productIndex)}เป็น reference สำหรับ${label}: ${product.name || 'สินค้า'}`,
+            message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับ${label}: ${product.name || 'สินค้า'}`,
           });
           const dataUrl = await loadImageReferenceDataUrl(product.preview);
           await uploadReferenceImageOrThrow({
@@ -3796,7 +3807,7 @@ export default function GoogleFlowWebViewRunnerHost({
               dataUrl: dataUrl ?? undefined,
               fileName: getProductReferenceFileName(product, productIndex, round, step),
               imageUrl: dataUrl ? undefined : product.preview,
-              referenceLabel: getProductReferenceLabel(productIndex),
+              referenceLabel: getProductReferenceLabel(product, productIndex),
             },
           });
           videoReferenceAttached = step === 'video';

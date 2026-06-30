@@ -4,6 +4,7 @@ import {
   FileText,
   Globe2,
   LogOut,
+  Monitor,
   Moon,
   RefreshCw,
   Square,
@@ -21,6 +22,7 @@ import { formatExpiryLabel, normalizeExpiryDate } from '@/auth/plan';
 import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import IconButton from '@/components/ui/IconButton';
 import Text from '@/components/ui/KubdeeText';
+import { getThemeModeLabel, type ThemeMode } from '@/theme/mode';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
@@ -38,12 +40,13 @@ interface MobileHeaderProps {
   isCheckingUpdate: boolean;
   isSyncingProfiles: boolean;
   profileDataError: string | null;
+  themeMode: ThemeMode;
   onCheckUpdate: () => void;
   onChangelogPress: () => void;
   onLogsPress: () => void;
   onProfilePress: () => void;
   onSelectedProfileChange: (profileId: string) => void;
-  onThemeModeToggle: () => void;
+  onThemeModeChange: (mode: ThemeMode) => void;
 }
 
 export default function MobileHeader({
@@ -56,12 +59,13 @@ export default function MobileHeader({
   isCheckingUpdate,
   isSyncingProfiles,
   profileDataError,
+  themeMode,
   onCheckUpdate,
   onChangelogPress,
   onLogsPress,
   onProfilePress,
   onSelectedProfileChange,
-  onThemeModeToggle,
+  onThemeModeChange,
 }: MobileHeaderProps): React.JSX.Element {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profileSelectVisible, setProfileSelectVisible] = useState(false);
@@ -90,6 +94,8 @@ export default function MobileHeader({
       : profileDataError
         ? 'โหลดโปรไฟล์ไม่สำเร็จ'
         : 'ยังไม่มีโปรไฟล์';
+  const resolvedThemeMode = theme.isDark ? 'dark' : 'light';
+  const themeModeLabel = getThemeModeLabel(themeMode, resolvedThemeMode);
 
   const closeProfileMenu = (): void => setProfileMenuOpen(false);
   const closeProfileSelect = (): void => setProfileSelectVisible(false);
@@ -111,10 +117,6 @@ export default function MobileHeader({
   const handleManageProfiles = (): void => {
     closeProfileSelect();
     onProfilePress();
-  };
-
-  const handleThemeToggle = (): void => {
-    onThemeModeToggle();
   };
 
   const handleOpenWebsite = (): void => {
@@ -386,13 +388,13 @@ export default function MobileHeader({
                   <View className="flex-row items-center justify-between gap-3">
                     <Text className="flex-shrink-0 text-kd-micro font-medium text-kd-text-subtle">ธีม</Text>
                     <Text className="text-kd-tiny font-medium text-kd-text-subtle">
-                      {theme.isDark ? 'มืด' : 'สว่าง'}
+                      {themeModeLabel}
                     </Text>
                   </View>
                   <View className="flex-row gap-[3px] rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted">
                     {themeSegmentOptions.map((option) => {
                       const SegmentIcon = option.icon;
-                      const isActive = (option.key === 'dark') === theme.isDark;
+                      const isActive = option.key === themeMode;
 
                       return (
                         <Pressable
@@ -402,7 +404,7 @@ export default function MobileHeader({
                           key={option.key}
                           onPress={() => {
                             if (!isActive) {
-                              handleThemeToggle();
+                              onThemeModeChange(option.key);
                             }
                           }}
                           className={`h-7 flex-1 flex-row items-center justify-center gap-1 rounded-kd-md ${
@@ -448,6 +450,7 @@ export default function MobileHeader({
 }
 
 const themeSegmentOptions = [
+  { key: 'system', label: 'ระบบ', icon: Monitor },
   { key: 'light', label: 'สว่าง', icon: Sun },
   { key: 'dark', label: 'มืด', icon: Moon },
 ] as const;

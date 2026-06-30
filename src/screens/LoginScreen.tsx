@@ -1,10 +1,11 @@
 import { ActivityIndicator, Image, Pressable, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { Moon, Sun, TriangleAlert } from 'lucide-react-native';
+import { Monitor, Moon, Sun, TriangleAlert } from 'lucide-react-native';
 
 import IconButton from '@/components/ui/IconButton';
 import Text from '@/components/ui/KubdeeText';
 import { toThaiPlanError } from '@/auth/plan';
+import type { ThemeMode } from '@/theme/mode';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 const logoDark = require('../../assets/logo-dark.png');
@@ -14,6 +15,7 @@ interface LoginScreenProps {
   authError: string | null;
   isLoggingIn: boolean;
   theme: KubdeeTheme;
+  themeMode: ThemeMode;
   onLogin: () => Promise<void>;
   onThemeModeToggle: () => void;
 }
@@ -45,10 +47,21 @@ export default function LoginScreen({
   authError,
   isLoggingIn,
   theme,
+  themeMode,
   onLogin,
   onThemeModeToggle,
 }: LoginScreenProps): React.JSX.Element {
-  const ThemeIcon = theme.isDark ? Moon : Sun;
+  const ThemeIcon = themeMode === 'system' ? Monitor : theme.isDark ? Moon : Sun;
+  const themeButtonColor = themeMode === 'system'
+    ? theme.cyan
+    : theme.isDark
+      ? theme.blue
+      : theme.amber;
+  const themeButtonBackground = themeMode === 'system'
+    ? theme.cyanSoft
+    : theme.isDark
+      ? theme.active
+      : theme.amberSoft;
   const loginForeground = theme.isDark ? '#111827' : theme.white;
 
   return (
@@ -58,8 +71,8 @@ export default function LoginScreen({
           icon={ThemeIcon}
           size={36}
           iconSize={18}
-          color={theme.isDark ? theme.blue : theme.amber}
-          backgroundColor={theme.isDark ? theme.active : theme.amberSoft}
+          color={themeButtonColor}
+          backgroundColor={themeButtonBackground}
           onPress={onThemeModeToggle}
         />
       </View>

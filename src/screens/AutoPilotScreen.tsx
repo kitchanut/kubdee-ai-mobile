@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { Sparkles, Square } from 'lucide-react-native';
 
 import {
@@ -154,9 +155,9 @@ export default function AutoPilotScreen({
   // ยังไม่ได้เลือกสินค้าจากคลัง → ซ่อนปุ่มเริ่มสร้าง (แต่ตอนกำลังรันยังต้องเห็นปุ่มหยุด)
   const showStartBar = controller.selectedProducts.length > 0 || isRunning || isPreparingRun;
   const startButtonBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 8;
-  // bottom bar = pt-3 (12) + start button (50) + bottom padding, plus breathing room
+  // bottom bar = pt-3 (12) + start button (44) + bottom padding, plus breathing room
   const startButtonScrollPadding = showStartBar
-    ? 12 + 50 + startButtonBottomPadding + 16
+    ? 12 + 44 + startButtonBottomPadding + 16
     : startButtonBottomPadding + 16;
 
   const openProductSettings = (productId: string): void => {
@@ -434,9 +435,27 @@ export default function AutoPilotScreen({
 
       {showStartBar ? (
         <View
-          className="absolute bottom-0 left-0 right-0 bg-kd-panel px-4 pt-3"
+          pointerEvents="box-none"
+          className="absolute bottom-0 left-0 right-0 overflow-hidden px-4 pt-3"
           style={{ paddingBottom: startButtonBottomPadding }}
         >
+          <BlurView
+            pointerEvents="none"
+            intensity={theme.isDark ? 28 : 42}
+            tint={theme.isDark ? 'dark' : 'light'}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              backgroundColor: theme.isDark ? 'rgba(17, 24, 39, 0.52)' : 'rgba(255, 255, 255, 0.62)',
+            }}
+          />
           <Button
             accessibilityRole="button"
             disabled={isPreparingRun || (!canStart && !isRunning)}
@@ -450,7 +469,7 @@ export default function AutoPilotScreen({
               }
               void controller.startRun();
             }}
-            className={`h-[50px] flex-row items-center justify-center gap-2 rounded-kd-xl ${
+            className={`h-11 flex-row items-center justify-center gap-2 rounded-kd-xl ${
               isRunning ? 'bg-kd-red' : canStart ? 'bg-kd-text' : 'bg-kd-border'
             }`}
           >
