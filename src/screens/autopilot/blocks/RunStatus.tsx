@@ -34,7 +34,6 @@ export function RunStatusSummaryBlock({
   const firstLog = getFirstLog(runState);
   const latestLog = getLatestLog(runState);
   const elapsedMs = getRunElapsedMs(runState);
-  const flowStats = getLatestFlowStats(runState);
 
   const dismissible = runState.status !== 'running' && Boolean(onDismiss);
 
@@ -139,27 +138,6 @@ export function RunStatusSummaryBlock({
           ) : null}
         </View>
 
-        {flowStats ? (
-          <View className="gap-1.5 rounded-kd-md border border-kd-border bg-kd-panel-muted px-2.5 py-2 dark:bg-kd-card-muted">
-            <View className="flex-row items-center justify-between gap-2">
-              <Text className="text-kd-micro font-semibold text-kd-text-subtle">สถานะ Google Flow</Text>
-              {flowStats.progress != null ? (
-                <Text className="text-kd-micro font-semibold text-kd-text">
-                  {flowStats.progress}%
-                </Text>
-              ) : null}
-            </View>
-            <View className="flex-row flex-wrap gap-1.5">
-              <MiniFlowStat label="กำลัง" value={flowStats.generating} theme={theme} />
-              <MiniFlowStat label="คิว" value={flowStats.queued} theme={theme} />
-              <MiniFlowStat label="สำเร็จ" value={flowStats.success} theme={theme} />
-              <MiniFlowStat label="ล้มเหลว" value={flowStats.failed} theme={theme} warning={flowStats.failed > 0} />
-              {flowStats.tilesFound != null ? (
-                <MiniFlowStat label="ทั้งหมด" value={flowStats.tilesFound} theme={theme} />
-              ) : null}
-            </View>
-          </View>
-        ) : null}
       </View>
     </SectionCard>
   );
@@ -346,27 +324,6 @@ function LogStageMeta({
   );
 }
 
-function MiniFlowStat({
-  label,
-  value,
-  theme,
-  warning = false,
-}: {
-  label: string;
-  value: number;
-  theme: KubdeeTheme;
-  warning?: boolean;
-}): React.JSX.Element {
-  return (
-    <View className="min-w-[58px] flex-1 rounded-kd-md bg-kd-card px-2 py-1.5">
-      <Text className="text-kd-tiny font-semibold text-kd-text-subtle">{label}</Text>
-      <Text className="mt-px text-kd-caption font-semibold" style={{ color: warning ? theme.red : theme.text }}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 function LogFlowStats({
   stats,
   theme,
@@ -472,32 +429,6 @@ function formatDuration(ms: number): string {
     return `${seconds}s`;
   }
   return `${minutes}m ${seconds}s`;
-}
-
-function getLatestFlowStats(runState: AutoPilotRunState): AutoPilotFlowStats | null {
-  for (let index = runState.logs.length - 1; index >= 0; index -= 1) {
-    const log = runState.logs[index];
-    if (log?.flowStats) {
-      return log.flowStats;
-    }
-
-    const message = log?.message ?? '';
-    const match = message.match(/gen\s+(\d+)\s+queue\s+(\d+)\s+ok\s+(\d+)\s+fail\s+(\d+)(?:\s+(\d+)%?)?/i);
-    if (!match) {
-      continue;
-    }
-
-    const progress = match[5] != null ? Number.parseInt(match[5], 10) : null;
-    return {
-      generating: Number.parseInt(match[1] ?? '0', 10) || 0,
-      queued: Number.parseInt(match[2] ?? '0', 10) || 0,
-      success: Number.parseInt(match[3] ?? '0', 10) || 0,
-      failed: Number.parseInt(match[4] ?? '0', 10) || 0,
-      progress: Number.isFinite(progress) ? progress : null,
-    };
-  }
-
-  return null;
 }
 
 function getCurrentStepLabel(step: AutoPilotRunState['progress']['currentStep']): string {

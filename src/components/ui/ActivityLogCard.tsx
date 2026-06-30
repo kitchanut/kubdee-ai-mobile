@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from 'react-native';
-import { ChevronDown, ChevronUp, Square, Trash2 } from 'lucide-react-native';
+import { Clock3, Info, Square, Trash2, X } from 'lucide-react-native';
 
+import { getAutoPilotStageLabel } from '@/autopilot/stageLabels';
+import type { AutoPilotFlowStats, AutoPilotStepType } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
-import SectionHeader from '@/components/ui/SectionHeader';
 import type { KubdeeTheme } from '@/theme/tokens';
+import { alpha } from '@/theme/tokens';
 
 type IconProps = {
   size?: number;
@@ -16,6 +18,9 @@ type IconProps = {
 export interface ActivityLogEntry {
   message: string;
   ts: number;
+  flowStats?: AutoPilotFlowStats;
+  step?: AutoPilotStepType;
+  stage?: string;
 }
 
 export interface ActivityLogStat {
@@ -58,7 +63,7 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
   runningText = 'กำลังทำงาน',
   idleText = 'ยังไม่มีรายการทำงาน',
   emptyText = 'ยังไม่มีรายการทำงาน',
-  maxVisible = 10,
+  maxVisible = 80,
   initiallyExpanded = false,
   stopLabel = 'หยุด',
   stoppingLabel = 'กำลังหยุด',
@@ -87,48 +92,88 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
     : latestLog
       ? [latestTimeText, elapsedText, `${logs.length} รายการ`].filter(Boolean).join(' · ')
       : idleText;
-  const Icon = icon;
   const visibleStartIndex = Math.max(0, logs.length - visibleLogs.length);
+  const Icon = icon ?? Info;
+  const statusColor = getRunStatusColor({ running, stopping, latestLog }, theme);
+  const latestDisplay = latestLog ? parseDisplayMessage(latestLog.message) : null;
 
   return (
     <>
-      <View className="flex-row items-center justify-between gap-2 px-1 py-0.5">
-        <Pressable
-          accessibilityLabel="เปิด Activity Log"
-          accessibilityRole="button"
-          onPress={() => setDrawerOpen(true)}
-          className="min-h-[34px] min-w-0 flex-1 flex-row items-center gap-1.5 rounded-kd-md px-1.5 active:opacity-70"
-        >
-          {Icon ? <Icon size={13} color={theme.textSubtle} strokeWidth={2.2} /> : null}
-          <View className="min-w-0 flex-1">
-            <Text className="text-kd-micro font-extrabold uppercase tracking-[0px] text-kd-text-subtle">
-              {title}
-            </Text>
-            <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle" numberOfLines={1}>
-              {statusText}
-            </Text>
-            {stats.length > 0 ? <ActivityLogStats stats={stats.slice(0, 3)} theme={theme} compact /> : null}
+      <View className="gap-2.5 rounded-kd-xl border border-kd-border bg-kd-panel p-2">
+        <View className="flex-row items-start justify-between gap-2">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
+            <View className="h-8 w-8 shrink-0 items-center justify-center rounded-kd-lg bg-kd-card-muted dark:bg-kd-panel-muted">
+              <Icon size={15} color={theme.textMuted} strokeWidth={2.1} />
+            </View>
+            <View className="min-w-0 flex-1">
+              <View className="flex-row items-center gap-1.5">
+                <View className="h-2 w-2 rounded-full" style={{ backgroundColor: statusColor }} />
+                <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                  {title}
+                </Text>
+              </View>
+              <Text numberOfLines={1} className="mt-px text-kd-micro font-medium text-kd-text-subtle">
+                {statusText}
+              </Text>
+            </View>
           </View>
-          <ChevronUp size={14} color={theme.textSubtle} strokeWidth={2.2} />
-        </Pressable>
 
-        {running && onStop ? (
+          <View className="shrink-0 flex-row items-center gap-1">
+            {running && onStop ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={stopping}
+                onPress={onStop}
+                className="h-8 w-8 items-center justify-center rounded-kd-md active:opacity-70 disabled:opacity-70"
+                style={{ backgroundColor: alpha(theme.red, theme.isDark ? 0.18 : 0.1) }}
+              >
+                {stopping ? (
+                  <ActivityIndicator color={theme.red} size="small" />
+                ) : (
+                  <Square size={13} color={theme.red} fill={theme.red} strokeWidth={2} />
+                )}
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityLabel="เปิดรายละเอียดการทำงาน"
+              accessibilityRole="button"
+              onPress={() => setDrawerOpen(true)}
+              className="h-8 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-card-muted px-2.5 active:opacity-70 dark:bg-kd-panel-muted"
+            >
+              <Info size={13} color={theme.textMuted} strokeWidth={2.2} />
+              <Text className="text-kd-micro font-semibold text-kd-text-subtle">รายละเอียด</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {latestLog && latestDisplay ? (
           <Pressable
+            accessibilityLabel="เปิดรายละเอียดการทำงาน"
             accessibilityRole="button"
-            disabled={stopping}
-            onPress={onStop}
-            className="h-8 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red px-2.5 active:opacity-70 disabled:opacity-70"
+            onPress={() => setDrawerOpen(true)}
+            className="rounded-kd-md bg-kd-card-muted px-2.5 py-2 active:opacity-75 dark:bg-kd-panel-muted"
           >
-            {stopping ? (
-              <ActivityIndicator color={theme.white} size="small" />
-            ) : (
-              <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
-            )}
-            <Text className="text-kd-caption font-black text-white">
-              {stopping ? stoppingLabel : stopLabel}
+            <View className="flex-row flex-wrap items-center gap-1">
+              <Text className="text-kd-micro font-semibold text-kd-text-subtle">
+                ล่าสุด {formatTimestamp(latestLog.ts)}
+              </Text>
+              <LogStageMeta log={latestLog} parsedLabel={latestDisplay.stageLabel} theme={theme} compact />
+            </View>
+            <Text
+              numberOfLines={2}
+              className="mt-0.5 text-kd-caption leading-4"
+              style={{ color: getLogTextColor(latestLog.message, theme) }}
+            >
+              {latestDisplay.message}
             </Text>
           </Pressable>
-        ) : null}
+        ) : (
+          <View className="rounded-kd-md bg-kd-card-muted px-2.5 py-2 dark:bg-kd-panel-muted">
+            <Text className="text-kd-caption leading-4 text-kd-text-subtle">{emptyText}</Text>
+          </View>
+        )}
+
+        {stats.length > 0 ? <ActivityLogStats stats={stats} theme={theme} /> : null}
       </View>
 
       <Modal
@@ -138,9 +183,9 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
         transparent
         visible={drawerOpen}
       >
-        <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}>
+        <View className="flex-1 justify-end bg-black/60">
           <Pressable
-            accessibilityLabel="ปิด Activity Log"
+            accessibilityLabel="ปิดรายละเอียดการทำงาน"
             accessibilityRole="button"
             className="absolute inset-0"
             onPress={() => setDrawerOpen(false)}
@@ -148,92 +193,106 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
 
           <View
             accessibilityViewIsModal
-            className="rounded-t-[22px] border border-kd-border bg-kd-card px-4 pb-10 pt-2"
-            style={{ maxHeight: '78%', minHeight: 260 }}
+            className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+            style={{ maxHeight: '72%' }}
           >
-            <View className="mb-3 h-1 w-10 self-center rounded-full bg-kd-border" />
-
-            <View className="gap-0.5">
-              <SectionHeader
-                icon={icon}
-                theme={theme}
-                title={title}
-                right={
-                  <View className="flex-row items-center gap-1.5">
-                    {!running && logs.length > 0 && onClear ? (
-                      <Pressable
-                        accessibilityLabel={clearLabel}
-                        accessibilityRole="button"
-                        onPress={onClear}
-                        className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-card-muted active:opacity-70"
-                      >
-                        <Trash2 size={13} color={theme.textSubtle} strokeWidth={2.1} />
-                      </Pressable>
-                    ) : null}
-
-                    {running && onStop ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={stopping}
-                        onPress={onStop}
-                        className="h-8 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-red px-2.5 active:opacity-70 disabled:opacity-70"
-                      >
-                        {stopping ? (
-                          <ActivityIndicator color={theme.white} size="small" />
-                        ) : (
-                          <Square size={12} color={theme.white} fill={theme.white} strokeWidth={2} />
-                        )}
-                        <Text className="text-kd-caption font-black text-white">
-                          {stopping ? stoppingLabel : stopLabel}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-
-                    <Pressable
-                      accessibilityLabel="ปิด Activity Log"
-                      accessibilityRole="button"
-                      onPress={() => setDrawerOpen(false)}
-                      className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-card-muted active:opacity-70"
-                    >
-                      <ChevronDown size={15} color={theme.textSubtle} strokeWidth={2.2} />
-                    </Pressable>
+            <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
+              <View className="flex-row items-center justify-between gap-2 pb-2">
+                <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                  <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+                    <Clock3 size={15} color={theme.textMuted} strokeWidth={2.1} />
                   </View>
-                }
-              />
-              <Text className="text-kd-caption font-bold leading-4 text-kd-text-subtle">{statusText}</Text>
-              {stats.length > 0 ? <ActivityLogStats stats={stats} theme={theme} /> : null}
+                  <View className="min-w-0 flex-1">
+                    <Text className="text-[14px] font-semibold text-kd-text">รายละเอียดการทำงาน</Text>
+                    <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                      {title}
+                      {runStartedAt ? ` · เริ่ม ${formatTimestamp(runStartedAt)}` : ''}
+                      {latestLog ? ` · ล่าสุด ${formatTimestamp(latestLog.ts)}` : ''}
+                      {elapsedText ? ` · ${elapsedText}` : ''}
+                      {` · log ${logs.length} รายการ`}
+                    </Text>
+                  </View>
+                </View>
+                <View className="flex-row items-center gap-1">
+                  {running && onStop ? (
+                    <Pressable
+                      accessibilityLabel={stopLabel}
+                      accessibilityRole="button"
+                      disabled={stopping}
+                      onPress={onStop}
+                      className="h-8 w-8 items-center justify-center rounded-kd-md active:opacity-70 disabled:opacity-70"
+                      style={{ backgroundColor: alpha(theme.red, theme.isDark ? 0.18 : 0.1) }}
+                    >
+                      {stopping ? (
+                        <ActivityIndicator color={theme.red} size="small" />
+                      ) : (
+                        <Square size={13} color={theme.red} fill={theme.red} strokeWidth={2} />
+                      )}
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    accessibilityLabel={clearLabel}
+                    accessibilityRole="button"
+                    disabled={logs.length === 0 || running || !onClear}
+                    onPress={onClear}
+                    className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted active:opacity-70 disabled:opacity-50 dark:bg-kd-card-muted"
+                  >
+                    <Trash2 size={14} color={theme.textSubtle} strokeWidth={2} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel="ปิดรายละเอียดการทำงาน"
+                    accessibilityRole="button"
+                    onPress={() => setDrawerOpen(false)}
+                    className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted active:opacity-70 dark:bg-kd-card-muted"
+                  >
+                    <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+                  </Pressable>
+                </View>
+              </View>
             </View>
 
             <ScrollView
-              className="mt-3"
-              contentContainerClassName="gap-1.5 rounded-kd-md bg-kd-card-muted p-2"
+              nestedScrollEnabled
               showsVerticalScrollIndicator={false}
+              contentContainerClassName="gap-1.5 px-3 py-3"
+              contentContainerStyle={{ paddingBottom: 24 }}
             >
-              {visibleLogs.length > 0 ? (
+              {visibleLogs.length === 0 ? (
+                <View className="min-h-[120px] items-center justify-center gap-1.5">
+                  <Clock3 size={24} color={theme.textSubtle} strokeWidth={1.8} />
+                  <Text className="text-kd-caption font-semibold text-kd-text-subtle">{emptyText}</Text>
+                </View>
+              ) : (
                 visibleLogs.map((entry, index) => {
                   const absoluteIndex = visibleStartIndex + index;
                   const previousEntry = absoluteIndex > 0 ? logs[absoluteIndex - 1] : null;
-                  const deltaMs = previousEntry ? entry.ts - previousEntry.ts : 0;
-                  const sinceStartMs = runStartedAt != null ? entry.ts - runStartedAt : deltaMs;
+                  const deltaMs = previousEntry ? Math.max(0, entry.ts - previousEntry.ts) : 0;
+                  const sinceStartMs = runStartedAt != null ? Math.max(0, entry.ts - runStartedAt) : deltaMs;
+                  const display = parseDisplayMessage(entry.message);
 
                   return (
-                    <View key={`${entry.ts}-${index}`} className="flex-row gap-2">
-                      <View className="w-[78px] shrink-0">
-                        <Text className="text-[10px] font-bold text-kd-text-muted">
+                    <View key={`${entry.ts}-${index}`} className="flex-row gap-2 rounded-kd-md bg-kd-card px-2.5 py-2">
+                      <View className="w-[68px]">
+                        <Text className="text-kd-micro font-medium text-kd-text-subtle">
                           {formatTimestamp(entry.ts)}
                         </Text>
-                        <Text className="mt-0.5 text-[9px] leading-3 text-kd-text-muted" numberOfLines={1}>
+                        <Text className="mt-0.5 text-kd-tiny text-kd-text-subtle">
                           +{formatLogDuration(deltaMs)} · {formatLogDuration(sinceStartMs)}
                         </Text>
                       </View>
-                      <Text className="min-w-0 flex-1 text-[10px] leading-4 text-kd-text-subtle">
-                        {entry.message}
-                      </Text>
+                      <View className="min-w-0 flex-1">
+                        <LogStageMeta log={entry} parsedLabel={display.stageLabel} theme={theme} />
+                        <Text
+                          className="text-kd-caption leading-4"
+                          style={{ color: getLogTextColor(entry.message, theme) }}
+                        >
+                          {display.message}
+                        </Text>
+                        {entry.flowStats ? <LogFlowStats stats={entry.flowStats} theme={theme} /> : null}
+                      </View>
                     </View>
                   );
                 })
-              ) : (
-                <Text className="text-kd-caption text-kd-text-subtle">{emptyText}</Text>
               )}
             </ScrollView>
           </View>
@@ -244,39 +303,163 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
 }
 
 function ActivityLogStats({
-  compact = false,
   stats,
   theme,
 }: {
-  compact?: boolean;
   stats: ActivityLogStat[];
   theme: KubdeeTheme;
 }): React.JSX.Element {
   return (
-    <View className={`mt-1 flex-row flex-wrap ${compact ? 'gap-1' : 'gap-1.5'}`}>
-      {stats.map((stat) => (
+    <View className="flex-row gap-1">
+      {stats.slice(0, 4).map((stat) => (
         <View
           key={`${stat.label}-${stat.value}`}
-          className="flex-row items-center gap-1 rounded-kd-md px-1.5 py-1"
+          className="min-h-[44px] flex-1 justify-center rounded-kd-md px-2 py-1.5"
           style={{ backgroundColor: stat.backgroundColor ?? theme.cardMuted }}
         >
-          <Text
-            className="text-[9px] font-extrabold uppercase text-kd-text-muted"
-            numberOfLines={1}
-          >
+          <Text className="text-[8px] font-medium text-kd-text-subtle" numberOfLines={1}>
             {stat.label}
           </Text>
-          <Text
-            className="text-[10px] font-black"
-            numberOfLines={1}
-            style={{ color: stat.color ?? theme.text }}
-          >
+          <Text className="mt-px text-kd-caption font-semibold" numberOfLines={1} style={{ color: stat.color ?? theme.text }}>
             {stat.value}
           </Text>
         </View>
       ))}
     </View>
   );
+}
+
+function LogStageMeta({
+  compact = false,
+  log,
+  parsedLabel,
+  theme,
+}: {
+  compact?: boolean;
+  log: ActivityLogEntry;
+  parsedLabel?: string | null;
+  theme: KubdeeTheme;
+}): React.JSX.Element | null {
+  const stepLabel = log.step ? getCurrentStepLabel(log.step) : null;
+  const stageLabel = parsedLabel || (log.stage ? getAutoPilotStageLabel(log.stage, '') : null);
+  const label = [stepLabel, stageLabel].filter(Boolean).join(' · ');
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <View
+      className={`self-start rounded-kd-sm border px-1.5 ${compact ? 'py-0' : 'mb-1 py-0.5'}`}
+      style={{
+        backgroundColor: alpha(theme.blue, theme.isDark ? 0.18 : 0.08),
+        borderColor: alpha(theme.blue, theme.isDark ? 0.32 : 0.18),
+      }}
+    >
+      <Text className="text-kd-tiny font-semibold" numberOfLines={1} style={{ color: theme.blue }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function LogFlowStats({
+  stats,
+  theme,
+}: {
+  stats: AutoPilotFlowStats;
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  return (
+    <View className="mt-1.5 flex-row flex-wrap gap-1">
+      <LogFlowStat label="กำลัง" value={stats.generating} theme={theme} />
+      <LogFlowStat label="คิว" value={stats.queued} theme={theme} />
+      <LogFlowStat label="สำเร็จ" value={stats.success} theme={theme} />
+      <LogFlowStat label="ล้มเหลว" value={stats.failed} theme={theme} warning={stats.failed > 0} />
+      {stats.progress != null ? <LogFlowStat label="%" value={stats.progress} theme={theme} /> : null}
+      {stats.tilesFound != null ? <LogFlowStat label="ทั้งหมด" value={stats.tilesFound} theme={theme} /> : null}
+    </View>
+  );
+}
+
+function LogFlowStat({
+  label,
+  value,
+  theme,
+  warning = false,
+}: {
+  label: string;
+  value: number;
+  theme: KubdeeTheme;
+  warning?: boolean;
+}): React.JSX.Element {
+  return (
+    <View className="flex-row items-center gap-1 rounded-kd-sm bg-kd-panel-muted px-1.5 py-0.5 dark:bg-kd-card-muted">
+      <Text className="text-kd-tiny text-kd-text-subtle">{label}</Text>
+      <Text className="text-kd-tiny font-semibold" style={{ color: warning ? theme.red : theme.textMuted }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function parseDisplayMessage(message: string): { message: string; stageLabel: string | null } {
+  const match = message.match(/^\[([^\]]+)\]\s*(.*)$/);
+  if (!match) {
+    return { message, stageLabel: null };
+  }
+
+  return {
+    stageLabel: match[1]?.trim() || null,
+    message: match[2]?.trim() || message,
+  };
+}
+
+function getRunStatusColor(
+  state: { running: boolean; stopping: boolean; latestLog: ActivityLogEntry | null },
+  theme: KubdeeTheme
+): string {
+  if (state.stopping) return theme.amber;
+  if (state.running) return theme.emerald;
+  if (!state.latestLog) return theme.textSubtle;
+  const level = inferMessageLevel(state.latestLog.message);
+  if (level === 'error') return theme.red;
+  if (level === 'warning') return theme.amber;
+  if (level === 'success') return theme.emerald;
+  return theme.blue;
+}
+
+function getLogTextColor(message: string, theme: KubdeeTheme): string {
+  switch (inferMessageLevel(message)) {
+    case 'error':
+      return theme.red;
+    case 'warning':
+      return theme.amber;
+    case 'success':
+      return theme.emerald;
+    case 'action':
+      return theme.blue;
+    default:
+      return theme.textMuted;
+  }
+}
+
+function inferMessageLevel(message: string): 'info' | 'success' | 'warning' | 'error' | 'action' {
+  if (/ไม่สำเร็จ|ผิดพลาด|error|failed|ล้มเหลว/i.test(message)) return 'error';
+  if (/เตือน|warning|กำลังหยุด|ถูกหยุด|ขาดตอน|ยังไม่/i.test(message)) return 'warning';
+  if (/สำเร็จ|เสร็จ|พร้อมใช้|รับงานแล้ว|เลือกสินค้าแล้ว/i.test(message)) return 'success';
+  if (/กำลัง|เริ่ม|เปิด|กด|ส่ง|ค้นหา|เลือก|เชื่อมต่อ/i.test(message)) return 'action';
+  return 'info';
+}
+
+function getCurrentStepLabel(step: AutoPilotStepType): string {
+  switch (step) {
+    case 'image':
+      return 'รูปภาพ';
+    case 'video':
+      return 'วิดีโอ';
+    default:
+      return 'ขั้นตอน';
+  }
 }
 
 function formatLogTime(timestamp: number): string {
