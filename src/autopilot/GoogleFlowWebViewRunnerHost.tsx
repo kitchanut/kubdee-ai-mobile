@@ -1249,9 +1249,19 @@ function promptForStep(product: GoogleFlowRunnerProduct, step: AutoPilotStepType
   return [productName, description].filter(Boolean).join('\n');
 }
 
-function getReferenceFileName(product: GoogleFlowRunnerProduct): string {
+function getProductReferenceFileName(
+  product: GoogleFlowRunnerProduct,
+  productIndex: number,
+  round: number,
+  step: AutoPilotStepType
+): string {
   const code = product.productId || product.catalogId || product.id || 'product';
-  return `kubdee-reference-${code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 48)}.png`;
+  const safeCode = code.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 38) || 'product';
+  return `kubdee-product-reference-${safeCode}-p${productIndex + 1}-r${round}-${step}.png`;
+}
+
+function getProductReferenceLabel(productIndex: number): string {
+  return `รูปสินค้า ลำดับ ${productIndex + 1}`;
 }
 
 function getGeneratedImageCacheKey(product: GoogleFlowRunnerProduct, round: number): string {
@@ -2685,7 +2695,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   currentProduct: productIndex + 1,
                   totalProducts: payload.products.length,
-                  message: `แนบรูปสินค้าเป็น reference รูปฉาก ${sceneNumber}/${sceneCount}`,
+                  message: `แนบ${getProductReferenceLabel(productIndex)}เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}/${sceneCount}: ${product.name || 'สินค้า'}`,
                 });
                 const productReferenceDataUrl = await loadImageReferenceDataUrl(product.preview);
                 await uploadReferenceImageOrThrow({
@@ -2697,9 +2707,26 @@ export default function GoogleFlowWebViewRunnerHost({
                   step: 'image',
                   args: {
                     dataUrl: productReferenceDataUrl ?? undefined,
-                    fileName: getReferenceFileName(product),
+                    fileName: getProductReferenceFileName(product, productIndex, round, 'image'),
                     imageUrl: productReferenceDataUrl ? undefined : product.preview,
+                    referenceLabel: getProductReferenceLabel(productIndex),
                   },
+                });
+              } else {
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'warning',
+                  step: 'image',
+                  stage: 'multi_scene_attach_product_reference',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: `ไม่มีรูปสินค้าให้แนบสำหรับสร้างรูปฉาก ${sceneNumber}/${sceneCount}: ${product.name || 'สินค้า'}`,
                 });
               }
 
@@ -2716,7 +2743,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   currentProduct: productIndex + 1,
                   totalProducts: payload.products.length,
-                  message: `แนบรูป${reference.label}เป็น reference รูปฉาก ${sceneNumber}/${sceneCount}`,
+                  message: `แนบรูป${reference.label}เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}/${sceneCount}`,
                 });
                 const referenceDataUrl = await loadImageReferenceDataUrl(reference.uri);
                 await uploadReferenceImageOrThrow({
@@ -2730,6 +2757,7 @@ export default function GoogleFlowWebViewRunnerHost({
                     dataUrl: referenceDataUrl ?? undefined,
                     fileName: reference.fileName,
                     imageUrl: referenceDataUrl ? undefined : reference.uri,
+                    referenceLabel: `รูป${reference.label}`,
                   },
                 });
               }
@@ -2748,7 +2776,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   currentProduct: productIndex + 1,
                   totalProducts: payload.products.length,
-                  message: `แนบรูปฉากก่อนหน้าที่บันทึกไว้เป็น reference รูปฉาก ${sceneNumber}`,
+                  message: `แนบรูปฉากก่อนหน้าเป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
                 });
                 await uploadReferenceImageOrThrow({
                   handle,
@@ -2760,6 +2788,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   args: {
                     dataUrl: previousSceneImageDataUrl,
                     fileName: `kubdee-scene-reference-${sceneNumber}.png`,
+                    referenceLabel: 'รูปฉากก่อนหน้า',
                   },
                 });
               } else if (sceneNumber > 1 || hasPriorImageStep) {
@@ -3000,7 +3029,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalRounds: payload.settings.totalRounds,
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
-                message: `แนบรูปมุมเดียวที่บันทึกไว้เป็น reference วิดีโอฉาก ${sceneNumber}`,
+                message: `แนบรูปฉากมุมเดียวเป็น reference สำหรับวิดีโอฉาก ${sceneNumber}`,
               });
               await uploadReferenceImageOrThrow({
                 handle,
@@ -3012,6 +3041,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 args: {
                   dataUrl: sceneReferenceDataUrl,
                   fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
+                  referenceLabel: 'รูปฉากมุมเดียว',
                 },
               });
               return true;
@@ -3029,8 +3059,8 @@ export default function GoogleFlowWebViewRunnerHost({
                 currentProduct: productIndex + 1,
                 totalProducts: payload.products.length,
                 message: useSameAngle
-                  ? `แนบรูปแรกที่บันทึกไว้เป็น reference วิดีโอฉาก ${sceneNumber}`
-                  : `แนบรูปฉาก ${sceneNumber} ที่บันทึกไว้เป็น reference วิดีโอ`,
+                  ? `แนบรูปฉากแรกเป็น reference สำหรับวิดีโอฉาก ${sceneNumber}`
+                  : `แนบรูปฉาก ${sceneNumber} เป็น reference สำหรับวิดีโอ`,
               });
               await uploadReferenceImageOrThrow({
                 handle,
@@ -3042,12 +3072,27 @@ export default function GoogleFlowWebViewRunnerHost({
                 args: {
                   dataUrl: sceneReferenceDataUrl,
                   fileName: `kubdee-video-scene-reference-${sceneNumber}.png`,
+                  referenceLabel: `รูปฉาก ${sceneNumber}`,
                 },
               });
               return true;
             } else if (neededSceneImages > 0 || payload.enabledSteps.includes('image')) {
               throw new Error(`ไม่มีรูป reference สำหรับวิดีโอฉาก ${sceneNumber}`);
             } else if (product.preview) {
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step,
+                stage: 'multi_scene_attach_product_reference',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `แนบ${getProductReferenceLabel(productIndex)}เป็น reference สำหรับวิดีโอฉาก ${sceneNumber}: ${product.name || 'สินค้า'}`,
+              });
               const dataUrl = await loadImageReferenceDataUrl(product.preview);
               await uploadReferenceImageOrThrow({
                 handle,
@@ -3058,8 +3103,9 @@ export default function GoogleFlowWebViewRunnerHost({
                 step,
                 args: {
                   dataUrl: dataUrl ?? undefined,
-                  fileName: getReferenceFileName(product),
+                  fileName: getProductReferenceFileName(product, productIndex, round, step),
                   imageUrl: dataUrl ? undefined : product.preview,
+                  referenceLabel: getProductReferenceLabel(productIndex),
                 },
               });
               return true;
@@ -3537,8 +3583,8 @@ export default function GoogleFlowWebViewRunnerHost({
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
             message: cachedImageDataUrl
-              ? 'แนบรูปที่บันทึกไว้ของสินค้านี้เป็น reference วิดีโอ'
-              : 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference วิดีโอ',
+              ? 'แนบรูปที่สร้างไว้ของสินค้านี้เป็น reference สำหรับวิดีโอ'
+              : 'แนบรูปที่เพิ่งสร้างจาก Google Flow เป็น reference สำหรับวิดีโอ',
           });
           if (cachedImageDataUrl) {
             await uploadReferenceImageOrThrow({
@@ -3551,6 +3597,7 @@ export default function GoogleFlowWebViewRunnerHost({
               args: {
                 dataUrl: cachedImageDataUrl,
                 fileName: getGeneratedImageReferenceFileName(product, round),
+                referenceLabel: 'รูปที่สร้างไว้',
               },
             });
           } else {
@@ -3578,7 +3625,7 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: `แนบรูปสินค้า reference สำหรับ${label}`,
+            message: `แนบ${getProductReferenceLabel(productIndex)}เป็น reference สำหรับ${label}: ${product.name || 'สินค้า'}`,
           });
           const dataUrl = await loadImageReferenceDataUrl(product.preview);
           await uploadReferenceImageOrThrow({
@@ -3590,11 +3637,28 @@ export default function GoogleFlowWebViewRunnerHost({
             step,
             args: {
               dataUrl: dataUrl ?? undefined,
-              fileName: getReferenceFileName(product),
+              fileName: getProductReferenceFileName(product, productIndex, round, step),
               imageUrl: dataUrl ? undefined : product.preview,
+              referenceLabel: getProductReferenceLabel(productIndex),
             },
           });
           videoReferenceAttached = step === 'video';
+        } else if (step === 'image' || !shouldUsePreviousImage) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            level: 'warning',
+            step,
+            stage: 'attach_reference',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `ไม่มีรูปสินค้าให้แนบสำหรับ${label}: ${product.name || 'สินค้า'}`,
+          });
         }
 
         if (step === 'video' && !shouldUsePreviousImage) {
@@ -3625,6 +3689,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 dataUrl: referenceDataUrl ?? undefined,
                 fileName: reference.fileName,
                 imageUrl: referenceDataUrl ? undefined : reference.uri,
+                referenceLabel: `รูป${reference.label}`,
               },
             });
             videoReferenceAttached = true;
@@ -3659,6 +3724,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 dataUrl: referenceDataUrl ?? undefined,
                 fileName: reference.fileName,
                 imageUrl: referenceDataUrl ? undefined : reference.uri,
+                referenceLabel: `รูป${reference.label}`,
               },
             });
           }
@@ -4399,6 +4465,11 @@ export default function GoogleFlowWebViewRunnerHost({
           ? 'ยังไม่เชื่อมต่อ'
           : 'กำลังโหลด';
   const overlayTitle = overlayProgress?.productName?.trim() || 'Google Flow';
+  const overlaySubtitle = overlayProgress
+    ? `${formatOverlayStep(overlayProgress.step, overlayProgress.stage)} · Flow ${formatOverlayFlowStats(
+        overlayProgress.flowStats
+      )} · ${flowStatusLabel}`
+    : flowStatusLabel;
 
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={requestStop}>
@@ -4409,7 +4480,7 @@ export default function GoogleFlowWebViewRunnerHost({
               {overlayTitle}
             </Text>
             <Text numberOfLines={1} className="text-[10px] leading-3 text-kd-text-muted">
-              {activeRunId ? `run ${activeRunId.slice(-8)}` : 'Auto Workflow'}
+              {overlaySubtitle}
             </Text>
           </View>
           <TouchableOpacity
@@ -4433,21 +4504,6 @@ export default function GoogleFlowWebViewRunnerHost({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 6, paddingRight: 8 }}
             >
-              <OverlayStatChip
-                label="ขั้นตอน"
-                theme={theme}
-                value={formatOverlayStep(overlayProgress.step, overlayProgress.stage)}
-              />
-              <OverlayStatChip
-                label="Flow"
-                theme={theme}
-                value={formatOverlayFlowStats(overlayProgress.flowStats)}
-              />
-              <OverlayStatChip
-                label="WebView"
-                theme={theme}
-                value={flowStatusLabel}
-              />
               <OverlayStatChip
                 label="รอบ"
                 theme={theme}

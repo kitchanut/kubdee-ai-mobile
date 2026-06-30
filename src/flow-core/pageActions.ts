@@ -1395,6 +1395,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
   var dataUrl = String(args.dataUrl || '');
   var imageUrl = String(args.imageUrl || '');
   var fileName = String(args.fileName || 'kubdee-reference.png');
+  var referenceLabel = String(args.referenceLabel || 'รูป reference');
   function blobToDataUrl(blob){
     return new Promise(function(resolve, reject){
       var reader = new FileReader();
@@ -1552,9 +1553,9 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       var uploadActivity = getUploadActivity(activeDialog);
       if (uploadActivity.item) lastUploadItem = uploadActivity.item;
       if (uploadActivity.active) {
-        logUploadStatus(uploadActivity.percent ? ('กำลังอัปโหลดรูป reference: ' + uploadActivity.percent) : 'รูป reference กำลังอัปโหลด/ประมวลผลใน Google Flow...');
+        logUploadStatus(uploadActivity.percent ? ('กำลังอัปโหลด' + referenceLabel + ': ' + uploadActivity.percent) : referenceLabel + ' กำลังอัปโหลด/ประมวลผลใน Google Flow...');
       } else {
-        logUploadStatus('กำลังรอรูป reference ที่อัปโหลดเสร็จพร้อมเลือก...');
+        logUploadStatus('กำลังรอ' + referenceLabel + ' ที่อัปโหลดเสร็จพร้อมเลือก...');
       }
       if (!uploadActivity.active) {
         var uploadedItem = findReadyUploadedImageItem(activeDialog, knownSignatures, lastUploadItem);
@@ -1585,13 +1586,13 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       await wait(Math.min(5000, remaining * 1000));
     }
   }
-  setStatus('เตรียมรูป reference สำหรับอัปโหลดเข้า Google Flow...', 'info');
+  setStatus('เตรียม' + referenceLabel + ' สำหรับอัปโหลดเข้า Google Flow...', 'info');
   var resolvedDataUrl = await resolveDataUrl();
-  setStatus('กำลังเปิด dialog เลือกรูป reference...', 'action');
+  setStatus('กำลังเปิด dialog เลือก' + referenceLabel + '...', 'action');
   var dialog = await openImageDialog();
   await handleAgreeDialog();
   dialog = getOpenDialog() || dialog;
-  setStatus('Dialog เลือกรูปเปิดแล้ว กำลังเตรียมอัปโหลด...', 'info');
+  setStatus('Dialog เลือกรูปเปิดแล้ว กำลังเตรียมอัปโหลด' + referenceLabel + '...', 'info');
   var lastRateLimitText = '';
   for (var uploadAttempt = 1; uploadAttempt <= 2; uploadAttempt++) {
     dialog = getOpenDialog() || (dialog && isDialogOpen(dialog) ? dialog : null);
@@ -1605,7 +1606,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     var knownInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
     var uploadButton = findUploadButton(dialog);
     if (uploadButton) {
-      setStatus('พบปุ่ม Upload แล้ว กำลังส่งไฟล์รูป reference (ครั้งที่ ' + uploadAttempt + '/2)...', 'action');
+      setStatus('พบปุ่ม Upload แล้ว กำลังส่งไฟล์' + referenceLabel + ' (ครั้งที่ ' + uploadAttempt + '/2)...', 'action');
       showRipple(uploadButton);
       uploadButton.click();
       await wait(600);
@@ -1621,7 +1622,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
 
     var input = null;
-    setStatus('กำลังค้นหา file input สำหรับส่งรูปให้ Google Flow...', 'info');
+    setStatus('กำลังค้นหา file input สำหรับส่ง' + referenceLabel + ' ให้ Google Flow...', 'info');
     for (var f = 0; f < 20 && !input; f++) {
       var allInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
       var newInputs = allInputs.filter(function(candidate){ return knownInputs.indexOf(candidate) === -1; });
@@ -1648,7 +1649,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 
     var dt = new DataTransfer();
     dt.items.add(dataUrlToFile(resolvedDataUrl, fileName));
-    setStatus('กำลังใส่ไฟล์รูปเข้า file input และเริ่มอัปโหลด...', 'action');
+    setStatus('กำลังใส่ไฟล์' + referenceLabel + ' เข้า file input และเริ่มอัปโหลด...', 'action');
     input.files = dt.files;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1664,13 +1665,13 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
 
     if (!isDialogOpen(dialog)) {
-      setStatus('Google Flow แนบรูป reference อัตโนมัติแล้ว', 'success');
+      setStatus('Google Flow แนบ' + referenceLabel + ' อัตโนมัติแล้ว', 'success');
       return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
     }
-    setStatus('ส่งไฟล์แล้ว กำลังรอ Google Flow อัปโหลด/ประมวลผลรูป...', 'info');
+    setStatus('ส่งไฟล์แล้ว กำลังรอ Google Flow อัปโหลด/ประมวลผล' + referenceLabel + '...', 'info');
     var uploadResult = await waitForUploadedImageItem(dialog, known);
     if (uploadResult.autoAttached) {
-      setStatus('Google Flow แนบรูป reference อัตโนมัติแล้ว', 'success');
+      setStatus('Google Flow แนบ' + referenceLabel + ' อัตโนมัติแล้ว', 'success');
       return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
     }
     var rateLimitAfterUploadWait = getUploadRateLimitToast();
@@ -1685,26 +1686,26 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 
     var picked = uploadResult.item;
     if (!picked) {
-      setStatus('ยังไม่พบ signature รูปใหม่ กำลังเลือกรูปบนสุดที่พร้อมเลือกแทน...', 'warning');
+      setStatus('ยังไม่พบ signature ' + referenceLabel + ' ใหม่ กำลังเลือกรูปบนสุดที่พร้อมเลือกแทน...', 'warning');
       picked = await waitForStableTopReadyImageItem(dialog);
     }
     if (!picked) {
-      setStatus('ยังไม่พบรูปใหม่ที่พร้อมเลือก กำลังลองกด Add to Prompt...', 'warning');
+      setStatus('ยังไม่พบ' + referenceLabel + ' ใหม่ที่พร้อมเลือก กำลังลองกด Add to Prompt...', 'warning');
       if (await clickAddToPrompt(dialog)) {
         if (await waitForDialogClosed(dialog, 5000)) return { success: true, dataIndex: null, confirmed: true, rateLimitRetried: uploadAttempt > 1 };
       }
     }
-    if (!picked) throw new Error('อัปโหลดรูปแล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก');
+    if (!picked) throw new Error('อัปโหลด' + referenceLabel + ' แล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก');
     var dataIndex = picked.getAttribute('data-index');
-    setStatus('อัปโหลดเสร็จแล้ว กำลังเลือกรูป reference บนสุด [' + (dataIndex || '?') + ']...', 'action');
+    setStatus('อัปโหลดเสร็จแล้ว กำลังเลือก' + referenceLabel + ' บนสุด [' + (dataIndex || '?') + ']...', 'action');
     clickImageItem(picked);
     await wait(1000);
     if (!(await waitForDialogClosed(dialog, 5000))) {
-      setStatus('เลือกรูปแล้ว กำลังกด Add to Prompt...', 'action');
-      if (!(await clickAddToPrompt(dialog))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ไม่พบปุ่ม Add to Prompt');
-      if (!(await waitForDialogClosed(dialog, 5000))) throw new Error('เลือกรูปอัปโหลดแล้วแต่ dialog ยังไม่ปิด');
+      setStatus('เลือก' + referenceLabel + ' แล้ว กำลังกด Add to Prompt...', 'action');
+      if (!(await clickAddToPrompt(dialog))) throw new Error('เลือก' + referenceLabel + ' อัปโหลดแล้วแต่ไม่พบปุ่ม Add to Prompt');
+      if (!(await waitForDialogClosed(dialog, 5000))) throw new Error('เลือก' + referenceLabel + ' อัปโหลดแล้วแต่ dialog ยังไม่ปิด');
     }
-    setStatus('แนบรูป reference เข้า prompt สำเร็จ', 'success');
+    setStatus('แนบ' + referenceLabel + ' เข้า prompt สำเร็จ', 'success');
     return { success: true, dataIndex: dataIndex, rateLimitRetried: uploadAttempt > 1 };
   }
   throw new Error('Google Flow จำกัดความถี่การอัปโหลดรูป (' + (lastRateLimitText || 'uploading too quickly') + ') — รอ 30 วิและลองอัปโหลดใหม่แล้ว แต่ยังไม่สำเร็จ');

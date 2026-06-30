@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.3',
+    date: '2026-06-30',
+    highlight: 'Auto Workflow แนบรูปสินค้าหลายรายการแม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้กรณีสร้างสินค้าลำดับถัดไปแล้วระบบอาจแนบรูปสินค้าจากรายการก่อนหน้า' },
+      { type: 'improved', text: 'ปรับ log ระหว่างแนบรูปให้แยกชัดเจนว่าเป็นรูปสินค้า รูปตัวละคร หรือรูปฉาก' },
+    ],
+  },
+  {
     version: '0.2.2',
     date: '2026-06-30',
     highlight: 'Auto Workflow แนบรูปอ้างอิงจากคลังได้ครบขึ้น',
