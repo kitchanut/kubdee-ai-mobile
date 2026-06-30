@@ -8,7 +8,7 @@ import type { CreativeMediaAsset } from '@/library/CreativeLibraryContext';
 import { createGoogleFlowVideoThumbnail, listGoogleFlowAssets } from '@/native/AccessibilityBridge';
 
 export type GeneratedMediaKind = 'images' | 'videos';
-export type GeneratedMediaSource = 'auto-pilot-google-flow';
+export type GeneratedMediaSource = 'auto-pilot-google-flow' | 'mobile-device-import' | 'mobile-local-upload';
 
 export interface GeneratedMediaAsset {
   id: string;
@@ -29,6 +29,9 @@ export interface GeneratedMediaAsset {
   mimeType: string | null;
   thumbnailUri: string | null;
   sizeBytes: number | null;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
   createdAt: number;
   source: GeneratedMediaSource;
 }
@@ -45,11 +48,16 @@ export interface AddGeneratedMediaAssetInput {
   hashtags?: string | null;
   cta?: string | null;
   platform?: string | null;
+  title?: string | null;
   fileUri?: string | null;
   fileName?: string | null;
   mimeType?: string | null;
   thumbnailUri?: string | null;
   sizeBytes?: number | null;
+  width?: number | null;
+  height?: number | null;
+  durationMs?: number | null;
+  source?: GeneratedMediaSource | null;
   createdAt?: number;
 }
 
@@ -93,6 +101,14 @@ function cleanText(value: string | null | undefined): string {
   return value?.trim() ?? '';
 }
 
+function normalizeSource(value: string | null | undefined): GeneratedMediaSource {
+  const cleanValue = cleanText(value);
+  if (cleanValue === 'mobile-device-import' || cleanValue === 'mobile-local-upload') {
+    return cleanValue;
+  }
+  return 'auto-pilot-google-flow';
+}
+
 function createAssetId(input: AddGeneratedMediaAssetInput): string {
   const stablePart = [
     input.kind,
@@ -112,6 +128,7 @@ function normalizeAsset(input: AddGeneratedMediaAssetInput): GeneratedMediaAsset
   const productName = cleanText(input.productName) || 'สินค้า';
   const productCode = cleanText(input.productCode) || cleanText(input.productId) || 'unknown';
   const fileName = cleanText(input.fileName) || null;
+  const title = cleanText(input.title) || fileName;
   const stepTitle = input.kind === 'images' ? 'รูปภาพ' : 'วิดีโอ';
 
   return {
@@ -127,14 +144,17 @@ function normalizeAsset(input: AddGeneratedMediaAssetInput): GeneratedMediaAsset
     hashtags: cleanText(input.hashtags) || null,
     cta: cleanText(input.cta) || null,
     platform: cleanText(input.platform) || null,
-    title: fileName || `${stepTitle} Auto Pilot - ${productName}`,
+    title: title || `${stepTitle} Auto Pilot - ${productName}`,
     fileUri: cleanText(input.fileUri) || null,
     fileName,
     mimeType: cleanText(input.mimeType) || null,
     thumbnailUri: cleanText(input.thumbnailUri) || null,
     sizeBytes: typeof input.sizeBytes === 'number' && Number.isFinite(input.sizeBytes) ? input.sizeBytes : null,
+    width: typeof input.width === 'number' && Number.isFinite(input.width) && input.width > 0 ? input.width : null,
+    height: typeof input.height === 'number' && Number.isFinite(input.height) && input.height > 0 ? input.height : null,
+    durationMs: typeof input.durationMs === 'number' && Number.isFinite(input.durationMs) && input.durationMs > 0 ? input.durationMs : null,
     createdAt,
-    source: 'auto-pilot-google-flow',
+    source: normalizeSource(input.source),
   };
 }
 
@@ -158,8 +178,11 @@ function creativeMediaToGeneratedAsset(asset: CreativeMediaAsset): GeneratedMedi
     mimeType: asset.mimeType,
     thumbnailUri: asset.thumbnailUri ?? null,
     sizeBytes: asset.sizeBytes,
+    width: asset.width,
+    height: asset.height,
+    durationMs: asset.durationMs,
     createdAt: asset.createdAt,
-    source: 'auto-pilot-google-flow',
+    source: normalizeSource(asset.source),
   };
 }
 
@@ -209,6 +232,10 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
         cta: cleanText(asset.cta) || null,
         platform: cleanText(asset.platform) || null,
         thumbnailUri: cleanText(asset.thumbnailUri) || null,
+        width: typeof asset.width === 'number' && Number.isFinite(asset.width) && asset.width > 0 ? asset.width : null,
+        height: typeof asset.height === 'number' && Number.isFinite(asset.height) && asset.height > 0 ? asset.height : null,
+        durationMs: typeof asset.durationMs === 'number' && Number.isFinite(asset.durationMs) && asset.durationMs > 0 ? asset.durationMs : null,
+        source: normalizeSource(asset.source),
       }))
     ).slice(0, MAX_GENERATED_MEDIA_ASSETS);
   } catch {
@@ -274,9 +301,9 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           mimeType: storedAsset.mimeType,
           thumbnailUri: storedAsset.thumbnailUri,
           sizeBytes: storedAsset.sizeBytes,
-          width: null,
-          height: null,
-          durationMs: null,
+          width: storedAsset.width,
+          height: storedAsset.height,
+          durationMs: storedAsset.durationMs,
           source: storedAsset.source,
           createdAt: storedAsset.createdAt,
         });
@@ -319,9 +346,9 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       mimeType: asset.mimeType,
       sizeBytes: asset.sizeBytes,
       thumbnailUri: asset.thumbnailUri,
-      width: null,
-      height: null,
-      durationMs: null,
+      width: asset.width,
+      height: asset.height,
+      durationMs: asset.durationMs,
       source: asset.source,
       createdAt: asset.createdAt,
     });
@@ -381,9 +408,9 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
         mimeType: nextAsset.mimeType,
         thumbnailUri: nextAsset.thumbnailUri,
         sizeBytes: nextAsset.sizeBytes,
-        width: null,
-        height: null,
-        durationMs: null,
+        width: nextAsset.width,
+        height: nextAsset.height,
+        durationMs: nextAsset.durationMs,
         source: nextAsset.source,
         createdAt: nextAsset.createdAt,
       });
@@ -464,6 +491,10 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           mimeType: deviceAsset.mimeType,
           thumbnailUri,
           sizeBytes: deviceAsset.sizeBytes,
+          width: null,
+          height: null,
+          durationMs: null,
+          source: 'mobile-device-import',
           createdAt: deviceAsset.createdAt || Date.now(),
         });
         existingUris.add(deviceAsset.uri);
@@ -510,9 +541,9 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           mimeType: nextAsset.mimeType,
           thumbnailUri: nextAsset.thumbnailUri,
           sizeBytes: nextAsset.sizeBytes,
-          width: null,
-          height: null,
-          durationMs: null,
+          width: nextAsset.width,
+          height: nextAsset.height,
+          durationMs: nextAsset.durationMs,
           source: nextAsset.source,
           createdAt: nextAsset.createdAt,
         });

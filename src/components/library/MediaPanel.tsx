@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image as NativeImage, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import {
@@ -33,7 +34,7 @@ import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { getLocalProducts } from '@/library/localProductDb';
 import type { AffiliateProduct } from '@/library/types';
-import { deleteGoogleFlowAssets } from '@/native/AccessibilityBridge';
+import { createGoogleFlowVideoThumbnail, deleteGoogleFlowAssets } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
@@ -84,6 +85,21 @@ interface MediaGroupRecord {
   subtitle: string;
 }
 
+interface UploadDraft {
+  id: string;
+  asset: ImagePicker.ImagePickerAsset;
+  fileName: string;
+  title: string;
+  productId: string;
+  productName: string;
+  productUrl: string;
+  caption: string;
+  hashtags: string;
+  cta: string;
+  thumbnailUri: string | null;
+  sizeBytes: number | null;
+}
+
 /** Accent wash/border classes per media kind (mirrors getAccentTone soft = alpha 0.1 light / 0.16 dark). */
 const accentClasses: Record<MediaKind, { soft: string; border: string }> = {
   images: {
@@ -114,7 +130,7 @@ const panelCopy: Record<
     generalTab: 'รูปภาพทั่วไป',
     unit: 'รูป',
     emptyTitle: 'ยังไม่มีรูปภาพ',
-    emptyCopy: 'รูปภาพที่สร้างจะถูกบันทึกไว้ที่นี่โดยอัตโนมัติ',
+    emptyCopy: 'รูปภาพที่สร้างหรือเพิ่มจากเครื่องจะถูกบันทึกไว้ที่นี่',
     emptyGeneral: 'ยังไม่มีรูปภาพทั่วไป',
   },
   videos: {
@@ -123,7 +139,7 @@ const panelCopy: Record<
     generalTab: 'วิดีโอทั่วไป',
     unit: 'วิดีโอ',
     emptyTitle: 'ยังไม่มีวิดีโอ',
-    emptyCopy: 'วิดีโอที่สร้างจะถูกบันทึกไว้ที่นี่โดยอัตโนมัติ',
+    emptyCopy: 'วิดีโอที่สร้างหรือเพิ่มจากเครื่องจะถูกบันทึกไว้ที่นี่',
     emptyGeneral: 'ยังไม่มีวิดีโอทั่วไป',
   },
 };
@@ -209,6 +225,179 @@ function formatAssetSize(sizeBytes: number | null): string {
 
 function getFallbackMimeType(kind: MediaKind): string {
   return kind === 'images' ? 'image/*' : 'video/*';
+}
+
+function getFallbackExtension(kind: MediaKind): string {
+  return kind === 'images' ? 'jpg' : 'mp4';
+}
+
+function getPickedFileName(uri: string, fileName?: string | null): string {
+  const cleanFileName = cleanText(fileName);
+  if (cleanFileName) {
+    return cleanFileName;
+  }
+
+  const lastPathSegment = uri.split('?')[0]?.split('/').filter(Boolean).pop();
+  if (!lastPathSegment) {
+    return '';
+  }
+
+  try {
+    return decodeURIComponent(lastPathSegment);
+  } catch {
+    return lastPathSegment;
+  }
+}
+
+function getFileExtension(value: string, fallback: string): string {
+  const extension = value.split('?')[0]?.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+  return extension || fallback;
+}
+
+function stripFileExtension(value: string): string {
+  return value.replace(/\.[^/.]+$/, '').trim();
+}
+
+function sanitizeFileNamePart(value: string, fallback: string): string {
+  const cleanValue = value
+    .normalize('NFKD')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48);
+  return cleanValue || fallback;
+}
+
+function guessPickedMimeType(kind: MediaKind, fileName: string, provided?: string | null): string {
+  const cleanMimeType = cleanText(provided);
+  if (cleanMimeType) {
+    return cleanMimeType;
+  }
+
+  const extension = getFileExtension(fileName, getFallbackExtension(kind));
+  const imageMimeTypes: Record<string, string> = {
+    avif: 'image/avif',
+    gif: 'image/gif',
+    heic: 'image/heic',
+    heif: 'image/heif',
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+  };
+  const videoMimeTypes: Record<string, string> = {
+    m4v: 'video/x-m4v',
+    mov: 'video/quicktime',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+  };
+
+  return kind === 'images'
+    ? imageMimeTypes[extension] ?? 'image/jpeg'
+    : videoMimeTypes[extension] ?? 'video/mp4';
+}
+
+function getPickedAssetMatchesKind(kind: MediaKind, asset: ImagePicker.ImagePickerAsset): boolean {
+  const fileName = getPickedFileName(asset.uri, asset.fileName).toLowerCase();
+  const extension = getFileExtension(fileName, '');
+  const imageExtensions = new Set(['avif', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'webp']);
+  const videoExtensions = new Set(['m4v', 'mov', 'mp4', 'webm']);
+
+  if (kind === 'images') {
+    return (
+      asset.type === 'image' ||
+      (!asset.type && cleanText(asset.mimeType).startsWith('image/')) ||
+      (!asset.type && imageExtensions.has(extension))
+    );
+  }
+
+  return (
+    asset.type === 'video' ||
+    (!asset.type && cleanText(asset.mimeType).startsWith('video/')) ||
+    (!asset.type && videoExtensions.has(extension))
+  );
+}
+
+async function copyPickedMediaToLibrary(
+  kind: MediaKind,
+  asset: ImagePicker.ImagePickerAsset,
+  index: number
+): Promise<{
+  durationMs: number | null;
+  fileName: string;
+  fileUri: string;
+  height: number | null;
+  mimeType: string;
+  sizeBytes: number | null;
+  thumbnailUri: string | null;
+  title: string;
+  width: number | null;
+}> {
+  if (!FileSystem.documentDirectory) {
+    throw new Error('Document directory is not available');
+  }
+
+  const fallbackExtension = getFallbackExtension(kind);
+  const originalName = getPickedFileName(asset.uri, asset.fileName) || `${kind}-${Date.now()}-${index}.${fallbackExtension}`;
+  const extension = getFileExtension(originalName, fallbackExtension);
+  const title = stripFileExtension(originalName) || (kind === 'images' ? 'รูปภาพนำเข้า' : 'วิดีโอนำเข้า');
+  const safeName = sanitizeFileNamePart(title, `${kind}-${index}`);
+  const storageDirectory = `${FileSystem.documentDirectory}creative-media/${kind}`;
+  const fileName = `${Date.now()}-${index}-${safeName}.${extension}`;
+  const fileUri = `${storageDirectory}/${fileName}`;
+
+  await FileSystem.makeDirectoryAsync(storageDirectory, { intermediates: true });
+  await FileSystem.copyAsync({ from: asset.uri, to: fileUri });
+
+  const width = asset.width > 0 ? asset.width : null;
+  const height = asset.height > 0 ? asset.height : null;
+  const durationMs =
+    kind === 'videos' && typeof asset.duration === 'number' && Number.isFinite(asset.duration) && asset.duration > 0
+      ? Math.round(asset.duration)
+      : null;
+  const thumbnailUri = kind === 'videos'
+    ? await createGoogleFlowVideoThumbnail(fileUri).catch(() => null)
+    : fileUri;
+
+  return {
+    durationMs,
+    fileName,
+    fileUri,
+    height,
+    mimeType: guessPickedMimeType(kind, originalName, asset.mimeType),
+    sizeBytes: typeof asset.fileSize === 'number' && Number.isFinite(asset.fileSize) ? asset.fileSize : null,
+    thumbnailUri,
+    title,
+    width,
+  };
+}
+
+async function createUploadDraft(
+  kind: MediaKind,
+  asset: ImagePicker.ImagePickerAsset,
+  index: number
+): Promise<UploadDraft> {
+  const fallbackExtension = getFallbackExtension(kind);
+  const originalName = getPickedFileName(asset.uri, asset.fileName) || `${kind}-${Date.now()}-${index}.${fallbackExtension}`;
+  const title = stripFileExtension(originalName) || (kind === 'images' ? 'รูปภาพนำเข้า' : 'วิดีโอนำเข้า');
+  const thumbnailUri = kind === 'videos'
+    ? await createGoogleFlowVideoThumbnail(asset.uri).catch(() => null)
+    : asset.uri;
+
+  return {
+    id: `upload-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+    asset,
+    fileName: originalName,
+    title,
+    productId: '',
+    productName: '',
+    productUrl: '',
+    caption: '',
+    hashtags: '',
+    cta: '',
+    thumbnailUri,
+    sizeBytes: typeof asset.fileSize === 'number' && Number.isFinite(asset.fileSize) ? asset.fileSize : null,
+  };
 }
 
 async function openGeneratedFile(uri: string, kind: MediaKind, mimeType?: string | null): Promise<void> {
@@ -326,6 +515,11 @@ function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Arra
   const groupsByProduct = new Map<string, { item: MediaGroupRecord; media: MediaSubItem[] }>();
   for (const asset of assets) {
     const groupId = `generated-${kind}-${asset.productCode || asset.productId}`;
+    const subtitle = asset.source === 'mobile-local-upload'
+      ? 'เพิ่มจากเครื่อง'
+      : asset.source === 'mobile-device-import'
+        ? 'นำเข้าไฟล์จากเครื่อง'
+        : 'Google Flow | Auto Pilot';
     const existing = groupsByProduct.get(groupId);
     const group =
       existing ??
@@ -334,7 +528,7 @@ function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Arra
           id: groupId,
           title: asset.productName,
           code: asset.productCode,
-          subtitle: 'Google Flow | Auto Pilot',
+          subtitle,
         },
         media: [],
       };
@@ -381,10 +575,10 @@ export default function MediaPanel({
 }): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const {
+    addGeneratedMediaAsset,
     deleteGeneratedMediaAssets,
     ensureGeneratedVideoThumbnails,
     getAssetsByKind,
-    importGeneratedMediaAssets,
     refreshGeneratedMediaAssets,
     updateGeneratedMediaAsset,
   } = useGeneratedMedia();
@@ -418,7 +612,10 @@ export default function MediaPanel({
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [productPickerQuery, setProductPickerQuery] = useState('');
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
+  const [isAddingMedia, setIsAddingMedia] = useState(false);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [uploadDrafts, setUploadDrafts] = useState<UploadDraft[]>([]);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const ensuringVideoThumbnailsRef = useRef(false);
 
@@ -770,21 +967,120 @@ export default function MediaPanel({
     }
   };
 
-  const importMedia = async (): Promise<void> => {
-    if (isImporting) return;
-    setIsImporting(true);
+  const pickMediaFiles = async (append = false): Promise<void> => {
+    if (isAddingMedia || isUploadingMedia) return;
+    setIsAddingMedia(true);
     try {
-      const imported = await importGeneratedMediaAssets(kind, selectedProfileId);
-      await refreshGeneratedMediaAssets();
-      if (imported > 0) {
-        toast.success(`นำเข้าแล้ว ${imported} ${copy.unit}`);
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        toast.warning('กรุณาอนุญาตให้เข้าถึงคลังรูป/วิดีโอก่อน');
         return;
       }
-      toast.info('ไม่พบไฟล์ใหม่ใน Downloads/Kubdee AI');
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: true,
+        mediaTypes: kind === 'images' ? ['images'] : ['videos'],
+        quality: 1,
+      });
+
+      if (result.canceled || result.assets.length === 0) {
+        return;
+      }
+
+      const pickedAssets = result.assets.filter((asset) => getPickedAssetMatchesKind(kind, asset));
+      if (pickedAssets.length === 0) {
+        toast.warning(kind === 'images' ? 'กรุณาเลือกรูปภาพเท่านั้น' : 'กรุณาเลือกวิดีโอเท่านั้น');
+        return;
+      }
+
+      const startIndex = append ? uploadDrafts.length : 0;
+      const nextDrafts = await Promise.all(
+        pickedAssets.map((asset, index) => createUploadDraft(kind, asset, startIndex + index))
+      );
+      setUploadDrafts((current) => (append ? [...current, ...nextDrafts] : nextDrafts));
+      setUploadModalOpen(true);
     } catch {
-      toast.error('นำเข้าไฟล์ไม่สำเร็จ');
+      toast.error('เลือกไฟล์ไม่สำเร็จ');
     } finally {
-      setIsImporting(false);
+      setIsAddingMedia(false);
+    }
+  };
+
+  const updateUploadDraft = (id: string, field: keyof Pick<UploadDraft, 'caption' | 'cta' | 'hashtags' | 'productId' | 'productName' | 'productUrl' | 'title'>, value: string): void => {
+    setUploadDrafts((current) => current.map((draft) => (draft.id === id ? { ...draft, [field]: value } : draft)));
+  };
+
+  const removeUploadDraft = (id: string): void => {
+    setUploadDrafts((current) => {
+      const next = current.filter((draft) => draft.id !== id);
+      if (next.length === 0) {
+        setUploadModalOpen(false);
+      }
+      return next;
+    });
+  };
+
+  const closeUploadModal = (): void => {
+    if (isUploadingMedia) return;
+    setUploadModalOpen(false);
+    setUploadDrafts([]);
+  };
+
+  const confirmUploadDrafts = async (): Promise<void> => {
+    if (isUploadingMedia || uploadDrafts.length === 0) return;
+    setIsUploadingMedia(true);
+    try {
+      let imported = 0;
+      for (const [index, draft] of uploadDrafts.entries()) {
+        const copiedAsset = await copyPickedMediaToLibrary(kind, draft.asset, index);
+        const title = cleanText(draft.title) || copiedAsset.title;
+        const productId = cleanText(draft.productId);
+        const productName = cleanText(draft.productName);
+        const productUrl = cleanText(draft.productUrl);
+        const caption = cleanText(draft.caption);
+        const hashtags = cleanText(draft.hashtags);
+        const cta = cleanText(draft.cta);
+        const hasProductBinding = Boolean(productId || productName || productUrl);
+
+        await addGeneratedMediaAsset({
+          kind,
+          runId: 'mobile-local-upload',
+          profileLocalId: selectedProfileId,
+          productId: hasProductBinding ? productId || productUrl || productName : 'device-import',
+          productName: hasProductBinding ? productName || productId || 'สินค้าจากลิงก์' : 'ไฟล์นำเข้า',
+          productCode: hasProductBinding ? productId || productName || 'shopee-link' : 'device-import',
+          productUrl: productUrl || null,
+          caption: caption || null,
+          hashtags: hashtags || null,
+          cta: cta || null,
+          platform: hasProductBinding ? 'shopee' : null,
+          title,
+          fileUri: copiedAsset.fileUri,
+          fileName: copiedAsset.fileName,
+          mimeType: copiedAsset.mimeType,
+          thumbnailUri: copiedAsset.thumbnailUri,
+          sizeBytes: copiedAsset.sizeBytes,
+          width: copiedAsset.width,
+          height: copiedAsset.height,
+          durationMs: copiedAsset.durationMs,
+          source: 'mobile-local-upload',
+          createdAt: Date.now() + index,
+        });
+        imported += 1;
+      }
+
+      await refreshGeneratedMediaAssets();
+      if (imported > 0) {
+        setMediaMode('product');
+        setUploadDrafts([]);
+        setUploadModalOpen(false);
+        toast.success(`เพิ่มเข้าคลังแล้ว ${imported} ${copy.unit}`);
+        return;
+      }
+    } catch {
+      toast.error('อัพโหลดไฟล์ไม่สำเร็จ');
+    } finally {
+      setIsUploadingMedia(false);
     }
   };
 
@@ -803,8 +1099,8 @@ export default function MediaPanel({
               <HeaderIconButton
                 theme={theme}
                 icon={Upload}
-                label={isImporting ? 'กำลังนำเข้า' : 'นำเข้าไฟล์'}
-                onPress={() => void importMedia()}
+                label={isAddingMedia ? 'กำลังเพิ่ม' : kind === 'images' ? 'เพิ่มรูป' : 'เพิ่มวิดีโอ'}
+                onPress={() => void pickMediaFiles()}
               />
               <HeaderIconButton
                 theme={theme}
@@ -1021,6 +1317,165 @@ export default function MediaPanel({
           onShopee={kind === 'videos' ? sendSelectedVideosToShopee : undefined}
         />
       ) : null}
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={uploadModalOpen}
+        onRequestClose={closeUploadModal}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <View
+            className="max-h-[94%] rounded-t-[20px] border border-kd-border bg-kd-panel"
+            style={{ paddingBottom: Math.max(insets.bottom + 10, 18) }}
+          >
+            <View className="flex-row items-center justify-between gap-3 border-b border-kd-border px-4 py-3">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <Upload size={16} color={accentColor} strokeWidth={2.2} />
+                <Text numberOfLines={1} className="text-kd-title font-semibold text-kd-text">
+                  อัพโหลด{kind === 'images' ? 'รูปภาพ' : 'วิดีโอ'} ({uploadDrafts.length} ไฟล์)
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                disabled={isUploadingMedia}
+                onPress={closeUploadModal}
+                className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted disabled:opacity-50"
+              >
+                <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerClassName="gap-3 p-3"
+            >
+              {uploadDrafts.map((draft) => (
+                <View key={draft.id} className="overflow-hidden rounded-kd-lg border border-kd-border bg-kd-card">
+                  <View className="flex-row items-center gap-3 border-b border-kd-border bg-kd-card-muted px-2.5 py-2">
+                    <View className="h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-kd-md bg-kd-panel">
+                      {draft.thumbnailUri ? (
+                        <NativeImage source={{ uri: draft.thumbnailUri }} className="h-full w-full" resizeMode="cover" />
+                      ) : kind === 'images' ? (
+                        <ImageIcon size={16} color={theme.textMuted} strokeWidth={1.6} />
+                      ) : (
+                        <Play size={16} color={theme.textMuted} strokeWidth={1.8} />
+                      )}
+                    </View>
+
+                    <View className="min-w-0 flex-1">
+                      <Text numberOfLines={1} className="text-kd-caption font-semibold text-kd-text">
+                        {draft.fileName}
+                      </Text>
+                      <Text numberOfLines={1} className="mt-0.5 text-[10px] text-kd-text-muted">
+                        {formatAssetSize(draft.sizeBytes)}
+                      </Text>
+                    </View>
+
+                    <Pressable
+                      accessibilityLabel="ลบไฟล์"
+                      accessibilityRole="button"
+                      disabled={isUploadingMedia}
+                      onPress={() => removeUploadDraft(draft.id)}
+                      className="h-8 w-8 items-center justify-center rounded-full disabled:opacity-50"
+                    >
+                      <X size={15} color={theme.textMuted} strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
+
+                  <View>
+                    <UploadDraftInput
+                      value={draft.productId}
+                      onChangeText={(value) => updateUploadDraft(draft.id, 'productId', value)}
+                      placeholder="รหัสสินค้า (ID)..."
+                      editable={!isUploadingMedia}
+                      mono
+                      theme={theme}
+                    />
+                    <UploadDraftInput
+                      value={draft.productName}
+                      onChangeText={(value) => updateUploadDraft(draft.id, 'productName', value)}
+                      placeholder="ชื่อสินค้า..."
+                      editable={!isUploadingMedia}
+                      multiline
+                      theme={theme}
+                    />
+                    <UploadDraftInput
+                      value={draft.productUrl}
+                      onChangeText={(value) => updateUploadDraft(draft.id, 'productUrl', value)}
+                      placeholder="ลิงก์สินค้า เช่น Shopee link..."
+                      editable={!isUploadingMedia}
+                      theme={theme}
+                    />
+                    <UploadDraftInput
+                      value={draft.caption}
+                      onChangeText={(value) => updateUploadDraft(draft.id, 'caption', value)}
+                      placeholder="Caption..."
+                      editable={!isUploadingMedia}
+                      multiline
+                      theme={theme}
+                    />
+                    <UploadDraftInput
+                      value={draft.hashtags}
+                      onChangeText={(value) => updateUploadDraft(draft.id, 'hashtags', value)}
+                      placeholder="#แฮชแท็ก..."
+                      editable={!isUploadingMedia}
+                      theme={theme}
+                    />
+                    <UploadDraftInput
+                      value={draft.cta}
+                      onChangeText={(value) => updateUploadDraft(draft.id, 'cta', value)}
+                      placeholder="Call to Action (CTA)..."
+                      editable={!isUploadingMedia}
+                      last
+                      theme={theme}
+                    />
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View className="flex-row items-center justify-between gap-3 border-t border-kd-border px-4 pt-3">
+              <Pressable
+                accessibilityRole="button"
+                disabled={isAddingMedia || isUploadingMedia}
+                onPress={() => void pickMediaFiles(true)}
+                className="min-h-10 flex-row items-center gap-1.5 rounded-kd-lg px-1 disabled:opacity-50"
+              >
+                <Upload size={13} color={accentColor} strokeWidth={2.2} />
+                <Text className="text-kd-caption font-semibold" style={{ color: accentColor }}>
+                  เพิ่มไฟล์
+                </Text>
+              </Pressable>
+
+              <View className="flex-1 flex-row justify-end gap-2">
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isUploadingMedia}
+                  onPress={closeUploadModal}
+                  className="h-10 min-w-20 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card px-3 disabled:opacity-50"
+                >
+                  <Text className="text-kd-caption font-semibold text-kd-text-subtle">ยกเลิก</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isUploadingMedia || uploadDrafts.length === 0}
+                  onPress={() => void confirmUploadDrafts()}
+                  className="h-10 min-w-28 flex-row items-center justify-center gap-1.5 rounded-kd-lg px-4 disabled:opacity-50"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {isUploadingMedia ? <ActivityIndicator color={theme.white} size="small" /> : <Upload size={13} color={theme.white} strokeWidth={2.2} />}
+                  <Text className="text-kd-caption font-semibold text-white">
+                    {isUploadingMedia ? 'กำลังอัพโหลด...' : `อัพโหลด ${uploadDrafts.length} ไฟล์`}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         animationType="fade"
@@ -1378,6 +1833,39 @@ function LabeledTextInput({
         }`}
       />
     </View>
+  );
+}
+
+function UploadDraftInput({
+  value,
+  placeholder,
+  editable,
+  last = false,
+  mono = false,
+  multiline = false,
+  theme,
+  onChangeText,
+}: {
+  value: string;
+  placeholder: string;
+  editable: boolean;
+  last?: boolean;
+  mono?: boolean;
+  multiline?: boolean;
+  theme: KubdeeTheme;
+  onChangeText: (value: string) => void;
+}): React.JSX.Element {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      placeholderTextColor={theme.textMuted}
+      editable={editable}
+      multiline={multiline}
+      textAlignVertical={multiline ? 'top' : 'center'}
+      className={`${multiline ? 'min-h-[58px] py-2' : 'h-10'} w-full bg-transparent px-3 text-kd-body text-kd-text ${mono ? 'font-mono' : ''} ${last ? '' : 'border-b border-kd-border'}`}
+    />
   );
 }
 

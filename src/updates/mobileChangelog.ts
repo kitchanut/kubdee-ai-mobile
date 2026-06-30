@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.8',
+    date: '2026-06-30',
+    highlight: 'เพิ่มรูปและวิดีโอเข้าคลังได้ละเอียดขึ้น',
+    changes: [
+      { type: 'added', text: 'คลังรูปภาพและคลังวิดีโอรองรับการเลือกหลายไฟล์จากเครื่องก่อนบันทึกเข้าคลัง' },
+      { type: 'added', text: 'เพิ่มหน้ากรอกข้อมูลต่อไฟล์ เช่น รหัสสินค้า ชื่อสินค้า ลิงก์สินค้า Caption Hashtag และ CTA' },
+      { type: 'improved', text: 'วิดีโอที่เพิ่มจากเครื่องมี thumbnail และเก็บข้อมูลไฟล์เพื่อเปิดดู แก้ไข หรือนำไปใช้ต่อได้ง่ายขึ้น' },
+      { type: 'fixed', text: 'ปรับฟอนต์ช่องกรอกชื่อตัวละครและฉากให้แสดงภาษาไทยสม่ำเสมอขึ้น' },
+    ],
+  },
+  {
     version: '0.2.7',
     date: '2026-06-30',
     highlight: 'คลังตัวละครและฉากแนบรูปเองได้แล้ว',

@@ -20,6 +20,7 @@ import { toast } from 'sonner-native';
 import Text from '@/components/ui/KubdeeText';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type { CreativeAssetKind, CreativeLibraryItem } from '@/library/CreativeLibraryContext';
+import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import {
@@ -284,6 +285,7 @@ export default function SimpleListPanel({
               placeholder="ชื่อ"
               placeholderTextColor={theme.textMuted}
               className="h-11 rounded-kd-lg border border-kd-border bg-kd-input px-3 text-kd-body text-kd-text"
+              style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
             />
             <TextInput
               value={draft?.description ?? ''}
@@ -293,6 +295,7 @@ export default function SimpleListPanel({
               multiline
               textAlignVertical="top"
               className="min-h-24 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2 text-kd-body text-kd-text"
+              style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
             />
             <View className="gap-2">
               <Pressable
