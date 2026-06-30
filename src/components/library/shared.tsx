@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Check, ChevronDown, ChevronUp, Pencil, Search, Star, Trash2, X } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, Pencil, Search, Star, Trash2, Upload, X } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
 import { ShopeeLogo } from '@/components/BrandLogos';
@@ -391,8 +391,10 @@ export function SelectionBar({
   count,
   bottomInset = 0,
   showAuto = false,
+  showCloudUpload = false,
   showShopee = false,
   onAuto,
+  onCloudUpload,
   onShopee,
   onClear,
   onDelete,
@@ -403,8 +405,10 @@ export function SelectionBar({
   count: number;
   bottomInset?: number;
   showAuto?: boolean;
+  showCloudUpload?: boolean;
   showShopee?: boolean;
   onAuto?: () => void;
+  onCloudUpload?: () => void;
   onShopee?: () => void;
   onClear: () => void;
   onDelete?: () => void;
@@ -462,6 +466,17 @@ export function SelectionBar({
               className="h-7 w-7 items-center justify-center rounded-full bg-kd-orange"
             >
               <ShopeeLogo size={14} color={theme.white} cutoutColor="#EE4D2D" />
+            </Pressable>
+          ) : null}
+          {showCloudUpload ? (
+            <Pressable
+              accessibilityLabel="ส่งขึ้น Cloud Transfer"
+              accessibilityRole="button"
+              disabled={!onCloudUpload}
+              onPress={onCloudUpload}
+              className="h-7 w-7 items-center justify-center rounded-full bg-kd-blue"
+            >
+              <Upload size={12} color={theme.white} strokeWidth={2.5} />
             </Pressable>
           ) : null}
           <Pressable

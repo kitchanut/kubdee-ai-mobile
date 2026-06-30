@@ -2728,6 +2728,67 @@ export default function GoogleFlowWebViewRunnerHost({
                 throw new Error(`ตั้งค่า Flow รูปฉากไม่ครบ: ${config.error ?? 'unknown'}`);
               }
 
+              const previousSceneImageDataUrl = sceneImageDataUrls[sceneImageDataUrls.length - 1];
+              if ((sceneNumber > 1 || hasPriorImageStep) && previousSceneImageDataUrl) {
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  step: 'image',
+                  stage: 'multi_scene_attach_previous_image',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: `เลือกรูปฉากก่อนหน้าจากรายการบนสุดใน Flow เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
+                });
+                try {
+                  await selectRecentImageOrThrow({
+                    handle,
+                    payload,
+                    product,
+                    productIndex,
+                    round,
+                    stage: 'multi_scene_select_recent_reference',
+                    step: 'image',
+                  });
+                } catch (selectError) {
+                  const reason = selectError instanceof Error ? selectError.message : String(selectError);
+                  emit({
+                    event: 'progress',
+                    runId: payload.runId,
+                    status: 'running',
+                    level: 'warning',
+                    step: 'image',
+                    stage: 'multi_scene_upload_reference_fallback',
+                    productId: product.id,
+                    productName: product.name,
+                    currentRound: round,
+                    totalRounds: payload.settings.totalRounds,
+                    currentProduct: productIndex + 1,
+                    totalProducts: payload.products.length,
+                    message: `เลือกรูปฉากก่อนหน้าล่าสุดไม่สำเร็จ: ${reason || 'unknown'} — จะอัปโหลดรูปฉากก่อนหน้าแทน`,
+                  });
+                  await uploadReferenceImageOrThrow({
+                    handle,
+                    payload,
+                    product,
+                    productIndex,
+                    round,
+                    step: 'image',
+                    args: {
+                      dataUrl: previousSceneImageDataUrl,
+                      fileName: `kubdee-scene-reference-${sceneNumber}.png`,
+                      referenceLabel: 'รูปฉากก่อนหน้า',
+                    },
+                  });
+                }
+              } else if (sceneNumber > 1 || hasPriorImageStep) {
+                throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
+              }
+
               if (product.preview) {
                 emit({
                   event: 'progress',
@@ -2806,67 +2867,6 @@ export default function GoogleFlowWebViewRunnerHost({
                     referenceLabel: `รูป${reference.label}`,
                   },
                 });
-              }
-
-              const previousSceneImageDataUrl = sceneImageDataUrls[sceneImageDataUrls.length - 1];
-              if ((sceneNumber > 1 || hasPriorImageStep) && previousSceneImageDataUrl) {
-                emit({
-                  event: 'progress',
-                  runId: payload.runId,
-                  status: 'running',
-                  step: 'image',
-                  stage: 'multi_scene_attach_previous_image',
-                  productId: product.id,
-                  productName: product.name,
-                  currentRound: round,
-                  totalRounds: payload.settings.totalRounds,
-                  currentProduct: productIndex + 1,
-                  totalProducts: payload.products.length,
-                  message: `เลือกรูปฉากก่อนหน้าจากรายการบนสุดใน Flow เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
-                });
-                try {
-                  await selectRecentImageOrThrow({
-                    handle,
-                    payload,
-                    product,
-                    productIndex,
-                    round,
-                    stage: 'multi_scene_select_recent_reference',
-                    step: 'image',
-                  });
-                } catch (selectError) {
-                  const reason = selectError instanceof Error ? selectError.message : String(selectError);
-                  emit({
-                    event: 'progress',
-                    runId: payload.runId,
-                    status: 'running',
-                    level: 'warning',
-                    step: 'image',
-                    stage: 'multi_scene_upload_reference_fallback',
-                    productId: product.id,
-                    productName: product.name,
-                    currentRound: round,
-                    totalRounds: payload.settings.totalRounds,
-                    currentProduct: productIndex + 1,
-                    totalProducts: payload.products.length,
-                    message: `เลือกรูปฉากก่อนหน้าล่าสุดไม่สำเร็จ: ${reason || 'unknown'} — จะอัปโหลดรูปฉากก่อนหน้าแทน`,
-                  });
-                  await uploadReferenceImageOrThrow({
-                    handle,
-                    payload,
-                    product,
-                    productIndex,
-                    round,
-                    step: 'image',
-                    args: {
-                      dataUrl: previousSceneImageDataUrl,
-                      fileName: `kubdee-scene-reference-${sceneNumber}.png`,
-                      referenceLabel: 'รูปฉากก่อนหน้า',
-                    },
-                  });
-                }
-              } else if (sceneNumber > 1 || hasPriorImageStep) {
-                throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
               }
 
               const imageSnapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;

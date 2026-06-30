@@ -8,7 +8,11 @@ import type { CreativeMediaAsset } from '@/library/CreativeLibraryContext';
 import { createGoogleFlowVideoThumbnail, listGoogleFlowAssets } from '@/native/AccessibilityBridge';
 
 export type GeneratedMediaKind = 'images' | 'videos';
-export type GeneratedMediaSource = 'auto-pilot-google-flow' | 'mobile-device-import' | 'mobile-local-upload';
+export type GeneratedMediaSource =
+  | 'auto-pilot-google-flow'
+  | 'cloud-transfer'
+  | 'mobile-device-import'
+  | 'mobile-local-upload';
 
 export interface GeneratedMediaAsset {
   id: string;
@@ -103,7 +107,7 @@ function cleanText(value: string | null | undefined): string {
 
 function normalizeSource(value: string | null | undefined): GeneratedMediaSource {
   const cleanValue = cleanText(value);
-  if (cleanValue === 'mobile-device-import' || cleanValue === 'mobile-local-upload') {
+  if (cleanValue === 'cloud-transfer' || cleanValue === 'mobile-device-import' || cleanValue === 'mobile-local-upload') {
     return cleanValue;
   }
   return 'auto-pilot-google-flow';

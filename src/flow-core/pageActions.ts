@@ -1514,12 +1514,14 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
     return { active: false, percent: null, item: null };
   }
-  function findReadyUploadedImageItem(dialog, knownSignatures, lastUploadItem){
+  function findReadyUploadedImageItem(dialog, knownSignatures, knownItems, lastUploadItem, trustLastUploadItem){
     var scope = dialog && dialog.isConnected ? dialog : document;
     var preferred = lastUploadItem && (lastUploadItem.closest('[data-index]') || lastUploadItem);
     if (preferred && readyImageItem(preferred)) {
+      if (trustLastUploadItem) return preferred;
       var preferredSig = itemSignature(preferred);
-      if (preferredSig && knownSignatures.indexOf(preferredSig) === -1) return preferred;
+      var preferredIsNewElement = knownItems.indexOf(preferred) === -1;
+      if ((preferredSig && knownSignatures.indexOf(preferredSig) === -1) || preferredIsNewElement) return preferred;
     }
     var seen = [];
     var items = sortImageItemsByTop(imageItems(scope).filter(readyImageItem)).filter(function(item){
@@ -1529,12 +1531,15 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
     });
     for (var i = 0; i < items.length; i++) {
       var sig = itemSignature(items[i]);
-      if (sig && knownSignatures.indexOf(sig) === -1) return items[i];
+      var isNewSignature = sig && knownSignatures.indexOf(sig) === -1;
+      var isNewElement = knownItems.indexOf(items[i]) === -1;
+      if (isNewSignature || (knownSignatures.length === 0 && isNewElement)) return items[i];
     }
     return null;
   }
-  async function waitForUploadedImageItem(dialog, knownSignatures){
+  async function waitForUploadedImageItem(dialog, knownSignatures, knownItems){
     var lastUploadItem = null;
+    var sawUploadActivity = false;
     var stableSignature = '';
     var stableCount = 0;
     var lastStatusMessage = '';
@@ -1551,14 +1556,17 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       var activeDialog = getOpenDialog() || dialog;
       if (!isDialogOpen(activeDialog)) return { autoAttached: true, item: null };
       var uploadActivity = getUploadActivity(activeDialog);
-      if (uploadActivity.item) lastUploadItem = uploadActivity.item;
+      if (uploadActivity.item) {
+        lastUploadItem = uploadActivity.item;
+        sawUploadActivity = true;
+      }
       if (uploadActivity.active) {
         logUploadStatus(uploadActivity.percent ? ('กำลังอัปโหลด' + referenceLabel + ': ' + uploadActivity.percent) : referenceLabel + ' กำลังอัปโหลด/ประมวลผลใน Google Flow...');
       } else {
         logUploadStatus('กำลังรอ' + referenceLabel + ' ที่อัปโหลดเสร็จพร้อมเลือก...');
       }
       if (!uploadActivity.active) {
-        var uploadedItem = findReadyUploadedImageItem(activeDialog, knownSignatures, lastUploadItem);
+        var uploadedItem = findReadyUploadedImageItem(activeDialog, knownSignatures, knownItems, lastUploadItem, sawUploadActivity);
         if (uploadedItem) {
           var sig = itemSignature(uploadedItem) || ('item:' + (uploadedItem.getAttribute('data-index') || '?'));
           if (sig === stableSignature) stableCount += 1;
@@ -1577,7 +1585,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       }
       await wait(1000);
     }
-    return { autoAttached: false, item: findReadyUploadedImageItem(getOpenDialog() || dialog, knownSignatures, lastUploadItem) };
+    return { autoAttached: false, item: findReadyUploadedImageItem(getOpenDialog() || dialog, knownSignatures, knownItems, lastUploadItem, sawUploadActivity) };
   }
   async function waitBeforeUploadRetry(){
     dismissUploadRateLimitToast();
@@ -1602,7 +1610,11 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       await handleAgreeDialog();
       dialog = getOpenDialog() || dialog;
     }
-    var known = imageItems(dialog).filter(readyImageItem).map(itemSignature).filter(Boolean);
+    var knownItems = imageItems(dialog)
+      .filter(readyImageItem)
+      .map(function(item){ return item && (item.closest('[data-index]') || item); })
+      .filter(Boolean);
+    var known = knownItems.map(itemSignature).filter(Boolean);
     var knownInputs = Array.prototype.slice.call(document.querySelectorAll('input[type="file"]'));
     var uploadButton = findUploadButton(dialog);
     if (uploadButton) {
@@ -1669,7 +1681,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
     }
     setStatus('ส่งไฟล์แล้ว กำลังรอ Google Flow อัปโหลด/ประมวลผล' + referenceLabel + '...', 'info');
-    var uploadResult = await waitForUploadedImageItem(dialog, known);
+    var uploadResult = await waitForUploadedImageItem(dialog, known, knownItems);
     if (uploadResult.autoAttached) {
       setStatus('Google Flow แนบ' + referenceLabel + ' อัตโนมัติแล้ว', 'success');
       return { success: true, dataIndex: null, autoAttached: true, rateLimitRetried: uploadAttempt > 1 };
@@ -1686,8 +1698,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
 
     var picked = uploadResult.item;
     if (!picked) {
-      setStatus('ยังไม่พบ signature ' + referenceLabel + ' ใหม่ กำลังเลือกรูปบนสุดที่พร้อมเลือกแทน...', 'warning');
-      picked = await waitForStableTopReadyImageItem(dialog);
+      setStatus('อัปโหลด' + referenceLabel + ' แล้ว แต่ยังยืนยันรูปที่อัปโหลดใหม่ไม่ได้ จึงไม่เลือกจากรายการบนสุดเพื่อเลี่ยงเลือกผิด', 'warning');
     }
     if (!picked) {
       setStatus('ยังไม่พบ' + referenceLabel + ' ใหม่ที่พร้อมเลือก กำลังลองกด Add to Prompt...', 'warning');

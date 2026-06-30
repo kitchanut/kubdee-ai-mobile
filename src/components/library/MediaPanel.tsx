@@ -29,12 +29,24 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 
+import { useAuth } from '@/auth/AuthContext';
 import Text from '@/components/ui/KubdeeText';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { getLocalProducts } from '@/library/localProductDb';
 import type { AffiliateProduct } from '@/library/types';
 import { createGoogleFlowVideoThumbnail, deleteGoogleFlowAssets } from '@/native/AccessibilityBridge';
+import {
+  acceptCloudTransfer,
+  downloadCloudTransferVideo,
+  getCloudTransferText,
+  listCloudTransferInbox,
+  MAX_CLOUD_TRANSFER_VIDEO_BYTES,
+  uploadCloudTransferVideos,
+  type CloudTransferItem,
+  type CloudTransferProgress,
+  type CloudTransferVideoUploadItem,
+} from '@/services/cloudTransferService';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 
@@ -221,6 +233,119 @@ function formatAssetSize(sizeBytes: number | null): string {
   }
 
   return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+}
+
+function formatCloudTransferPhase(phase: CloudTransferProgress['phase']): string {
+  if (phase === 'preparing') return 'เตรียมไฟล์';
+  if (phase === 'creating') return 'สร้าง transfer';
+  if (phase === 'uploading') return 'กำลังส่งไฟล์';
+  if (phase === 'finalizing') return 'ยืนยันอัปโหลด';
+  if (phase === 'downloading') return 'กำลังดาวน์โหลด';
+  if (phase === 'saving') return 'บันทึกเข้าคลัง';
+  if (phase === 'accepting') return 'ยืนยันรับไฟล์';
+  if (phase === 'completed') return 'สำเร็จ';
+  if (phase === 'failed') return 'ไม่สำเร็จ';
+  return 'กำลังประมวลผล';
+}
+
+function getCloudTransferProgress(status: CloudTransferProgress | null): number {
+  if (!status || status.total <= 0) {
+    return 0;
+  }
+  if (typeof status.bytesWritten === 'number' && typeof status.totalBytes === 'number' && status.totalBytes > 0) {
+    const itemProgress = Math.max(0, Math.min(1, status.bytesWritten / status.totalBytes));
+    return Math.min(1, (Math.max(0, status.current - 1) + itemProgress) / status.total);
+  }
+  if (status.phase === 'completed') {
+    return 1;
+  }
+  return Math.min(1, Math.max(0, status.current - 0.65) / status.total);
+}
+
+function formatCloudExpiry(timestamp: number | null | undefined): string {
+  if (!timestamp || !Number.isFinite(timestamp)) {
+    return '-';
+  }
+  return new Intl.DateTimeFormat('th-TH', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp));
+}
+
+function getCloudTransferDisplayName(transfer: CloudTransferItem): string {
+  return (
+    getCloudTransferText(transfer, 'displayName') ||
+    getCloudTransferText(transfer, 'productName') ||
+    getCloudTransferText(transfer, 'title') ||
+    getCloudTransferText(transfer, 'localName') ||
+    cleanText(transfer.displayName) ||
+    cleanText(transfer.filename) ||
+    'Cloud Transfer Video'
+  );
+}
+
+function getCloudTransferTitle(transfer: CloudTransferItem): string {
+  return stripFileExtension(getCloudTransferDisplayName(transfer)) || 'Cloud Transfer Video';
+}
+
+function buildCloudUploadItem(asset: GeneratedMediaAsset): CloudTransferVideoUploadItem {
+  return {
+    id: asset.id,
+    fileUri: asset.fileUri || '',
+    fileName: asset.fileName,
+    title: asset.title,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    width: asset.width,
+    height: asset.height,
+    durationMs: asset.durationMs,
+    profileLocalId: asset.profileLocalId,
+    productId: asset.productId,
+    productCode: asset.productCode,
+    productName: asset.productName,
+    productUrl: asset.productUrl,
+    caption: asset.caption,
+    hashtags: asset.hashtags,
+    cta: asset.cta,
+    platform: asset.platform,
+  };
+}
+
+function resolveCloudTransferProductFields(transfer: CloudTransferItem, fallbackProfileId: string): {
+  caption: string | null;
+  cta: string | null;
+  hashtags: string | null;
+  platform: string | null;
+  productCode: string;
+  productId: string;
+  productName: string;
+  productUrl: string | null;
+  profileLocalId: string;
+  title: string;
+} {
+  const title = getCloudTransferTitle(transfer);
+  const productName = getCloudTransferText(transfer, 'productName') || 'ไฟล์นำเข้า';
+  const productCode = getCloudTransferText(transfer, 'productId', 'productCode') || 'cloud-transfer';
+  const productDbId = getCloudTransferText(transfer, 'productDbId');
+  const productUrl = getCloudTransferText(transfer, 'productUrl') || null;
+  const platform = getCloudTransferText(transfer, 'platform') || null;
+  const caption = getCloudTransferText(transfer, 'caption') || null;
+  const hashtags = getCloudTransferText(transfer, 'hashtags', 'hashtag') || null;
+  const cta = getCloudTransferText(transfer, 'cta') || null;
+  const profileLocalId = getCloudTransferText(transfer, 'profileId') || fallbackProfileId;
+
+  return {
+    caption,
+    cta,
+    hashtags,
+    platform,
+    productCode,
+    productId: productDbId || productCode || transfer.id,
+    productName,
+    productUrl,
+    profileLocalId,
+    title,
+  };
 }
 
 function getFallbackMimeType(kind: MediaKind): string {
@@ -519,7 +644,9 @@ function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Arra
       ? 'เพิ่มจากเครื่อง'
       : asset.source === 'mobile-device-import'
         ? 'นำเข้าไฟล์จากเครื่อง'
-        : 'Google Flow | Auto Pilot';
+        : asset.source === 'cloud-transfer'
+          ? 'รับจาก Cloud Transfer'
+          : 'Google Flow | Auto Pilot';
     const existing = groupsByProduct.get(groupId);
     const group =
       existing ??
@@ -574,6 +701,7 @@ export default function MediaPanel({
   onSendVideosToShopee?: (videoIds: string[]) => void;
 }): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const {
     addGeneratedMediaAsset,
     deleteGeneratedMediaAssets,
@@ -617,6 +745,13 @@ export default function MediaPanel({
   const [uploadDrafts, setUploadDrafts] = useState<UploadDraft[]>([]);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [cloudInboxOpen, setCloudInboxOpen] = useState(false);
+  const [cloudInboxLoading, setCloudInboxLoading] = useState(false);
+  const [cloudTransfers, setCloudTransfers] = useState<CloudTransferItem[]>([]);
+  const [selectedCloudTransferIds, setSelectedCloudTransferIds] = useState<Set<string>>(new Set());
+  const [cloudUploadConfirmAssets, setCloudUploadConfirmAssets] = useState<GeneratedMediaAsset[]>([]);
+  const [cloudTransferStatus, setCloudTransferStatus] = useState<CloudTransferProgress | null>(null);
+  const [cloudTransferWorking, setCloudTransferWorking] = useState(false);
   const ensuringVideoThumbnailsRef = useRef(false);
 
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
@@ -725,6 +860,21 @@ export default function MediaPanel({
   const productMedia = useMemo(() => visibleGroups.flatMap((group) => group.media), [visibleGroups]);
   const totalMedia = useMemo(() => groups.reduce((sum, group) => sum + group.media.length, 0), [groups]);
   const allSelected = productMedia.length > 0 && productMedia.every((media) => selectedIds.has(media.id));
+  const allCloudTransfersSelected =
+    cloudTransfers.length > 0 && cloudTransfers.every((transfer) => selectedCloudTransferIds.has(transfer.id));
+  const cloudUploadConfirmTotalBytes = useMemo(
+    () => cloudUploadConfirmAssets.reduce((sum, asset) => sum + (asset.sizeBytes || 0), 0),
+    [cloudUploadConfirmAssets]
+  );
+  const cloudUploadConfirmTooLargeCount = useMemo(
+    () => cloudUploadConfirmAssets.filter((asset) => (asset.sizeBytes || 0) > MAX_CLOUD_TRANSFER_VIDEO_BYTES).length,
+    [cloudUploadConfirmAssets]
+  );
+  const cloudUploadConfirmPreview = useMemo(
+    () => cloudUploadConfirmAssets.slice(0, 5),
+    [cloudUploadConfirmAssets]
+  );
+  const cloudProgressValue = getCloudTransferProgress(cloudTransferStatus);
 
   const toggleSelect = (id: string): void => {
     setSelectedIds((current) => {
@@ -780,6 +930,249 @@ export default function MediaPanel({
     onSendVideosToShopee(ids);
     setSelectedIds(new Set());
     toast.success(`ส่งไป Shopee ${ids.length} วิดีโอ`);
+  };
+
+  const openCloudInbox = async (): Promise<void> => {
+    if (kind !== 'videos') {
+      return;
+    }
+    if (!token) {
+      toast.warning('กรุณาเข้าสู่ระบบก่อนใช้ Cloud Transfer');
+      return;
+    }
+    if (cloudInboxLoading || cloudTransferWorking) {
+      return;
+    }
+
+    setCloudInboxOpen(true);
+    setCloudInboxLoading(true);
+    try {
+      const result = await listCloudTransferInbox();
+      if (!result.success) {
+        setCloudTransfers([]);
+        setSelectedCloudTransferIds(new Set());
+        toast.error(result.error || 'โหลด Cloud Transfer ไม่สำเร็จ');
+        return;
+      }
+
+      setCloudTransfers(result.transfers);
+      setSelectedCloudTransferIds(new Set());
+      if (result.transfers.length === 0) {
+        toast.info('ยังไม่มีวิดีโอใน Cloud Transfer');
+      }
+    } catch (error) {
+      setCloudTransfers([]);
+      setSelectedCloudTransferIds(new Set());
+      toast.error(error instanceof Error ? error.message : 'โหลด Cloud Transfer ไม่สำเร็จ');
+    } finally {
+      setCloudInboxLoading(false);
+    }
+  };
+
+  const toggleCloudTransfer = (id: string): void => {
+    setSelectedCloudTransferIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllCloudTransfers = (): void => {
+    setSelectedCloudTransferIds(() => {
+      if (allCloudTransfersSelected) return new Set();
+      return new Set(cloudTransfers.map((transfer) => transfer.id));
+    });
+  };
+
+  const performCloudUpload = async (assets: GeneratedMediaAsset[]): Promise<void> => {
+    setCloudTransferWorking(true);
+    setCloudTransferStatus({
+      mode: 'upload',
+      phase: 'preparing',
+      current: 1,
+      total: assets.length,
+      filename: '',
+    });
+
+    try {
+      const result = await uploadCloudTransferVideos(assets.map(buildCloudUploadItem), setCloudTransferStatus);
+      setCloudTransferStatus({
+        mode: 'upload',
+        phase: result.failed > 0 ? 'failed' : 'completed',
+        current: result.total,
+        total: result.total,
+        filename: '',
+      });
+
+      if (result.uploaded > 0) {
+        setSelectedIds(new Set());
+      }
+
+      const deduped = result.results.filter((item) => item.deduped).length;
+      if (result.failed > 0) {
+        toast.warning(`ส่งขึ้น Cloud สำเร็จ ${result.uploaded}/${result.total} ไฟล์`);
+      } else {
+        toast.success(`ส่งขึ้น Cloud Transfer แล้ว ${result.uploaded} ไฟล์${deduped ? ` · ซ้ำ ${deduped}` : ''}`);
+      }
+    } catch (error) {
+      setCloudTransferStatus((current) => current ? { ...current, phase: 'failed' } : null);
+      toast.error(error instanceof Error ? error.message : 'ส่งขึ้น Cloud Transfer ไม่สำเร็จ');
+    } finally {
+      setTimeout(() => {
+        setCloudTransferWorking(false);
+        setCloudTransferStatus(null);
+      }, 500);
+    }
+  };
+
+  const uploadSelectedVideosToCloud = (): void => {
+    if (kind !== 'videos') {
+      return;
+    }
+    if (!token) {
+      toast.warning('กรุณาเข้าสู่ระบบก่อนใช้ Cloud Transfer');
+      return;
+    }
+
+    const assets = Array.from(selectedIds)
+      .map((id) => generatedAssetById.get(id))
+      .filter((asset): asset is GeneratedMediaAsset => !!asset?.fileUri);
+
+    if (assets.length === 0) {
+      toast.warning('เลือกวิดีโอที่มีไฟล์ก่อนส่งขึ้น Cloud');
+      return;
+    }
+
+    setCloudUploadConfirmAssets(assets);
+  };
+
+  const confirmCloudUpload = async (): Promise<void> => {
+    const assets = cloudUploadConfirmAssets;
+    if (assets.length === 0 || cloudTransferWorking) {
+      return;
+    }
+
+    setCloudUploadConfirmAssets([]);
+    await performCloudUpload(assets);
+  };
+
+  const downloadSelectedCloudTransfers = async (): Promise<void> => {
+    if (cloudTransferWorking) {
+      return;
+    }
+    if (!token) {
+      toast.warning('กรุณาเข้าสู่ระบบก่อนใช้ Cloud Transfer');
+      return;
+    }
+
+    const selectedTransfers = cloudTransfers.filter((transfer) => selectedCloudTransferIds.has(transfer.id));
+    if (selectedTransfers.length === 0) {
+      toast.warning('เลือกรายการจาก Cloud Transfer ก่อน');
+      return;
+    }
+
+    setCloudInboxOpen(false);
+    setCloudTransferWorking(true);
+    let downloaded = 0;
+    let failed = 0;
+
+    try {
+      for (let index = 0; index < selectedTransfers.length; index += 1) {
+        const transfer = selectedTransfers[index];
+        const filename = getCloudTransferDisplayName(transfer);
+
+        try {
+          setCloudTransferStatus({
+            mode: 'download',
+            phase: 'downloading',
+            current: index + 1,
+            total: selectedTransfers.length,
+            filename,
+          });
+
+          const downloadedVideo = await downloadCloudTransferVideo(
+            transfer,
+            setCloudTransferStatus,
+            index,
+            selectedTransfers.length
+          );
+          const fields = resolveCloudTransferProductFields(transfer, selectedProfileId);
+
+          setCloudTransferStatus({
+            mode: 'download',
+            phase: 'saving',
+            current: index + 1,
+            total: selectedTransfers.length,
+            filename,
+          });
+
+          const thumbnailUri = await createGoogleFlowVideoThumbnail(downloadedVideo.fileUri).catch(() => null);
+          await addGeneratedMediaAsset({
+            kind: 'videos',
+            runId: 'cloud-transfer',
+            profileLocalId: fields.profileLocalId,
+            productId: fields.productId,
+            productName: fields.productName,
+            productCode: fields.productCode,
+            productUrl: fields.productUrl,
+            caption: fields.caption,
+            hashtags: fields.hashtags,
+            cta: fields.cta,
+            platform: fields.platform,
+            title: fields.title,
+            fileUri: downloadedVideo.fileUri,
+            fileName: downloadedVideo.fileName,
+            mimeType: downloadedVideo.mimeType,
+            thumbnailUri,
+            sizeBytes: downloadedVideo.sizeBytes,
+            width: downloadedVideo.width,
+            height: downloadedVideo.height,
+            durationMs: downloadedVideo.durationMs,
+            source: 'cloud-transfer',
+            createdAt: Date.now() + index,
+          });
+
+          setCloudTransferStatus({
+            mode: 'download',
+            phase: 'accepting',
+            current: index + 1,
+            total: selectedTransfers.length,
+            filename,
+          });
+          await acceptCloudTransfer(transfer.id).catch(() => undefined);
+          downloaded += 1;
+        } catch (error) {
+          failed += 1;
+          toast.error(error instanceof Error ? error.message : `รับ ${filename} ไม่สำเร็จ`);
+        }
+      }
+
+      await refreshGeneratedMediaAssets();
+      setSelectedCloudTransferIds(new Set());
+      setCloudTransfers((current) => current.filter((transfer) => !selectedTransfers.some((item) => item.id === transfer.id)));
+
+      setCloudTransferStatus({
+        mode: 'download',
+        phase: failed > 0 ? 'failed' : 'completed',
+        current: selectedTransfers.length,
+        total: selectedTransfers.length,
+        filename: '',
+      });
+
+      if (downloaded > 0 && failed === 0) {
+        toast.success(`รับวิดีโอจาก Cloud Transfer แล้ว ${downloaded} ไฟล์`);
+      } else if (downloaded > 0) {
+        toast.warning(`รับสำเร็จ ${downloaded}/${selectedTransfers.length} ไฟล์`);
+      } else {
+        toast.error('รับวิดีโอจาก Cloud Transfer ไม่สำเร็จ');
+      }
+    } finally {
+      setTimeout(() => {
+        setCloudTransferWorking(false);
+        setCloudTransferStatus(null);
+      }, 500);
+    }
   };
 
   const openMedia = async (media: MediaSubItem): Promise<void> => {
@@ -1102,6 +1495,14 @@ export default function MediaPanel({
                 label={isAddingMedia ? 'กำลังเพิ่ม' : kind === 'images' ? 'เพิ่มรูป' : 'เพิ่มวิดีโอ'}
                 onPress={() => void pickMediaFiles()}
               />
+              {kind === 'videos' ? (
+                <HeaderIconButton
+                  theme={theme}
+                  icon={Download}
+                  label={cloudInboxLoading ? 'กำลังโหลด Cloud Transfer' : 'รับ Cloud Transfer'}
+                  onPress={() => void openCloudInbox()}
+                />
+              ) : null}
               <HeaderIconButton
                 theme={theme}
                 icon={RefreshCw}
@@ -1310,13 +1711,369 @@ export default function MediaPanel({
           accent={accentColor}
           bottomInset={insets.bottom}
           count={selectedIds.size}
+          showCloudUpload={kind === 'videos'}
           showShopee={kind === 'videos'}
           onClear={() => setSelectedIds(new Set())}
           onDelete={() => void deleteSelected()}
           onEdit={editSelected}
+          onCloudUpload={kind === 'videos' ? uploadSelectedVideosToCloud : undefined}
           onShopee={kind === 'videos' ? sendSelectedVideosToShopee : undefined}
         />
       ) : null}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={cloudUploadConfirmAssets.length > 0}
+        onRequestClose={() => {
+          if (!cloudTransferWorking) setCloudUploadConfirmAssets([]);
+        }}
+      >
+        <View className="flex-1 items-center justify-center bg-black/55 px-4">
+          <View className="w-full max-w-[420px] overflow-hidden rounded-[18px] border border-kd-border bg-kd-panel">
+            <View className="flex-row items-center gap-3 border-b border-kd-red/15 px-4 py-3 dark:border-kd-red/30">
+              <View className="h-10 w-10 items-center justify-center rounded-kd-lg bg-kd-red-soft">
+                <Upload size={18} color={accentColor} strokeWidth={2.2} />
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                  ส่งขึ้น Cloud Transfer
+                </Text>
+                <Text className="text-kd-caption text-kd-text-subtle">
+                  ตรวจสอบรายการก่อนเริ่มอัปโหลด
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                disabled={cloudTransferWorking}
+                onPress={() => setCloudUploadConfirmAssets([])}
+                className="h-8 w-8 items-center justify-center rounded-kd-md disabled:opacity-50"
+              >
+                <X size={16} color={theme.textSubtle} strokeWidth={2.3} />
+              </Pressable>
+            </View>
+
+            <View className="gap-3 p-4">
+              <View className="rounded-kd-lg border border-kd-red/15 bg-kd-red-soft/70 p-3 dark:border-kd-red/35 dark:bg-kd-red-soft">
+                <View className="gap-1.5">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-kd-caption text-kd-text-subtle">จำนวนไฟล์:</Text>
+                    <Text className="text-kd-caption font-semibold text-kd-text">{cloudUploadConfirmAssets.length} ไฟล์</Text>
+                  </View>
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-kd-caption text-kd-text-subtle">ขนาดรวม:</Text>
+                    <Text className="text-kd-caption font-semibold text-kd-text">{formatAssetSize(cloudUploadConfirmTotalBytes)}</Text>
+                  </View>
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-kd-caption text-kd-text-subtle">จำกัดต่อไฟล์:</Text>
+                    <Text className="text-kd-caption font-semibold text-kd-text">{formatAssetSize(MAX_CLOUD_TRANSFER_VIDEO_BYTES)}</Text>
+                  </View>
+                </View>
+
+                {cloudUploadConfirmTooLargeCount > 0 ? (
+                  <View className="mt-3 rounded-kd-md border border-kd-amber/35 bg-kd-amber/10 px-2 py-1.5">
+                    <Text className="text-kd-caption text-kd-amber">
+                      มี {cloudUploadConfirmTooLargeCount} ไฟล์เกินขนาด ระบบจะข้ามไฟล์เหล่านี้
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View className="mt-3 gap-1.5">
+                  {cloudUploadConfirmPreview.map((asset) => (
+                    <View key={asset.id} className="flex-row items-center justify-between gap-3 rounded-kd-md bg-kd-panel px-2 py-1.5">
+                      <View className="min-w-0 flex-1">
+                        <Text numberOfLines={1} className="text-kd-caption font-semibold text-kd-text">
+                          {asset.productName || asset.title || asset.fileName || 'วิดีโอ'}
+                        </Text>
+                        <Text numberOfLines={1} className="mt-px text-kd-micro text-kd-text-subtle">
+                          {asset.fileName || asset.productCode || 'Cloud Transfer'}
+                        </Text>
+                      </View>
+                      <Text className="shrink-0 text-kd-micro text-kd-text-muted">
+                        {formatAssetSize(asset.sizeBytes)}
+                      </Text>
+                    </View>
+                  ))}
+                  {cloudUploadConfirmAssets.length > cloudUploadConfirmPreview.length ? (
+                    <Text className="text-kd-micro text-kd-text-muted">
+                      และอีก {cloudUploadConfirmAssets.length - cloudUploadConfirmPreview.length} รายการ
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+
+            <View className="flex-row justify-end gap-2 border-t border-kd-red/15 px-4 py-3 dark:border-kd-red/30">
+              <Pressable
+                accessibilityRole="button"
+                disabled={cloudTransferWorking}
+                onPress={() => setCloudUploadConfirmAssets([])}
+                className="h-9 items-center justify-center rounded-kd-lg px-3 disabled:opacity-50"
+              >
+                <Text className="text-kd-caption font-semibold text-kd-text-subtle">ยกเลิก</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={cloudTransferWorking || cloudUploadConfirmAssets.length === 0}
+                onPress={() => void confirmCloudUpload()}
+                className="h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-red px-3 disabled:opacity-50"
+              >
+                {cloudTransferWorking ? <ActivityIndicator color={theme.white} size="small" /> : <Upload size={13} color={theme.white} strokeWidth={2.4} />}
+                <Text className="text-kd-caption font-semibold text-white">เริ่มส่งขึ้น</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={!!cloudTransferStatus && cloudTransferWorking}
+      >
+        <View className="flex-1 items-center justify-center bg-black/45 px-6">
+          <View className="w-full max-w-[340px] overflow-hidden rounded-[18px] border border-kd-border bg-kd-panel">
+            <View className="flex-row items-center gap-3 border-b border-kd-border px-4 py-3">
+              <View className="h-10 w-10 items-center justify-center rounded-kd-lg bg-kd-red-soft">
+                {cloudTransferStatus?.mode === 'download' ? (
+                  <Download size={18} color={accentColor} strokeWidth={2.2} />
+                ) : (
+                  <Upload size={18} color={accentColor} strokeWidth={2.2} />
+                )}
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text className="text-kd-body font-semibold text-kd-text">
+                  {cloudTransferStatus?.mode === 'download' ? 'กำลังรับจาก Cloud Transfer' : 'กำลังส่งขึ้น Cloud Transfer'}
+                </Text>
+                <View className="mt-1 flex-row items-center gap-1.5">
+                  <View className="rounded-full bg-kd-red-soft px-2 py-0.5">
+                    <Text className="text-kd-micro font-semibold text-kd-red">
+                      {cloudTransferStatus ? formatCloudTransferPhase(cloudTransferStatus.phase) : ''}
+                    </Text>
+                  </View>
+                  <Text className="text-kd-caption text-kd-text-subtle">
+                    {cloudTransferStatus ? `${cloudTransferStatus.current}/${cloudTransferStatus.total}` : ''}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View className="gap-3 p-4">
+              {cloudTransferStatus?.filename ? (
+                <View className="rounded-kd-lg border border-kd-border bg-kd-card-muted px-3 py-2">
+                  <Text numberOfLines={2} className="text-kd-caption font-medium text-kd-text">
+                    {cloudTransferStatus.filename}
+                  </Text>
+                </View>
+              ) : null}
+              <View className="h-2 overflow-hidden rounded-full bg-kd-card-muted">
+                <View className="h-full rounded-full bg-kd-red" style={{ width: `${Math.round(cloudProgressValue * 100)}%` }} />
+              </View>
+              <View className="flex-row items-center justify-between">
+                <Text className="text-kd-micro text-kd-text-subtle">
+                  {Math.round(cloudProgressValue * 100)}%
+                </Text>
+                {typeof cloudTransferStatus?.bytesWritten === 'number' && cloudTransferStatus.totalBytes ? (
+                  <Text className="text-kd-micro text-kd-text-subtle">
+                    {formatAssetSize(cloudTransferStatus.bytesWritten)} / {formatAssetSize(cloudTransferStatus.totalBytes)}
+                  </Text>
+                ) : (
+                  <ActivityIndicator color={accentColor} size="small" />
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={cloudInboxOpen}
+        onRequestClose={() => {
+          if (!cloudTransferWorking) setCloudInboxOpen(false);
+        }}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <View
+            className="max-h-[88%] rounded-t-[20px] border border-kd-border bg-kd-panel"
+            style={{ paddingBottom: Math.max(insets.bottom + 12, 20) }}
+          >
+            <View className="flex-row items-center justify-between gap-3 border-b border-kd-border px-4 py-3">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <Download size={16} color={accentColor} strokeWidth={2.2} />
+                <View className="min-w-0 flex-1">
+                  <Text numberOfLines={1} className="text-kd-title font-semibold text-kd-text">
+                    Cloud Transfer
+                  </Text>
+                  <Text className="text-kd-caption text-kd-text-subtle">
+                    รับวิดีโอเข้าคลังตามโปรไฟล์ต้นทาง
+                  </Text>
+                </View>
+              </View>
+              <View className="flex-row items-center gap-1">
+                <Pressable
+                  accessibilityLabel="รีเฟรช Cloud Transfer"
+                  accessibilityRole="button"
+                  disabled={cloudInboxLoading}
+                  onPress={() => void openCloudInbox()}
+                  className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted disabled:opacity-50"
+                >
+                  {cloudInboxLoading ? (
+                    <ActivityIndicator color={theme.textSubtle} size="small" />
+                  ) : (
+                    <RefreshCw size={15} color={theme.textSubtle} strokeWidth={2.2} />
+                  )}
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="ปิด"
+                  accessibilityRole="button"
+                  disabled={cloudTransferWorking}
+                  onPress={() => setCloudInboxOpen(false)}
+                  className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted disabled:opacity-50"
+                >
+                  <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+                </Pressable>
+              </View>
+            </View>
+
+            {cloudTransfers.length > 0 ? (
+              <View className="flex-row items-center justify-between px-4 py-2">
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: allCloudTransfersSelected }}
+                  onPress={toggleAllCloudTransfers}
+                  className="min-h-7 flex-row items-center gap-2"
+                >
+                  <SelectCircle theme={theme} selected={allCloudTransfersSelected} accent={accentColor} size={16} />
+                  <Text className="text-kd-caption text-kd-text-subtle">
+                    เลือกทั้งหมด ({cloudTransfers.length})
+                  </Text>
+                </Pressable>
+                <Text className="text-kd-caption text-kd-text-muted">
+                  เลือกแล้ว {selectedCloudTransferIds.size}
+                </Text>
+              </View>
+            ) : null}
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerClassName="gap-2 px-4 py-3"
+            >
+              {cloudInboxLoading ? (
+                <View className="gap-2 py-6">
+                  {[0, 1, 2].map((item) => (
+                    <View key={item} className="rounded-kd-lg border border-kd-border bg-kd-card p-3">
+                      <View className="flex-row items-center gap-3">
+                        <View className="h-5 w-5 rounded-full bg-kd-card-muted" />
+                        <View className="h-12 w-12 rounded-kd-md bg-kd-card-muted" />
+                        <View className="min-w-0 flex-1 gap-2">
+                          <View className="h-3 w-2/3 rounded-full bg-kd-card-muted" />
+                          <View className="h-2 w-1/2 rounded-full bg-kd-card-muted" />
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : cloudTransfers.length > 0 ? (
+                cloudTransfers.map((transfer) => {
+                  const selected = selectedCloudTransferIds.has(transfer.id);
+                  const displayName = getCloudTransferDisplayName(transfer);
+                  const rawFilename = stripFileExtension(cleanText(transfer.filename));
+                  const showRawFilename = rawFilename && rawFilename !== displayName;
+                  const productName = getCloudTransferText(transfer, 'productName');
+                  const profileId = getCloudTransferText(transfer, 'profileId');
+                  const expiresText = formatCloudExpiry(transfer.expiresAt);
+
+                  return (
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected }}
+                      key={transfer.id}
+                      onPress={() => toggleCloudTransfer(transfer.id)}
+                      className={`rounded-kd-lg border p-3 active:opacity-80 ${
+                        selected ? 'border-kd-red bg-kd-red-soft' : 'border-kd-border bg-kd-card'
+                      }`}
+                    >
+                      <View className="flex-row items-start gap-3">
+                        <View className="mt-0.5">
+                          <SelectCircle theme={theme} selected={selected} accent={accentColor} size={18} />
+                        </View>
+                        <View className="h-12 w-12 items-center justify-center rounded-kd-md bg-kd-card-muted">
+                          <Video size={18} color={selected ? accentColor : theme.textSubtle} strokeWidth={1.7} />
+                        </View>
+                        <View className="min-w-0 flex-1">
+                          <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                            {displayName}
+                          </Text>
+                          {showRawFilename ? (
+                            <Text numberOfLines={1} className="mt-px text-kd-micro text-kd-text-muted">
+                              {rawFilename}
+                            </Text>
+                          ) : null}
+                          <View className="mt-1.5 flex-row flex-wrap gap-1">
+                            <View className="rounded-full bg-kd-card-muted px-2 py-0.5">
+                              <Text className="text-kd-micro text-kd-text-subtle">
+                                {productName || transfer.sourceApp || 'Cloud Transfer'}
+                              </Text>
+                            </View>
+                            <View className="rounded-full bg-kd-card-muted px-2 py-0.5">
+                              <Text className="text-kd-micro text-kd-text-subtle">
+                                {formatAssetSize(transfer.size)}
+                              </Text>
+                            </View>
+                            <View className="rounded-full bg-kd-card-muted px-2 py-0.5">
+                              <Text className="text-kd-micro text-kd-text-subtle">
+                                หมดอายุ {expiresText}
+                              </Text>
+                            </View>
+                          </View>
+                          {profileId ? (
+                            <Text numberOfLines={1} className="mt-1 text-kd-micro text-kd-text-muted">
+                              โปรไฟล์ต้นทาง: {profileId}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    </Pressable>
+                  );
+                })
+              ) : (
+                <View className="items-center justify-center gap-2 py-12">
+                  <Download size={28} color={theme.textSubtle} strokeWidth={1.5} />
+                  <Text className="text-kd-body font-semibold text-kd-text-muted">ยังไม่มีวิดีโอใน Cloud Transfer</Text>
+                  <Text className="max-w-[240px] text-center text-kd-caption text-kd-text-subtle">
+                    วิดีโอที่ส่งจาก Desktop หรือ Extension จะมาแสดงที่นี่
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View className="flex-row gap-2 border-t border-kd-border px-4 pt-3">
+              <Pressable
+                accessibilityRole="button"
+                disabled={cloudTransferWorking}
+                onPress={() => setCloudInboxOpen(false)}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card disabled:opacity-50"
+              >
+                <Text className="text-kd-body font-medium text-kd-text-subtle">ปิด</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={selectedCloudTransferIds.size === 0 || cloudTransferWorking}
+                onPress={() => void downloadSelectedCloudTransfers()}
+                className="h-11 flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-red px-3 disabled:opacity-50"
+              >
+                <Download size={14} color={theme.white} strokeWidth={2.3} />
+                <Text className="text-kd-body font-semibold text-white">
+                  รับเข้าคลัง {selectedCloudTransferIds.size || ''}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         animationType="slide"

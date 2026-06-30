@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.11',
+    date: '2026-07-01',
+    highlight: 'วิดีโอหลายฉากและ Cloud Transfer ใช้งานนิ่งขึ้น',
+    changes: [
+      { type: 'improved', text: 'ปรับการแนบรูปอ้างอิงของวิดีโอหลายฉากหลายมุมให้เลือกฉากถูกต้องและรอน้อยลง' },
+      { type: 'improved', text: 'ปรับหน้าตา Cloud Transfer ในคลังรูปและวิดีโอให้ใช้งานใกล้เคียง Desktop และ Extension มากขึ้น' },
+      { type: 'fixed', text: 'ลดโอกาสที่ระบบจะเลือก reference ผิดหลังอัปโหลดรูปเข้า Google Flow' },
+    ],
+  },
+  {
     version: '0.2.10',
     date: '2026-07-01',
     highlight: 'Auto Workflow วิดีโอหลายฉากแม่นขึ้น',
