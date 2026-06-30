@@ -27,7 +27,7 @@ import FlowWebView, {
   getFlowLanguageIssue,
 } from '@/flow/FlowWebView';
 import Text from '@/components/ui/KubdeeText';
-import type { KubdeeTheme } from '@/theme/tokens';
+import { alpha, type KubdeeTheme } from '@/theme/tokens';
 import {
   mergeGoogleFlowVideos,
   probeGoogleFlowVideos,
@@ -83,6 +83,11 @@ interface FlowImageDownloadPayload {
 }
 
 type FlowImageDownloadItem = NonNullable<FlowImageDownloadPayload['images']>[number];
+
+interface OpenGoogleFlowProjectResult extends Record<string, unknown> {
+  entered?: boolean;
+  already?: boolean;
+}
 
 function getRoundLoopCount(settings: AutoPilotSettings): number {
   return settings.totalRounds >= AUTO_PILOT_INFINITE_ROUNDS
@@ -176,6 +181,18 @@ class GoogleFlowCountedStepFailure extends Error {
 
 function stepLabel(step: AutoPilotStepType): string {
   return step === 'image' ? 'รูปภาพ' : 'วิดีโอ';
+}
+
+function shouldSkipRefreshAfterFreshProjectOpen({
+  productIndex,
+  projectResult,
+  round,
+}: {
+  productIndex: number;
+  projectResult: OpenGoogleFlowProjectResult;
+  round: number;
+}): boolean {
+  return round === 1 && productIndex === 0 && projectResult.entered === true && projectResult.already !== true;
 }
 
 function isRetryableFlowError(error: unknown): boolean {
@@ -1264,6 +1281,18 @@ function getProductReferenceLabel(productIndex: number): string {
   return `รูปสินค้า ลำดับ ${productIndex + 1}`;
 }
 
+function getUploadReferenceStage(referenceLabel: unknown): string {
+  const label = String(referenceLabel || '').trim();
+  if (/สินค้า/.test(label)) return 'upload_product_reference';
+  if (/ตัวละคร/.test(label)) return 'upload_character_reference';
+  if (/ฉากมุมเดียว/.test(label)) return 'upload_same_angle_scene_reference';
+  if (/ฉากก่อนหน้า/.test(label)) return 'upload_previous_scene_reference';
+  if (/ฉาก/.test(label)) return 'upload_scene_reference';
+  if (/สร้างไว้/.test(label)) return 'upload_generated_image_reference';
+  if (/เพิ่งสร้าง/.test(label)) return 'upload_recent_image_reference';
+  return 'upload_reference';
+}
+
 function getGeneratedImageCacheKey(product: GoogleFlowRunnerProduct, round: number): string {
   return `${round}:${product.id || product.productId || product.catalogId || 'product'}`;
 }
@@ -1407,6 +1436,7 @@ export default function GoogleFlowWebViewRunnerHost({
   const [visible, setVisible] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [flowStatus, setFlowStatus] = useState<FlowConnectionState>('unknown');
+  const [flowWebViewKey, setFlowWebViewKey] = useState(0);
   const [overlayLogs, setOverlayLogs] = useState<OverlayLogLine[]>([]);
   const [overlayProgress, setOverlayProgress] = useState<OverlayProgressState | null>(null);
 
@@ -1592,7 +1622,7 @@ export default function GoogleFlowWebViewRunnerHost({
       productIndex: number;
       round: number;
       step: AutoPilotStepType;
-    }): Promise<Record<string, unknown>> => {
+    }): Promise<OpenGoogleFlowProjectResult> => {
       const startedAt = Date.now();
       let lastError = '';
 
@@ -1638,7 +1668,12 @@ export default function GoogleFlowWebViewRunnerHost({
           };
           actionLogContextRef.current = context;
           try {
-            const projectResult = await runActionOrThrow(handle, 'newProject', {}, 35_000);
+            const projectResult = (await runActionOrThrow(
+              handle,
+              'newProject',
+              {},
+              35_000
+            )) as OpenGoogleFlowProjectResult;
             const prepareContext: FlowActionLogContext = {
               payload,
               product,
@@ -1738,7 +1773,7 @@ export default function GoogleFlowWebViewRunnerHost({
       step: AutoPilotStepType;
       stage: string;
       message: string;
-    }): Promise<Record<string, unknown>> => {
+    }): Promise<OpenGoogleFlowProjectResult> => {
       checkStop();
       emit({
         event: 'progress',
@@ -2429,7 +2464,7 @@ export default function GoogleFlowWebViewRunnerHost({
         productIndex,
         round,
         step,
-        stage: 'upload_reference',
+        stage: getUploadReferenceStage(args.referenceLabel),
       };
       actionLogContextRef.current = context;
       try {
@@ -2574,7 +2609,7 @@ export default function GoogleFlowWebViewRunnerHost({
           message: `เริ่มวิดีโอหลายฉาก ${sceneCount} ฉาก (${useSameAngle ? 'มุมเดียว' : useVoiceover ? 'เสียงพากษ์' : 'หลายมุม'})`,
         });
 
-        await openGoogleFlowProject({
+        const initialProject = await openGoogleFlowProject({
           handle,
           payload,
           product,
@@ -2582,6 +2617,18 @@ export default function GoogleFlowWebViewRunnerHost({
           round,
           step,
         });
+        let skipNextRefresh = shouldSkipRefreshAfterFreshProjectOpen({
+          productIndex,
+          projectResult: initialProject,
+          round,
+        });
+        const consumeSkipNextRefresh = (): boolean => {
+          if (!skipNextRefresh) {
+            return false;
+          }
+          skipNextRefresh = false;
+          return true;
+        };
 
         const hasPriorImageStep = payload.enabledSteps.includes('image');
         const neededSceneImages = useSameAngle ? (hasPriorImageStep ? 0 : 1) : hasPriorImageStep ? sceneCount - 1 : sceneCount;
@@ -2652,19 +2699,21 @@ export default function GoogleFlowWebViewRunnerHost({
             const finalImageAttempt = imageAttempt >= maxSceneImageAttempts;
             try {
               checkStop();
-              await refreshGoogleFlowProject({
-                handle,
-                payload,
-                product,
-                productIndex,
-                round,
-                step: 'image',
-                stage: imageAttempt === 1 ? 'multi_scene_refresh_image' : 'multi_scene_image_retry_refresh',
-                message:
-                  imageAttempt === 1
-                    ? `รีเฟรชหน้า Flow ก่อนสร้างรูปฉาก ${sceneNumber}/${sceneCount}`
-                    : `รีเฟรชหน้า Flow ก่อน retry รูปฉาก ${sceneNumber}/${sceneCount}`,
-              });
+              if (!consumeSkipNextRefresh()) {
+                await refreshGoogleFlowProject({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  step: 'image',
+                  stage: imageAttempt === 1 ? 'multi_scene_refresh_image' : 'multi_scene_image_retry_refresh',
+                  message:
+                    imageAttempt === 1
+                      ? `รีเฟรชหน้า Flow ก่อนสร้างรูปฉาก ${sceneNumber}/${sceneCount}`
+                      : `รีเฟรชหน้า Flow ก่อน retry รูปฉาก ${sceneNumber}/${sceneCount}`,
+                });
+              }
 
               const config = (await runActionWithProductContext(
                 'configurePopper',
@@ -2985,16 +3034,18 @@ export default function GoogleFlowWebViewRunnerHost({
             message: `หลายฉาก: สร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
           });
 
-          await refreshGoogleFlowProject({
-            handle,
-            payload,
-            product,
-            productIndex,
-            round,
-            step,
-            stage: 'multi_scene_refresh_video',
-            message: `รีเฟรชหน้า Flow ก่อนสร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
-          });
+          if (!consumeSkipNextRefresh()) {
+            await refreshGoogleFlowProject({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              stage: 'multi_scene_refresh_video',
+              message: `รีเฟรชหน้า Flow ก่อนสร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
+            });
+          }
 
           const config = (await runActionWithProductContext(
             'configurePopper',
@@ -3514,19 +3565,28 @@ export default function GoogleFlowWebViewRunnerHost({
           message: newProject.already ? 'อยู่ใน Google Flow project อยู่แล้ว' : 'เข้า Google Flow project แล้ว',
         });
 
-        await refreshGoogleFlowProject({
-          handle,
-          payload,
-          product,
-          productIndex,
-          round,
-          step,
-          stage: attempt === 1 ? 'refresh_before_config' : 'single_step_retry_refresh',
-          message:
-            attempt === 1
-              ? `รีเฟรชหน้า Flow ก่อนตั้งค่า${label}`
-              : `รีเฟรชหน้า Flow ก่อน retry ${label} รอบ ${retryAttempt}`,
-        });
+        const skipRefresh =
+          attempt === 1 &&
+          shouldSkipRefreshAfterFreshProjectOpen({
+            productIndex,
+            projectResult: newProject,
+            round,
+          });
+        if (!skipRefresh) {
+          await refreshGoogleFlowProject({
+            handle,
+            payload,
+            product,
+            productIndex,
+            round,
+            step,
+            stage: attempt === 1 ? 'refresh_before_config' : 'single_step_retry_refresh',
+            message:
+              attempt === 1
+                ? `รีเฟรชหน้า Flow ก่อนตั้งค่า${label}`
+                : `รีเฟรชหน้า Flow ก่อน retry ${label} รอบ ${retryAttempt}`,
+          });
+        }
 
         const configArgs =
           step === 'image'
@@ -3575,7 +3635,7 @@ export default function GoogleFlowWebViewRunnerHost({
             runId: payload.runId,
             status: 'running',
             step,
-            stage: 'attach_reference',
+            stage: cachedImageDataUrl ? 'attach_generated_image_reference' : 'attach_recent_image_reference',
             productId: product.id,
             productName: product.name,
             currentRound: round,
@@ -3607,7 +3667,7 @@ export default function GoogleFlowWebViewRunnerHost({
               product,
               productIndex,
               round,
-              stage: 'attach_reference',
+              stage: 'attach_recent_image_reference',
               step,
             });
           }
@@ -3618,7 +3678,7 @@ export default function GoogleFlowWebViewRunnerHost({
             runId: payload.runId,
             status: 'running',
             step,
-            stage: 'attach_reference',
+            stage: 'attach_product_reference',
             productId: product.id,
             productName: product.name,
             currentRound: round,
@@ -3650,7 +3710,7 @@ export default function GoogleFlowWebViewRunnerHost({
             status: 'running',
             level: 'warning',
             step,
-            stage: 'attach_reference',
+            stage: 'attach_product_reference',
             productId: product.id,
             productName: product.name,
             currentRound: round,
@@ -4226,7 +4286,10 @@ export default function GoogleFlowWebViewRunnerHost({
               message: `เริ่มสินค้า ${productIndex + 1}/${payload.products.length}: ${product.name || 'สินค้า'}`,
             });
 
-            if (payload.settings.startNewFlowProjectPerProduct !== false) {
+            const shouldOpenFlowHomeBeforeProduct =
+              payload.settings.startNewFlowProjectPerProduct !== false &&
+              !(round === 1 && productIndex === 0);
+            if (shouldOpenFlowHomeBeforeProduct) {
               emit({
                 event: 'progress',
                 runId: payload.runId,
@@ -4417,6 +4480,8 @@ export default function GoogleFlowWebViewRunnerHost({
         flowStatusRef.current = 'unknown';
         setOverlayLogs([]);
         setOverlayProgress(null);
+        flowRef.current = null;
+        setFlowWebViewKey((key) => key + 1);
         setVisible(true);
         flowUrlRef.current = '';
         void runPayload(payload);
@@ -4498,24 +4563,33 @@ export default function GoogleFlowWebViewRunnerHost({
           </TouchableOpacity>
         </View>
         {overlayProgress ? (
-          <View className="border-b border-kd-border bg-kd-panel px-3 py-2">
+          <View className="h-8 justify-center border-b border-kd-border bg-kd-panel px-3">
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 6, paddingRight: 8 }}
+              contentContainerStyle={{ alignItems: 'center', gap: 8, paddingRight: 8 }}
             >
               <OverlayStatChip
+                color={theme.blue}
                 label="รอบ"
                 theme={theme}
                 value={formatRoundProgress(overlayProgress.currentRound, overlayProgress.totalRounds)}
               />
               <OverlayStatChip
+                color={theme.emerald}
                 label="สินค้า"
                 theme={theme}
                 value={`${overlayProgress.currentProduct}/${overlayProgress.totalProducts || '-'}`}
               />
               {overlayProgress.assetStats.plannedImages > 0 ? (
                 <OverlayStatChip
+                  color={getOverlayAssetColor(
+                    overlayProgress.assetStats.generatedImages,
+                    overlayProgress.assetStats.failedImages,
+                    overlayProgress.assetStats.plannedImages,
+                    theme.amber,
+                    theme
+                  )}
                   label="รูป"
                   theme={theme}
                   value={formatOverlayAssetProgress(
@@ -4527,6 +4601,13 @@ export default function GoogleFlowWebViewRunnerHost({
               ) : null}
               {overlayProgress.assetStats.plannedVideos > 0 ? (
                 <OverlayStatChip
+                  color={getOverlayAssetColor(
+                    overlayProgress.assetStats.generatedVideos,
+                    overlayProgress.assetStats.failedVideos,
+                    overlayProgress.assetStats.plannedVideos,
+                    theme.red,
+                    theme
+                  )}
                   label="วิดีโอ"
                   theme={theme}
                   value={formatOverlayAssetProgress(
@@ -4537,11 +4618,13 @@ export default function GoogleFlowWebViewRunnerHost({
                 />
               ) : null}
               <OverlayStatChip
+                color={theme.cyan}
                 label="ล่าสุด"
                 theme={theme}
                 value={formatOverlayTime(overlayProgress.updatedAt)}
               />
               <OverlayStatChip
+                color={theme.textMuted}
                 label="ใช้เวลา"
                 theme={theme}
                 value={formatOverlayDuration(overlayProgress.updatedAt - overlayProgress.startedAt)}
@@ -4551,7 +4634,9 @@ export default function GoogleFlowWebViewRunnerHost({
         ) : null}
         <View className="relative flex-1">
           <FlowWebView
+            key={flowWebViewKey}
             ref={flowRef}
+            accountProbeEnabled={false}
             backgroundColor={theme.screen}
             onActionLog={emitFlowActionLog}
             onNavigationChange={(href) => {
@@ -4603,33 +4688,44 @@ export default function GoogleFlowWebViewRunnerHost({
 }
 
 function OverlayStatChip({
+  color,
   label,
   theme,
   value,
-  wide = false,
 }: {
+  color: string;
   label: string;
   theme: KubdeeTheme;
   value: string;
-  wide?: boolean;
 }): React.JSX.Element {
   return (
     <View
-      className="rounded-kd-md border px-2 py-1"
+      className="h-5 flex-row items-center gap-1.5 rounded-kd-sm px-1.5"
       style={{
-        backgroundColor: theme.cardMuted,
-        borderColor: theme.border,
-        maxWidth: wide ? 220 : undefined,
+        backgroundColor: alpha(color, theme.isDark ? 0.16 : 0.08),
       }}
     >
-      <Text className="text-[9px] font-extrabold uppercase text-kd-text-muted" numberOfLines={1}>
+      <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+      <Text className="text-[9px] font-normal text-kd-text-subtle" numberOfLines={1}>
         {label}
       </Text>
-      <Text className="text-[10px] font-black text-kd-text" numberOfLines={1}>
+      <Text className="text-[10px] font-medium" numberOfLines={1} style={{ color }}>
         {value}
       </Text>
     </View>
   );
+}
+
+function getOverlayAssetColor(
+  generated: number,
+  failed: number,
+  planned: number,
+  fallbackColor: string,
+  theme: KubdeeTheme
+): string {
+  if (failed > 0) return theme.red;
+  if (planned > 0 && generated >= planned) return theme.emerald;
+  return fallbackColor;
 }
 
 function formatOverlayStep(step: AutoPilotStepType | null, stage: string | null): string {

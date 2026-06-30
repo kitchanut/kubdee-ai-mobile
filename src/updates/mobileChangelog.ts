@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.4',
+    date: '2026-06-30',
+    highlight: 'Auto Workflow ดูสถานะและแนบรูปอ้างอิงชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'ปรับแถบสถานะ Google Flow ให้กระชับ อ่านสถานะงานในแถวเดียวได้ง่ายขึ้น' },
+      { type: 'improved', text: 'ปรับรายการตั้งค่า Auto ให้ชิดและเรียบขึ้น เหมาะกับหน้าจอมือถือมากขึ้น' },
+      { type: 'fixed', text: 'ลดการเปิดหน้าข้อมูลบัญชี Google Flow ระหว่างเริ่มสร้างงาน Auto' },
+      { type: 'improved', text: 'แยกข้อความ log การแนบรูปให้เห็นชัดว่าเป็นรูปสินค้า รูปตัวละคร รูปฉาก หรือรูปที่สร้างไว้' },
+    ],
+  },
+  {
     version: '0.2.3',
     date: '2026-06-30',
     highlight: 'Auto Workflow แนบรูปสินค้าหลายรายการแม่นขึ้น',

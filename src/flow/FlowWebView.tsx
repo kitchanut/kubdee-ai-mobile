@@ -158,20 +158,21 @@ const STATUS_JS = `
   function send(){
     try {
       var state = detect();
-      var email = (state === 'connected' || state === 'signin') ? getEmail() : null;
-      var photo = state === 'connected' ? getPhoto() : null;
-      var name = (state === 'connected') ? getName(email) : null;
+      var shouldProbeAccount = window.__kbFlowAccountProbeEnabled !== false;
+      var email = shouldProbeAccount && (state === 'connected' || state === 'signin') ? getEmail() : null;
+      var photo = shouldProbeAccount && state === 'connected' ? getPhoto() : null;
+      var name = shouldProbeAccount && state === 'connected' ? getName(email) : null;
       if (email) emailFound = true;
       // The email lives in the Google account menu (same document, hidden until opened). If we are
       // connected but cannot see it yet, briefly click the avatar to reveal it, then press Escape
       // to close the menu once captured.
-      if (state === 'connected' && !emailFound) {
+      if (shouldProbeAccount && state === 'connected' && !emailFound) {
         var nowMs = +new Date();
         if (nowMs - menuOpenedAt > 6000) {
           var av = avatarClickable();
           if (av) { menuOpenedAt = nowMs; av.click(); }
         }
-      } else if (state === 'connected' && emailFound && menuOpenedAt) {
+      } else if (shouldProbeAccount && state === 'connected' && emailFound && menuOpenedAt) {
         try {
           document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, which: 27, bubbles: true }));
         } catch (e) {}
@@ -196,6 +197,7 @@ interface FlowWebViewProps {
   onActionLog?: (entry: FlowActionLogEntry) => void;
   style?: StyleProp<ViewStyle>;
   backgroundColor?: string;
+  accountProbeEnabled?: boolean;
 }
 
 /**
@@ -218,7 +220,15 @@ export interface FlowWebViewHandle {
  * this connection screen and the automation runner reuse the same session.
  */
 const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function FlowWebView(
-  { onStatusChange, onAccount, onNavigationChange, onActionLog, style, backgroundColor = '#000000' },
+  {
+    onStatusChange,
+    onAccount,
+    onNavigationChange,
+    onActionLog,
+    style,
+    backgroundColor = '#000000',
+    accountProbeEnabled = true,
+  },
   ref
 ) {
   const innerRef = useRef<WebView>(null);
@@ -263,7 +273,7 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
       cacheEnabled
       originWhitelist={['https://*', 'http://*']}
       setSupportMultipleWindows={false}
-      injectedJavaScript={STATUS_JS}
+      injectedJavaScript={`window.__kbFlowAccountProbeEnabled = ${accountProbeEnabled ? 'true' : 'false'};\n${STATUS_JS}`}
       onNavigationStateChange={(navState) => onNavigationChange?.(navState.url)}
       onMessage={(event: WebViewMessageEvent) => {
         try {

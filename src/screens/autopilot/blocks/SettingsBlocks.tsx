@@ -1,5 +1,5 @@
 import { Pressable, View } from 'react-native';
-import { Copy, FilePlus2, Sparkles, Star, Trash2 } from 'lucide-react-native';
+import { Star } from 'lucide-react-native';
 import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_INFINITE_ROUNDS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
@@ -65,17 +65,15 @@ export function ExtensionBasicSettingsBlock({
 
       </View>
 
-      <View className="gap-1.5">
-        <View className="gap-1">
+      <View className="gap-0.5">
+        <View className="gap-0.5">
           <ExtensionToggleRow
-            icon={Star}
             label="AI คิด Caption"
             theme={theme}
             value={settings.aiGenerateCaption}
             onValueChange={onToggleCaption}
           />
           <ExtensionToggleRow
-            icon={Star}
             label="AI คิด Hashtags"
             rightSlot={settings.aiGenerateHashtags ? (
               <HashtagCountSelector
@@ -90,7 +88,7 @@ export function ExtensionBasicSettingsBlock({
             onValueChange={onToggleHashtags}
           />
           {SHOW_SEND_IMAGE_TO_AI && (settings.aiGenerateCaption || settings.aiGenerateHashtags) ? (
-            <View className="min-h-7 flex-row items-center gap-3 pl-7">
+            <View className="min-h-[24px] flex-row items-center gap-2">
               <View className="min-w-0 flex-1 flex-row flex-wrap items-baseline gap-x-1.5">
                 <Text className="text-kd-caption font-medium text-kd-text-muted">ส่งรูปให้ AI วิเคราะห์</Text>
                 <Text className="text-kd-tiny text-kd-text-subtle">(ปิดไว้จะประหยัด token กว่า)</Text>
@@ -105,21 +103,18 @@ export function ExtensionBasicSettingsBlock({
           ) : null}
         </View>
         <ExtensionToggleRow
-          icon={Copy}
           label="AI คิด CTA"
           theme={theme}
           value={settings.aiGenerateCta}
           onValueChange={onToggleCta}
         />
         <ExtensionToggleRow
-          icon={Sparkles}
           label="AI rewrite prompt เมื่อเกิด error"
           theme={theme}
           value={settings.aiRewritePromptOnAudioFailure}
           onValueChange={onToggleRewrite}
         />
         <ExtensionToggleRow
-          icon={FilePlus2}
           label="สร้างโปรเจกต์ใหม่ต่อสินค้า"
           theme={theme}
           value={settings.startNewFlowProjectPerProduct}
@@ -127,7 +122,6 @@ export function ExtensionBasicSettingsBlock({
         />
         <ExtensionToggleRow
           disabled={!settings.startNewFlowProjectPerProduct}
-          icon={Trash2}
           label="ลบโปรเจกต์ที่สร้างต่อสินค้า"
           theme={theme}
           value={settings.deleteLatestFlowProjectBeforeNewProject}
@@ -179,7 +173,6 @@ function HashtagCountSelector({
 }
 
 function ExtensionToggleRow({
-  icon: Icon,
   disabled = false,
   label,
   rightSlot,
@@ -188,7 +181,6 @@ function ExtensionToggleRow({
   onValueChange,
 }: {
   disabled?: boolean;
-  icon: typeof Star;
   label: string;
   rightSlot?: React.ReactNode;
   theme: KubdeeTheme;
@@ -196,8 +188,7 @@ function ExtensionToggleRow({
   onValueChange: (value: boolean) => void;
 }): React.JSX.Element {
   return (
-    <View className={`min-h-6 flex-row items-center gap-2.5 ${disabled ? 'opacity-50' : ''}`}>
-      <Icon size={15} color={disabled ? theme.textSubtle : theme.textMuted} strokeWidth={2} />
+    <View className={`min-h-[24px] flex-row items-center gap-2 ${disabled ? 'opacity-50' : ''}`}>
       <Text
         adjustsFontSizeToFit
         minimumFontScale={0.85}
