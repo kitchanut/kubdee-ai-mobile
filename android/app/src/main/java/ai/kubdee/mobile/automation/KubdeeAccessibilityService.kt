@@ -70,6 +70,7 @@ data class ShopeePostingVideo(
   val productUrl: String?,
   val caption: String?,
   val hashtags: String?,
+  val cta: String?,
   val galleryVideoId: String?,
   val platform: String?
 )
@@ -115,6 +116,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   @Volatile
   private var shopeeImportThread: Thread? = null
+
+  @Volatile
+  private var shopeePostThread: Thread? = null
 
   companion object {
     private const val TAG = "KubdeeAccessibility"
@@ -239,6 +243,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
     private var pendingShopeeImportCommand: PendingShopeeImportCommand? = null
 
     @Volatile
+    private var pendingShopeePostCommand: PendingShopeePostCommand? = null
+
+    @Volatile
     private var pendingShopeeStopRequested = false
 
     fun getInstance(): KubdeeAccessibilityService? = currentService
@@ -257,8 +264,21 @@ class KubdeeAccessibilityService : AccessibilityService() {
       return false
     }
 
+    fun dispatchShopeePostStart(payloadJson: String, runId: String): Boolean {
+      pendingShopeeStopRequested = false
+      val service = currentService
+      if (service != null) {
+        service.startShopeePostAsync(payloadJson, runId)
+        return true
+      }
+
+      pendingShopeePostCommand = PendingShopeePostCommand(payloadJson, runId)
+      return false
+    }
+
     fun dispatchShopeeStop(): Boolean {
       pendingShopeeImportCommand = null
+      pendingShopeePostCommand = null
       val service = currentService
       if (service != null) {
         service.requestStopShopeeAutomation()
@@ -304,10 +324,21 @@ class KubdeeAccessibilityService : AccessibilityService() {
       return command
     }
 
+    private fun takePendingShopeePostCommand(): PendingShopeePostCommand? {
+      val command = pendingShopeePostCommand
+      pendingShopeePostCommand = null
+      return command
+    }
+
     private data class PendingShopeeImportCommand(
       val maxItems: Int,
       val runId: String,
       val profileLocalId: String?
+    )
+
+    private data class PendingShopeePostCommand(
+      val payloadJson: String,
+      val runId: String
     )
   }
 
@@ -328,6 +359,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     takePendingShopeeImportCommand()?.let { command ->
       startShopeeImportAsync(command.maxItems, command.runId, command.profileLocalId)
+    }
+    takePendingShopeePostCommand()?.let { command ->
+      startShopeePostAsync(command.payloadJson, command.runId)
     }
   }
 
@@ -650,6 +684,49 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
   }
 
+  private fun startShopeePostAsync(payloadJson: String, runId: String) {
+    val runningThread = shopeePostThread
+    if (runningThread?.isAlive == true) {
+      KubdeeAutomationIpc.sendShopeePostFinished(
+        this,
+        runId,
+        JSONObject().apply {
+          put("success", false)
+          put("error", "Shopee post กำลังทำงานอยู่แล้ว")
+        },
+        error = "Shopee post กำลังทำงานอยู่แล้ว"
+      )
+      return
+    }
+
+    val thread = Thread {
+      val result = try {
+        postShopeeVideos(payloadJson)
+      } catch (error: Exception) {
+        Log.e(TAG, "Shopee post runner failed", error)
+        JSONObject().apply {
+          put("success", false)
+          put("error", error.message ?: "Shopee post failed")
+        }
+      }
+
+      KubdeeAutomationIpc.sendShopeePostFinished(
+        this,
+        runId,
+        result,
+        error = result.optString("error").takeIf { it.isNotBlank() },
+        stopped = result.optBoolean("stopped", false)
+      )
+      if (shopeePostThread === Thread.currentThread()) {
+        shopeePostThread = null
+      }
+    }.also { worker ->
+      worker.name = "KubdeeShopeePosting"
+      shopeePostThread = worker
+      worker.start()
+    }
+  }
+
   @Synchronized
   fun importShopeeLikedProducts(
     targetPackage: String,
@@ -869,6 +946,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           productUrl = item.optCleanString("productUrl"),
           caption = item.optCleanString("caption"),
           hashtags = item.optCleanString("hashtags"),
+          cta = item.optCleanString("cta"),
           galleryVideoId = item.optCleanString("galleryVideoId"),
           platform = item.optCleanString("platform")
         )
@@ -886,9 +964,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun runShopeeVideoPostingFlow(video: ShopeePostingVideo, preparedVideo: PreparedShopeeVideo) {
     logShopeePostStep("รีเซ็ต Shopee เพื่อโพสต์วิดีโอ")
     if (!launchPackage(TARGET_PACKAGE_SHOPEE, resetTask = true)) {
-      throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
+      logShopeePostStep("เปิด Shopee จาก service ไม่สำเร็จ จะรอหน้าที่เปิดจากแอป")
     }
-    if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 8_000L)) {
+    if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 12_000L)) {
       throw IllegalStateException("ยังไม่เห็นหน้าต่าง Shopee หลังเปิดแอป")
     }
 
@@ -981,6 +1059,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   private fun fillShopeePostingCaption(video: ShopeePostingVideo) {
     val fullText = listOfNotNull(
       video.caption?.trim()?.ifBlank { null } ?: video.productName?.trim()?.ifBlank { null },
+      video.cta?.trim()?.ifBlank { null },
       formatShopeeHashtagText(video.hashtags)
     ).joinToString(" ").trim()
 
@@ -1399,7 +1478,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 1_000L)) {
         logShopeePostStep("ดึง Shopee กลับมาหลังออกจากหน้าค้าง (${attempt + 1}/3)")
         if (!launchPackage(TARGET_PACKAGE_SHOPEE, resetTask = true)) {
-          throw IllegalStateException("เปิด Shopee ไม่สำเร็จหลังออกจากหน้าค้าง")
+          logShopeePostStep("เปิด Shopee จาก service ไม่สำเร็จ จะรอหน้าที่เปิดอยู่")
         }
         if (!waitForPackageActive(TARGET_PACKAGE_SHOPEE, 8_000L)) {
           throw IllegalStateException("ยังไม่เห็นหน้าต่าง Shopee หลังดึงกลับจากหน้าค้าง")

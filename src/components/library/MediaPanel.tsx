@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image as NativeImage, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image as NativeImage, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   ChevronsDown,
@@ -12,10 +13,13 @@ import {
   Grid2X2,
   Heart,
   Image as ImageIcon,
+  Link2,
   Package,
   Pencil,
   Play,
   RefreshCw,
+  Search,
+  ShoppingBag,
   Trash2,
   Upload,
   Video,
@@ -27,6 +31,8 @@ import { toast } from 'sonner-native';
 import Text from '@/components/ui/KubdeeText';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
+import { getLocalProducts } from '@/library/localProductDb';
+import type { AffiliateProduct } from '@/library/types';
 import { deleteGoogleFlowAssets } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
@@ -64,6 +70,11 @@ interface MediaSubItem {
   uri?: string | null;
   mimeType?: string | null;
   thumbnailUri?: string | null;
+  productUrl?: string | null;
+  caption?: string | null;
+  hashtags?: string | null;
+  cta?: string | null;
+  platform?: string | null;
 }
 
 interface MediaGroupRecord {
@@ -122,6 +133,56 @@ const FLAG_GRANT_READ_URI_PERMISSION = 1;
 
 function getItemCode(item: MediaGroupRecord): string {
   return item.code || item.id;
+}
+
+function cleanText(value: string | null | undefined): string {
+  return value?.trim() ?? '';
+}
+
+function isGenericProductLabel(value: string | null | undefined): boolean {
+  const label = cleanText(value);
+  return !label || label === 'ไฟล์นำเข้า' || label === 'สินค้า';
+}
+
+function isPlaceholderProductCode(value: string | null | undefined): boolean {
+  const code = cleanText(value).toLowerCase();
+  return !code || code === 'unknown' || code === 'device-import' || code === 'mobile-device-import';
+}
+
+function getProductCode(product: AffiliateProduct): string {
+  return cleanText(product.externalProductId) || cleanText(product.localId) || String(product.id ?? '');
+}
+
+function getProductImageUri(product: AffiliateProduct | null | undefined): string | null {
+  return cleanText(product?.imageUrl) || cleanText(product?.imagePath) || null;
+}
+
+function getProductKey(product: AffiliateProduct): string {
+  return cleanText(product.localId) || String(product.id ?? '');
+}
+
+function findProductForAsset(products: AffiliateProduct[], asset: GeneratedMediaAsset | null | undefined): AffiliateProduct | null {
+  if (!asset) {
+    return null;
+  }
+
+  const productId = cleanText(asset.productId);
+  const productCode = cleanText(asset.productCode);
+  const productUrl = cleanText(asset.productUrl);
+  const productName = cleanText(asset.productName);
+
+  return products.find((product) => {
+    const localId = cleanText(product.localId);
+    const externalId = cleanText(product.externalProductId);
+    const url = cleanText(product.productUrl);
+    const name = cleanText(product.name);
+    return (
+      (!!productId && (productId === localId || productId === externalId || productId === String(product.id))) ||
+      (!!productCode && (productCode === externalId || productCode === localId)) ||
+      (!!productUrl && productUrl === url) ||
+      (!!productName && !isGenericProductLabel(productName) && productName === name)
+    );
+  }) ?? null;
 }
 
 function formatAssetDate(timestamp: number): string {
@@ -291,6 +352,11 @@ function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): Arra
       uri: asset.fileUri,
       mimeType: asset.mimeType,
       thumbnailUri: asset.thumbnailUri,
+      productUrl: asset.productUrl,
+      caption: asset.caption,
+      hashtags: asset.hashtags,
+      cta: asset.cta,
+      platform: asset.platform,
     });
 
     groupsByProduct.set(groupId, group);
@@ -342,11 +408,45 @@ export default function MediaPanel({
   const [previewMedia, setPreviewMedia] = useState<MediaSubItem | null>(null);
   const [editMedia, setEditMedia] = useState<MediaSubItem | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [editProductName, setEditProductName] = useState('');
+  const [editProductCode, setEditProductCode] = useState('');
+  const [editProductUrl, setEditProductUrl] = useState('');
+  const [editCaption, setEditCaption] = useState('');
+  const [editHashtags, setEditHashtags] = useState('');
+  const [editCta, setEditCta] = useState('');
+  const [productOptions, setProductOptions] = useState<AffiliateProduct[]>([]);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productPickerQuery, setProductPickerQuery] = useState('');
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const ensuringVideoThumbnailsRef = useRef(false);
 
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingProducts(true);
+    void getLocalProducts({ profileLocalId: selectedProfileId })
+      .then((products) => {
+        if (!cancelled) {
+          setProductOptions(products);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProductOptions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingProducts(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProfileId]);
   useEffect(() => {
     if (kind !== 'videos' || ensuringVideoThumbnailsRef.current) {
       return;
@@ -361,6 +461,45 @@ export default function MediaPanel({
     () => new Map(generatedAssets.map((asset) => [asset.id, asset])),
     [generatedAssets]
   );
+  const editAsset = editMedia ? generatedAssetById.get(editMedia.id) ?? null : null;
+  const selectedEditProduct = useMemo(
+    () => findProductForAsset(productOptions, editAsset),
+    [editAsset, productOptions]
+  );
+  const editFieldMatchedProduct = useMemo(() => {
+    const productName = cleanText(editProductName);
+    const productCode = cleanText(editProductCode);
+    const productUrl = cleanText(editProductUrl);
+    return productOptions.find((product) => {
+      const code = getProductCode(product);
+      return (
+        (!!productCode && productCode === code) ||
+        (!!productUrl && productUrl === cleanText(product.productUrl)) ||
+        (!!productName && productName === cleanText(product.name))
+      );
+    }) ?? null;
+  }, [editProductCode, editProductName, editProductUrl, productOptions]);
+  const editProductImageUri = getProductImageUri(editFieldMatchedProduct ?? selectedEditProduct);
+  const filteredProductOptions = useMemo(() => {
+    const query = productPickerQuery.trim().toLowerCase();
+    if (!query) {
+      return productOptions;
+    }
+
+    return productOptions.filter((product) =>
+      [
+        product.name,
+        product.externalProductId,
+        product.productUrl,
+        product.caption,
+        product.hashtags,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [productOptions, productPickerQuery]);
   const groups = useMemo(() => {
     return toGeneratedGroups(kind, generatedAssets);
   }, [generatedAssets, kind]);
@@ -456,8 +595,37 @@ export default function MediaPanel({
   };
 
   const openEdit = (media: MediaSubItem): void => {
+    const asset = generatedAssetById.get(media.id);
     setEditMedia(media);
     setEditTitle(media.title);
+    setEditProductName(isGenericProductLabel(asset?.productName ?? media.productName) ? '' : cleanText(asset?.productName ?? media.productName));
+    setEditProductCode(isPlaceholderProductCode(asset?.productCode ?? media.productCode) ? '' : cleanText(asset?.productCode ?? media.productCode));
+    setEditProductUrl(cleanText(asset?.productUrl ?? media.productUrl));
+    setEditCaption(cleanText(asset?.caption ?? media.caption));
+    setEditHashtags(cleanText(asset?.hashtags ?? media.hashtags));
+    setEditCta(cleanText(asset?.cta ?? media.cta));
+    setProductPickerQuery('');
+  };
+
+  const applyProductToEdit = (product: AffiliateProduct | null): void => {
+    if (!product) {
+      setEditProductName('');
+      setEditProductCode('');
+      setEditProductUrl('');
+      setEditCaption('');
+      setEditHashtags('');
+      setEditCta('');
+      setProductPickerOpen(false);
+      return;
+    }
+
+    setEditProductName(product.name);
+    setEditProductCode(getProductCode(product));
+    setEditProductUrl(cleanText(product.productUrl));
+    setEditCaption(cleanText(product.caption));
+    setEditHashtags(cleanText(product.hashtags));
+    setEditCta(cleanText(product.cta));
+    setProductPickerOpen(false);
   };
 
   const saveEdit = async (): Promise<void> => {
@@ -468,14 +636,55 @@ export default function MediaPanel({
       return;
     }
 
-    const updated = await updateGeneratedMediaAsset(editMedia.id, { title });
+    const productName = editProductName.trim();
+    const productCode = editProductCode.trim();
+    const productUrl = editProductUrl.trim();
+    const caption = editCaption.trim();
+    const hashtags = editHashtags.trim();
+    const cta = editCta.trim();
+    const hasBinding = Boolean(productName || productCode || productUrl || caption || hashtags || cta);
+    const selectedProduct = productOptions.find((product) => {
+      const code = getProductCode(product);
+      return (
+        (!!productCode && productCode === code) ||
+        (!!productUrl && productUrl === cleanText(product.productUrl)) ||
+        (!!productName && productName === cleanText(product.name))
+      );
+    }) ?? null;
+
+    const updated = await updateGeneratedMediaAsset(editMedia.id, {
+      title,
+      productId: hasBinding ? (selectedProduct ? getProductKey(selectedProduct) : productCode || productName || editMedia.id) : 'device-import',
+      productName: hasBinding ? productName || productCode || 'สินค้า' : 'ไฟล์นำเข้า',
+      productCode: hasBinding ? productCode || productName || 'unknown' : 'device-import',
+      productUrl: productUrl || null,
+      caption: caption || null,
+      hashtags: hashtags || null,
+      cta: cta || null,
+      platform: hasBinding ? selectedProduct?.platform || 'shopee' : null,
+    });
     if (!updated) {
       toast.error('ไม่พบรายการที่จะแก้ไข');
       return;
     }
 
     setEditMedia(null);
-    setPreviewMedia((current) => (current?.id === editMedia.id ? { ...current, title } : current));
+    setProductPickerOpen(false);
+    setPreviewMedia((current) => (
+      current?.id === editMedia.id
+        ? {
+          ...current,
+          title,
+          productName: updated.productName,
+          productCode: updated.productCode,
+          productUrl: updated.productUrl,
+          caption: updated.caption,
+          hashtags: updated.hashtags,
+          cta: updated.cta,
+          platform: updated.platform,
+        }
+        : current
+    ));
     toast.success('บันทึกแล้ว');
   };
 
@@ -891,39 +1100,146 @@ export default function MediaPanel({
         animationType="fade"
         transparent
         visible={!!editMedia}
-        onRequestClose={() => setEditMedia(null)}
+        onRequestClose={() => {
+          setEditMedia(null);
+          setProductPickerOpen(false);
+        }}
       >
         <View className="flex-1 justify-end bg-black/45">
           <View
-            className="gap-3 rounded-t-[20px] border border-kd-border bg-kd-panel p-4"
-            style={{ paddingBottom: Math.max(insets.bottom + 16, 24) }}
+            className="max-h-[88%] rounded-t-[20px] border border-kd-border bg-kd-panel"
+            style={{ paddingBottom: Math.max(insets.bottom + 12, 20) }}
           >
-            <View className="flex-row items-center justify-between gap-3">
+            <View className="flex-row items-center justify-between gap-3 px-4 pt-4">
               <Text className="text-kd-title font-semibold text-kd-text">
                 แก้ไข{kind === 'images' ? 'รูปภาพ' : 'วิดีโอ'}
               </Text>
               <Pressable
                 accessibilityLabel="ปิด"
                 accessibilityRole="button"
-                onPress={() => setEditMedia(null)}
+                onPress={() => {
+                  setEditMedia(null);
+                  setProductPickerOpen(false);
+                }}
                 className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted"
               >
                 <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
               </Pressable>
             </View>
 
-            <TextInput
-              value={editTitle}
-              onChangeText={setEditTitle}
-              placeholder="ชื่อรายการ"
-              placeholderTextColor={theme.textMuted}
-              className="h-11 rounded-kd-lg border border-kd-border bg-kd-input px-3 text-kd-body text-kd-text"
-            />
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerClassName="gap-3 px-4 py-3"
+            >
+              <LabeledTextInput
+                label="ชื่อรายการ"
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="ชื่อรายการ"
+                theme={theme}
+              />
 
-            <View className="flex-row gap-2">
+              {kind === 'videos' ? (
+                <View className="gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-kd-caption font-semibold text-kd-text-subtle">ผูกกับสินค้า</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => applyProductToEdit(null)}
+                      className="h-7 justify-center"
+                    >
+                      <Text className="text-kd-caption font-semibold text-kd-text-muted">ล้างสินค้า</Text>
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setProductPickerOpen(true)}
+                    className="flex-row items-center gap-2 rounded-kd-lg bg-kd-card-muted p-2 active:opacity-75"
+                  >
+                    <View className="h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-kd-md bg-kd-panel">
+                      {editProductImageUri ? (
+                        <NativeImage source={{ uri: editProductImageUri }} className="h-full w-full" resizeMode="cover" />
+                      ) : (
+                        <ShoppingBag size={20} color={theme.textSubtle} strokeWidth={1.7} />
+                      )}
+                    </View>
+                    <View className="min-w-0 flex-1">
+                      <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                        {editProductName || 'เลือกสินค้าจากคลัง'}
+                      </Text>
+                      <Text numberOfLines={1} className="mt-0.5 text-kd-caption text-kd-text-subtle">
+                        {editProductCode ? `#${editProductCode}` : 'แตะเพื่อผูกสินค้า'}
+                      </Text>
+                    </View>
+                    <ChevronRight size={17} color={theme.textMuted} strokeWidth={2} />
+                  </Pressable>
+
+                  <View className="flex-row gap-2">
+                    <View className="flex-1">
+                      <LabeledTextInput
+                        label="Product ID"
+                        value={editProductCode}
+                        onChangeText={setEditProductCode}
+                        placeholder="รหัสสินค้า"
+                        theme={theme}
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <LabeledTextInput
+                        label="ชื่อสินค้า"
+                        value={editProductName}
+                        onChangeText={setEditProductName}
+                        placeholder="ชื่อสินค้า"
+                        theme={theme}
+                      />
+                    </View>
+                  </View>
+
+                  <LabeledTextInput
+                    label="ลิงก์สินค้า"
+                    value={editProductUrl}
+                    onChangeText={setEditProductUrl}
+                    placeholder="https://..."
+                    theme={theme}
+                  />
+
+                  <LabeledTextInput
+                    label="Caption"
+                    value={editCaption}
+                    onChangeText={setEditCaption}
+                    placeholder="คำบรรยาย"
+                    multiline
+                    theme={theme}
+                  />
+
+                  <LabeledTextInput
+                    label="Hashtag"
+                    value={editHashtags}
+                    onChangeText={setEditHashtags}
+                    placeholder="#แฮชแท็ก"
+                    theme={theme}
+                  />
+
+                  <LabeledTextInput
+                    label="CTA"
+                    value={editCta}
+                    onChangeText={setEditCta}
+                    placeholder="สั่งซื้อเลย"
+                    theme={theme}
+                  />
+                </View>
+              ) : null}
+            </ScrollView>
+
+            <View className="flex-row gap-2 px-4 pt-1">
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setEditMedia(null)}
+                onPress={() => {
+                  setEditMedia(null);
+                  setProductPickerOpen(false);
+                }}
                 className="h-11 flex-1 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card"
               >
                 <Text className="text-kd-body font-medium text-kd-text-subtle">ยกเลิก</Text>
@@ -939,7 +1255,180 @@ export default function MediaPanel({
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={productPickerOpen}
+        onRequestClose={() => setProductPickerOpen(false)}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <View
+            className="max-h-[82%] rounded-t-[20px] border border-kd-border bg-kd-panel"
+            style={{ paddingBottom: Math.max(insets.bottom + 12, 20) }}
+          >
+            <View className="flex-row items-center justify-between px-4 pt-4">
+              <View className="flex-row items-center gap-2">
+                <ShoppingBag size={16} color={accentColor} strokeWidth={2.2} />
+                <Text className="text-kd-title font-semibold text-kd-text">เลือกสินค้า</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                onPress={() => setProductPickerOpen(false)}
+                className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted"
+              >
+                <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+
+            <View className="mx-4 mt-3 flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3">
+              <Search size={13} color={theme.textSubtle} strokeWidth={2} />
+              <TextInput
+                value={productPickerQuery}
+                onChangeText={setProductPickerQuery}
+                placeholder="ค้นหาสินค้า..."
+                placeholderTextColor={theme.textMuted}
+                className="h-10 flex-1 text-kd-body text-kd-text"
+              />
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerClassName="gap-2 px-4 py-3"
+            >
+              <ProductPickerRow
+                active={!editProductName && !editProductCode && !editProductUrl}
+                imageUri={null}
+                meta="ไม่แนบข้อมูลสินค้าไปกับวิดีโอนี้"
+                name="ไม่ผูกสินค้า"
+                theme={theme}
+                onPress={() => applyProductToEdit(null)}
+              />
+
+              {isLoadingProducts ? (
+                <View className="items-center justify-center gap-2 py-8">
+                  <ActivityIndicator color={accentColor} />
+                  <Text className="text-kd-caption text-kd-text-subtle">กำลังโหลดสินค้า...</Text>
+                </View>
+              ) : filteredProductOptions.length > 0 ? (
+                filteredProductOptions.map((product) => {
+                  const productCode = getProductCode(product);
+                  const isActive =
+                    (!!editProductCode && productCode === editProductCode) ||
+                    (!!editProductUrl && cleanText(product.productUrl) === editProductUrl) ||
+                    (!!editProductName && cleanText(product.name) === editProductName);
+
+                  return (
+                    <ProductPickerRow
+                      active={isActive}
+                      imageUri={getProductImageUri(product)}
+                      key={getProductKey(product)}
+                      meta={`${productCode ? `#${productCode}` : 'ไม่มีรหัส'}${product.productUrl ? ' · มีลิงก์สินค้า' : ''}`}
+                      name={product.name}
+                      theme={theme}
+                      onPress={() => applyProductToEdit(product)}
+                    />
+                  );
+                })
+              ) : (
+                <View className="items-center justify-center gap-2 py-8">
+                  <Package size={24} color={theme.textSubtle} strokeWidth={1.6} />
+                  <Text className="text-kd-caption text-kd-text-subtle">
+                    {productOptions.length === 0 ? 'ยังไม่มีสินค้าในคลัง' : 'ไม่พบสินค้าที่ค้นหา'}
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
+  );
+}
+
+function LabeledTextInput({
+  label,
+  value,
+  placeholder,
+  multiline = false,
+  theme,
+  onChangeText,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  multiline?: boolean;
+  theme: KubdeeTheme;
+  onChangeText: (value: string) => void;
+}): React.JSX.Element {
+  return (
+    <View className="gap-1">
+      <Text className="text-kd-caption font-medium text-kd-text-subtle">{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={theme.textMuted}
+        multiline={multiline}
+        textAlignVertical={multiline ? 'top' : 'center'}
+        className={`rounded-kd-lg border border-kd-border bg-kd-input px-3 text-kd-body text-kd-text ${
+          multiline ? 'min-h-[76px] py-2' : 'h-11'
+        }`}
+      />
+    </View>
+  );
+}
+
+function ProductPickerRow({
+  active,
+  imageUri,
+  meta,
+  name,
+  theme,
+  onPress,
+}: {
+  active: boolean;
+  imageUri: string | null;
+  meta: string;
+  name: string;
+  theme: KubdeeTheme;
+  onPress: () => void;
+}): React.JSX.Element {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      className={`flex-row items-center gap-2 rounded-kd-lg border p-2 active:opacity-75 ${
+        active ? 'border-kd-red bg-kd-red-soft' : 'border-kd-border bg-kd-card'
+      }`}
+    >
+      <View className="h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-kd-md bg-kd-panel">
+        {imageUri ? (
+          <NativeImage source={{ uri: imageUri }} className="h-full w-full" resizeMode="cover" />
+        ) : (
+          <ShoppingBag size={19} color={theme.textSubtle} strokeWidth={1.7} />
+        )}
+      </View>
+      <View className="min-w-0 flex-1">
+        <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+          {name}
+        </Text>
+        <View className="mt-0.5 flex-row items-center gap-1">
+          {meta.includes('ลิงก์') ? <Link2 size={10} color={theme.orange} strokeWidth={2} /> : null}
+          <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-caption text-kd-text-subtle">
+            {meta}
+          </Text>
+        </View>
+      </View>
+      {active ? (
+        <View className="h-5 w-5 items-center justify-center rounded-full bg-kd-red">
+          <Check size={12} color={theme.white} strokeWidth={3} />
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 

@@ -43,6 +43,7 @@ export interface NativeShopeePostingVideoInput {
   productUrl?: string | null;
   caption?: string | null;
   hashtags?: string | null;
+  cta?: string | null;
   galleryVideoId?: string | null;
   platform?: string | null;
 }

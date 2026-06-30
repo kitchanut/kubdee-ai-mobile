@@ -519,6 +519,7 @@ export function useAutoPilotController({
           productUrl: product?.productUrl || null,
           caption: product?.caption || null,
           hashtags: product?.hashtags || null,
+          cta: product?.cta || null,
           platform: product?.platform || null,
           fileUri: entry.fileUri,
           fileName: entry.fileName,

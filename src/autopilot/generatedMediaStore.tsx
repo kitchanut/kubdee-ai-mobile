@@ -21,6 +21,7 @@ export interface GeneratedMediaAsset {
   productUrl: string | null;
   caption: string | null;
   hashtags: string | null;
+  cta: string | null;
   platform: string | null;
   title: string;
   fileUri: string | null;
@@ -42,6 +43,7 @@ export interface AddGeneratedMediaAssetInput {
   productUrl?: string | null;
   caption?: string | null;
   hashtags?: string | null;
+  cta?: string | null;
   platform?: string | null;
   fileUri?: string | null;
   fileName?: string | null;
@@ -50,6 +52,22 @@ export interface AddGeneratedMediaAssetInput {
   sizeBytes?: number | null;
   createdAt?: number;
 }
+
+type GeneratedMediaAssetPatch = Partial<
+  Pick<
+    GeneratedMediaAsset,
+    | 'title'
+    | 'thumbnailUri'
+    | 'productId'
+    | 'productName'
+    | 'productCode'
+    | 'productUrl'
+    | 'caption'
+    | 'hashtags'
+    | 'cta'
+    | 'platform'
+  >
+>;
 
 interface GeneratedMediaContextType {
   assets: GeneratedMediaAsset[];
@@ -61,7 +79,7 @@ interface GeneratedMediaContextType {
   refreshGeneratedMediaAssets: () => Promise<void>;
   updateGeneratedMediaAsset: (
     id: string,
-    patch: Partial<Pick<GeneratedMediaAsset, 'title' | 'thumbnailUri'>>
+    patch: GeneratedMediaAssetPatch
   ) => Promise<GeneratedMediaAsset | null>;
 }
 
@@ -107,6 +125,7 @@ function normalizeAsset(input: AddGeneratedMediaAssetInput): GeneratedMediaAsset
     productUrl: cleanText(input.productUrl) || null,
     caption: cleanText(input.caption) || null,
     hashtags: cleanText(input.hashtags) || null,
+    cta: cleanText(input.cta) || null,
     platform: cleanText(input.platform) || null,
     title: fileName || `${stepTitle} Auto Pilot - ${productName}`,
     fileUri: cleanText(input.fileUri) || null,
@@ -131,6 +150,7 @@ function creativeMediaToGeneratedAsset(asset: CreativeMediaAsset): GeneratedMedi
     productUrl: asset.productUrl,
     caption: asset.caption,
     hashtags: asset.hashtags,
+    cta: asset.cta,
     platform: asset.platform,
     title: asset.title,
     fileUri: asset.fileUri,
@@ -186,6 +206,7 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
         productUrl: cleanText(asset.productUrl) || null,
         caption: cleanText(asset.caption) || null,
         hashtags: cleanText(asset.hashtags) || null,
+        cta: cleanText(asset.cta) || null,
         platform: cleanText(asset.platform) || null,
         thumbnailUri: cleanText(asset.thumbnailUri) || null,
       }))
@@ -245,6 +266,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           productUrl: storedAsset.productUrl,
           caption: storedAsset.caption,
           hashtags: storedAsset.hashtags,
+          cta: storedAsset.cta,
           platform: storedAsset.platform,
           title: storedAsset.title,
           fileUri: storedAsset.fileUri,
@@ -289,6 +311,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       productUrl: asset.productUrl,
       caption: asset.caption,
       hashtags: asset.hashtags,
+      cta: asset.cta,
       platform: asset.platform,
       title: asset.title,
       fileUri: asset.fileUri,
@@ -317,7 +340,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
   const updateGeneratedMediaAsset = useCallback(
     async (
       id: string,
-      patch: Partial<Pick<GeneratedMediaAsset, 'title' | 'thumbnailUri'>>
+      patch: GeneratedMediaAssetPatch
     ): Promise<GeneratedMediaAsset | null> => {
       const cleanId = id.trim();
       const currentAsset = assets.find((asset) => asset.id === cleanId);
@@ -329,6 +352,14 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
         ...currentAsset,
         title: patch.title === undefined ? currentAsset.title : cleanText(patch.title) || currentAsset.title,
         thumbnailUri: patch.thumbnailUri === undefined ? currentAsset.thumbnailUri : cleanText(patch.thumbnailUri) || null,
+        productId: patch.productId === undefined ? currentAsset.productId : cleanText(patch.productId),
+        productName: patch.productName === undefined ? currentAsset.productName : cleanText(patch.productName) || 'สินค้า',
+        productCode: patch.productCode === undefined ? currentAsset.productCode : cleanText(patch.productCode) || cleanText(patch.productId) || 'unknown',
+        productUrl: patch.productUrl === undefined ? currentAsset.productUrl : cleanText(patch.productUrl) || null,
+        caption: patch.caption === undefined ? currentAsset.caption : cleanText(patch.caption) || null,
+        hashtags: patch.hashtags === undefined ? currentAsset.hashtags : cleanText(patch.hashtags) || null,
+        cta: patch.cta === undefined ? currentAsset.cta : cleanText(patch.cta) || null,
+        platform: patch.platform === undefined ? currentAsset.platform : cleanText(patch.platform) || null,
       };
 
       await addMediaAsset({
@@ -342,6 +373,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
         productUrl: nextAsset.productUrl,
         caption: nextAsset.caption,
         hashtags: nextAsset.hashtags,
+        cta: nextAsset.cta,
         platform: nextAsset.platform,
         title: nextAsset.title,
         fileUri: nextAsset.fileUri,
@@ -425,6 +457,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           productUrl: null,
           caption: null,
           hashtags: null,
+          cta: null,
           platform: null,
           fileUri: deviceAsset.uri,
           fileName: deviceAsset.fileName,
@@ -469,6 +502,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           productUrl: nextAsset.productUrl,
           caption: nextAsset.caption,
           hashtags: nextAsset.hashtags,
+          cta: nextAsset.cta,
           platform: nextAsset.platform,
           title: nextAsset.title,
           fileUri: nextAsset.fileUri,

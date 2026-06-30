@@ -14,6 +14,7 @@ export interface CreativeMediaAsset {
   productUrl: string | null;
   caption: string | null;
   hashtags: string | null;
+  cta: string | null;
   platform: string | null;
   title: string;
   fileUri: string | null;
@@ -111,6 +112,7 @@ async function openDb(): Promise<SQLite.SQLiteDatabase> {
           product_url TEXT,
           caption TEXT,
           hashtags TEXT,
+          cta TEXT,
           platform TEXT,
           title TEXT NOT NULL,
           file_uri TEXT,
@@ -150,6 +152,7 @@ async function openDb(): Promise<SQLite.SQLiteDatabase> {
           ON creative_library_items(profile_local_id, kind, created_at);
       `);
       await ensureColumn(db, 'creative_media_assets', 'thumbnail_uri', 'TEXT');
+      await ensureColumn(db, 'creative_media_assets', 'cta', 'TEXT');
       await db.runAsync(
         `INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)`,
         'schema_version',
@@ -184,6 +187,7 @@ function mapMediaRow(row: Record<string, unknown>): CreativeMediaAsset {
     productUrl: cleanText(row.product_url as string | null),
     caption: cleanText(row.caption as string | null),
     hashtags: cleanText(row.hashtags as string | null),
+    cta: cleanText(row.cta as string | null),
     platform: cleanText(row.platform as string | null),
     title: String(row.title || 'Media'),
     fileUri: cleanText(row.file_uri as string | null),
@@ -250,6 +254,7 @@ export async function upsertCreativeMediaAsset(
     productUrl: cleanText(input.productUrl),
     caption: cleanText(input.caption),
     hashtags: cleanText(input.hashtags),
+    cta: cleanText(input.cta),
     platform: cleanText(input.platform),
     fileUri: cleanText(input.fileUri),
     fileName: cleanText(input.fileName),
@@ -263,10 +268,10 @@ export async function upsertCreativeMediaAsset(
       `
         INSERT INTO creative_media_assets (
           id, kind, run_id, profile_local_id, product_id, product_name, product_code,
-          product_url, caption, hashtags, platform, title, file_uri, file_name,
+          product_url, caption, hashtags, cta, platform, title, file_uri, file_name,
           mime_type, thumbnail_uri, size_bytes, width, height, duration_ms, source, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           run_id = excluded.run_id,
           profile_local_id = excluded.profile_local_id,
@@ -276,6 +281,7 @@ export async function upsertCreativeMediaAsset(
           product_url = excluded.product_url,
           caption = excluded.caption,
           hashtags = excluded.hashtags,
+          cta = excluded.cta,
           platform = excluded.platform,
           title = excluded.title,
           file_uri = excluded.file_uri,
@@ -299,6 +305,7 @@ export async function upsertCreativeMediaAsset(
       asset.productUrl,
       asset.caption,
       asset.hashtags,
+      asset.cta,
       asset.platform,
       asset.title,
       asset.fileUri,

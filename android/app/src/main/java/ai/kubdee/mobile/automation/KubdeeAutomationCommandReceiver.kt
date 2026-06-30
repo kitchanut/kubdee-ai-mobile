@@ -23,6 +23,24 @@ class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
         }
       }
 
+      KubdeeAutomationIpc.ACTION_START_SHOPEE_POST -> {
+        val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
+        val payloadJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON).orEmpty()
+        if (runId.isBlank()) {
+          Log.w(TAG, "Missing Shopee post run id")
+          return
+        }
+        if (payloadJson.isBlank()) {
+          Log.w(TAG, "Missing Shopee post payload")
+          return
+        }
+
+        val started = KubdeeAccessibilityService.dispatchShopeePostStart(payloadJson, runId)
+        if (!started) {
+          Log.w(TAG, "Accessibility service is not connected yet; queued Shopee post")
+        }
+      }
+
       KubdeeAutomationIpc.ACTION_STOP_SHOPEE -> {
         val stopped = KubdeeAccessibilityService.dispatchShopeeStop()
         if (!stopped) {

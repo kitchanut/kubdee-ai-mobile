@@ -51,11 +51,13 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
+import org.json.JSONObject
 
 class KubdeeAccessibilityModule(
   private val reactContext: ReactApplicationContext
 ) : ReactContextBaseJavaModule(reactContext) {
   private val pendingShopeeImportPromises = ConcurrentHashMap<String, Promise>()
+  private val pendingShopeePostPromises = ConcurrentHashMap<String, Promise>()
   private val moduleHandler = Handler(Looper.getMainLooper())
   private val automationEventReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -80,6 +82,10 @@ class KubdeeAccessibilityModule(
       promise.reject("MODULE_INVALIDATED", "Kubdee Accessibility module ถูกปิดก่อนงานจบ")
     }
     pendingShopeeImportPromises.clear()
+    pendingShopeePostPromises.forEach { (_, promise) ->
+      promise.reject("MODULE_INVALIDATED", "Kubdee Accessibility module ถูกปิดก่อนงานจบ")
+    }
+    pendingShopeePostPromises.clear()
     if (eventContext === reactContext) {
       eventContext = null
     }
@@ -92,6 +98,7 @@ class KubdeeAccessibilityModule(
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_PRODUCT)
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_FINISHED)
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_LOG)
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_FINISHED)
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       reactContext.registerReceiver(automationEventReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -127,6 +134,10 @@ class KubdeeAccessibilityModule(
         })
       }
 
+      KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_FINISHED -> {
+        handleShopeePostFinished(intent)
+      }
+
     }
   }
 
@@ -140,6 +151,26 @@ class KubdeeAccessibilityModule(
     }
 
     promise.resolve(shopeeProductsJsonToWritableArray(intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCTS_JSON).orEmpty()))
+  }
+
+  private fun handleShopeePostFinished(intent: Intent) {
+    val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
+    val promise = pendingShopeePostPromises.remove(runId) ?: return
+    val resultJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RESULT_JSON).orEmpty()
+    val error = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_ERROR)
+    if (!error.isNullOrBlank() && resultJson.isBlank()) {
+      promise.reject("SHOPEE_POST_FAILED", error)
+      return
+    }
+
+    promise.resolve(
+      resultJson.ifBlank {
+        JSONObject()
+          .put("success", false)
+          .put("error", "Shopee post result missing")
+          .toString()
+      }
+    )
   }
 
   private fun shopeeProductIntentToWritableMap(intent: Intent) =
@@ -371,9 +402,9 @@ class KubdeeAccessibilityModule(
 
   @ReactMethod
   fun postShopeeVideos(payloadJson: String, promise: Promise) {
-    val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
-      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
       return
     }
 
@@ -382,16 +413,18 @@ class KubdeeAccessibilityModule(
       return
     }
 
-    Thread {
-      try {
-        val result = service.postShopeeVideos(payloadJson)
-        promise.resolve(result.toString())
-      } catch (error: Exception) {
-        promise.reject("SHOPEE_POST_FAILED", error.message, error)
-      }
-    }.also { thread ->
-      thread.name = "KubdeeShopeePosting"
-      thread.start()
+    val runId = "shopee-post-${System.currentTimeMillis()}-${UUID.randomUUID()}"
+    pendingShopeePostPromises[runId] = promise
+    moduleHandler.postDelayed({
+      pendingShopeePostPromises.remove(runId)?.reject(
+        "SHOPEE_POST_TIMEOUT",
+        "Shopee post ใช้เวลานานเกินไป"
+      )
+    }, 20 * 60 * 1000L)
+
+    sendAutomationCommand(KubdeeAutomationIpc.ACTION_START_SHOPEE_POST) {
+      putExtra(KubdeeAutomationIpc.EXTRA_RUN_ID, runId)
+      putExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON, payloadJson)
     }
   }
 
