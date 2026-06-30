@@ -424,7 +424,7 @@ function PostVideoRow({
   const productCode = getPostPayloadProductCode(video);
   const productLabel = productName || getPostVideoFallbackLabel(video, index);
   const hasProductInfo = hasProductUrl || Boolean(productName || productCode);
-  const productMeta = productCode ? `#shopee:${productCode}` : productName ? 'มีชื่อสินค้า แต่ยังไม่มีรหัส' : 'ยังไม่ได้ผูกสินค้า';
+  const productMeta = productCode ? `#${productCode}` : productName ? 'มีชื่อสินค้า แต่ยังไม่มีรหัส' : 'ยังไม่ได้ผูกสินค้า';
   const productStatus = hasProductUrl
     ? 'มีลิงก์สินค้า'
     : hasProductInfo
