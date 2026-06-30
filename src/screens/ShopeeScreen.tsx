@@ -21,7 +21,7 @@ import {
   stopShopeeAutomation,
   subscribeShopeePostLogs,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeePostLog } from '@/native/AccessibilityBridge';
+import type { NativeShopeePostLog, NativeShopeePostingResult } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 interface ShopeeScreenProps {
@@ -165,6 +165,7 @@ export default function ShopeeScreen({
       if (result.stopped) {
         const message = `หยุดโพสต์ Shopee แล้ว (${result.postedCount || 0}/${postQueueVideos.length})`;
         appendPostLog(message);
+        removePostedVideosFromQueue(result, postQueueVideos, onClearPendingVideos, onRemovePendingVideo);
         toast.warning(message);
         return;
       }
@@ -180,6 +181,7 @@ export default function ShopeeScreen({
         result.successCount ?? result.results?.filter((entry) => entry.success).length ?? result.postedCount ?? 0;
       const message = `โพสต์ Shopee สำเร็จ ${result.postedCount || successCount}/${postQueueVideos.length} วิดีโอ`;
       appendPostLog(message);
+      removePostedVideosFromQueue(result, postQueueVideos, onClearPendingVideos, onRemovePendingVideo);
       toast.success(message);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -190,7 +192,7 @@ export default function ShopeeScreen({
       setIsStoppingPost(false);
       setAutomationActivityRunning('shopee-post', false);
     }
-  }, [appendPostLog, isPosting, postQueueVideos]);
+  }, [appendPostLog, isPosting, onClearPendingVideos, onRemovePendingVideo, postQueueVideos]);
 
   const handleStopPost = useCallback(async (): Promise<void> => {
     if (!isPosting || isStoppingPost) {
@@ -401,6 +403,47 @@ function getPostPayloadProductCode(video: GeneratedMediaAsset): string | null {
   }
 
   return null;
+}
+
+function getPostedVideoIds(result: NativeShopeePostingResult, videos: GeneratedMediaAsset[]): string[] {
+  const resultSuccessIds = result.results
+    ?.filter((entry) => entry.success)
+    .map((entry) => videos[entry.videoIndex]?.id)
+    .filter((videoId): videoId is string => Boolean(videoId));
+
+  if (resultSuccessIds?.length) {
+    return resultSuccessIds;
+  }
+
+  const postedCount = Math.max(0, Math.min(result.postedCount ?? result.successCount ?? 0, videos.length));
+  if (postedCount > 0) {
+    return videos.slice(0, postedCount).map((video) => video.id);
+  }
+
+  if (result.success) {
+    return videos.map((video) => video.id);
+  }
+
+  return [];
+}
+
+function removePostedVideosFromQueue(
+  result: NativeShopeePostingResult,
+  videos: GeneratedMediaAsset[],
+  onClearPendingVideos: (() => void) | undefined,
+  onRemovePendingVideo: ((videoId: string) => void) | undefined
+): void {
+  const postedVideoIds = getPostedVideoIds(result, videos);
+  if (postedVideoIds.length === 0) {
+    return;
+  }
+
+  if (postedVideoIds.length >= videos.length) {
+    onClearPendingVideos?.();
+    return;
+  }
+
+  postedVideoIds.forEach((videoId) => onRemovePendingVideo?.(videoId));
 }
 
 function getPostVideoFallbackLabel(video: GeneratedMediaAsset, index: number): string {

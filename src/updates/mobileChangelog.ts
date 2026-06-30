@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.0',
+    date: '2026-06-30',
+    highlight: 'Shopee Post ผูกสินค้าและคิวโพสต์ชัดขึ้น',
+    changes: [
+      { type: 'added', text: 'คลังวิดีโอสามารถผูกสินค้า แคปชั่น แฮชแท็ก CTA และลิงก์สินค้า ก่อนส่งไปโพสต์ Shopee ได้' },
+      { type: 'improved', text: 'รายการโพสต์ Shopee แสดงชื่อสินค้า รหัส และสถานะลิงก์สินค้าให้อ่านง่ายขึ้น' },
+      { type: 'fixed', text: 'หลังโพสต์ Shopee สำเร็จ ระบบล้างวิดีโอที่โพสต์แล้วออกจากคิว เพื่อป้องกันการกดโพสต์ซ้ำ' },
+    ],
+  },
+  {
     version: '0.1.50',
     date: '2026-06-29',
     highlight: 'วิดีโอหลายฉากแนบรูป reference แม่นขึ้น',
@@ -510,4 +520,4 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   },
 ];
 
-export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.1.50';
+export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.2.0';
