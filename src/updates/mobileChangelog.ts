@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.7',
+    date: '2026-06-30',
+    highlight: 'คลังตัวละครและฉากแนบรูปเองได้แล้ว',
+    changes: [
+      { type: 'changed', text: 'เพิ่มตัวละครและฉากในคลังด้วยการแนบรูปจากเครื่องเหมือน Desktop' },
+      { type: 'changed', text: 'ตัดการสร้างตัวละครและฉากด้วย Google Flow ออกจากหน้าคลัง' },
+      { type: 'improved', text: 'บันทึกรูปตัวละครและฉากไว้ในพื้นที่ของแอปก่อนนำไปใช้เป็น reference' },
+    ],
+  },
+  {
     version: '0.2.6',
     date: '2026-06-30',
     highlight: 'คลังสินค้าและการดึง Shopee ลื่นขึ้น',

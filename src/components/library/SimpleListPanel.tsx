@@ -1,22 +1,23 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Eye,
   EyeOff,
+  ImagePlus,
   Pencil,
   Plus,
   Presentation,
-  Sparkles,
   Trash2,
+  Upload,
   User,
 } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 
-import { startGoogleFlowRunner } from '@/autopilot/googleFlowRunnerBridge';
 import Text from '@/components/ui/KubdeeText';
-import { createCreativeImageRunnerPayload } from '@/creative/creativeImageRunner';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type { CreativeAssetKind, CreativeLibraryItem } from '@/library/CreativeLibraryContext';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -44,13 +45,13 @@ const panelCopy: Record<SimpleListKind, { title: string; emptyTitle: string; emp
   characters: {
     title: 'คลังตัวละคร',
     emptyTitle: 'ยังไม่มีตัวละคร',
-    emptyCopy: 'กดปุ่มเพิ่มเพื่อสร้างตัวละครไว้ใช้ใน Auto Pilot',
+    emptyCopy: 'กดปุ่มเพิ่มแล้วแนบรูปตัวละครไว้ใช้ใน Auto Pilot',
     defaultName: 'ตัวละครใหม่',
   },
   scenes: {
     title: 'คลังฉาก',
     emptyTitle: 'ยังไม่มีฉาก',
-    emptyCopy: 'กดปุ่มเพิ่มเพื่อสร้างฉากไว้ใช้ใน Auto Pilot',
+    emptyCopy: 'กดปุ่มเพิ่มแล้วแนบรูปฉากไว้ใช้ใน Auto Pilot',
     defaultName: 'ฉากใหม่',
   },
 };
@@ -75,6 +76,31 @@ function cleanText(value: string): string | null {
   return trimmed ? trimmed : null;
 }
 
+function getPickedImageExtension(uri: string, fileName?: string | null): string {
+  const source = fileName || uri.split('?')[0]?.split('/').pop() || '';
+  const match = source.match(/\.([a-z0-9]{2,5})$/i);
+  const ext = match?.[1]?.toLowerCase();
+  return ext && /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
+}
+
+async function copyPickedImageToLibrary(
+  uri: string,
+  kind: SimpleListKind,
+  fileName?: string | null
+): Promise<string> {
+  if (!FileSystem.documentDirectory) {
+    throw new Error('ไม่พบพื้นที่จัดเก็บของแอป');
+  }
+
+  const directory = `${FileSystem.documentDirectory}creative-library/${kind}/`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+
+  const extension = getPickedImageExtension(uri, fileName);
+  const targetUri = `${directory}${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+  await FileSystem.copyAsync({ from: uri, to: targetUri });
+  return targetUri;
+}
+
 export default function SimpleListPanel({
   theme,
   kind,
@@ -91,7 +117,7 @@ export default function SimpleListPanel({
   const { deleteLibraryItems, getLibraryItems, saveLibraryItem } = useCreativeLibrary();
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState<EditDraft | null>(null);
-  const [isStartingFlow, setIsStartingFlow] = useState(false);
+  const [isPickingImage, setIsPickingImage] = useState(false);
 
   const items = useMemo(
     () => getLibraryItems(kind, selectedProfileId),
@@ -121,17 +147,24 @@ export default function SimpleListPanel({
   const saveDraft = async (): Promise<CreativeLibraryItem | null> => {
     if (!draft) return null;
     const name = cleanText(draft.name) ?? copy.defaultName;
+    const imageUri = cleanText(draft.imageUri);
+    if (!imageUri) {
+      toast.error(`กรุณาแนบรูป${kind === 'characters' ? 'ตัวละคร' : 'ฉาก'}ก่อนบันทึก`);
+      return null;
+    }
+
     const now = Date.now();
+    const existingItem = draft.id ? items.find((item) => item.id === draft.id) : null;
     const item = await saveLibraryItem({
       id: draft.id ?? createId(kind),
       kind,
       profileLocalId: selectedProfileId,
       name,
       description: cleanText(draft.description),
-      imageUri: cleanText(draft.imageUri),
-      tags: null,
-      source: 'mobile',
-      createdAt: draft.id ? items.find((item) => item.id === draft.id)?.createdAt ?? now : now,
+      imageUri,
+      tags: kind === 'characters' ? 'character,mobile-upload' : 'scene,mobile-upload',
+      source: 'mobile-upload',
+      createdAt: existingItem?.createdAt ?? now,
     });
     toast.success(draft.id ? 'บันทึกแล้ว' : 'เพิ่มเข้าคลังแล้ว');
     return item;
@@ -144,35 +177,36 @@ export default function SimpleListPanel({
     }
   };
 
-  const generateDraftWithFlow = async (): Promise<void> => {
-    if (!draft || isStartingFlow) return;
-    if (!selectedProfileId.trim()) {
-      toast.error('กรุณาเลือกโปรไฟล์ก่อน');
-      return;
-    }
-
-    setIsStartingFlow(true);
+  const pickDraftImage = async (): Promise<void> => {
+    if (!draft || isPickingImage) return;
+    setIsPickingImage(true);
     try {
-      const item = await saveDraft();
-      if (!item) return;
-      const result = await startGoogleFlowRunner(
-        createCreativeImageRunnerPayload({
-          description: item.description,
-          imageUri: item.imageUri,
-          itemId: item.id,
-          kind,
-          name: item.name,
-          profileLocalId: selectedProfileId,
-        })
-      );
-      if (!result.success) {
-        toast.error(result.error || 'เริ่ม Google Flow ไม่สำเร็จ');
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        toast.error('กรุณาอนุญาตให้แอปเข้าถึงรูปภาพก่อน');
         return;
       }
-      toast.success(`เริ่มสร้าง${kind === 'characters' ? 'ตัวละคร' : 'ฉาก'}ด้วย Google Flow แล้ว`);
-      closeDraft();
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: false,
+        mediaTypes: ['images'],
+        quality: 1,
+      });
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (!asset?.uri) {
+        toast.error('เลือกรูปไม่สำเร็จ');
+        return;
+      }
+
+      const localUri = await copyPickedImageToLibrary(asset.uri, kind, asset.fileName);
+      setDraft((current) => (current ? { ...current, imageUri: localUri } : current));
+      toast.success(`แนบรูป${kind === 'characters' ? 'ตัวละคร' : 'ฉาก'}แล้ว`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'แนบรูปไม่สำเร็จ');
     } finally {
-      setIsStartingFlow(false);
+      setIsPickingImage(false);
     }
   };
 
@@ -254,20 +288,47 @@ export default function SimpleListPanel({
             <TextInput
               value={draft?.description ?? ''}
               onChangeText={(value) => setDraft((current) => (current ? { ...current, description: value } : current))}
-              placeholder="รายละเอียด / prompt reference"
+              placeholder="รายละเอียดสั้น ๆ เช่น เพศ ช่วงวัย ลุค หรือประเภทฉาก"
               placeholderTextColor={theme.textMuted}
               multiline
               textAlignVertical="top"
               className="min-h-24 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2 text-kd-body text-kd-text"
             />
-            <TextInput
-              value={draft?.imageUri ?? ''}
-              onChangeText={(value) => setDraft((current) => (current ? { ...current, imageUri: value } : current))}
-              placeholder="ลิงก์รูป reference (ถ้ามี)"
-              placeholderTextColor={theme.textMuted}
-              autoCapitalize="none"
-              className="h-11 rounded-kd-lg border border-kd-border bg-kd-input px-3 text-kd-body text-kd-text"
-            />
+            <View className="gap-2">
+              <Pressable
+                accessibilityRole="button"
+                disabled={isPickingImage}
+                onPress={() => void pickDraftImage()}
+                className="min-h-24 items-center justify-center overflow-hidden rounded-kd-lg border border-dashed border-kd-border bg-kd-input disabled:opacity-60"
+              >
+                {draft?.imageUri ? (
+                  <Image source={{ uri: draft.imageUri }} className="h-44 w-full" resizeMode="cover" />
+                ) : (
+                  <View className="items-center gap-2 px-4 py-6">
+                    <View className="h-10 w-10 items-center justify-center rounded-full bg-kd-card">
+                      <ImagePlus size={20} color={theme.textSubtle} strokeWidth={2} />
+                    </View>
+                    <Text className="text-kd-body font-semibold text-kd-text">
+                      แนบรูป{kind === 'characters' ? 'ตัวละคร' : 'ฉาก'}
+                    </Text>
+                    <Text className="text-center text-kd-caption text-kd-text-subtle">
+                      ใช้รูปจากเครื่องเป็น reference เหมือน Desktop
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+              {draft?.imageUri ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isPickingImage}
+                  onPress={() => void pickDraftImage()}
+                  className="h-10 flex-row items-center justify-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card disabled:opacity-60"
+                >
+                  <Upload size={14} color={theme.textSubtle} strokeWidth={2.2} />
+                  <Text className="text-kd-caption font-semibold text-kd-text-subtle">เปลี่ยนรูปที่แนบ</Text>
+                </Pressable>
+              ) : null}
+            </View>
             <View className="flex-row gap-2">
               <Pressable
                 accessibilityRole="button"
@@ -284,21 +345,6 @@ export default function SimpleListPanel({
                 <Text className="text-kd-body font-semibold text-kd-panel">บันทึก</Text>
               </Pressable>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              disabled={isStartingFlow}
-              onPress={() => void generateDraftWithFlow()}
-              className="h-11 flex-row items-center justify-center gap-2 rounded-kd-lg bg-kd-amber disabled:opacity-60"
-            >
-              {isStartingFlow ? (
-                <ActivityIndicator size="small" color="#111827" />
-              ) : (
-                <Sparkles size={15} color="#111827" strokeWidth={2.4} />
-              )}
-            <Text className="text-kd-body font-extrabold text-[#111827]">
-              สร้างด้วย Google Flow
-            </Text>
-          </Pressable>
         </View>
       </View>
     </Modal>
