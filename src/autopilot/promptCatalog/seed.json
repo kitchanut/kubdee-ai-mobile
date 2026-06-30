@@ -2267,7 +2267,7 @@
       "key": "image_prohibition",
       "label": "รูป: ข้อห้าม",
       "appliesTo": "image",
-      "text": "ห้ามบิดเบือนสินค้า ห้ามมีข้อความมั่วบนภาพ"
+      "text": "ห้ามบิดเบือนสินค้า ห้ามมีข้อความมั่วบนภาพ ห้ามใส่ราคา โปรโมชัน ตัวเลขราคา hashtag caption URL watermark หรือข้อความใดๆ บนภาพ เว้นแต่ผู้ใช้ตั้งค่า \"ข้อความในภาพ\" เป็นกำหนดเองเท่านั้น"
     },
     {
       "key": "video_main_instruction",
@@ -2325,8 +2325,8 @@
           "when": "frame != ''"
         },
         {
-          "template": "ข้อความบนภาพ: {{text_overlay}}",
-          "when": "textOverlay != ''"
+          "template": "ข้อความบนภาพตามที่ผู้ใช้กำหนดเท่านั้น: {{text_overlay}}",
+          "when": "text_overlay != ''"
         },
         {
           "template": "{{image_quality_rule}}"
@@ -2337,10 +2337,6 @@
         },
         {
           "template": "{{image_prohibition}}"
-        },
-        {
-          "template": "{{hashtags}}",
-          "when": "hashtags != ''"
         }
       ]
     },
@@ -2410,10 +2406,6 @@
         {
           "template": "{{video_prohibition_with_dialogue}}",
           "when": "dialogueMode != none"
-        },
-        {
-          "template": "{{hashtags}}",
-          "when": "hashtags != ''"
         }
       ]
     },

@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.10',
+    date: '2026-07-01',
+    highlight: 'Auto Workflow วิดีโอหลายฉากแม่นขึ้น',
+    changes: [
+      { type: 'improved', text: 'ปรับ prompt วิดีโอหลายฉากให้ทำงานใกล้เคียง Desktop มากขึ้น ทั้งมุมเดียว หลายมุม และเสียงพากษ์' },
+      { type: 'improved', text: 'เมื่อปิด AI คิดบท ระบบจะให้ Google Flow คิดบทเองโดยไม่ส่งรูปไปให้ AI ภายนอก' },
+      { type: 'fixed', text: 'ลดโอกาสที่ราคา hashtag caption หรือข้อความที่ไม่ได้ตั้งใจจะไปปรากฏบนรูปและวิดีโอ' },
+    ],
+  },
+  {
     version: '0.2.9',
     date: '2026-06-30',
     highlight: 'สร้างตัวละครได้ยืดหยุ่นขึ้น',
