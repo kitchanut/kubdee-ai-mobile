@@ -1,6 +1,6 @@
 {
   "name": "kubdee-ai-mobile",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

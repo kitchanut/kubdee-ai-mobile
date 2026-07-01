@@ -1064,55 +1064,226 @@ const IMAGE_DIALOG_HELPERS_BODY = `
     requestAnimationFrame(function(){ Object.assign(ripple.style, {width:'60px',height:'60px',opacity:'0'}); });
     setTimeout(function(){ try { ripple.remove(); } catch (e) {} }, 800);
   }
-  async function openImageDialog(){
-    for (var attempt = 0; attempt < 10; attempt++) {
-      var triggers = Array.prototype.slice.call(document.querySelectorAll('button[aria-haspopup="dialog"], [aria-haspopup="dialog"]'));
-      for (var i = 0; i < triggers.length; i++) {
-        var btn = triggers[i];
-        if (!isVisible(btn) && !btn.closest('[data-state="open"]')) continue;
-        var txt = (btn.textContent || '').trim().toLowerCase();
-        var icons = Array.prototype.slice.call(btn.querySelectorAll('i, span')).map(function(icon){ return (icon.textContent || '').trim().toLowerCase(); });
-        if (icons.indexOf('add_2') !== -1 || icons.indexOf('add') !== -1 || txt === 'add' || txt.indexOf('start') !== -1 || txt.indexOf('create') !== -1 || txt.indexOf('เริ่ม') !== -1) {
-          showRipple(btn);
-          btn.click();
-          await wait(1200);
-          var dialog = getOpenDialog();
-          if (dialog) return dialog;
-        }
-      }
-
-      var allIcons = Array.prototype.slice.call(document.querySelectorAll('i, span'));
-      for (var j = 0; j < allIcons.length; j++) {
-        var icon = allIcons[j];
-        var iconText = (icon.textContent || '').trim().toLowerCase();
-        if (iconText !== 'add' && iconText !== 'add_photo_alternate') continue;
-        var iconBtn = icon.closest('button, [role="button"]');
-        if (!iconBtn || !isVisible(iconBtn)) continue;
-        if (iconBtn.closest('[role="menu"]') || iconBtn.closest('nav') || iconBtn.closest('aside')) continue;
-
-        var container = iconBtn.parentElement;
-        var foundArrowForward = false;
-        for (var depth = 0; depth < 10 && container; depth++) {
-          var containerIcons = Array.prototype.slice.call(container.querySelectorAll('i, span'));
-          for (var c = 0; c < containerIcons.length; c++) {
-            if ((containerIcons[c].textContent || '').trim().toLowerCase() === 'arrow_forward') {
-              foundArrowForward = true;
-              break;
-            }
-          }
-          if (foundArrowForward) break;
-          container = container.parentElement;
-        }
-        if (!foundArrowForward && iconText !== 'add_photo_alternate') continue;
-        showRipple(iconBtn);
-        iconBtn.click();
-        await wait(1200);
-        var fallbackDialog = getOpenDialog();
-        if (fallbackDialog) return fallbackDialog;
-      }
-      await wait(800);
+  function isDisabled(el){
+    return !!(el && (
+      el.disabled ||
+      el.getAttribute('aria-disabled') === 'true' ||
+      el.hasAttribute('disabled') ||
+      el.hasAttribute('data-disabled') ||
+      el.getAttribute('data-state') === 'disabled'
+    ));
+  }
+  function textAndIcons(el){
+    var parts = [el.textContent || '', el.getAttribute('aria-label') || '', el.getAttribute('title') || ''];
+    var icons = Array.prototype.slice.call(el.querySelectorAll ? el.querySelectorAll('i, span, svg') : []);
+    for (var i = 0; i < icons.length; i++) parts.push(icons[i].textContent || icons[i].getAttribute('aria-label') || '');
+    return parts.join(' ').replace(/\\s+/g, ' ').trim().toLowerCase();
+  }
+  function hasIconText(el, values){
+    var icons = Array.prototype.slice.call(el.querySelectorAll ? el.querySelectorAll('i, span') : []);
+    for (var i = 0; i < icons.length; i++) {
+      var iconText = (icons[i].textContent || '').trim().toLowerCase();
+      if (values.indexOf(iconText) !== -1) return true;
     }
-    throw new Error('หาปุ่ม Start/Create สำหรับแนบรูปไม่เจอ');
+    return false;
+  }
+  function hasSubmitArrowNear(el){
+    var container = el.parentElement;
+    for (var depth = 0; depth < 10 && container; depth++) {
+      if (hasIconText(container, ['arrow_forward', 'send'])) return true;
+      container = container.parentElement;
+    }
+    return false;
+  }
+  function findPromptComposer(){
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"]'));
+    var submitButtons = buttons.filter(function(btn){
+      if (!isVisible(btn) || isDisabled(btn) || btn.closest('[role="menu"]') || btn.closest('nav') || btn.closest('aside')) return false;
+      return hasIconText(btn, ['arrow_forward', 'send']);
+    });
+    submitButtons.sort(function(a, b){
+      var ar = a.getBoundingClientRect();
+      var br = b.getBoundingClientRect();
+      return (br.bottom - ar.bottom) || (br.right - ar.right);
+    });
+    for (var i = 0; i < submitButtons.length; i++) {
+      var node = submitButtons[i];
+      for (var depth = 0; node && depth < 12; depth++, node = node.parentElement) {
+        if (
+          node.querySelector &&
+          node.querySelector('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"], textarea') &&
+          (node.querySelector('[aria-haspopup="dialog"]') || hasIconText(node, ['add', 'add_2', 'add_photo_alternate']))
+        ) {
+          return node;
+        }
+      }
+    }
+    var editor = document.querySelector('${SLATE}, [contenteditable="true"][role="textbox"], [contenteditable="true"], textarea');
+    var node = editor;
+    for (var ed = 0; node && ed < 12; ed++, node = node.parentElement) {
+      if (node.querySelector && hasIconText(node, ['arrow_forward', 'send']) && hasIconText(node, ['add', 'add_2', 'add_photo_alternate'])) {
+        return node;
+      }
+    }
+    return null;
+  }
+  function isAddDialogTrigger(el, strictComposerScope){
+    if (!el || !isVisible(el) || isDisabled(el)) return false;
+    if (el.closest('[role="menu"]') || el.closest('nav') || el.closest('aside')) return false;
+    var haystack = textAndIcons(el);
+    var hasAdd =
+      haystack.indexOf('add_photo_alternate') !== -1 ||
+      haystack.indexOf('add_2') !== -1 ||
+      /(^|\\s)add(\\s|$)/.test(haystack) ||
+      haystack.indexOf('upload image') !== -1 ||
+      haystack.indexOf('image') !== -1 ||
+      haystack.indexOf('รูป') !== -1;
+    if (!hasAdd) return false;
+    if (strictComposerScope) return true;
+    return el.getAttribute('aria-haspopup') === 'dialog' || hasSubmitArrowNear(el) || haystack.indexOf('add_photo_alternate') !== -1;
+  }
+  function dedupeElements(items){
+    var result = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i] && result.indexOf(items[i]) === -1) result.push(items[i]);
+    }
+    return result;
+  }
+  function collectImageDialogTriggers(){
+    var composer = findPromptComposer();
+    var scoped = [];
+    if (composer) {
+      scoped = Array.prototype.slice.call(composer.querySelectorAll('button, [role="button"], [aria-haspopup="dialog"]'))
+        .filter(function(el){ return isAddDialogTrigger(el, true); });
+      scoped.sort(function(a, b){
+        var ar = a.getBoundingClientRect();
+        var br = b.getBoundingClientRect();
+        return (br.bottom - ar.bottom) || (ar.left - br.left);
+      });
+    }
+    var global = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"], [aria-haspopup="dialog"]'))
+      .filter(function(el){ return scoped.indexOf(el) === -1 && isAddDialogTrigger(el, false); });
+    global.sort(function(a, b){
+      var ar = a.getBoundingClientRect();
+      var br = b.getBoundingClientRect();
+      return (br.bottom - ar.bottom) || (ar.left - br.left);
+    });
+    return dedupeElements(scoped.concat(global));
+  }
+  function reactClick(el){
+    if (!el) return null;
+    var rect = el.getBoundingClientRect();
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top + rect.height / 2;
+    var fakeEvent = {
+      type: 'click', target: el, currentTarget: el,
+      nativeEvent: { type: 'click', isTrusted: true, button: 0, buttons: 1, clientX: cx, clientY: cy },
+      preventDefault: function(){}, stopPropagation: function(){}, stopImmediatePropagation: function(){},
+      isDefaultPrevented: function(){ return false; }, isPropagationStopped: function(){ return false; },
+      persist: function(){}, bubbles: true, cancelable: true, button: 0, buttons: 1,
+      clientX: cx, clientY: cy, isTrusted: true
+    };
+    var propsKey = Object.keys(el).find(function(k){ return k.indexOf('__reactProps$') === 0; });
+    if (propsKey && el[propsKey] && typeof el[propsKey].onClick === 'function') {
+      el[propsKey].onClick(fakeEvent);
+      return 'reactProps.onClick';
+    }
+    var fiberKey = Object.keys(el).find(function(k){ return k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0; });
+    if (fiberKey) {
+      var fiber = el[fiberKey];
+      for (var i = 0; i < 30 && fiber; i++) {
+        var p = fiber.memoizedProps || fiber.pendingProps;
+        if (p && typeof p.onClick === 'function') {
+          p.onClick(fakeEvent);
+          return 'fiber.onClick@' + i;
+        }
+        fiber = fiber.return;
+      }
+    }
+    return null;
+  }
+  function dispatchPointerClick(el){
+    var rect = el.getBoundingClientRect();
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top + rect.height / 2;
+    var pointerOpts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1, pointerId: 1, pointerType: 'touch', isPrimary: true };
+    try {
+      if (typeof PointerEvent !== 'undefined') {
+        el.dispatchEvent(new PointerEvent('pointerover', pointerOpts));
+        el.dispatchEvent(new PointerEvent('pointerenter', pointerOpts));
+        el.dispatchEvent(new PointerEvent('pointerdown', pointerOpts));
+        el.dispatchEvent(new PointerEvent('pointerup', pointerOpts));
+      }
+    } catch (e) {}
+    try {
+      var mouseOpts = { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy, button: 0, buttons: 1 };
+      el.dispatchEvent(new MouseEvent('mouseover', mouseOpts));
+      el.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+      el.dispatchEvent(new MouseEvent('mouseup', mouseOpts));
+      el.dispatchEvent(new MouseEvent('click', mouseOpts));
+    } catch (e2) {}
+  }
+  async function waitForImageDialogAfterClick(ms){
+    var started = Date.now();
+    while (Date.now() - started < ms) {
+      var dialog = getOpenDialog();
+      if (dialog) return dialog;
+      await wait(250);
+    }
+    return null;
+  }
+  async function clickDialogTrigger(trigger, attempt, source){
+    try { trigger.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' }); } catch (e) {}
+    await wait(120);
+    showRipple(trigger);
+    setStatus('กดปุ่ม + เพื่อเปิด dialog รูป (' + source + ', ครั้ง ' + attempt + ')', 'action');
+    var reactMethod = reactClick(trigger);
+    var dialog = await waitForImageDialogAfterClick(900);
+    if (dialog) {
+      setStatus('Dialog รูปเปิดแล้ว (' + (reactMethod || 'react-none') + ')', 'success');
+      return dialog;
+    }
+    trigger.click();
+    dialog = await waitForImageDialogAfterClick(900);
+    if (dialog) {
+      setStatus('Dialog รูปเปิดแล้ว (native.click)', 'success');
+      return dialog;
+    }
+    dispatchPointerClick(trigger);
+    dialog = await waitForImageDialogAfterClick(1200);
+    if (dialog) {
+      setStatus('Dialog รูปเปิดแล้ว (pointer/mouse fallback)', 'success');
+      return dialog;
+    }
+    return null;
+  }
+  async function openImageDialog(){
+    var existing = getOpenDialog();
+    if (existing) return existing;
+    var totalCandidates = 0;
+    var clickedCandidates = 0;
+    for (var attempt = 1; attempt <= 8; attempt++) {
+      var triggers = collectImageDialogTriggers();
+      totalCandidates = Math.max(totalCandidates, triggers.length);
+      if (!triggers.length) {
+        if (attempt === 1 || attempt === 4 || attempt === 8) {
+          setStatus('ยังไม่พบปุ่ม + สำหรับแนบรูปใน composer (ครั้ง ' + attempt + '/8)', 'warning');
+        }
+        await wait(800);
+        continue;
+      }
+      for (var i = 0; i < Math.min(3, triggers.length); i++) {
+        clickedCandidates++;
+        var dialog = await clickDialogTrigger(triggers[i], attempt, i === 0 ? 'composer' : 'fallback-' + i);
+        if (dialog) return dialog;
+        setStatus('กดปุ่ม + แล้ว dialog รูปยังไม่เปิด จะลองวิธีถัดไป', 'warning');
+      }
+      await wait(700);
+    }
+    if (clickedCandidates > 0) {
+      throw new Error('กดปุ่ม + สำหรับแนบรูปแล้ว แต่ dialog รูปไม่เปิดบนเครื่องนี้');
+    }
+    throw new Error('หาปุ่ม + สำหรับแนบรูปใน Google Flow ไม่เจอ (candidate ' + totalCandidates + ')');
   }
   function getOpenDialog(){
     var dialogs = Array.prototype.slice.call(document.querySelectorAll('[role="dialog"][data-state="open"]'));

@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.17',
+    date: '2026-07-01',
+    highlight: 'แนบรูปใน Google Flow เสถียรขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้บางเครื่องกดปุ่ม + แล้ว dialog เลือกรูปไม่เปิด ทำให้แนบรูปไม่ได้' },
+      { type: 'improved', text: 'เพิ่มการคลิก fallback หลายแบบและ log/error ชัดเจนเมื่อกด + แล้ว dialog ไม่เปิด' },
+    ],
+  },
+  {
     version: '0.2.16',
     date: '2026-07-01',
     highlight: 'Flow progress อ่านเปอร์เซ็นต์แม่นขึ้น',
