@@ -34,6 +34,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.CookieManager
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
 import ai.kubdee.mobile.R
 import java.io.ByteArrayInputStream
@@ -54,8 +55,12 @@ import org.json.JSONObject
 
 class KubdeeAccessibilityService : AccessibilityService() {
   internal val mainHandler = Handler(Looper.getMainLooper())
-  internal var overlayView: TextView? = null
+  internal var overlayView: LinearLayout? = null
   internal var overlayStopButton: Button? = null
+  internal var overlayTitleView: TextView? = null
+  internal var overlaySubtitleView: TextView? = null
+  internal var overlayChipRow: LinearLayout? = null
+  internal var overlayLogContainer: LinearLayout? = null
   internal var automationOverlayUnavailable = false
   internal val automationLogLines = mutableListOf<String>()
   internal val automationStatsLock = Any()
