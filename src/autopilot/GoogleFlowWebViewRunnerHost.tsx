@@ -22,6 +22,7 @@ import FlowWebView, {
 } from '@/flow/FlowWebView';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
+import { getCurrentMobileVersion, getCurrentMobileVersionCode } from '@/updates/mobileUpdate';
 import {
   mergeGoogleFlowVideos,
   probeGoogleFlowVideos,
@@ -98,6 +99,34 @@ import type {
 
 interface GoogleFlowWebViewRunnerHostProps {
   theme: KubdeeTheme;
+}
+
+function describeReferenceTransport(args: Record<string, unknown>): string {
+  const dataUrl = typeof args.dataUrl === 'string' ? args.dataUrl : '';
+  if (dataUrl.startsWith('data:image/')) {
+    const mime = dataUrl.slice(5, dataUrl.indexOf(';') > 5 ? dataUrl.indexOf(';') : 32);
+    return `dataUrl จากแอป (${mime || 'image'})`;
+  }
+
+  const imageUrl = typeof args.imageUrl === 'string' ? args.imageUrl.trim() : '';
+  if (!imageUrl) {
+    return 'ไม่มี dataUrl/imageUrl';
+  }
+  if (imageUrl.startsWith('content://')) return 'fallback URL: content://';
+  if (imageUrl.startsWith('file://')) return 'fallback URL: file://';
+  if (imageUrl.startsWith('/')) return 'fallback path ในเครื่อง';
+  try {
+    const url = new URL(imageUrl);
+    return `fallback URL: ${url.protocol}//${url.hostname}`;
+  } catch {
+    return `fallback URL: ${imageUrl.slice(0, 32)}`;
+  }
+}
+
+function getRunnerVersionLabel(): string {
+  const version = getCurrentMobileVersion();
+  const buildCode = getCurrentMobileVersionCode();
+  return buildCode != null ? `v${version} (${buildCode})` : `v${version}`;
 }
 
 export default function GoogleFlowWebViewRunnerHost({
@@ -1160,7 +1189,7 @@ export default function GoogleFlowWebViewRunnerHost({
           totalRounds: payload.settings.totalRounds,
           currentProduct: productIndex + 1,
           totalProducts: payload.products.length,
-          message: `เริ่มเปิด dialog แนบ${referenceLabel}ใน Google Flow จะกดปุ่ม + และตรวจว่า dialog เปิดจริง`,
+          message: `เริ่มเปิด dialog แนบ${referenceLabel}ใน Google Flow จะกดปุ่ม + และตรวจว่า dialog เปิดจริง (${describeReferenceTransport(args)})`,
         });
         const result = await runActionOrThrow(handle, 'uploadReferenceImage', args, 120_000);
         emit({
@@ -3344,11 +3373,12 @@ export default function GoogleFlowWebViewRunnerHost({
   };
 
   const overlayTitle = overlayProgress?.productName?.trim() || 'Google Flow';
+  const overlayVersionLabel = getRunnerVersionLabel();
   const overlaySubtitle = overlayProgress
-    ? `${formatOverlayStep(overlayProgress.step, overlayProgress.stage)} · Flow ${formatOverlayFlowStats(
+    ? `${overlayVersionLabel} · ${formatOverlayStep(overlayProgress.step, overlayProgress.stage)} · Flow ${formatOverlayFlowStats(
         overlayProgress.flowStats
       )}`
-    : 'รอเริ่ม';
+    : `${overlayVersionLabel} · รอเริ่ม`;
 
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={requestStop}>

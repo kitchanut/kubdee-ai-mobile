@@ -95,13 +95,23 @@ export const UPLOAD_REFERENCE_IMAGE_BODY = `
     });
   }
   async function resolveDataUrl(){
-    if (dataUrl.indexOf('data:image/') === 0) return dataUrl;
+    if (dataUrl.indexOf('data:image/') === 0) {
+      setStatus('ได้รับไฟล์' + referenceLabel + ' จากแอปแล้ว ไม่ต้องโหลด URL เพิ่ม', 'info');
+      return dataUrl;
+    }
     if (!imageUrl) throw new Error('ไม่มีรูป reference');
-    var response = await fetch(imageUrl);
-    if (!response.ok) throw new Error('โหลดรูป reference ไม่สำเร็จ HTTP ' + response.status);
-    var blob = await response.blob();
-    if (!blob || !blob.size) throw new Error('รูป reference ว่าง');
-    return await blobToDataUrl(blob);
+    setStatus('ยังไม่มีไฟล์' + referenceLabel + ' จากแอป จะลองโหลด URL ใน Google Flow WebView...', 'warning');
+    try {
+      var response = await fetch(imageUrl);
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      var blob = await response.blob();
+      if (!blob || !blob.size) throw new Error('รูป reference ว่าง');
+      setStatus('โหลด URL ของ' + referenceLabel + ' สำเร็จ กำลังแปลงเป็นไฟล์อัปโหลด...', 'info');
+      return await blobToDataUrl(blob);
+    } catch (error) {
+      var message = error && error.message ? error.message : String(error || 'unknown');
+      throw new Error('โหลด URL ของ' + referenceLabel + ' ใน WebView ไม่สำเร็จ: ' + message);
+    }
   }
   function dataUrlToFile(value, name){
     var comma = value.indexOf(',');
@@ -114,7 +124,16 @@ export const UPLOAD_REFERENCE_IMAGE_BODY = `
     for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     var ext = mime.indexOf('jpeg') !== -1 ? '.jpg' : mime.indexOf('webp') !== -1 ? '.webp' : '.png';
     var safeName = /\\.[a-z0-9]+$/i.test(name) ? name : name + ext;
-    return new File([bytes], safeName, { type: mime });
+    try {
+      return new File([bytes], safeName, { type: mime });
+    } catch (error) {
+      var blob = new Blob([bytes], { type: mime });
+      try {
+        Object.defineProperty(blob, 'name', { value: safeName });
+        Object.defineProperty(blob, 'lastModified', { value: Date.now() });
+      } catch (e) {}
+      return blob;
+    }
   }
   function setStatus(message, level){
     try {
@@ -320,12 +339,13 @@ export const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
   }
   setStatus('เตรียม' + referenceLabel + ' สำหรับอัปโหลดเข้า Google Flow...', 'info');
-  var resolvedDataUrl = await resolveDataUrl();
   setStatus('กำลังเปิด dialog เลือก' + referenceLabel + '...', 'action');
   var dialog = await openImageDialog();
   await handleAgreeDialog();
   dialog = getOpenDialog() || dialog;
-  setStatus('Dialog เลือกรูปเปิดแล้ว กำลังเตรียมอัปโหลด' + referenceLabel + '...', 'info');
+  setStatus('Dialog เลือกรูปเปิดแล้ว กำลังเตรียมไฟล์' + referenceLabel + ' สำหรับอัปโหลด...', 'info');
+  var resolvedDataUrl = await resolveDataUrl();
+  setStatus('เตรียมไฟล์' + referenceLabel + ' พร้อมแล้ว กำลังเริ่มอัปโหลด...', 'info');
   var lastRateLimitText = '';
   for (var uploadAttempt = 1; uploadAttempt <= 2; uploadAttempt++) {
     dialog = getOpenDialog() || (dialog && isDialogOpen(dialog) ? dialog : null);
@@ -385,7 +405,10 @@ export const UPLOAD_REFERENCE_IMAGE_BODY = `
     }
 
     var dt = new DataTransfer();
-    dt.items.add(dataUrlToFile(resolvedDataUrl, fileName));
+    setStatus('กำลังแปลง' + referenceLabel + ' เป็นไฟล์สำหรับ file input...', 'info');
+    var uploadFile = dataUrlToFile(resolvedDataUrl, fileName);
+    setStatus('สร้างไฟล์' + referenceLabel + ' สำเร็จ: ' + (uploadFile.name || fileName) + ' (' + (uploadFile.size || 0) + ' bytes)', 'info');
+    dt.items.add(uploadFile);
     setStatus('กำลังใส่ไฟล์' + referenceLabel + ' เข้า file input และเริ่มอัปโหลด...', 'action');
     input.files = dt.files;
     input.dispatchEvent(new Event('input', { bubbles: true }));
