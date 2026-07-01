@@ -2156,11 +2156,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
       }
 
       sleepStep(2200)
-      if (isShopeeMePageVisible()) {
-        logStep("หน้า ฉัน พร้อมแล้ว")
+      val pageCheck = checkShopeeMePage()
+      if (pageCheck.visible) {
+        logStep("หน้า ฉัน พร้อมแล้ว (${pageCheck.summary()})")
         return true
       }
-      logStep("ยังยืนยันหน้า ฉัน ไม่ได้")
+      logStep("ยังยืนยันหน้า ฉัน ไม่ได้ (${pageCheck.summary()})")
     }
 
     return false
@@ -2249,24 +2250,33 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return null
   }
 
-  private fun isShopeeMePageVisible(): Boolean {
-    val root = rootInActiveWindow ?: return false
+  private fun isShopeeMePageVisible(): Boolean = checkShopeeMePage().visible
+
+  private fun checkShopeeMePage(): ShopeeMePageCheck {
+    val root = rootInActiveWindow ?: return ShopeeMePageCheck(visible = false, reason = "อ่าน root window ไม่ได้")
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
     collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     val visibleTextNodes = textNodes.filter { it.node.isVisibleToUser }
-    if (visibleTextNodes.isEmpty()) return false
+    if (visibleTextNodes.isEmpty()) {
+      return ShopeeMePageCheck(visible = false, reason = "ไม่มี text node ที่มองเห็น")
+    }
 
     val topLimit = screen.top + (screen.height() * 0.20f).toInt()
     val midLimit = screen.top + (screen.height() * 0.40f).toInt()
-    val hasCurrentNonMeTitle = visibleTextNodes.any { node ->
-      node.bounds.top <= topLimit &&
-        listOf("การแจ้งเตือน", "Notifications", "สำหรับคุณ", "วิดีโอ", "Video", "Live").any { marker ->
-          node.text.contains(marker, ignoreCase = true)
-        }
-    }
-    if (hasCurrentNonMeTitle) {
-      return false
+    val nonMeTitleMarkers = listOf("การแจ้งเตือน", "Notifications", "สำหรับคุณ", "วิดีโอ", "Video", "Live")
+    val currentNonMeMarker = visibleTextNodes
+      .filter { node -> node.bounds.top <= topLimit }
+      .mapNotNull { node ->
+        nonMeTitleMarkers.firstOrNull { marker -> node.text.contains(marker, ignoreCase = true) }
+      }
+      .firstOrNull()
+    if (currentNonMeMarker != null) {
+      return ShopeeMePageCheck(
+        visible = false,
+        reason = "เจอหัวข้อหน้าอื่น:$currentNonMeMarker",
+        visibleTextCount = visibleTextNodes.size
+      )
     }
 
     val purchaseSectionTop = screen.top + (screen.height() * 0.10f).toInt()
@@ -2286,8 +2296,57 @@ class KubdeeAccessibilityService : AccessibilityService() {
       node.bounds.top > topLimit &&
         SHOPEE_LIKED_TEXTS.any { marker -> node.text.contains(marker, ignoreCase = true) }
     }
+    val bottomNavStart = screen.bottom - (screen.height() * 0.13f).toInt()
+    val hasBottomMeTab = visibleTextNodes.any { node ->
+      node.bounds.top >= bottomNavStart &&
+        (
+          node.text.equals("ฉัน", ignoreCase = true) ||
+            node.text.equals("Me", ignoreCase = true) ||
+            node.text.contains("tab_bar_button_me", ignoreCase = true)
+        )
+    }
+    val meSurfaceBottomLimit = screen.bottom - (screen.height() * 0.10f).toInt()
+    val meSurfaceMarkers = listOf(
+      "My Wallet",
+      "กระเป๋าเงิน",
+      "ShopeePay",
+      "Shopee Coins",
+      "SPayLater",
+      "โค้ดส่วนลด",
+      "ส่วนลด",
+      "Promotions",
+      "Campaign",
+      "E-Service",
+      "E-Voucher",
+      "บริการทางการเงิน",
+      "ดูเพิ่มเติม"
+    )
+    val meSurfaceHits = visibleTextNodes
+      .filter { node -> node.bounds.top in topLimit..meSurfaceBottomLimit }
+      .mapNotNull { node ->
+        meSurfaceMarkers.firstOrNull { marker -> node.text.contains(marker, ignoreCase = true) }
+      }
+      .distinctBy { it.lowercase(Locale.ROOT) }
 
-    return hasProfileHeader && (hasPurchaseSection || hasLikedMenu)
+    val visible = (hasProfileHeader && (hasPurchaseSection || hasLikedMenu)) ||
+      ((hasBottomMeTab || hasProfileHeader) && meSurfaceHits.size >= 2)
+    val reason = when {
+      visible -> "ok"
+      !hasBottomMeTab && !hasProfileHeader -> "ไม่เจอ tab ฉัน หรือ header profile"
+      meSurfaceHits.size < 2 && !hasPurchaseSection && !hasLikedMenu -> "marker หน้า ฉัน ไม่พอ"
+      else -> "เงื่อนไขหน้า ฉัน ไม่ครบ"
+    }
+
+    return ShopeeMePageCheck(
+      visible = visible,
+      reason = reason,
+      hasBottomMeTab = hasBottomMeTab,
+      hasProfileHeader = hasProfileHeader,
+      hasPurchaseSection = hasPurchaseSection,
+      hasLikedMenu = hasLikedMenu,
+      markerHits = meSurfaceHits,
+      visibleTextCount = visibleTextNodes.size
+    )
   }
 
   private fun openShopeeLikedList(): Boolean {
@@ -4357,6 +4416,24 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val label: String,
     val rank: Int
   )
+
+  private data class ShopeeMePageCheck(
+    val visible: Boolean,
+    val reason: String,
+    val hasBottomMeTab: Boolean = false,
+    val hasProfileHeader: Boolean = false,
+    val hasPurchaseSection: Boolean = false,
+    val hasLikedMenu: Boolean = false,
+    val markerHits: List<String> = emptyList(),
+    val visibleTextCount: Int = 0
+  ) {
+    fun summary(): String {
+      val markers = markerHits.take(3).joinToString("/")
+      return "tab=${yn(hasBottomMeTab)} header=${yn(hasProfileHeader)} purchase=${yn(hasPurchaseSection)} liked=${yn(hasLikedMenu)} markers=${markerHits.size}[${markers.ifBlank { "-" }}] text=$visibleTextCount reason=$reason"
+    }
+
+    private fun yn(value: Boolean): String = if (value) "yes" else "no"
+  }
 
   private data class ShopeeToggleTarget(
     val node: AccessibilityNodeInfo,

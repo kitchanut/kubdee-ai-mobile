@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.23',
+    date: '2026-07-01',
+    highlight: 'Shopee Import ตรวจหน้า ฉัน ได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้บางเครื่องที่กดเมนู ฉัน สำเร็จแล้ว แต่ระบบยังยืนยันหน้า ฉัน ไม่ได้' },
+      { type: 'improved', text: 'รองรับ marker หน้า ฉัน เพิ่ม เช่น My Wallet, Shopee Coins, Promotions และ E-Service' },
+      { type: 'improved', text: 'เพิ่ม log รายละเอียดตอนตรวจหน้า ฉัน เพื่อบอกว่าเจอ tab, header, purchase, liked และ marker กี่รายการ' },
+    ],
+  },
+  {
     version: '0.2.22',
     date: '2026-07-01',
     highlight: 'Auto Workflow ไม่ข้ามขั้นตอนสร้างรูป',
