@@ -231,7 +231,13 @@ export const VIDEO_RESULTS_BODY = `
   }
 
   var result = { videos: [], images: 0, failedCount: 0, failedMessages: [], successCount: 0, generatingCount: 0, queuedCount: 0, tilesFound: tiles.length, progress: null };
-  var progressVals = [];
+  var explicitProgressVals = [];
+  var blurProgressVals = [];
+  function pushProgress(list, value){
+    var parsed = parseInt(value, 10);
+    if (!isFinite(parsed)) return;
+    list.push(Math.max(0, Math.min(100, parsed)));
+  }
   var limit = tiles.slice(0, n);
   for (var z = 0; z < limit.length; z++) {
     var tile = limit[z];
@@ -245,8 +251,8 @@ export const VIDEO_RESULTS_BODY = `
     var blurProgress = estimateBlurProgress(tile);
     var generating = tileText.indexOf('กำลังสร้าง') !== -1 || !!pm;
     if (generating || blurProgress != null) {
-      if (pm) progressVals.push(parseInt(pm[1], 10));
-      if (blurProgress != null) progressVals.push(blurProgress);
+      if (pm) pushProgress(explicitProgressVals, pm[1]);
+      if (blurProgress != null) pushProgress(blurProgressVals, blurProgress);
       result.generatingCount++;
       continue;
     }
@@ -286,11 +292,11 @@ export const VIDEO_RESULTS_BODY = `
     var dt = (pdivs[d].textContent || '').trim();
     if (/^\\d{1,3}\\s?%$/.test(dt)) {
       var r2 = pdivs[d].getBoundingClientRect();
-      if (r2.width > 0 && r2.height > 0) progressVals.push(parseInt(dt, 10));
+      if (r2.width > 0 && r2.height > 0) pushProgress(explicitProgressVals, dt);
     }
   }
   var pageBlurProgress = estimateBlurProgress(document);
-  if (pageBlurProgress != null) progressVals.push(pageBlurProgress);
+  if (pageBlurProgress != null) pushProgress(blurProgressVals, pageBlurProgress);
   // Mobile WebView/Flow sometimes exposes the progress only through the
   // accessible label of the card, e.g. "play_circle 27% ... Reuse prompt".
   // Read attributes as a fallback so the submit-start guard does not resubmit.
@@ -303,9 +309,12 @@ export const VIDEO_RESULTS_BODY = `
       attrEls[a].textContent || '',
     ].join(' ');
     var am = attrText.match(/(?:^|\\D)(\\d{1,3})\\s?%(?:\\D|$)/);
-    if (am) progressVals.push(parseInt(am[1], 10));
+    if (am) pushProgress(explicitProgressVals, am[1]);
   }
-  // Lowest percentage (the slowest output) — matches desktop minProgress.
+  // Prefer real visible/accessible percentages over blur estimates. Some Flow
+  // cards expose "75%" while a separate blur layer still estimates to 0%; mixing
+  // both makes the status bar show Flow 0% even though the card is progressing.
+  var progressVals = explicitProgressVals.length > 0 ? explicitProgressVals : blurProgressVals;
   if (progressVals.length > 0) {
     var minP = progressVals[0];
     for (var pIdx = 1; pIdx < progressVals.length; pIdx++) { if (progressVals[pIdx] < minP) minP = progressVals[pIdx]; }

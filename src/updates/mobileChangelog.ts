@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.16',
+    date: '2026-07-01',
+    highlight: 'Flow progress อ่านเปอร์เซ็นต์แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้สถานะ Flow แสดง 0% ทั้งที่การ์ด Google Flow มีเปอร์เซ็นต์จริง เช่น 75%' },
+      { type: 'changed', text: 'ให้ระบบใช้เปอร์เซ็นต์ตัวเลขจริงก่อน และใช้ค่า blur estimate เฉพาะตอนที่ไม่พบเปอร์เซ็นต์บนหน้า' },
+    ],
+  },
+  {
     version: '0.2.15',
     date: '2026-07-01',
     highlight: 'แนบรูปฉากวิดีโอหลายฉากแม่นขึ้น',
