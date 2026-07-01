@@ -98,6 +98,28 @@ function withKubdeeAccessibility(config, props = {}) {
       application.receiver.push(receiver);
     }
 
+    application.activity = application.activity || [];
+    const clipboardBridgeName = '.automation.KubdeeClipboardBridgeActivity';
+    const existingClipboardBridgeIndex = application.activity.findIndex((item) => item.$?.['android:name'] === clipboardBridgeName);
+    const appPackageName = config.android?.package || manifest.$?.package || 'ai.kubdee.mobile';
+    const clipboardBridgeActivity = {
+      $: {
+        'android:name': clipboardBridgeName,
+        'android:process': ':clipboard',
+        'android:theme': '@style/Theme.Kubdee.ClipboardBridge',
+        'android:taskAffinity': `${appPackageName}.clipboard`,
+        'android:exported': 'false',
+        'android:excludeFromRecents': 'true',
+        'android:finishOnTaskLaunch': 'true',
+        'android:noHistory': 'true',
+      },
+    };
+    if (existingClipboardBridgeIndex >= 0) {
+      application.activity[existingClipboardBridgeIndex] = clipboardBridgeActivity;
+    } else {
+      application.activity.push(clipboardBridgeActivity);
+    }
+
     return config;
   });
 
@@ -147,22 +169,45 @@ function withKubdeeAccessibility(config, props = {}) {
       const javaRoot = path.join(projectRoot, 'app/src/main/java', packagePath);
       const automationRoot = path.join(javaRoot, 'automation');
       const xmlRoot = path.join(projectRoot, 'app/src/main/res/xml');
+      const valuesRoot = path.join(projectRoot, 'app/src/main/res/values');
 
       fs.mkdirSync(automationRoot, { recursive: true });
       fs.mkdirSync(xmlRoot, { recursive: true });
+      fs.mkdirSync(valuesRoot, { recursive: true });
 
       writeFileIfChanged(
         path.join(xmlRoot, 'kubdee_accessibility_service.xml'),
         accessibilityServiceXml(targetPackage)
       );
-      writeFileIfChanged(
-        path.join(automationRoot, 'KubdeeAccessibilityService.kt'),
-        accessibilityServiceKt(packageName)
-      );
-      writeFileIfChanged(
-        path.join(automationRoot, 'KubdeeAccessibilityModule.kt'),
-        accessibilityModuleKt(packageName, targetPackage)
-      );
+      patchStylesXml(path.join(valuesRoot, 'styles.xml'));
+      const automationTemplateFiles = [
+        'KubdeeAccessibilityService.kt',
+        'KubdeeAccessibilityModule.kt',
+        'KubdeeGoogleFlowAssets.kt',
+        'KubdeeAutomationIpc.kt',
+        'KubdeeShopeeImportQueue.kt',
+        'KubdeeClipboardBridgeActivity.kt',
+        'ShopeeAutomationModels.kt',
+        'ShopeePostingFlow.kt',
+        'ShopeePostingNavigationMedia.kt',
+        'AutomationCore.kt',
+        'ShopeeImportNavigation.kt',
+        'ShopeeLikedListScraper.kt',
+        'ShopeeProductDetailShare.kt',
+        'ShopeeShareSheet.kt',
+        'ShopeeParsingUtils.kt',
+        'AccessibilityNodeUtils.kt',
+        'AutomationOverlay.kt',
+      ];
+      for (const templateFile of automationTemplateFiles) {
+        writeFileIfChanged(
+          path.join(automationRoot, templateFile),
+          renderTemplate(templateFile, {
+            PACKAGE_NAME: packageName,
+            TARGET_PACKAGE: targetPackage,
+          })
+        );
+      }
       writeFileIfChanged(
         path.join(automationRoot, 'KubdeeAutomationCommandReceiver.kt'),
         automationCommandReceiverKt(packageName)
@@ -194,6 +239,29 @@ function renderTemplate(templateName, values) {
     source = source.split(`__${key}__`).join(value);
   }
   return source;
+}
+
+function patchStylesXml(filePath) {
+  const styleBlock = `  <style name="Theme.Kubdee.ClipboardBridge" parent="@android:style/Theme.Translucent.NoTitleBar">
+    <item name="android:windowBackground">@android:color/transparent</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:windowIsTranslucent">true</item>
+    <item name="android:backgroundDimEnabled">false</item>
+    <item name="android:windowDisablePreview">true</item>
+    <item name="android:windowAnimationStyle">@null</item>
+  </style>`;
+
+  let source = fs.existsSync(filePath)
+    ? fs.readFileSync(filePath, 'utf8')
+    : '<resources>\\n</resources>\\n';
+  if (source.includes('name="Theme.Kubdee.ClipboardBridge"')) {
+    return;
+  }
+  if (!source.includes('</resources>')) {
+    source = `${source.trim()}\\n<resources>\\n</resources>\\n`;
+  }
+  source = source.replace(/\s*<\/resources>\s*$/, `\n${styleBlock}\n</resources>\n`);
+  writeFileIfChanged(filePath, source);
 }
 
 function patchMainApplication(filePath, packageName) {
@@ -549,6 +617,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
   fun performBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
 }
 `;
+}
+
+function shopeeAutomationModelsKt(packageName) {
+  return renderTemplate('ShopeeAutomationModels.kt', { PACKAGE_NAME: packageName });
 }
 
 function accessibilityModuleKt(packageName, targetPackage) {
