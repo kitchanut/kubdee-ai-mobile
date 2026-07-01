@@ -2454,6 +2454,8 @@ export default function GoogleFlowWebViewRunnerHost({
       round: number;
       step: AutoPilotStepType;
     }): Promise<Record<string, unknown>> => {
+      const referenceLabel = String(args.referenceLabel || 'รูป reference').trim();
+      const stage = getUploadReferenceStage(args.referenceLabel);
       const previousContext = actionLogContextRef.current;
       const context: FlowActionLogContext = {
         payload,
@@ -2461,11 +2463,40 @@ export default function GoogleFlowWebViewRunnerHost({
         productIndex,
         round,
         step,
-        stage: getUploadReferenceStage(args.referenceLabel),
+        stage,
       };
       actionLogContextRef.current = context;
       try {
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `เริ่มเปิด dialog แนบ${referenceLabel}ใน Google Flow จะกดปุ่ม + และตรวจว่า dialog เปิดจริง`,
+        });
         const result = await runActionOrThrow(handle, 'uploadReferenceImage', args, 120_000);
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'success',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `แนบ${referenceLabel}ผ่าน Google Flow สำเร็จ`,
+        });
         if (result.rateLimitRetried) {
           emit({
             event: 'progress',
@@ -2484,6 +2515,24 @@ export default function GoogleFlowWebViewRunnerHost({
           });
         }
         return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || 'unknown');
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'error',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `แนบ${referenceLabel}ไม่สำเร็จ: ${message}`,
+        });
+        throw error;
       } finally {
         if (actionLogContextRef.current === context) {
           actionLogContextRef.current = previousContext;
@@ -2524,7 +2573,55 @@ export default function GoogleFlowWebViewRunnerHost({
       };
       actionLogContextRef.current = context;
       try {
-        return await runActionOrThrow(handle, 'selectRecentImage', { indexOffset }, 45_000);
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `เริ่มเปิด dialog เลือกรูปล่าสุดจาก Google Flow จะกดปุ่ม + และตรวจว่า dialog เปิดจริง`,
+        });
+        const result = await runActionOrThrow(handle, 'selectRecentImage', { indexOffset }, 45_000);
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'success',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: 'เลือกรูปล่าสุดจาก dialog Google Flow สำเร็จ',
+        });
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || 'unknown');
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'error',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `เลือกรูปล่าสุดจาก Google Flow ไม่สำเร็จ: ${message}`,
+        });
+        throw error;
       } finally {
         if (actionLogContextRef.current === context) {
           actionLogContextRef.current = previousContext;
