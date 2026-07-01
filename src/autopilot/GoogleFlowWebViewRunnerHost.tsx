@@ -123,6 +123,7 @@ interface OverlayLogLine {
   id: string;
   message: string;
   ts: number;
+  level?: GoogleFlowRunnerLogEntry['level'];
   step?: AutoPilotStepType;
   stage?: string;
 }
@@ -1507,6 +1508,7 @@ export default function GoogleFlowWebViewRunnerHost({
           id: `${ts}-${current.length}`,
           message: entry.message,
           ts,
+          level: entry.level,
           step: entry.step,
           stage: entry.stage ?? terminalStage ?? undefined,
         },
@@ -4845,18 +4847,21 @@ export default function GoogleFlowWebViewRunnerHost({
                 const deltaMs = previousLog ? Math.max(0, line.ts - previousLog.ts) : 0;
                 const elapsedMs = Math.max(0, line.ts - firstLog.ts);
                 const meta = formatOverlayLogMeta(line);
+                const messageLineCount = getOverlayLogMessageLineCount(line);
                 return (
-                  <Text key={line.id} numberOfLines={1} className="text-kd-micro leading-4 text-white">
-                    <Text className="text-kd-micro" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                      {formatOverlayTime(line.ts)} +{formatOverlayDuration(deltaMs)} · {formatOverlayDuration(elapsedMs)}{' '}
+                  <View key={line.id} className={index > 0 ? 'mt-1' : undefined}>
+                    <Text numberOfLines={1} className="text-[8px] leading-3" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                      {formatOverlayTime(line.ts)} +{formatOverlayDuration(deltaMs)} · {formatOverlayDuration(elapsedMs)}
+                      {meta ? `  [${meta}]` : ''}
                     </Text>
-                    {meta ? (
-                      <Text className="text-kd-micro font-semibold" style={{ color: 'rgba(255,255,255,0.88)' }}>
-                        [{meta}]{' '}
-                      </Text>
-                    ) : null}
-                    {line.message}
-                  </Text>
+                    <Text
+                      numberOfLines={messageLineCount}
+                      className="text-kd-micro leading-4 text-white"
+                      style={{ color: getOverlayLogMessageColor(line) }}
+                    >
+                      {line.message}
+                    </Text>
+                  </View>
                 );
               })}
             </View>
@@ -4946,6 +4951,25 @@ function formatOverlayAssetProgress(generated: number, failed: number, planned: 
 function formatOverlayLogMeta(line: OverlayLogLine): string | null {
   if (!line.step && !line.stage) return null;
   return formatOverlayStep(line.step ?? null, line.stage ?? null);
+}
+
+function isImportantOverlayLog(line: OverlayLogLine): boolean {
+  if (line.level === 'error' || line.level === 'warning') return true;
+  return /ไม่สำเร็จ|ไม่พบ|ไม่ได้|ไม่เปิด|ล้มเหลว|Failed|Error|Retry/i.test(line.message);
+}
+
+function getOverlayLogMessageLineCount(line: OverlayLogLine): number {
+  return isImportantOverlayLog(line) ? 3 : 1;
+}
+
+function getOverlayLogMessageColor(line: OverlayLogLine): string {
+  if (line.level === 'error' || /ไม่สำเร็จ|ล้มเหลว|Failed|Error/i.test(line.message)) {
+    return '#fecaca';
+  }
+  if (line.level === 'warning' || /Retry|ไม่พบ|ไม่ได้|ไม่เปิด/i.test(line.message)) {
+    return '#fde68a';
+  }
+  return '#ffffff';
 }
 
 function formatOverlayTime(timestamp: number): string {

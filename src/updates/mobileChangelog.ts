@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.19',
+    date: '2026-07-01',
+    highlight: 'อ่านข้อความ error ใน WebView ได้ชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'ปรับ log overlay บน Google Flow WebView ให้ error แสดงหลายบรรทัด ไม่ถูกตัดท้ายข้อความ' },
+      { type: 'improved', text: 'เพิ่มสีและพื้นที่ให้ log สำคัญ เช่น แนบรูปไม่สำเร็จ Retry หรือเปิด dialog ไม่ได้ เพื่อช่วยวิเคราะห์เครื่องที่มีปัญหา' },
+    ],
+  },
+  {
     version: '0.2.18',
     date: '2026-07-01',
     highlight: 'Log แนบรูปใน Google Flow ชัดขึ้น',
