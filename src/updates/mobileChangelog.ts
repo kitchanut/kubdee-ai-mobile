@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.15',
+    date: '2026-07-01',
+    highlight: 'แนบรูปฉากวิดีโอหลายฉากแม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้ปัญหารูป reference ที่มีคำว่า video ในชื่อไฟล์ถูกเข้าใจผิดว่าเป็นวิดีโอ' },
+      { type: 'changed', text: 'ตรวจวิดีโอใน Google Flow จากหลักฐานที่เป็นวิดีโอจริงเท่านั้น เช่น video element หรือไอคอนวิดีโอ' },
+      { type: 'removed', text: 'นำ diagnostic log ชั่วคราวออกหลังระบุสาเหตุได้แล้ว' },
+    ],
+  },
+  {
     version: '0.2.14',
     date: '2026-07-01',
     highlight: 'ตรวจรูปอัปโหลดใน Google Flow ละเอียดขึ้น',
