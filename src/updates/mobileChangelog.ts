@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.14',
+    date: '2026-07-01',
+    highlight: 'ตรวจรูปอัปโหลดใน Google Flow ละเอียดขึ้น',
+    changes: [
+      { type: 'improved', text: 'เพิ่ม diagnostic log ตอนอัปโหลดรูปเข้า Google Flow แล้วหารูปใหม่ไม่เจอ' },
+      { type: 'improved', text: 'log จะแสดง candidate รูปบนสุด เช่น idx, ready, ขนาดรูป, signature เก่า/ใหม่ และเหตุผลที่ยังเลือกไม่ได้' },
+    ],
+  },
+  {
     version: '0.2.13',
     date: '2026-07-01',
     highlight: 'Auto และอัปเดตแอปดูชัดขึ้น',

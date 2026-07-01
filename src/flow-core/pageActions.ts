@@ -1474,6 +1474,88 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       return (ar.top - br.top) || (ar.left - br.left);
     });
   }
+  function shortenDiagnosticText(value, maxLength){
+    var text = String(value || '').replace(/\\s+/g, ' ').trim();
+    if (!text) return '-';
+    return text.length > maxLength ? text.slice(0, maxLength - 1) + '…' : text;
+  }
+  function uniqueVisibleCandidateItems(scope){
+    var root = scope && scope.isConnected ? scope : document;
+    var raw = Array.prototype.slice.call(root.querySelectorAll('[data-testid="virtuoso-item-list"] [data-index], [data-index], [role="option"], [role="gridcell"]'))
+      .map(selectableImageItem)
+      .filter(function(item){ return item && isVisible(item); });
+    if (!raw.length) {
+      raw = Array.prototype.slice.call(root.querySelectorAll('[role="button"]'))
+        .filter(function(item){ return item && isVisible(item) && (item.querySelector('img') || item.tagName === 'IMG'); })
+        .map(selectableImageItem)
+        .filter(Boolean);
+    }
+    if (!raw.length) raw = imageItems(root);
+    var seen = [];
+    var result = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (seen.indexOf(raw[i]) !== -1) continue;
+      seen.push(raw[i]);
+      result.push(raw[i]);
+    }
+    return sortImageItemsByTop(result);
+  }
+  function describeImageCandidate(item, knownSignatures, knownItems, lastUploadItem){
+    var selectable = selectableImageItem(item);
+    if (!selectable) return 'item=missing';
+    var img = selectable.querySelector('img') || (selectable.tagName === 'IMG' ? selectable : null);
+    var sig = itemSignature(selectable);
+    var uploadActive = itemHasUploadActivity(selectable);
+    var looksVideo = itemLooksLikeVideo(selectable);
+    var ready = readyImageItem(selectable);
+    var knownSig = !!(sig && knownSignatures.indexOf(sig) !== -1);
+    var knownEl = knownItems.indexOf(selectable) !== -1;
+    var isLastUpload = !!(lastUploadItem && selectable === (lastUploadItem.closest('[data-index]') || lastUploadItem));
+    var reasons = [];
+    if (uploadActive) reasons.push('upload/placeholder');
+    if (looksVideo) reasons.push('video');
+    if (!img) reasons.push('no-img');
+    if (img) {
+      var src = img.currentSrc || img.src || img.getAttribute('src') || '';
+      var opacity = Number(window.getComputedStyle(img).opacity || '1');
+      if (!String(src || '').trim()) reasons.push('no-src');
+      if (img.complete === false) reasons.push('not-complete');
+      if ((img.naturalWidth || 0) <= 20 || (img.naturalHeight || 0) <= 20) reasons.push('small-size');
+      if (opacity < 0.95) reasons.push('opacity-' + opacity.toFixed(2));
+    }
+    if (knownSig) reasons.push('old-signature');
+    if (knownEl) reasons.push('old-element');
+    if (!reasons.length) reasons.push('ok');
+    var idx = selectable.getAttribute('data-index') || '?';
+    var alt = img ? img.getAttribute('alt') || '' : '';
+    var text = selectable.textContent || '';
+    var size = img ? ((img.naturalWidth || 0) + 'x' + (img.naturalHeight || 0)) : '-';
+    var complete = img ? String(img.complete !== false) : '-';
+    return '#' + idx +
+      ' ready=' + (ready ? 'yes' : 'no') +
+      ' img=' + (img ? 'yes' : 'no') +
+      ' size=' + size +
+      ' complete=' + complete +
+      ' newSig=' + (sig && !knownSig ? 'yes' : 'no') +
+      ' newEl=' + (!knownEl ? 'yes' : 'no') +
+      ' uploadItem=' + (isLastUpload ? 'yes' : 'no') +
+      ' reason=' + reasons.join(',') +
+      ' alt=' + shortenDiagnosticText(alt, 36) +
+      ' text=' + shortenDiagnosticText(text, 36);
+  }
+  function logImageCandidateDiagnostics(dialog, knownSignatures, knownItems, lastUploadItem){
+    var scope = dialog && dialog.isConnected ? dialog : document;
+    var candidates = uniqueVisibleCandidateItems(scope);
+    var readyCount = sortImageItemsByTop(imageItems(scope).filter(readyImageItem)).length;
+    setStatus('diagnostic ' + referenceLabel + ': candidates=' + candidates.length + ', ready=' + readyCount + ', known=' + knownItems.length + ', signatures=' + knownSignatures.length, 'warning');
+    if (!candidates.length) {
+      setStatus('diagnostic ' + referenceLabel + ': ไม่พบ item ในรายการรูปของ dialog', 'warning');
+      return;
+    }
+    for (var d = 0; d < Math.min(4, candidates.length); d++) {
+      setStatus('diagnostic ' + referenceLabel + ' ' + describeImageCandidate(candidates[d], knownSignatures, knownItems, lastUploadItem), 'warning');
+    }
+  }
   async function scrollImageListTop(dialog){
     var scope = dialog && dialog.isConnected ? dialog : document;
     var scroller = scope.querySelector('[data-testid="virtuoso-scroller"]') || document.querySelector('[data-testid="virtuoso-scroller"]');
@@ -1624,6 +1706,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
           if (attempt === 0 || attempt % 5 === 0) {
             var readyCount = sortImageItemsByTop(imageItems(activeDialog).filter(readyImageItem)).length;
             setStatus((sawUploadActivity ? 'progress/blur หายแล้ว แต่' : '') + 'ยังเช็คไม่เจอ' + referenceLabel + ' ใหม่ที่พร้อมเลือก (รอบ ' + (attempt + 1) + '/90, รูปพร้อมเลือกทั้งหมด ' + readyCount + ')', 'warning');
+            logImageCandidateDiagnostics(activeDialog, knownSignatures, knownItems, lastUploadItem);
           }
           stableSignature = '';
           stableCount = 0;
@@ -1635,6 +1718,7 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
       await wait(1000);
     }
     setStatus('รอครบเวลาแล้วยังเช็คไม่เจอ' + referenceLabel + ' ใหม่ที่พร้อมเลือก จะคืนผลล่าสุดให้ขั้นตอน fallback จัดการต่อ', 'warning');
+    logImageCandidateDiagnostics(getOpenDialog() || dialog, knownSignatures, knownItems, lastUploadItem);
     return { autoAttached: false, item: findReadyUploadedImageItem(getOpenDialog() || dialog, knownSignatures, knownItems, lastUploadItem, sawUploadActivity) };
   }
   async function waitBeforeUploadRetry(){
