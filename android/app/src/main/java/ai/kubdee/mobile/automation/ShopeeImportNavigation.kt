@@ -323,6 +323,52 @@ internal fun KubdeeAccessibilityService.waitForShopeeLikedListVisible(timeoutMs:
     }
     return false
   }
+internal fun KubdeeAccessibilityService.ensureShopeeBuyerLikedView(): Boolean {
+    logStep("ตรวจมุมรายการถูกใจ: ${describeShopeeLikedViewState()}")
+    if (isShopeeBuyerLikedViewVisible()) {
+      logStep("อยู่ในมุมมองผู้ซื้อแล้ว")
+      return true
+    }
+
+    repeat(3) { attempt ->
+      checkStopRequested()
+      dismissShopeeBlockingPopups()
+      logStep("ยังไม่ใช่มุมผู้ซื้อ จะสลับมุมมอง (${attempt + 1}/3): ${describeShopeeLikedViewState()}")
+
+      if (!clickShopeeLikedViewSwitcher()) {
+        logStep("สลับมุมมองไม่ได้: ไม่พบหัว dropdown มุมมอง (${describeShopeeLikedViewState()})")
+        sleepStep(700L)
+        return@repeat
+      }
+
+      sleepStep(650L)
+      if (isShopeeBuyerLikedViewVisible()) {
+        logStep("เข้าใช้มุมมองผู้ซื้อแล้ว")
+        return true
+      }
+
+      if (!clickShopeeBuyerViewOption()) {
+        logStep("ยังไม่พบตัวเลือก มุมมองผู้ซื้อ หลังเปิด dropdown")
+        performBack()
+        sleepStep(650L)
+        return@repeat
+      }
+
+      val start = System.currentTimeMillis()
+      while (System.currentTimeMillis() - start < 7_000L) {
+        checkStopRequested()
+        if (isShopeeBuyerLikedViewVisible()) {
+          logStep("เข้าใช้มุมมองผู้ซื้อแล้ว")
+          return true
+        }
+        sleepStep(450L)
+      }
+      logStep("รอ Shopee เปลี่ยนเป็นมุมผู้ซื้อแล้วยังไม่สำเร็จ (${describeShopeeLikedViewState()})")
+    }
+
+    logStep("สลับมุมมองผู้ซื้อไม่สำเร็จ: ${describeShopeeLikedViewState()}")
+    return false
+  }
 internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolean {
     if (isShopeePartnerLikedViewVisible()) {
       logStep("อยู่ในมุมมองพาร์ทเนอร์แล้ว")
@@ -367,6 +413,26 @@ internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolea
     logStep("สลับมุมมองพาร์ทเนอร์ไม่สำเร็จ")
     return false
   }
+internal fun KubdeeAccessibilityService.isShopeeBuyerLikedViewVisible(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    if (textNodes.isEmpty()) return false
+
+    val topLimit = screen.top + (screen.height() * 0.22f).toInt()
+    val hasBuyerTitle = textNodes.any { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.top <= topLimit &&
+        (
+          node.text.contains("มุมมองผู้ซื้อ", ignoreCase = true) ||
+            node.text.contains("Buyer View", ignoreCase = true)
+        )
+    }
+    if (hasBuyerTitle) return true
+
+    return isShopeeLikedListVisible() && !isShopeePartnerLikedViewVisible()
+  }
 internal fun KubdeeAccessibilityService.clickShopeeLikedViewSwitcher(): Boolean {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
@@ -396,6 +462,28 @@ internal fun KubdeeAccessibilityService.clickShopeeLikedViewSwitcher(): Boolean 
     val fallbackY = screen.top + screen.height() * 0.075f
     logStep("กดตัวสลับมุมมองด้วยพิกัด fallback")
     return tapBlocking(fallbackX, fallbackY, timeoutMs = 1800L, durationMs = 90L)
+  }
+internal fun KubdeeAccessibilityService.clickShopeeBuyerViewOption(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val topLimit = screen.top + (screen.height() * 0.10f).toInt()
+    val candidate = textNodes
+      .filter { node ->
+        node.node.isVisibleToUser &&
+          node.bounds.top > topLimit &&
+          (
+            node.text.contains("มุมมองผู้ซื้อ", ignoreCase = true) ||
+              node.text.contains("Buyer View", ignoreCase = true)
+          )
+      }
+      .minByOrNull { it.bounds.top }
+      ?: return false
+
+    val tapBounds = menuTapBounds(candidate.node, candidate.bounds, screen)
+    logStep("กดตัวเลือก มุมมองผู้ซื้อ")
+    return tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
   }
 internal fun KubdeeAccessibilityService.clickShopeePartnerViewOption(): Boolean {
     val root = rootInActiveWindow ?: return false
@@ -446,6 +534,42 @@ internal fun KubdeeAccessibilityService.isShopeePartnerLikedViewVisible(): Boole
     }
     val shareButtons = findShopeePartnerOfferShareButtons(root, screen, 0, screen.bottom).size
     return filterHits >= 1 && shareButtons > 0
+  }
+internal fun KubdeeAccessibilityService.describeShopeeLikedViewState(): String {
+    val root = rootInActiveWindow ?: return "root=none"
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val visibleTextNodes = textNodes.filter { it.node.isVisibleToUser }
+    val topLimit = screen.top + (screen.height() * 0.24f).toInt()
+    val topTexts = visibleTextNodes
+      .filter { it.bounds.top <= topLimit }
+      .sortedWith(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+      .map { cleanNodeText(it.text).take(22) }
+      .filter { it.isNotBlank() }
+      .take(6)
+      .joinToString("|")
+    val buyerTitle = visibleTextNodes.count { node ->
+      node.bounds.top <= topLimit &&
+        (node.text.contains("มุมมองผู้ซื้อ", ignoreCase = true) || node.text.contains("Buyer View", ignoreCase = true))
+    }
+    val partnerTitle = visibleTextNodes.count { node ->
+      node.bounds.top <= topLimit &&
+        (node.text.contains("มุมมองพาร์ทเนอร์", ignoreCase = true) || node.text.contains("Partner View", ignoreCase = true))
+    }
+    val buyerFilters = visibleTextNodes.count { node ->
+      node.bounds.top <= screen.top + (screen.height() * 0.35f).toInt() &&
+        listOf("ทั้งหมด", "สถานะ", "ส่วนลด", "หมวดหมู่").any { label -> node.text.equals(label, ignoreCase = true) }
+    }
+    val partnerFilters = visibleTextNodes.count { node ->
+      node.bounds.top <= screen.top + (screen.height() * 0.35f).toInt() &&
+        listOf("เรียงตาม", "ข้อเสนอที่ดีกว่า", "ไม่พร้อมโปรโมต", "Sort", "Offer").any { label ->
+          node.text.contains(label, ignoreCase = true)
+        }
+    }
+    val shareButtons = findShopeePartnerOfferShareButtons(root, screen, 0, screen.bottom).size
+    val likedVisible = isShopeeLikedListVisible()
+    return "buyerTitle=$buyerTitle partnerTitle=$partnerTitle buyerFilter=$buyerFilters partnerFilter=$partnerFilters shareBtn=$shareButtons liked=${if (likedVisible) "yes" else "no"} top=${topTexts.ifBlank { "-" }}"
   }
 internal fun KubdeeAccessibilityService.waitForShopeePartnerOffersReady(timeoutMs: Long): Boolean {
     val start = System.currentTimeMillis()
