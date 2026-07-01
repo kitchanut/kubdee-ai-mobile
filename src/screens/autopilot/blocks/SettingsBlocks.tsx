@@ -1,12 +1,13 @@
+import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Star } from 'lucide-react-native';
+import { ChevronDown, Star } from 'lucide-react-native';
 import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_INFINITE_ROUNDS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
 import type { KubdeeTheme } from '@/theme/tokens';
 import type { AutoPilotSettings } from '@/autopilot/types';
 import { SHOW_SEND_IMAGE_TO_AI, type OptionValue } from '../constants';
-import { ExtensionSectionTitle, SelectField } from '../primitives';
+import { SelectField } from '../primitives';
 
 export function ExtensionBasicSettingsBlock({
   settings,
@@ -35,99 +36,120 @@ export function ExtensionBasicSettingsBlock({
   onToggleStartNewProject: (value: boolean) => void;
   onToggleSendImage: (value: boolean) => void;
 }): React.JSX.Element {
+  const [open, setOpen] = useState(true);
+
   return (
     <View className="gap-2">
-      <ExtensionSectionTitle icon={Star} title="ตั้งค่าพื้นฐาน" theme={theme} />
-
-      <View className="gap-1.5">
-        <View className="flex-row gap-2.5">
-          <SelectField
-            label="จำนวนรอบ"
-            options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({
-              label: round === AUTO_PILOT_INFINITE_ROUNDS ? '∞ ไม่สิ้นสุด' : `${round} รอบ`,
-              value: round,
-            }))}
-            theme={theme}
-            value={settings.totalRounds}
-            onChange={onRoundChange}
-          />
-          <SelectField
-            label="หน่วงเวลา"
-            options={AUTO_PILOT_DELAY_OPTIONS.map((option) => ({
-              label: option.label,
-              value: option.value,
-            }))}
-            theme={theme}
-            value={settings.delayPreset}
-            onChange={onDelayChange}
-          />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((value) => !value)}
+        className="flex-row items-center justify-between rounded-md px-0.5 py-0.5"
+      >
+        <View className="flex-row items-center gap-2">
+          <Star size={14} color={theme.text} strokeWidth={2} />
+          <Text className="text-[13px] font-semibold text-kd-text">ตั้งค่าพื้นฐาน</Text>
         </View>
+        <ChevronDown
+          size={14}
+          color={theme.textSubtle}
+          strokeWidth={2.2}
+          style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}
+        />
+      </Pressable>
 
-      </View>
-
-      <View className="gap-0.5">
-        <View className="gap-0.5">
-          <ExtensionToggleRow
-            label="AI คิด Caption"
-            theme={theme}
-            value={settings.aiGenerateCaption}
-            onValueChange={onToggleCaption}
-          />
-          <ExtensionToggleRow
-            label="AI คิด Hashtags"
-            rightSlot={settings.aiGenerateHashtags ? (
-              <HashtagCountSelector
-                enabled={settings.aiGenerateHashtags}
+      {open ? (
+        <>
+          <View className="gap-1.5">
+            <View className="flex-row gap-2.5">
+              <SelectField
+                label="จำนวนรอบ"
+                options={AUTO_PILOT_ROUND_OPTIONS.map((round) => ({
+                  label: round === AUTO_PILOT_INFINITE_ROUNDS ? '∞ ไม่สิ้นสุด' : `${round} รอบ`,
+                  value: round,
+                }))}
                 theme={theme}
-                value={settings.aiHashtagCount}
-                onChange={onHashtagCountChange}
+                value={settings.totalRounds}
+                onChange={onRoundChange}
               />
-            ) : null}
-            theme={theme}
-            value={settings.aiGenerateHashtags}
-            onValueChange={onToggleHashtags}
-          />
-          {SHOW_SEND_IMAGE_TO_AI && (settings.aiGenerateCaption || settings.aiGenerateHashtags) ? (
-            <View className="min-h-[24px] flex-row items-center gap-2">
-              <View className="min-w-0 flex-1 flex-row flex-wrap items-baseline gap-x-1.5">
-                <Text className="text-kd-caption font-medium text-kd-text-muted">ส่งรูปให้ AI วิเคราะห์</Text>
-                <Text className="text-kd-tiny text-kd-text-subtle">(ปิดไว้จะประหยัด token กว่า)</Text>
-              </View>
-              <Switch
-                size="sm"
-                checked={settings.aiSendImageToAi}
-                onCheckedChange={onToggleSendImage}
-                className={settings.aiSendImageToAi ? 'bg-black dark:bg-zinc-200' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
+              <SelectField
+                label="หน่วงเวลา"
+                options={AUTO_PILOT_DELAY_OPTIONS.map((option) => ({
+                  label: option.label,
+                  value: option.value,
+                }))}
+                theme={theme}
+                value={settings.delayPreset}
+                onChange={onDelayChange}
               />
             </View>
-          ) : null}
-        </View>
-        <ExtensionToggleRow
-          label="AI คิด CTA"
-          theme={theme}
-          value={settings.aiGenerateCta}
-          onValueChange={onToggleCta}
-        />
-        <ExtensionToggleRow
-          label="AI rewrite prompt เมื่อเกิด error"
-          theme={theme}
-          value={settings.aiRewritePromptOnAudioFailure}
-          onValueChange={onToggleRewrite}
-        />
-        <ExtensionToggleRow
-          label="สร้างโปรเจกต์ใหม่ต่อสินค้า"
-          theme={theme}
-          value={settings.startNewFlowProjectPerProduct}
-          onValueChange={onToggleStartNewProject}
-        />
-        <ExtensionToggleRow
-          disabled={!settings.startNewFlowProjectPerProduct}
-          label="ลบโปรเจกต์ที่สร้างต่อสินค้า"
-          theme={theme}
-          value={settings.deleteLatestFlowProjectBeforeNewProject}
-          onValueChange={onToggleDeleteLatestProject}
-        />
-      </View>
+          </View>
+
+          <View className="gap-0.5">
+            <View className="gap-0.5">
+              <ExtensionToggleRow
+                label="AI คิด Caption"
+                theme={theme}
+                value={settings.aiGenerateCaption}
+                onValueChange={onToggleCaption}
+              />
+              <ExtensionToggleRow
+                label="AI คิด Hashtags"
+                rightSlot={settings.aiGenerateHashtags ? (
+                  <HashtagCountSelector
+                    enabled={settings.aiGenerateHashtags}
+                    theme={theme}
+                    value={settings.aiHashtagCount}
+                    onChange={onHashtagCountChange}
+                  />
+                ) : null}
+                theme={theme}
+                value={settings.aiGenerateHashtags}
+                onValueChange={onToggleHashtags}
+              />
+              {SHOW_SEND_IMAGE_TO_AI && (settings.aiGenerateCaption || settings.aiGenerateHashtags) ? (
+                <View className="min-h-[24px] flex-row items-center gap-2">
+                  <View className="min-w-0 flex-1 flex-row flex-wrap items-baseline gap-x-1.5">
+                    <Text className="text-kd-caption font-medium text-kd-text-muted">ส่งรูปให้ AI วิเคราะห์</Text>
+                    <Text className="text-kd-tiny text-kd-text-subtle">(ปิดไว้จะประหยัด token กว่า)</Text>
+                  </View>
+                  <Switch
+                    size="sm"
+                    checked={settings.aiSendImageToAi}
+                    onCheckedChange={onToggleSendImage}
+                    className={settings.aiSendImageToAi ? 'bg-black dark:bg-zinc-200' : 'bg-kd-border-strong dark:bg-kd-card-muted'}
+                  />
+                </View>
+              ) : null}
+            </View>
+            <ExtensionToggleRow
+              label="AI คิด CTA"
+              theme={theme}
+              value={settings.aiGenerateCta}
+              onValueChange={onToggleCta}
+            />
+            <ExtensionToggleRow
+              label="AI rewrite prompt เมื่อเกิด error"
+              theme={theme}
+              value={settings.aiRewritePromptOnAudioFailure}
+              onValueChange={onToggleRewrite}
+            />
+            <ExtensionToggleRow
+              label="สร้างโปรเจกต์ใหม่ต่อสินค้า"
+              theme={theme}
+              value={settings.startNewFlowProjectPerProduct}
+              onValueChange={onToggleStartNewProject}
+            />
+            <ExtensionToggleRow
+              disabled={!settings.startNewFlowProjectPerProduct}
+              label="ลบโปรเจกต์ที่สร้างต่อสินค้า"
+              theme={theme}
+              value={settings.deleteLatestFlowProjectBeforeNewProject}
+              onValueChange={onToggleDeleteLatestProject}
+            />
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }

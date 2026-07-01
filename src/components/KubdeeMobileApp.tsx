@@ -550,6 +550,9 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const downloadProgressPercent = updateDownloadState.progress == null
     ? null
     : Math.round(updateDownloadState.progress * 100);
+  const updateModalAccent = theme.isDark ? '#f9fafb' : '#111827';
+  const updateModalTrack = theme.isDark ? '#374151' : '#e5e7eb';
+  const updateModalBackdrop = theme.isDark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(17, 24, 39, 0.45)';
 
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
@@ -676,7 +679,10 @@ export default function KubdeeMobileApp(): React.JSX.Element {
         onClose={closeMobileChangelog}
       />
       <Modal animationType="fade" transparent visible={updateDownloadState.visible}>
-        <View className="flex-1 items-center justify-center bg-black/60 px-6">
+        <View
+          className="flex-1 items-center justify-center px-6"
+          style={{ backgroundColor: updateModalBackdrop }}
+        >
           <View
             className="w-full max-w-[320px] rounded-[12px] border border-kd-border bg-kd-panel p-5"
             style={{
@@ -688,7 +694,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             }}
           >
             <View className="mb-4 flex-row items-center gap-3">
-              <ActivityIndicator color={theme.emerald} />
+              <ActivityIndicator color={updateModalAccent} />
               <View className="min-w-0 flex-1">
                 <Text className="text-base font-semibold text-kd-text">
                   กำลังอัปเดตแอป
@@ -698,12 +704,15 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 </Text>
               </View>
             </View>
-            <View className="h-2 overflow-hidden rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
+            <View
+              className="h-2 overflow-hidden rounded-full"
+              style={{ backgroundColor: updateModalTrack }}
+            >
               <View
                 className="h-full rounded-full"
                 style={{
                   width: downloadProgressPercent == null ? '45%' : `${downloadProgressPercent}%`,
-                  backgroundColor: theme.emerald,
+                  backgroundColor: updateModalAccent,
                 }}
               />
             </View>

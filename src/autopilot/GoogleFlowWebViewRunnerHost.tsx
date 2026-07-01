@@ -1502,7 +1502,7 @@ export default function GoogleFlowWebViewRunnerHost({
     }
     if (entry.message) {
       setOverlayLogs((current) => [
-        ...current.slice(-7),
+        ...current.slice(-3),
         {
           id: `${ts}-${current.length}`,
           message: entry.message,
@@ -4740,7 +4740,7 @@ export default function GoogleFlowWebViewRunnerHost({
             <View
               pointerEvents="none"
               style={{ backgroundColor: 'rgba(0,0,0,0.66)' }}
-              className="absolute inset-x-2 top-2 rounded-kd-lg px-3 py-2"
+              className="absolute inset-x-0 top-0 border-b border-black/20 px-3 py-2"
             >
               {overlayLogs.map((line, index) => {
                 const firstLog = overlayLogs[0] ?? line;

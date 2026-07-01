@@ -12,6 +12,17 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.13',
+    date: '2026-07-01',
+    highlight: 'Auto และอัปเดตแอปดูชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'ปรับ log บน Google Flow WebView ให้แสดง 4 รายการล่าสุดแบบเต็มแถวด้านบน' },
+      { type: 'improved', text: 'ปรับตั้งค่าพื้นฐานในหน้า Auto ให้ย่อขยายได้เหมือน Extension' },
+      { type: 'fixed', text: 'ปรับการรอ placeholder ระหว่างอัปโหลดรูปเข้า Google Flow ให้ไม่รีบเลือก reference ก่อนรูปพร้อม' },
+      { type: 'improved', text: 'ปรับ loading ในหน้ากำลังอัปเดตแอปให้ใช้โทนขาว ดำ และเทาตามธีม' },
+    ],
+  },
+  {
     version: '0.2.12',
     date: '2026-07-01',
     highlight: 'ตรวจ reference ใน Google Flow ละเอียดขึ้น',

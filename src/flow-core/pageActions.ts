@@ -1206,6 +1206,20 @@ const IMAGE_DIALOG_HELPERS_BODY = `
     if (!item || !item.isConnected) return false;
     var text = (item.textContent || '').trim();
     if (/\\b\\d+%\\b/.test(text)) return true;
+    var selectable = selectableImageItem(item);
+    var isIndexedItem = selectable && selectable.hasAttribute && selectable.hasAttribute('data-index');
+    var img = selectable && (selectable.querySelector('img') || (selectable.tagName === 'IMG' ? selectable : null));
+    if (isIndexedItem && !img) {
+      return true;
+    }
+    if (img && isVisible(img)) {
+      var src = img.currentSrc || img.src || img.getAttribute('src') || '';
+      if (!String(src || '').trim()) return true;
+      if (img.complete === false) return true;
+      if ((img.naturalWidth || 0) <= 20 || (img.naturalHeight || 0) <= 20) return true;
+      var opacity = Number(window.getComputedStyle(img).opacity || '1');
+      if (opacity < 0.95) return true;
+    }
     var progressItems = Array.prototype.slice.call(item.querySelectorAll('i, [role="progressbar"], [aria-busy="true"]'));
     for (var p = 0; p < progressItems.length; p++) {
       var txt = (progressItems[p].textContent || '').trim().toLowerCase();
@@ -1488,6 +1502,14 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
   }
   function getUploadActivity(dialog){
     var scope = dialog && dialog.isConnected ? dialog : document;
+    var topIndexedItems = sortImageItemsByTop(Array.prototype.slice.call(scope.querySelectorAll('[data-testid="virtuoso-item-list"] [data-index], [data-index]'))
+      .map(selectableImageItem)
+      .filter(function(item){ return item && isVisible(item); }));
+    for (var top = 0; top < Math.min(2, topIndexedItems.length); top++) {
+      if (itemHasUploadActivity(topIndexedItems[top])) {
+        return { active: true, percent: null, item: topIndexedItems[top], placeholder: true };
+      }
+    }
     var textCandidates = Array.prototype.slice.call(scope.querySelectorAll('[data-index] div, [data-testid="virtuoso-item-list"] div, [role="progressbar"]'));
     for (var t = 0; t < textCandidates.length; t++) {
       var txt = (textCandidates[t].textContent || '').trim();
@@ -1541,6 +1563,8 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
   async function waitForUploadedImageItem(dialog, knownSignatures, knownItems){
     var lastUploadItem = null;
     var sawUploadActivity = false;
+    var uploadBecameIdleAt = 0;
+    var idleDelayLogged = false;
     var stableSignature = '';
     var stableCount = 0;
     var lastStatusMessage = '';
@@ -1565,11 +1589,25 @@ const UPLOAD_REFERENCE_IMAGE_BODY = `
         sawUploadActivity = true;
       }
       if (uploadActivity.active) {
-        logUploadStatus(uploadActivity.percent ? ('ยังเห็น progress/blur ของ' + referenceLabel + ': ' + uploadActivity.percent) : 'ยังเห็น progress/blur ของ' + referenceLabel + ' — Google Flow กำลังอัปโหลด/ประมวลผล...');
+        uploadBecameIdleAt = 0;
+        idleDelayLogged = false;
+        logUploadStatus(uploadActivity.percent ? ('ยังเห็น progress/blur ของ' + referenceLabel + ': ' + uploadActivity.percent) : 'ยังเห็น progress/blur/placeholder ของ' + referenceLabel + ' — Google Flow กำลังอัปโหลด/ประมวลผล...');
       } else {
         logUploadStatus((sawUploadActivity ? 'progress/blur หายไปแล้ว ' : '') + 'กำลังเช็ค' + referenceLabel + ' ในรายการรูป...');
       }
       if (!uploadActivity.active) {
+        if (sawUploadActivity && !uploadBecameIdleAt) {
+          uploadBecameIdleAt = Date.now();
+          idleDelayLogged = true;
+          setStatus('progress/blur/placeholder ของ' + referenceLabel + ' หายไปแล้ว — รอ 2 วิให้รายการนิ่งก่อนเช็ครูป', 'info');
+        }
+        if (uploadBecameIdleAt && Date.now() - uploadBecameIdleAt < 2000) {
+          await wait(500);
+          continue;
+        } else if (idleDelayLogged) {
+          idleDelayLogged = false;
+          setStatus('รอ 2 วิหลัง progress/blur หายแล้ว กำลังเช็ค' + referenceLabel + ' ที่พร้อมเลือก', 'info');
+        }
         var uploadedItem = findReadyUploadedImageItem(activeDialog, knownSignatures, knownItems, lastUploadItem, sawUploadActivity);
         if (uploadedItem) {
           var sig = itemSignature(uploadedItem) || ('item:' + (uploadedItem.getAttribute('data-index') || '?'));
