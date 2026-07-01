@@ -1130,17 +1130,21 @@ const IMAGE_DIALOG_HELPERS_BODY = `
   function isAddDialogTrigger(el, strictComposerScope){
     if (!el || !isVisible(el) || isDisabled(el)) return false;
     if (el.closest('[role="menu"]') || el.closest('nav') || el.closest('aside')) return false;
+    var ariaHasDialog = el.getAttribute('aria-haspopup') === 'dialog';
     var haystack = textAndIcons(el);
-    var hasAdd =
+    var hasAddIcon =
       haystack.indexOf('add_photo_alternate') !== -1 ||
       haystack.indexOf('add_2') !== -1 ||
-      /(^|\\s)add(\\s|$)/.test(haystack) ||
-      haystack.indexOf('upload image') !== -1 ||
-      haystack.indexOf('image') !== -1 ||
-      haystack.indexOf('รูป') !== -1;
-    if (!hasAdd) return false;
-    if (strictComposerScope) return true;
-    return el.getAttribute('aria-haspopup') === 'dialog' || hasSubmitArrowNear(el) || haystack.indexOf('add_photo_alternate') !== -1;
+      /(^|\\s)\\+(\\s|$)/.test(haystack) ||
+      /(^|\\s)add(\\s|$)/.test(haystack);
+    var hasCreateStartLabel =
+      haystack.indexOf('create') !== -1 ||
+      haystack.indexOf('start') !== -1 ||
+      haystack.indexOf('เริ่ม') !== -1;
+    if (strictComposerScope) {
+      return hasAddIcon || (ariaHasDialog && hasCreateStartLabel);
+    }
+    return (ariaHasDialog && (hasAddIcon || hasCreateStartLabel)) || (hasAddIcon && hasSubmitArrowNear(el));
   }
   function dedupeElements(items){
     var result = [];
@@ -1160,6 +1164,9 @@ const IMAGE_DIALOG_HELPERS_BODY = `
         var br = b.getBoundingClientRect();
         return (br.bottom - ar.bottom) || (ar.left - br.left);
       });
+      if (scoped.length) {
+        return dedupeElements(scoped);
+      }
     }
     var global = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"], [aria-haspopup="dialog"]'))
       .filter(function(el){ return scoped.indexOf(el) === -1 && isAddDialogTrigger(el, false); });

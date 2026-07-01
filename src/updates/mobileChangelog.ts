@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.20',
+    date: '2026-07-01',
+    highlight: 'กดปุ่มแนบรูปใน Google Flow แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การหาปุ่ม + แนบรูปใน Google Flow ให้จำกัดอยู่กับ composer มากขึ้น ลดโอกาสกดโดนปุ่มของตัวอย่างหรือส่วนอื่นบนหน้า' },
+      { type: 'changed', text: 'ปรับ logic ให้ใกล้ Desktop/Extension โดยใช้ปุ่ม dialog ที่มี add/add_2/create/start เป็นหลัก ไม่ใช้คำว่า Image/รูป เป็นตัวเลือกกด' },
+    ],
+  },
+  {
     version: '0.2.19',
     date: '2026-07-01',
     highlight: 'อ่านข้อความ error ใน WebView ได้ชัดขึ้น',
