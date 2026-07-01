@@ -12,6 +12,15 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.21',
+    date: '2026-07-01',
+    highlight: 'แนบรูปวิดีโอจาก cache แทนเลือกรูปล่าสุด',
+    changes: [
+      { type: 'changed', text: 'เมื่อสร้างวิดีโอต่อจากรูปที่เพิ่งสร้าง ระบบจะอัปโหลดรูปจาก cache ของแอปเข้า Google Flow โดยตรง แทนการเลื่อนหาและเลือกรูปล่าสุดจาก dialog' },
+      { type: 'improved', text: 'วิดีโอหลายฉากและมุมเดียวบนมือถือจะใช้รูปฉากที่แอปเก็บไว้เป็น reference โดยตรง ลดโอกาสเลือกผิดบนเครื่องที่รายการล่าสุดของ Google Flow ไม่นิ่ง' },
+    ],
+  },
+  {
     version: '0.2.20',
     date: '2026-07-01',
     highlight: 'กดปุ่มแนบรูปใน Google Flow แม่นขึ้น',
