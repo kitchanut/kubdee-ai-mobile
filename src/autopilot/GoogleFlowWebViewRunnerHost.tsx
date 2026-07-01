@@ -3762,112 +3762,108 @@ export default function GoogleFlowWebViewRunnerHost({
               runId: payload.runId,
               status: 'running',
               step,
-              stage: 'attach_recent_image_reference',
+              stage: 'attach_generated_image_reference',
               productId: product.id,
               productName: product.name,
               currentRound: round,
               totalRounds: payload.settings.totalRounds,
               currentProduct: productIndex + 1,
               totalProducts: payload.products.length,
-              message: 'ไม่พบรูป cache ในแอป จึงเลือกรูปที่เพิ่งสร้างจากรายการบนสุดใน Google Flow เป็น fallback',
+              message: 'ไม่พบรูป cache ในแอป จะดึงรูปที่เพิ่งสร้างจากหน้า Flow แล้วอัปโหลดเป็น reference สำหรับวิดีโอ',
             });
 
-            try {
-              await selectRecentImageOrThrow({
-                handle,
-                payload,
-                product,
-                productIndex,
-                round,
-                stage: 'attach_recent_image_reference',
-                step,
-              });
-            } catch (selectError) {
-              const reason = selectError instanceof Error ? selectError.message : String(selectError);
-              if (product.preview) {
-                emit({
-                  event: 'progress',
-                  runId: payload.runId,
-                  status: 'running',
-                  level: 'warning',
-                  step,
-                  stage: 'attach_product_reference',
-                  productId: product.id,
-                  productName: product.name,
-                  currentRound: round,
-                  totalRounds: payload.settings.totalRounds,
-                  currentProduct: productIndex + 1,
-                  totalProducts: payload.products.length,
-                  message: `เลือกรูปล่าสุดไม่สำเร็จ: ${reason || 'unknown'} — จะอัปโหลดรูปสินค้า fallback แทน`,
-                });
-                const dataUrl = await loadImageReferenceDataUrl(product.preview);
-                await uploadReferenceImageOrThrow({
-                  handle,
-                  payload,
-                  product,
-                  productIndex,
-                  round,
-                  step,
-                  args: {
-                    dataUrl: dataUrl ?? undefined,
-                    fileName: getProductReferenceFileName(product, productIndex, round, step),
-                    imageUrl: dataUrl ? undefined : product.preview,
-                    referenceLabel: getProductReferenceLabel(product, productIndex),
-                  },
-                });
-              } else {
-                throw new Error(`เลือกรูปล่าสุดไม่สำเร็จ และไม่มีรูป fallback ให้อัปโหลด: ${reason || 'unknown'}`);
-              }
+            const latestImage = await downloadLatestFlowImage(handle, 1, latestBaselineImageUrls);
+            if (!latestImage?.dataUrl) {
+              throw new Error('ไม่พบรูปที่เพิ่งสร้างจากหน้า Flow สำหรับใช้เป็น reference วิดีโอ');
             }
+
+            await uploadReferenceImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              args: {
+                dataUrl: latestImage.dataUrl,
+                fileName: getGeneratedImageReferenceFileName(product, round),
+                referenceLabel: 'รูปที่สร้างไว้',
+              },
+            });
           }
           videoReferenceAttached = true;
-        } else if (product.preview) {
-          emit({
-            event: 'progress',
-            runId: payload.runId,
-            status: 'running',
-            step,
-            stage: 'attach_product_reference',
-            productId: product.id,
-            productName: product.name,
-            currentRound: round,
-            totalRounds: payload.settings.totalRounds,
-            currentProduct: productIndex + 1,
-            totalProducts: payload.products.length,
-            message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับ${label}: ${product.name || 'สินค้า'}`,
-          });
-          const dataUrl = await loadImageReferenceDataUrl(product.preview);
-          await uploadReferenceImageOrThrow({
-            handle,
-            payload,
-            product,
-            productIndex,
-            round,
-            step,
-            args: {
-              dataUrl: dataUrl ?? undefined,
-              fileName: getProductReferenceFileName(product, productIndex, round, step),
-              imageUrl: dataUrl ? undefined : product.preview,
-              referenceLabel: getProductReferenceLabel(product, productIndex),
-            },
-          });
-          videoReferenceAttached = step === 'video';
-        } else if (step === 'image' || !shouldUsePreviousImage) {
-          emit({
-            event: 'progress',
-            runId: payload.runId,
-            status: 'running',
-            level: 'warning',
-            step,
-            stage: 'attach_product_reference',
-            productId: product.id,
-            productName: product.name,
-            currentRound: round,
-            totalRounds: payload.settings.totalRounds,
-            currentProduct: productIndex + 1,
-            totalProducts: payload.products.length,
-            message: `ไม่มีรูปสินค้าให้แนบสำหรับ${label}: ${product.name || 'สินค้า'}`,
-          });
+        } else {
+          if (step === 'image') {
+            const referenceNames = [
+              product.preview ? getProductReferenceLabel(product, productIndex) : null,
+              ...getAdditionalImageReferences(product).map((reference) => `รูป${reference.label}`),
+            ].filter(Boolean);
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: 'attach_reference_plan',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: referenceNames.length
+                ? `สร้างรูปฉากเดียว: จะอัปโหลด reference (${referenceNames.join(', ')})`
+                : 'สร้างรูปฉากเดียว: ไม่มีรูป reference ให้แนบ',
+            });
+          }
+
+          if (product.preview) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              step,
+              stage: 'attach_product_reference',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับ${label}: ${product.name || 'สินค้า'}`,
+            });
+            const dataUrl = await loadImageReferenceDataUrl(product.preview);
+            await uploadReferenceImageOrThrow({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              args: {
+                dataUrl: dataUrl ?? undefined,
+                fileName: getProductReferenceFileName(product, productIndex, round, step),
+                imageUrl: dataUrl ? undefined : product.preview,
+                referenceLabel: getProductReferenceLabel(product, productIndex),
+              },
+            });
+            videoReferenceAttached = step === 'video';
+          } else if (step === 'image' || !shouldUsePreviousImage) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              level: 'warning',
+              step,
+              stage: 'attach_product_reference',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: `ไม่มีรูปสินค้าให้แนบสำหรับ${label}: ${product.name || 'สินค้า'}`,
+            });
+          }
         }
 
         if (step === 'video' && !shouldUsePreviousImage) {
@@ -4380,7 +4376,6 @@ export default function GoogleFlowWebViewRunnerHost({
       openGoogleFlowProject,
       refreshGoogleFlowProject,
       runActionOrThrow,
-      selectRecentImageOrThrow,
       uploadReferenceImageOrThrow,
       waitForStepResult,
     ]

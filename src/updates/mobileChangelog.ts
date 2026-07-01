@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.22',
+    date: '2026-07-01',
+    highlight: 'Auto Workflow ไม่ข้ามขั้นตอนสร้างรูป',
+    changes: [
+      { type: 'fixed', text: 'แก้กรณีเครื่องที่จำค่าเก่าไว้เป็นวิดีโออย่างเดียว แล้วเริ่มสร้างวิดีโอทันทีโดยไม่สร้างรูปก่อน' },
+      { type: 'changed', text: 'เมื่อเปิดขั้นตอนวิดีโอ ระบบจะบังคับให้มีขั้นตอนรูปภาพนำหน้าเสมอ เพื่อให้แนบรูปสินค้า ตัวละคร และฉากก่อนสร้างวิดีโอ' },
+      { type: 'improved', text: 'เพิ่ม log สรุปก่อนสร้างรูปฉากเดียวว่าอัปโหลด reference อะไรบ้าง เช่น รูปสินค้า รูปตัวละคร หรือรูปฉาก' },
+    ],
+  },
+  {
     version: '0.2.21',
     date: '2026-07-01',
     highlight: 'แนบรูปวิดีโอจาก cache แทนเลือกรูปล่าสุด',

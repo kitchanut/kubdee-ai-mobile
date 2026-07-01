@@ -49,6 +49,7 @@ type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'capt
 
 const AUTO_PILOT_RUNTIME_SETTINGS_KEY = 'kubdee_ai_mobile_auto_runtime_settings_v1';
 const DEFAULT_ENABLED_STEPS: AutoPilotStepType[] = ['image', 'video'];
+const ORDERED_ENABLED_STEPS: AutoPilotStepType[] = ['image', 'video'];
 const VALID_FLOW_IMAGE_MODELS = new Set<string>(FLOW_IMAGE_MODELS.map((model) => model.value));
 const VALID_FLOW_VIDEO_MODELS = new Set<string>(FLOW_VIDEO_MODELS.map((model) => model.value));
 
@@ -189,13 +190,21 @@ function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {
   };
 }
 
+function orderEnabledSteps(value: AutoPilotStepType[]): AutoPilotStepType[] {
+  const stepSet = new Set(value);
+  if (stepSet.has('video')) {
+    stepSet.add('image');
+  }
+  return ORDERED_ENABLED_STEPS.filter((step) => stepSet.has(step));
+}
+
 function normalizeEnabledSteps(value: unknown): AutoPilotStepType[] {
   if (!Array.isArray(value)) {
     return DEFAULT_ENABLED_STEPS;
   }
 
-  const steps = value.filter((step): step is AutoPilotStepType => step === 'image' || step === 'video');
-  return steps.length > 0 ? Array.from(new Set(steps)) : DEFAULT_ENABLED_STEPS;
+  const steps = orderEnabledSteps(value.filter((step): step is AutoPilotStepType => step === 'image' || step === 'video'));
+  return steps.length > 0 ? steps : DEFAULT_ENABLED_STEPS;
 }
 
 function clampAutoSceneCount(value?: string | number | null): number {
@@ -589,9 +598,24 @@ export function useAutoPilotController({
   );
 
   const toggleStep = useCallback((step: AutoPilotStepType): void => {
-    setEnabledSteps((current) =>
-      current.includes(step) ? current.filter((item) => item !== step) : [...current, step]
-    );
+    setEnabledSteps((current) => {
+      const stepSet = new Set(current);
+      if (step === 'video') {
+        if (stepSet.has('video')) {
+          stepSet.delete('video');
+        } else {
+          stepSet.add('image');
+          stepSet.add('video');
+        }
+      } else if (stepSet.has('image')) {
+        stepSet.delete('image');
+        stepSet.delete('video');
+      } else {
+        stepSet.add('image');
+      }
+
+      return orderEnabledSteps(Array.from(stepSet));
+    });
   }, []);
 
   const toggleProduct = useCallback((productId: string): void => {
@@ -909,9 +933,14 @@ export function useAutoPilotController({
         return;
       }
 
-      if (enabledSteps.length === 0) {
+      const runEnabledSteps = orderEnabledSteps(enabledSteps);
+      if (runEnabledSteps.length === 0) {
         appendLog('error', 'ยังไม่ได้เลือกขั้นตอน');
         return;
+      }
+      if (JSON.stringify(runEnabledSteps) !== JSON.stringify(enabledSteps)) {
+        setEnabledSteps(runEnabledSteps);
+        appendLog('warning', 'ปรับลำดับขั้นตอนเป็น รูปภาพ → วิดีโอ ก่อนเริ่มงาน');
       }
 
       if (selectedProducts.length === 0) {
@@ -922,7 +951,7 @@ export function useAutoPilotController({
       const runId = createRunId();
       runIdRef.current = runId;
       beginAutomationActivityRun('auto-pilot', `Auto Workflow · ${selectedProducts.length} สินค้า`);
-      const plannedTotals = getPlannedAutoTotals(selectedProducts, enabledSteps, settings.totalRounds);
+      const plannedTotals = getPlannedAutoTotals(selectedProducts, runEnabledSteps, settings.totalRounds);
 
       setRunState({
         runId,
@@ -931,7 +960,7 @@ export function useAutoPilotController({
           ...initialRunState.progress,
           totalRounds: settings.totalRounds,
           totalProducts: selectedProducts.length,
-          totalSteps: enabledSteps.length,
+          totalSteps: runEnabledSteps.length,
           ...plannedTotals,
         },
         logs: [],
@@ -1038,7 +1067,7 @@ export function useAutoPilotController({
       }
 
       const payload = createGoogleFlowRunnerPayload({
-        enabledSteps,
+        enabledSteps: runEnabledSteps,
         promptCatalog: catalogResult.catalog,
         promptCatalogSource: catalogResult.source,
         promptCatalogVersion: catalogResult.version,

@@ -46,6 +46,7 @@ export const AUTO_PILOT_STAGE_LABELS: Record<string, string> = {
   multi_scene_config_video: 'ตั้งค่าวิดีโอฉาก',
   voiceover_video_retry_config: 'ตั้งค่า Retry ภาพล้วน',
   attach_reference: 'แนบรูปอ้างอิง',
+  attach_reference_plan: 'เตรียมแนบรูป',
   attach_product_reference: 'แนบรูปสินค้า',
   attach_generated_image_reference: 'แนบรูปที่สร้างไว้',
   attach_recent_image_reference: 'เลือกรูปที่เพิ่งสร้าง',
