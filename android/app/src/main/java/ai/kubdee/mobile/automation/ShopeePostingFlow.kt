@@ -353,11 +353,14 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
     }
     sleepStep(1800L)
 
-    if (
-      productUrl.isNotBlank() &&
-      tapShopeeProductLinkEntryWithRetry()
-    ) {
-      sleepStep(1200L)
+    if (productUrl.isNotBlank()) {
+      if (!tapShopeeProductLinkEntryWithRetry()) {
+        logShopeePostStep("แนบสินค้าด้วยลิงก์ไม่สำเร็จ: เปิดหน้าใส่ลิงก์ไม่ได้ จะไม่กรอกช่องค้นหา")
+        performBack()
+        sleepStep(900L)
+        return
+      }
+
       val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
       if (edit != null) {
         clickNode(edit)
@@ -377,9 +380,10 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
           }
         }
       }
-      logShopeePostStep("แนบสินค้าด้วยลิงก์ไม่สำเร็จ จะกลับไปค้นหาด้วยชื่อสินค้า")
+      logShopeePostStep("แนบสินค้าด้วยลิงก์ไม่สำเร็จ จะไม่กรอกช่องค้นหา")
       performBack()
       sleepStep(900L)
+      return
     }
 
     if (productName.isNotBlank()) {
@@ -543,6 +547,16 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntryWithRetry(attem
   return false
 }
 
+internal fun KubdeeAccessibilityService.waitForShopeeProductLinkEntryScreen(timeoutMs: Long): Boolean {
+  val start = System.currentTimeMillis()
+  while (System.currentTimeMillis() - start < timeoutMs) {
+    checkStopRequested()
+    if (isShopeeProductLinkEntryScreen()) return true
+    Thread.sleep(180L)
+  }
+  return isShopeeProductLinkEntryScreen()
+}
+
 internal fun KubdeeAccessibilityService.isShopeeProductLinkEntryScreen(): Boolean =
   containsAnyText(
     listOf("กรอกลิงก์สินค้า", "รองรับเฉพาะลิงก์สินค้า", "Product link"),
@@ -627,8 +641,11 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
       if (linkAction != null) {
         val bounds = linkAction.first
         if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
-          successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ (${bounds.centerX()},${bounds.centerY()})"
-          break
+          if (waitForShopeeProductLinkEntryScreen(2500L)) {
+            successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ (${bounds.centerX()},${bounds.centerY()})"
+            break
+          }
+          logShopeePostStep("แตะไอคอนโซ่ที่ตรวจเจอแล้ว แต่หน้าใส่ลิงก์ยังไม่เปิด (${bounds.centerX()},${bounds.centerY()})")
         }
       }
 
@@ -636,8 +653,11 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
       if (headerImageAction != null) {
         val bounds = headerImageAction.first
         if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
-          successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนขวาบน (${bounds.centerX()},${bounds.centerY()})"
-          break
+          if (waitForShopeeProductLinkEntryScreen(2500L)) {
+            successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนขวาบน (${bounds.centerX()},${bounds.centerY()})"
+            break
+          }
+          logShopeePostStep("แตะไอคอนขวาบนแล้ว แต่หน้าใส่ลิงก์ยังไม่เปิด (${bounds.centerX()},${bounds.centerY()})")
         }
       }
     }

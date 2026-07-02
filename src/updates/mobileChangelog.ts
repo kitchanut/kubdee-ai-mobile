@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.38',
+    date: '2026-07-02',
+    highlight: 'Shopee Post ไม่กรอกผิดช่องค้นหาเมื่อกดไอคอนลิงก์ไม่สำเร็จ',
+    changes: [
+      { type: 'fixed', text: 'หลังแตะไอคอนโซ่หน้าเพิ่มสินค้า ต้องตรวจว่าหน้าใส่ลิงก์เปิดจริงก่อนจึงจะกรอกลิงก์สินค้า' },
+      { type: 'fixed', text: 'ถ้ามีลิงก์สินค้าแต่เปิดหน้าใส่ลิงก์ไม่ได้ ระบบจะไม่ fallback ไปกรอกช่องค้นหาสินค้าแทน' },
+    ],
+  },
+  {
     version: '0.2.37',
     date: '2026-07-02',
     highlight: 'ซ่อน overlay ระหว่างคุม Shopee เพื่อไม่ให้บังหรือถูกรวมใน Accessibility',
