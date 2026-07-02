@@ -619,9 +619,54 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
       logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ")
       return true
     }
+
+    val headerImageAction = findShopeeTopRightHeaderImage(root, screen)
+    if (headerImageAction != null) {
+      val bounds = headerImageAction.first
+      if (tapBlockingWithoutStopButton(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
+        logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยไอคอนขวาบน (${bounds.centerX()},${bounds.centerY()})")
+        return true
+      }
+    }
+
     logShopeePostStep("ไม่พบ node ไอคอนโซ่จาก UI บนหน้าเพิ่มสินค้า")
   }
   return false
+}
+
+internal fun KubdeeAccessibilityService.findShopeeTopRightHeaderImage(
+  node: AccessibilityNodeInfo?,
+  screen: Rect
+): Pair<Rect, AccessibilityNodeInfo>? {
+  if (node == null || !isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) return null
+
+  var best: Pair<Rect, AccessibilityNodeInfo>? = null
+  if (node.isVisibleToUser) {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val className = node.className?.toString().orEmpty().lowercase(Locale.ROOT)
+    val headerTop = screen.top + statusBarHeightPx() - dp(8)
+    val headerBottom = screen.top + statusBarHeightPx() + dp(88)
+    val isTopRightHeaderImage =
+      className.contains("imageview") &&
+        bounds.width() in dp(24)..dp(72) &&
+        bounds.height() in dp(24)..dp(72) &&
+        bounds.centerX() >= screen.right - dp(96) &&
+        bounds.centerY() in headerTop..headerBottom
+
+    if (isTopRightHeaderImage) {
+      best = Rect(bounds) to node
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    val childBest = findShopeeTopRightHeaderImage(node.getChild(index), screen)
+    if (childBest != null) {
+      best = listOfNotNull(best, childBest).maxByOrNull { it.first.centerX() }
+    }
+  }
+
+  return best
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeProductLinkImportButton(): Boolean {

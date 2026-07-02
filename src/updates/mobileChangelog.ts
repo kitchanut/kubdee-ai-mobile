@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.33',
+    date: '2026-07-02',
+    highlight: 'Shopee Post หาไอคอนโซ่มุมขวาบนได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้บางเครื่องที่หน้าเพิ่มสินค้า Shopee แสดงไอคอนโซ่เป็นรูปเปล่าไม่มี label ทำให้ระบบหาไม่เจอ' },
+      { type: 'improved', text: 'เพิ่มการตรวจไอคอน ImageView ขวาบนของหน้าเพิ่มสินค้า แล้วกดจาก bounds จริงของ UI แทนการเดาจากข้อความ' },
+    ],
+  },
+  {
     version: '0.2.32',
     date: '2026-07-02',
     highlight: 'Shopee Post กดไอคอนลิงก์ไม่โดน Stop บัง',
