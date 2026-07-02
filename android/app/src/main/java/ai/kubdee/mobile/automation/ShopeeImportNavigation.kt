@@ -258,43 +258,61 @@ internal fun KubdeeAccessibilityService.checkShopeeMePage(): ShopeeMePageCheck {
 }
 
 internal fun KubdeeAccessibilityService.openShopeeLikedList(): Boolean {
-  if (isShopeeImportListVisible()) {
-    return true
-  }
+  return openShopeeMenuWithShortScroll(
+    texts = SHOPEE_LIKED_TEXTS,
+    menuName = "สิ่งที่ฉันถูกใจ",
+    maxAttempts = 12,
+    log = { message -> logStep(message) },
+    isTargetVisible = { isShopeeImportListVisible() },
+    tapMenu = { clickShopeeLikedMenu() },
+    onTapped = { waitForShopeeLikedListVisible(5_000L) }
+  )
+}
 
-  val maxAttempts = 12
+internal fun KubdeeAccessibilityService.openShopeeMenuWithShortScroll(
+  texts: List<String>,
+  menuName: String,
+  maxAttempts: Int,
+  log: (String) -> Unit,
+  isTargetVisible: () -> Boolean = { false },
+  tapMenu: () -> Boolean = {
+    clickByAnyText(texts, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  },
+  onTapped: () -> Boolean = { true }
+): Boolean {
+  if (isTargetVisible()) return true
+
   repeat(maxAttempts) { attempt ->
     dismissShopeeBlockingPopups()
 
-    if (isShopeeImportListVisible()) {
-      return true
-    }
+    if (isTargetVisible()) return true
 
-    logStep("ค้นหาเมนูสิ่งที่ฉันถูกใจ ครั้ง ${attempt + 1}/$maxAttempts")
-    if (clickShopeeLikedMenu()) {
-      logStep("กดเมนู สิ่งที่ฉันถูกใจ")
-      if (waitForShopeeLikedListVisible(5_000L)) {
-        return true
-      }
+    log("ค้นหาเมนู $menuName ครั้ง ${attempt + 1}/$maxAttempts")
+    if (tapMenu()) {
+      log("กดเมนู $menuName")
+      if (onTapped()) return true
+      log("กดเมนู $menuName แล้ว แต่หน้าปลายทางยังไม่พร้อม")
     } else {
-      logStep("ยังไม่พบเมนู สิ่งที่ฉันถูกใจ")
+      log("ยังไม่พบเมนู $menuName")
     }
 
-    logStep("ขยับหน้า ฉัน หาเมนูถูกใจทีละนิด (ครั้ง ${attempt + 1}/$maxAttempts)")
+    log("ขยับหน้าจอหาเมนู $menuName ทีละนิด (ครั้ง ${attempt + 1}/$maxAttempts)")
     if (!swipeUpByScreen(durationMs = 220L, startFraction = 0.66f, endFraction = 0.54f)) {
       scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
     }
-    sleepStep(450)
-    if (clickShopeeLikedMenu()) {
-      logStep("กดเมนู สิ่งที่ฉันถูกใจ หลังขยับหน้าจอ")
-      if (waitForShopeeLikedListVisible(5_000L)) {
-        return true
-      }
+    sleepStep(450L)
+
+    if (isTargetVisible()) return true
+
+    if (tapMenu()) {
+      log("กดเมนู $menuName หลังขยับหน้าจอ")
+      if (onTapped()) return true
+      log("กดเมนู $menuName หลังขยับแล้ว แต่หน้าปลายทางยังไม่พร้อม")
     }
-    sleepStep(350)
+    sleepStep(350L)
   }
 
-  return isShopeeImportListVisible()
+  return isTargetVisible()
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeMeTabFallback(): Boolean {

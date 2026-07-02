@@ -140,32 +140,64 @@ internal fun KubdeeAccessibilityService.isShopeeMainNavigationVisible(): Boolean
   }
 
 internal fun KubdeeAccessibilityService.tapShopeeAffiliateAccountTab(): Boolean {
-  if (clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
-
-  for (root in shopeeWindowRoots()) {
-    val screen = screenBounds(root)
-    val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
-    val candidates = textNodes
-      .filter { candidate ->
-        SHOPEE_ACCOUNT_TEXTS.any { needle -> candidate.text.contains(needle, ignoreCase = true) } &&
-          candidate.bounds.top >= screen.top + (screen.height() * 0.78f).toInt()
-      }
-      .sortedWith(compareByDescending<TextNode> { it.bounds.left }.thenByDescending { it.bounds.top })
-
-    for (candidate in candidates) {
-      val tapBounds = bottomNavTapBounds(candidate.node, candidate.bounds, screen)
-      if (tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat())) return true
-      if (clickNode(candidate.node)) return true
-    }
+  for ((candidate, screen) in findShopeeAffiliateAccountTabCandidates()) {
+    val tapBounds = bottomNavTapBounds(candidate.node, candidate.bounds, screen)
+    logShopeePostStep("กดบัญชีผู้ใช้ที่แถบล่าง (${tapBounds.centerX()},${tapBounds.centerY()})")
+    if (tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat())) return true
+    if (clickNode(candidate.node)) return true
   }
 
+  if (clickByAnyText(SHOPEE_ACCOUNT_TEXTS, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
+
   val display = displayBounds()
+  logShopeePostStep("ไม่พบ node บัญชีผู้ใช้ ใช้พิกัด fallback แถบล่าง")
   return tapBlocking(
     display.left + display.width() * 0.875f,
     display.bottom - display.height() * 0.08f,
     durationMs = 120L
   )
+}
+
+internal fun KubdeeAccessibilityService.waitForShopeeAffiliateAccountTabReady(timeoutMs: Long): Boolean {
+  val start = System.currentTimeMillis()
+  var lastLog = 0L
+  while (System.currentTimeMillis() - start < timeoutMs) {
+    checkStopRequested()
+    dismissShopeeBlockingPopups()
+    val candidates = findShopeeAffiliateAccountTabCandidates()
+    if (candidates.isNotEmpty()) {
+      logShopeePostStep("เมนู บัญชีผู้ใช้ พร้อมแล้ว (${candidates.size} จุด)")
+      return true
+    }
+
+    val now = System.currentTimeMillis()
+    if (now - lastLog >= 2_000L) {
+      logShopeePostStep("รอเมนู บัญชีผู้ใช้ โหลด ${((now - start) / 1000.0).formatOneDecimal()} วิ")
+      lastLog = now
+    }
+    sleepStep(500L)
+  }
+  logShopeePostStep("รอเมนู บัญชีผู้ใช้ ครบเวลาแล้วยังไม่พบ")
+  return false
+}
+
+internal fun KubdeeAccessibilityService.findShopeeAffiliateAccountTabCandidates(): List<Pair<TextNode, Rect>> {
+  val output = mutableListOf<Pair<TextNode, Rect>>()
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val bottomNavStart = screen.top + (screen.height() * 0.74f).toInt()
+    val candidates = textNodes
+      .filter { candidate ->
+        candidate.node.isVisibleToUser &&
+          SHOPEE_ACCOUNT_TEXTS.any { needle -> candidate.text.contains(needle, ignoreCase = true) } &&
+          candidate.bounds.top >= bottomNavStart
+      }
+      .sortedWith(compareByDescending<TextNode> { it.bounds.left }.thenByDescending { it.bounds.top })
+    output.addAll(candidates.map { it to screen })
+  }
+  return output
 }
 
 internal fun KubdeeAccessibilityService.bottomNavTapBounds(node: AccessibilityNodeInfo, fallback: Rect, screen: Rect): Rect {
@@ -187,18 +219,6 @@ internal fun KubdeeAccessibilityService.bottomNavTapBounds(node: AccessibilityNo
     current = current.parent
   }
   return best
-}
-
-internal fun KubdeeAccessibilityService.scrollUntilTapText(texts: List<String>, maxAttempts: Int): Boolean {
-  repeat(maxAttempts) {
-    dismissShopeeBlockingPopups()
-    if (clickByAnyText(texts, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
-    if (!scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
-      swipeUpByScreen()
-    }
-    sleepStep(900L)
-  }
-  return clickByAnyText(texts, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)
 }
 
 internal fun KubdeeAccessibilityService.tapAndroidPermissionAllow(): Boolean =

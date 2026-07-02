@@ -212,11 +212,20 @@ internal fun KubdeeAccessibilityService.navigateShopeeVideoAccount(): Boolean {
   sleepStep(1200L)
 
   logShopeePostStep("เปิด โปรแกรม Affiliate")
-  if (!scrollUntilTapText(SHOPEE_AFFILIATE_TEXTS, maxAttempts = 8)) {
+  if (
+    !openShopeeMenuWithShortScroll(
+      texts = SHOPEE_AFFILIATE_TEXTS,
+      menuName = "โปรแกรม Affiliate",
+      maxAttempts = 12,
+      log = { message -> logShopeePostStep(message) },
+      onTapped = {
+        waitForShopeeAffiliateAccountTabReady(20_000L)
+      }
+    )
+  ) {
     logShopeePostStep("ไม่พบเมนู โปรแกรม Affiliate")
     return false
   }
-  sleepStep(4000L)
 
   logShopeePostStep("ไปที่ บัญชีผู้ใช้")
   if (!tapShopeeAffiliateAccountTab()) {
@@ -226,11 +235,21 @@ internal fun KubdeeAccessibilityService.navigateShopeeVideoAccount(): Boolean {
   sleepStep(2500L)
 
   logShopeePostStep("เปิด หน้าบัญชี Shopee Video")
-  if (!scrollUntilTapText(SHOPEE_VIDEO_ACCOUNT_TEXTS, maxAttempts = 5)) {
+  if (
+    !openShopeeMenuWithShortScroll(
+      texts = SHOPEE_VIDEO_ACCOUNT_TEXTS,
+      menuName = "หน้าบัญชี Shopee Video",
+      maxAttempts = 8,
+      log = { message -> logShopeePostStep(message) },
+      onTapped = {
+        sleepStep(4000L)
+        true
+      }
+    )
+  ) {
     logShopeePostStep("ไม่พบ หน้าบัญชี Shopee Video")
     return false
   }
-  sleepStep(4000L)
   return true
 }
 
