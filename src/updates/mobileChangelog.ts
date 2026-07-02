@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.34',
+    date: '2026-07-02',
+    highlight: 'Shopee Post แสดงเวอร์ชันและลดปัญหา overlay บังไอคอนโซ่',
+    changes: [
+      { type: 'improved', text: 'เพิ่มเวอร์ชันแอปใน overlay และ log เริ่มงาน เพื่อให้ตรวจสอบ build จากรูปหน้าจอได้ชัดเจน' },
+      { type: 'fixed', text: 'ซ่อน overlay และปุ่ม Stop ชั่วคราวก่อนหาและกดไอคอนโซ่ในหน้าเพิ่มสินค้า Shopee ลดปัญหา UI ของเราไปบัง node' },
+    ],
+  },
+  {
     version: '0.2.33',
     date: '2026-07-02',
     highlight: 'Shopee Post หาไอคอนโซ่มุมขวาบนได้แม่นขึ้น',

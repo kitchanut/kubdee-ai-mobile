@@ -38,6 +38,7 @@ import android.webkit.CookieManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import ai.kubdee.mobile.BuildConfig
 import ai.kubdee.mobile.R
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -210,6 +211,24 @@ internal fun KubdeeAccessibilityService.setAutomationStopButtonVisibleBlocking(v
   }
 }
 
+internal fun KubdeeAccessibilityService.setAutomationFloatingUiVisibleBlocking(visible: Boolean) {
+  val latch = CountDownLatch(1)
+  try {
+    mainHandler.post {
+      try {
+        val visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        overlayView?.visibility = visibility
+        overlayStopButton?.visibility = visibility
+      } finally {
+        latch.countDown()
+      }
+    }
+    latch.await(500L, TimeUnit.MILLISECONDS)
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to update automation overlay visibility", error)
+  }
+}
+
 internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): LinearLayout? {
   if (automationOverlayUnavailable) return null
   overlayView?.let { return it }
@@ -328,7 +347,7 @@ internal fun KubdeeAccessibilityService.updateAutomationOverlayContent() {
     "${stats.currentCount}"
   }
   overlayTitleView?.text = stats.taskLabel.ifBlank { "Kubdee AI" }
-  overlaySubtitleView?.text = "${stats.statusLabel} · ใช้เวลา $elapsed · log $logCount"
+  overlaySubtitleView?.text = "v${BuildConfig.VERSION_NAME} · ${stats.statusLabel} · ใช้เวลา $elapsed · log $logCount"
 
   overlayChipRow?.let { row ->
     row.removeAllViews()

@@ -76,7 +76,7 @@ internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): J
       }
     }
 
-    logShopeePostStep("เริ่มโพสต์ Shopee ${videos.size} คลิป")
+    logShopeePostStep("App v${ai.kubdee.mobile.BuildConfig.VERSION_NAME} เริ่มโพสต์ Shopee ${videos.size} คลิป")
 
     for ((index, video) in videos.withIndex()) {
       checkStopRequested()
@@ -585,52 +585,77 @@ internal fun KubdeeAccessibilityService.tapShopeeLinkNodeCenterWithoutStopButton
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolean {
-  for (root in shopeeWindowRoots()) {
-    val screen = screenBounds(root)
-    val isAddProductScreen = isShopeeAddProductPickerScreen()
-    if (!isAddProductScreen) continue
+  var sawAddProductScreen = false
+  var successMessage: String? = null
 
-    val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
-    collectClickableNodes(root, candidates)
-    val linkAction = candidates
-      .filter { (bounds, node) ->
-        val raw = listOfNotNull(
-          node.text?.toString(),
-          node.contentDescription?.toString(),
-          node.viewIdResourceName
-        ).joinToString(" ").lowercase(Locale.ROOT)
-        isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
-          bounds.width() > 0 &&
-          bounds.height() > 0 &&
-          bounds.centerX() >= screen.left + (screen.width() * 0.58f).toInt() &&
-          bounds.centerY() >= screen.top + statusBarHeightPx() &&
-          bounds.centerY() <= screen.top + statusBarHeightPx() + dp(72) &&
-          (
-            "link" in raw ||
-              "url" in raw ||
-              "chain" in raw ||
-              "ลิงก์" in raw ||
-              "ลิงค์" in raw
-            )
+  setAutomationFloatingUiVisibleBlocking(false)
+  sleepStep(180L)
+  try {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val isAddProductScreen = isShopeeAddProductPickerScreen()
+      if (!isAddProductScreen) continue
+      sawAddProductScreen = true
+
+      val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+      collectClickableNodes(root, candidates)
+      val linkAction = candidates
+        .filter { (bounds, node) ->
+          val raw = listOfNotNull(
+            node.text?.toString(),
+            node.contentDescription?.toString(),
+            node.viewIdResourceName
+          ).joinToString(" ").lowercase(Locale.ROOT)
+          isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
+            bounds.width() > 0 &&
+            bounds.height() > 0 &&
+            bounds.centerX() >= screen.left + (screen.width() * 0.58f).toInt() &&
+            bounds.centerY() >= screen.top + statusBarHeightPx() &&
+            bounds.centerY() <= screen.top + statusBarHeightPx() + dp(72) &&
+            (
+              "link" in raw ||
+                "url" in raw ||
+                "chain" in raw ||
+                "ลิงก์" in raw ||
+                "ลิงค์" in raw
+              )
+        }
+        .maxByOrNull { it.first.centerX() }
+
+      if (linkAction != null) {
+        val bounds = linkAction.first
+        if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
+          successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ (${bounds.centerX()},${bounds.centerY()})"
+          break
+        }
       }
-      .maxByOrNull { it.first.centerX() }
 
-    if (linkAction != null && tapShopeeLinkNodeCenterWithoutStopButton(linkAction.second)) {
-      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ")
-      return true
-    }
-
-    val headerImageAction = findShopeeTopRightHeaderImage(root, screen)
-    if (headerImageAction != null) {
-      val bounds = headerImageAction.first
-      if (tapBlockingWithoutStopButton(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
-        logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยไอคอนขวาบน (${bounds.centerX()},${bounds.centerY()})")
-        return true
+      val headerImageAction = findShopeeTopRightHeaderImage(root, screen)
+      if (headerImageAction != null) {
+        val bounds = headerImageAction.first
+        if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
+          successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนขวาบน (${bounds.centerX()},${bounds.centerY()})"
+          break
+        }
       }
     }
-
-    logShopeePostStep("ไม่พบ node ไอคอนโซ่จาก UI บนหน้าเพิ่มสินค้า")
+  } finally {
+    sleepStep(180L)
+    setAutomationFloatingUiVisibleBlocking(true)
   }
+
+  successMessage?.let { message ->
+    logShopeePostStep(message)
+    return true
+  }
+
+  logShopeePostStep(
+    if (sawAddProductScreen) {
+      "ไม่พบ node ไอคอนโซ่จาก UI บนหน้าเพิ่มสินค้า"
+    } else {
+      "ยังไม่ยืนยันหน้าเพิ่มสินค้า ตอนหาไอคอนโซ่"
+    }
+  )
   return false
 }
 
