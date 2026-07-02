@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.31',
+    date: '2026-07-02',
+    highlight: 'Shopee Post กดไอคอนลิงก์แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้ขั้นตอนแนบสินค้า Shopee หลังเข้าแตะเพื่อเพิ่มสินค้า ให้กดเฉพาะไอคอนลิงก์ที่ตรวจเจอจาก UI เท่านั้น' },
+      { type: 'improved', text: 'ตัดการกดตำแหน่งสำรองของไอคอนลิงก์ออก เพื่อลดโอกาสกดโดนปุ่มอื่นและทำให้ debug ง่ายขึ้น' },
+    ],
+  },
+  {
     version: '0.2.30',
     date: '2026-07-02',
     highlight: 'Shopee Post แนบสินค้าได้ตรงปุ่มขึ้น',

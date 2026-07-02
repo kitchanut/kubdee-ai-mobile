@@ -494,9 +494,17 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntry(): Boolean {
     return true
   }
 
+  if (isShopeeAddProductPickerScreen()) {
+    if (tapShopeeProductLinkHeaderIcon()) {
+      return true
+    }
+    logShopeePostStep("อยู่หน้าเพิ่มสินค้า แต่ยังหาไอคอนโซ่มุมขวาบนไม่เจอ")
+    return false
+  }
+
   if (
     clickByAnyText(
-      listOf("กรอกลิงก์สินค้า", "ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"),
+      listOf("กรอกลิงก์สินค้า", "ลิงก์สินค้า", "ลิงค์สินค้า", "Product link"),
       exact = false,
       allowedPackageName = TARGET_PACKAGE_SHOPEE
     )
@@ -540,45 +548,68 @@ internal fun KubdeeAccessibilityService.isShopeeProductLinkEntryScreen(): Boolea
     allowedPackageName = TARGET_PACKAGE_SHOPEE
   ) && findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE) != null
 
-internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolean {
+internal fun KubdeeAccessibilityService.isShopeeAddProductPickerScreen(): Boolean {
   for (root in shopeeWindowRoots()) {
     val textNodes = mutableListOf<TextNode>()
     collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     val screen = screenBounds(root)
-    val isAddProductScreen = textNodes.any { node ->
-      node.text == "เพิ่มสินค้า" &&
-        node.bounds.top <= screen.top + (screen.height() * 0.14f).toInt()
-    } && textNodes.any { node ->
+    val hasHeader = textNodes.any { node ->
+      (
+        node.text == "เพิ่มสินค้า" ||
+          node.text.equals("Add product", ignoreCase = true)
+        ) &&
+        node.bounds.top <= screen.top + statusBarHeightPx() + dp(72)
+    }
+    if (!hasHeader) continue
+
+    val hasPickerContent = textNodes.any { node ->
       node.text.contains("ค้นหาสินค้า") ||
         node.text.contains("ที่กดถูกใจ") ||
-        node.text.contains("Affiliate", ignoreCase = true)
+        node.text.contains("Affiliate", ignoreCase = true) ||
+        node.text.contains("Liked", ignoreCase = true) ||
+        node.text.contains("Product", ignoreCase = true)
     }
+    if (hasPickerContent) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    val isAddProductScreen = isShopeeAddProductPickerScreen()
     if (!isAddProductScreen) continue
 
     val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
     collectClickableNodes(root, candidates)
-    val topRightAction = candidates
+    val linkAction = candidates
       .filter { (bounds, node) ->
+        val raw = listOfNotNull(
+          node.text?.toString(),
+          node.contentDescription?.toString(),
+          node.viewIdResourceName
+        ).joinToString(" ").lowercase(Locale.ROOT)
         isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
           bounds.width() > 0 &&
           bounds.height() > 0 &&
-          bounds.centerX() >= screen.left + (screen.width() * 0.78f).toInt() &&
+          bounds.centerX() >= screen.left + (screen.width() * 0.58f).toInt() &&
           bounds.centerY() >= screen.top + statusBarHeightPx() &&
-          bounds.centerY() <= screen.top + statusBarHeightPx() + dp(72)
+          bounds.centerY() <= screen.top + statusBarHeightPx() + dp(72) &&
+          (
+            "link" in raw ||
+              "url" in raw ||
+              "chain" in raw ||
+              "ลิงก์" in raw ||
+              "ลิงค์" in raw
+            )
       }
-      .maxWithOrNull(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.centerX() }.thenBy { -it.first.top })
+      .maxByOrNull { it.first.centerX() }
 
-    if (topRightAction != null && tapNodeCenter(topRightAction.second)) {
-      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่มุมขวาบน")
+    if (linkAction != null && tapNodeCenter(linkAction.second)) {
+      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ")
       return true
     }
-
-    val x = screen.right - dp(18)
-    val y = screen.top + statusBarHeightPx() + dp(42)
-    if (tapBlocking(x.toFloat(), y.toFloat(), timeoutMs = 1800L, durationMs = 80L)) {
-      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยตำแหน่งไอคอนโซ่มุมขวาบน")
-      return true
-    }
+    logShopeePostStep("ไม่พบ node ไอคอนโซ่จาก UI บนหน้าเพิ่มสินค้า")
   }
   return false
 }
