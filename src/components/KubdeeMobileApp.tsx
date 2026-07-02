@@ -674,6 +674,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
         </View>
       </SafeAreaView>
       <MobileChangelogModal
+        authToken={auth.token}
         theme={theme}
         versionLabel={mobileVersionLabel}
         visible={changelogVisible}

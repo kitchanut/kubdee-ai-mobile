@@ -1,12 +1,19 @@
 import { X } from 'lucide-react-native';
-import { Modal, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Modal, Pressable, View, useWindowDimensions } from 'react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { MOBILE_CHANGELOG, type MobileChangelogItem } from '@/updates/mobileChangelog';
+import {
+  MOBILE_CHANGELOG,
+  loadMobileChangelog,
+  type MobileChangelogItem,
+  type MobileChangelogRelease,
+} from '@/updates/mobileChangelog';
 
 interface MobileChangelogModalProps {
   visible: boolean;
+  authToken?: string | null;
   theme: KubdeeTheme;
   versionLabel: string;
   onClose: () => void;
@@ -69,15 +76,48 @@ function formatDate(dateStr: string): string {
 
 export default function MobileChangelogModal({
   visible,
+  authToken,
   theme,
   versionLabel,
   onClose,
 }: MobileChangelogModalProps): React.JSX.Element {
   const { height } = useWindowDimensions();
-  const latestVersion = MOBILE_CHANGELOG[0]?.version || versionLabel.replace(/^v/i, '');
+  const [releases, setReleases] = useState<MobileChangelogRelease[]>(MOBILE_CHANGELOG);
+  const [isLoading, setIsLoading] = useState(false);
+  const latestVersion = releases[0]?.version || versionLabel.replace(/^v/i, '');
   const timelineLineColor = theme.isDark ? '#374151' : '#e5e7eb';
   const oldDotBackground = theme.isDark ? '#1f2937' : '#ffffff';
   const oldDotBorder = theme.isDark ? '#4b5563' : '#d1d5db';
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    let active = true;
+    setIsLoading(true);
+
+    loadMobileChangelog(authToken)
+      .then((result) => {
+        if (active) {
+          setReleases(result.releases);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setReleases(MOBILE_CHANGELOG);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authToken, visible]);
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
@@ -111,6 +151,7 @@ export default function MobileChangelogModal({
                   Release notes and updates
                 </Text>
               </View>
+              {isLoading ? <ActivityIndicator color={theme.textSubtle} size="small" /> : null}
               <Pressable
                 accessibilityLabel="ปิด changelog"
                 accessibilityRole="button"
@@ -122,90 +163,92 @@ export default function MobileChangelogModal({
             </View>
           </View>
 
-          <ScrollView
-            className="px-5 pb-5"
+          <FlatList
+            data={releases}
+            keyExtractor={(release) => release.version}
+            renderItem={({ item: release, index: releaseIndex }) => {
+              const isLatest = releaseIndex === 0;
+              const isLast = releaseIndex === releases.length - 1;
+              return (
+                <View className="relative pl-6" style={{ paddingBottom: isLast ? 0 : 20 }}>
+                  {!isLast ? (
+                    <View
+                      pointerEvents="none"
+                      className="absolute bottom-[-20px] left-[5px] top-[18px] w-px"
+                      style={{ backgroundColor: timelineLineColor }}
+                    />
+                  ) : null}
+                  <View
+                    className="absolute left-0 top-[5px] h-[11px] w-[11px] rounded-full border-2"
+                    style={
+                      isLatest
+                        ? {
+                            backgroundColor: theme.isDark ? '#ffffff' : '#111827',
+                            borderColor: theme.isDark ? '#ffffff' : '#111827',
+                          }
+                        : {
+                            backgroundColor: oldDotBackground,
+                            borderColor: oldDotBorder,
+                          }
+                    }
+                  />
+
+                  <View className="flex-row items-baseline gap-2">
+                    <Text
+                      className="text-[13px] font-semibold"
+                      style={{ color: isLatest ? theme.text : theme.textSubtle }}
+                    >
+                      {release.version}
+                    </Text>
+                    <Text className="text-kd-caption text-kd-text-subtle">
+                      {formatDate(release.date)}
+                    </Text>
+                  </View>
+
+                  {release.highlight ? (
+                    <Text className="mt-0.5 text-kd-caption font-medium leading-[16px] text-kd-text-muted">
+                      {release.highlight}
+                    </Text>
+                  ) : null}
+
+                  <View className="mt-2 gap-2.5">
+                    {groupChangesByType(theme, release.changes).map((group) => (
+                      <View key={`${release.version}-${group.label}`}>
+                        <Text className="text-kd-tiny font-bold uppercase text-kd-text-subtle">
+                          {group.label}
+                        </Text>
+                        <View className="mt-1 gap-1">
+                          {group.items.map((change, changeIndex) => {
+                            const config = getTypeConfig(theme, change.type);
+                            return (
+                              <View
+                                key={`${release.version}-${group.label}-${changeIndex}`}
+                                className="flex-row items-start gap-2"
+                              >
+                                <View
+                                  className="mt-[5px] h-1.5 w-1.5 flex-shrink-0 rounded-full opacity-80"
+                                  style={{ backgroundColor: config.color }}
+                                />
+                                <Text className="min-w-0 flex-1 text-kd-caption leading-[17px] text-kd-text-muted">
+                                  {change.text}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            }}
+            contentContainerStyle={{
+              paddingHorizontal: 20,
+              paddingBottom: 20,
+            }}
             showsVerticalScrollIndicator={false}
             style={{ maxHeight: Math.max(340, Math.floor(height * 0.72)) }}
-          >
-            <View className="relative">
-              <View
-                pointerEvents="none"
-                className="absolute bottom-0 left-[5px] top-2 w-px"
-                style={{ backgroundColor: timelineLineColor }}
-              />
-
-              <View className="gap-5">
-                {MOBILE_CHANGELOG.map((release, releaseIndex) => {
-                  const isLatest = releaseIndex === 0;
-                  return (
-                    <View key={release.version} className="relative pl-6">
-                      <View
-                        className="absolute left-0 top-[5px] h-[11px] w-[11px] rounded-full border-2"
-                        style={
-                          isLatest
-                            ? {
-                                backgroundColor: theme.isDark ? '#ffffff' : '#111827',
-                                borderColor: theme.isDark ? '#ffffff' : '#111827',
-                              }
-                            : {
-                                backgroundColor: oldDotBackground,
-                                borderColor: oldDotBorder,
-                              }
-                        }
-                      />
-
-                      <View className="flex-row items-baseline gap-2">
-                        <Text
-                          className="text-[13px] font-semibold"
-                          style={{ color: isLatest ? theme.text : theme.textSubtle }}
-                        >
-                          {release.version}
-                        </Text>
-                        <Text className="text-kd-caption text-kd-text-subtle">
-                          {formatDate(release.date)}
-                        </Text>
-                      </View>
-
-                      {release.highlight ? (
-                        <Text className="mt-0.5 text-kd-caption font-medium leading-[16px] text-kd-text-muted">
-                          {release.highlight}
-                        </Text>
-                      ) : null}
-
-                      <View className="mt-2 gap-2.5">
-                        {groupChangesByType(theme, release.changes).map((group) => (
-                          <View key={`${release.version}-${group.label}`}>
-                            <Text className="text-kd-tiny font-bold uppercase text-kd-text-subtle">
-                              {group.label}
-                            </Text>
-                            <View className="mt-1 gap-1">
-                              {group.items.map((change, changeIndex) => {
-                                const config = getTypeConfig(theme, change.type);
-                                return (
-                                  <View
-                                    key={`${release.version}-${group.label}-${changeIndex}`}
-                                    className="flex-row items-start gap-2"
-                                  >
-                                    <View
-                                      className="mt-[5px] h-1.5 w-1.5 flex-shrink-0 rounded-full opacity-80"
-                                      style={{ backgroundColor: config.color }}
-                                    />
-                                    <Text className="min-w-0 flex-1 text-kd-caption leading-[17px] text-kd-text-muted">
-                                      {change.text}
-                                    </Text>
-                                  </View>
-                                );
-                              })}
-                            </View>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          </ScrollView>
+          />
         </View>
       </View>
     </Modal>

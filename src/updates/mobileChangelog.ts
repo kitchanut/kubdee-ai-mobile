@@ -1,3 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { APP_TYPE, BACKEND_URL, CLIENT_APP } from '@/auth/constants';
+
 export interface MobileChangelogItem {
   type: 'feature' | 'added' | 'fixed' | 'improved' | 'changed' | 'removed';
   text: string;
@@ -9,6 +13,34 @@ export interface MobileChangelogRelease {
   highlight: string;
   changes: MobileChangelogItem[];
 }
+
+export type MobileChangelogSource = 'remote' | 'cache' | 'local';
+
+export interface MobileChangelogLoadResult {
+  releases: MobileChangelogRelease[];
+  source: MobileChangelogSource;
+  error: string | null;
+}
+
+interface RemoteRelease {
+  version?: unknown;
+  date?: unknown;
+  highlight?: unknown;
+  changes?: unknown;
+}
+
+interface RemoteReleaseResponse {
+  releases?: unknown;
+  error?: string;
+  message?: string;
+}
+
+interface CachedMobileChangelog {
+  releases: MobileChangelogRelease[];
+  cachedAt: number;
+}
+
+const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
@@ -105,673 +137,321 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
       { type: 'fixed', text: 'แก้บางเครื่องกดปุ่ม + แล้ว dialog เลือกรูปไม่เปิด ทำให้แนบรูปไม่ได้' },
       { type: 'improved', text: 'เพิ่มการคลิก fallback หลายแบบและ log/error ชัดเจนเมื่อกด + แล้ว dialog ไม่เปิด' },
     ],
-  },
-  {
-    version: '0.2.16',
-    date: '2026-07-01',
-    highlight: 'Flow progress อ่านเปอร์เซ็นต์แม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แก้สถานะ Flow แสดง 0% ทั้งที่การ์ด Google Flow มีเปอร์เซ็นต์จริง เช่น 75%' },
-      { type: 'changed', text: 'ให้ระบบใช้เปอร์เซ็นต์ตัวเลขจริงก่อน และใช้ค่า blur estimate เฉพาะตอนที่ไม่พบเปอร์เซ็นต์บนหน้า' },
-    ],
-  },
-  {
-    version: '0.2.15',
-    date: '2026-07-01',
-    highlight: 'แนบรูปฉากวิดีโอหลายฉากแม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แก้ปัญหารูป reference ที่มีคำว่า video ในชื่อไฟล์ถูกเข้าใจผิดว่าเป็นวิดีโอ' },
-      { type: 'changed', text: 'ตรวจวิดีโอใน Google Flow จากหลักฐานที่เป็นวิดีโอจริงเท่านั้น เช่น video element หรือไอคอนวิดีโอ' },
-      { type: 'removed', text: 'นำ diagnostic log ชั่วคราวออกหลังระบุสาเหตุได้แล้ว' },
-    ],
-  },
-  {
-    version: '0.2.14',
-    date: '2026-07-01',
-    highlight: 'ตรวจรูปอัปโหลดใน Google Flow ละเอียดขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่ม diagnostic log ตอนอัปโหลดรูปเข้า Google Flow แล้วหารูปใหม่ไม่เจอ' },
-      { type: 'improved', text: 'log จะแสดง candidate รูปบนสุด เช่น idx, ready, ขนาดรูป, signature เก่า/ใหม่ และเหตุผลที่ยังเลือกไม่ได้' },
-    ],
-  },
-  {
-    version: '0.2.13',
-    date: '2026-07-01',
-    highlight: 'Auto และอัปเดตแอปดูชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'ปรับ log บน Google Flow WebView ให้แสดง 4 รายการล่าสุดแบบเต็มแถวด้านบน' },
-      { type: 'improved', text: 'ปรับตั้งค่าพื้นฐานในหน้า Auto ให้ย่อขยายได้เหมือน Extension' },
-      { type: 'fixed', text: 'ปรับการรอ placeholder ระหว่างอัปโหลดรูปเข้า Google Flow ให้ไม่รีบเลือก reference ก่อนรูปพร้อม' },
-      { type: 'improved', text: 'ปรับ loading ในหน้ากำลังอัปเดตแอปให้ใช้โทนขาว ดำ และเทาตามธีม' },
-    ],
-  },
-  {
-    version: '0.2.12',
-    date: '2026-07-01',
-    highlight: 'ตรวจ reference ใน Google Flow ละเอียดขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่ม log ระหว่างอัปโหลดรูปอ้างอิงให้เห็นสถานะ progress การเช็ครูป และจุดที่หา reference ไม่เจอชัดขึ้น' },
-      { type: 'improved', text: 'ปรับการตรวจรูป reference ก่อนสร้างวิดีโอหลายฉากให้รอและตรวจ media card ได้ยืดหยุ่นขึ้น' },
-      { type: 'fixed', text: 'ลดโอกาสที่วิดีโอหลายฉากหลายมุมจะหยุดเพราะเช็ครูปฉากแรกไม่เจอหลังอัปโหลดเสร็จแล้ว' },
-    ],
-  },
-  {
-    version: '0.2.11',
-    date: '2026-07-01',
-    highlight: 'วิดีโอหลายฉากและ Cloud Transfer ใช้งานนิ่งขึ้น',
-    changes: [
-      { type: 'improved', text: 'ปรับการแนบรูปอ้างอิงของวิดีโอหลายฉากหลายมุมให้เลือกฉากถูกต้องและรอน้อยลง' },
-      { type: 'improved', text: 'ปรับหน้าตา Cloud Transfer ในคลังรูปและวิดีโอให้ใช้งานใกล้เคียง Desktop และ Extension มากขึ้น' },
-      { type: 'fixed', text: 'ลดโอกาสที่ระบบจะเลือก reference ผิดหลังอัปโหลดรูปเข้า Google Flow' },
-    ],
-  },
-  {
-    version: '0.2.10',
-    date: '2026-07-01',
-    highlight: 'Auto Workflow วิดีโอหลายฉากแม่นขึ้น',
-    changes: [
-      { type: 'improved', text: 'ปรับ prompt วิดีโอหลายฉากให้ทำงานใกล้เคียง Desktop มากขึ้น ทั้งมุมเดียว หลายมุม และเสียงพากษ์' },
-      { type: 'improved', text: 'เมื่อปิด AI คิดบท ระบบจะให้ Google Flow คิดบทเองโดยไม่ส่งรูปไปให้ AI ภายนอก' },
-      { type: 'fixed', text: 'ลดโอกาสที่ราคา hashtag caption หรือข้อความที่ไม่ได้ตั้งใจจะไปปรากฏบนรูปและวิดีโอ' },
-    ],
-  },
-  {
-    version: '0.2.9',
-    date: '2026-06-30',
-    highlight: 'สร้างตัวละครได้ยืดหยุ่นขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่มรูปแบบสร้างตัวละครแบบภาพเดียวและชีทอ้างอิง 3x3 เพื่อช่วยคุมหน้าตาและบุคลิกให้สม่ำเสมอขึ้น' },
-      { type: 'improved', text: 'ปรับปุ่มเริ่มสร้างตัวละครให้ติดล่างจอ เผื่อ safe area และใช้พื้นหลังเบลอให้อ่านง่ายขึ้น' },
-      { type: 'improved', text: 'เมื่อนำชีทตัวละครไปใช้ต่อ ระบบจะระบุให้ใช้เป็น reference โดยไม่สร้างภาพเป็นตารางซ้ำ' },
-    ],
-  },
-  {
-    version: '0.2.8',
-    date: '2026-06-30',
-    highlight: 'เพิ่มรูปและวิดีโอเข้าคลังได้ละเอียดขึ้น',
-    changes: [
-      { type: 'added', text: 'คลังรูปภาพและคลังวิดีโอรองรับการเลือกหลายไฟล์จากเครื่องก่อนบันทึกเข้าคลัง' },
-      { type: 'added', text: 'เพิ่มหน้ากรอกข้อมูลต่อไฟล์ เช่น รหัสสินค้า ชื่อสินค้า ลิงก์สินค้า Caption Hashtag และ CTA' },
-      { type: 'improved', text: 'วิดีโอที่เพิ่มจากเครื่องมี thumbnail และเก็บข้อมูลไฟล์เพื่อเปิดดู แก้ไข หรือนำไปใช้ต่อได้ง่ายขึ้น' },
-      { type: 'fixed', text: 'ปรับฟอนต์ช่องกรอกชื่อตัวละครและฉากให้แสดงภาษาไทยสม่ำเสมอขึ้น' },
-    ],
-  },
-  {
-    version: '0.2.7',
-    date: '2026-06-30',
-    highlight: 'คลังตัวละครและฉากแนบรูปเองได้แล้ว',
-    changes: [
-      { type: 'changed', text: 'เพิ่มตัวละครและฉากในคลังด้วยการแนบรูปจากเครื่องเหมือน Desktop' },
-      { type: 'changed', text: 'ตัดการสร้างตัวละครและฉากด้วย Google Flow ออกจากหน้าคลัง' },
-      { type: 'improved', text: 'บันทึกรูปตัวละครและฉากไว้ในพื้นที่ของแอปก่อนนำไปใช้เป็น reference' },
-    ],
-  },
-  {
-    version: '0.2.6',
-    date: '2026-06-30',
-    highlight: 'คลังสินค้าและการดึง Shopee ลื่นขึ้น',
-    changes: [
-      { type: 'improved', text: 'ปรับคลังสินค้าให้เลื่อนรายการจำนวนมากได้ลื่นขึ้น' },
-      { type: 'improved', text: 'ลดการโหลดข้อมูลซ้ำระหว่างดึงสินค้าจาก Shopee' },
-      { type: 'fixed', text: 'ลดข้อความแจ้งเตือนซิงก์ที่อาจทำให้เข้าใจผิดระหว่างบันทึกสินค้าในเครื่อง' },
-    ],
-  },
-  {
-    version: '0.2.5',
-    date: '2026-06-30',
-    highlight: 'Auto Workflow ใช้รูป Google Flow ล่าสุดแม่นขึ้น',
-    changes: [
-      { type: 'improved', text: 'วิดีโอหลายฉากมุมเดียวจะเลือกรูปล่าสุดจาก Google Flow ก่อน เพื่อลดการอัปโหลดรูปซ้ำ' },
-      { type: 'improved', text: 'วิดีโอหลายมุมใช้รูปฉากก่อนหน้าจากรายการล่าสุดก่อนสร้างฉากถัดไป ทำให้ความต่อเนื่องของภาพดีขึ้น' },
-      { type: 'changed', text: 'ปรับ Auto Workflow ให้ใช้ระบบ WebView เป็นหลักสำหรับ Google Flow ลดขั้นตอนที่ซ้ำซ้อนบนมือถือ' },
-    ],
-  },
-  {
-    version: '0.2.4',
-    date: '2026-06-30',
-    highlight: 'Auto Workflow ดูสถานะและแนบรูปอ้างอิงชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'ปรับแถบสถานะ Google Flow ให้กระชับ อ่านสถานะงานในแถวเดียวได้ง่ายขึ้น' },
-      { type: 'improved', text: 'ปรับรายการตั้งค่า Auto ให้ชิดและเรียบขึ้น เหมาะกับหน้าจอมือถือมากขึ้น' },
-      { type: 'fixed', text: 'ลดการเปิดหน้าข้อมูลบัญชี Google Flow ระหว่างเริ่มสร้างงาน Auto' },
-      { type: 'improved', text: 'แยกข้อความ log การแนบรูปให้เห็นชัดว่าเป็นรูปสินค้า รูปตัวละคร รูปฉาก หรือรูปที่สร้างไว้' },
-    ],
-  },
-  {
-    version: '0.2.3',
-    date: '2026-06-30',
-    highlight: 'Auto Workflow แนบรูปสินค้าหลายรายการแม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แก้กรณีสร้างสินค้าลำดับถัดไปแล้วระบบอาจแนบรูปสินค้าจากรายการก่อนหน้า' },
-      { type: 'improved', text: 'ปรับ log ระหว่างแนบรูปให้แยกชัดเจนว่าเป็นรูปสินค้า รูปตัวละคร หรือรูปฉาก' },
-    ],
-  },
-  {
-    version: '0.2.2',
-    date: '2026-06-30',
-    highlight: 'Auto Workflow แนบรูปอ้างอิงจากคลังได้ครบขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แก้การแนบรูปตัวละครและฉากจากคลังในขั้นตอนสร้างภาพและวิดีโอให้ทำงานถูกต้องขึ้น' },
-      { type: 'improved', text: 'ปรับหน้าต่างทำงาน Google Flow ให้แสดงชื่องานและสถานะระหว่างสร้างคลิปชัดเจนขึ้น' },
-      { type: 'improved', text: 'เพิ่มปุ่มปิดการ์ดสถานะงานหลังสร้างเสร็จ หยุดงาน หรือเกิดข้อผิดพลาด' },
-    ],
-  },
-  {
-    version: '0.2.1',
-    date: '2026-06-30',
-    highlight: 'Auto Workflow ใช้รูปอ้างอิงตรงสินค้ามากขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แก้กรณีสร้างหลายสินค้าในงานเดียวแล้ววิดีโออาจใช้รูป reference ของสินค้าก่อนหน้า' },
-      { type: 'improved', text: 'ปรับการส่งรูปจากขั้นตอนสร้างภาพไปขั้นตอนสร้างวิดีโอให้ผูกกับสินค้าปัจจุบันชัดเจนขึ้น' },
-    ],
-  },
-  {
-    version: '0.2.0',
-    date: '2026-06-30',
-    highlight: 'Shopee Post ผูกสินค้าและคิวโพสต์ชัดขึ้น',
-    changes: [
-      { type: 'added', text: 'คลังวิดีโอสามารถผูกสินค้า แคปชั่น แฮชแท็ก CTA และลิงก์สินค้า ก่อนส่งไปโพสต์ Shopee ได้' },
-      { type: 'improved', text: 'รายการโพสต์ Shopee แสดงชื่อสินค้า รหัส และสถานะลิงก์สินค้าให้อ่านง่ายขึ้น' },
-      { type: 'fixed', text: 'หลังโพสต์ Shopee สำเร็จ ระบบล้างวิดีโอที่โพสต์แล้วออกจากคิว เพื่อป้องกันการกดโพสต์ซ้ำ' },
-    ],
-  },
-  {
-    version: '0.1.50',
-    date: '2026-06-29',
-    highlight: 'วิดีโอหลายฉากแนบรูป reference แม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'เสียงพากย์และวิดีโอหลายฉาก: ถ้า Google Flow อัปโหลดรูปแล้วไม่สร้าง signature ใหม่ ระบบจะ fallback ไปเลือกรูปบนสุดที่พร้อมเลือกแทน' },
-      { type: 'improved', text: 'ลดโอกาสเจอ error อัปโหลดรูปแล้วแต่ไม่พบรูปใหม่ที่พร้อมเลือก ระหว่างแนบรูป reference เพื่อสร้างวิดีโอ' },
-    ],
-  },
-  {
-    version: '0.1.49',
-    date: '2026-06-29',
-    highlight: 'Auto Mobile เห็นสถานะงานง่ายขึ้น',
-    changes: [
-      { type: 'improved', text: 'ย้ายบล็อกสถานะการทำงาน Auto ขึ้นมาไว้ใต้ขั้นตอนการทำงาน เพื่อเห็นผลล่าสุดและปุ่มรายละเอียดได้ทันที' },
-      { type: 'improved', text: 'ช่วยให้ตรวจ elapsed time, ความคืบหน้า และ log หลังงานจบบนมือถือได้ง่ายขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.48',
-    date: '2026-06-29',
-    highlight: 'Auto Mobile แสดงสถานะงานชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'Activity Log และรายละเอียดงาน Auto แสดงเวลาใช้จริงต่อเนื่องระหว่างที่งานกำลังรัน' },
-      { type: 'improved', text: 'ปรับ label ขั้นตอนใน Logs ให้ใช้ชื่อไทยจาก stage จริง เหมือนหน้า Auto รายละเอียด' },
-      { type: 'improved', text: 'สไตล์รูปภาพมือถือใช้ prompt แนวภาพถ่ายด้วย iPhone ที่ตรงกับ Desktop มากขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.47',
-    date: '2026-06-29',
-    highlight: 'Auto Mobile แสดงสาเหตุ Failed แม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'Auto Workflow: ตัดข้อความ Failed เก่าออกจาก log เมื่อตรวจผลลัพธ์งานใหม่บน Google Flow' },
-      { type: 'improved', text: 'ปรับข้อความ error ของงานใหม่ให้สัมพันธ์กับจำนวน Failed ที่นับหลังหัก baseline แล้ว' },
-    ],
-  },
-  {
-    version: '0.1.46',
-    date: '2026-06-29',
-    highlight: 'Auto Mobile กัน Failed เก่ารบกวนงานใหม่',
-    changes: [
-      { type: 'fixed', text: 'Auto Workflow: บันทึกจำนวน Failed เดิมก่อน submit และไม่นับ Failed เก่าเป็นผลล้มเหลวของงานใหม่' },
-      { type: 'improved', text: 'เพิ่มข้อมูล failed ใน log ก่อนสร้าง เพื่อช่วยตรวจสถานะ Google Flow ได้ใกล้เคียง Desktop มากขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.45',
-    date: '2026-06-29',
-    highlight: 'Auto Mobile จับรูปจาก Google Flow แม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แก้การตรวจรูปที่สร้างจาก Google Flow ให้ไม่ตัดรูปจริงทิ้งเมื่อไฟล์มาจากโดเมน Google' },
-      { type: 'improved', text: 'ปรับ logic รูปเดิม/รูปใหม่ให้ใกล้ Desktop มากขึ้นตอน poll ผลลัพธ์และดาวน์โหลดรูป' },
-    ],
-  },
-  {
-    version: '0.1.44',
-    date: '2026-06-29',
-    highlight: 'Auto Mobile ตรวจผลรูปภาพแม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'Auto Workflow: บันทึกสถานะรูปเดิมก่อนสร้าง และไม่นับรูปเก่าบน Google Flow เป็นผลงานใหม่' },
-      { type: 'improved', text: 'เพิ่ม log สถานะเดิมก่อน submit เพื่อช่วยตรวจงานรูปและวิดีโอได้ใกล้เคียง Desktop มากขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.43',
-    date: '2026-06-29',
-    highlight: 'อัปเดต Mobile Changelog ให้ใช้งานง่ายขึ้น',
-    changes: [
-      { type: 'improved', text: 'ปรับหน้าตา Changelog เป็น modal กลางจอให้ใกล้เคียง Desktop มากขึ้น' },
-      { type: 'improved', text: 'ออก APK เวอร์ชันใหม่ให้ระบบเช็คอัปเดตและดาวน์โหลดได้ต่อเนื่อง' },
-    ],
-  },
-  {
-    version: '0.1.42',
-    date: '2026-06-29',
-    highlight: 'วิดีโอหลายฉากบน Mobile คุมบทและเสียงพากย์ตรงขึ้น',
-    changes: [
-      { type: 'fixed', text: 'วิดีโอหลายฉาก: ถ้าปิด AI คิดบท ระบบจะไม่แทรกบทพูดเอง แต่ให้ Google Flow คิดบทจาก prompt และรูปฉากตามปกติ' },
-      { type: 'fixed', text: 'เสียงพากย์: ถ้า AI ส่งบทแยกฉากมาแต่ไม่มีบทพากย์รวม ระบบจะรวมบทฉากที่ AI คิดไว้จริงไปสร้างเสียงแทนการ fallback ไปใช้บททั่วไป' },
-    ],
-  },
-  {
-    version: '0.1.41',
-    date: '2026-06-29',
-    highlight: 'อัปเดตแพ็กเกจ Mobile รุ่นใหม่',
-    changes: [
-      { type: 'improved', text: 'ออก APK เวอร์ชันใหม่ให้ระบบเช็คอัปเดตและดาวน์โหลดได้ต่อเนื่อง' },
-      { type: 'improved', text: 'ปรับข้อมูลเวอร์ชันและ changelog ให้ตรงกับ release ล่าสุด' },
-    ],
-  },
-  {
-    version: '0.1.40',
-    date: '2026-06-29',
-    highlight: 'หน้า Logs เห็นสถานะ Google Flow ล่าสุดง่ายขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่มสรุปสถานะ Google Flow ล่าสุดบนการ์ด Activity เพื่อดูจำนวนกำลังสร้าง คิว สำเร็จ ล้มเหลว และเปอร์เซ็นต์ได้เร็วขึ้น' },
-      { type: 'improved', text: 'ช่วยให้ติดตามงาน Auto Mobile จากหน้า Logs ได้ใกล้เคียง Desktop มากขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.39',
-    date: '2026-06-29',
-    highlight: 'Activity Log แสดงขั้นตอนตั้งค่า Google Flow ชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'แสดง log ระหว่างตั้งค่า Google Flow เช่น model, สัดส่วน, จำนวน และความยาววิดีโอแบบละเอียดขึ้น' },
-      { type: 'improved', text: 'ช่วยให้ตามปัญหาตอนสร้างงาน Auto Mobile ได้ใกล้เคียง Desktop มากขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.38',
-    date: '2026-06-29',
-    highlight: 'อัปเดตแพ็กเกจ Mobile รุ่นใหม่',
-    changes: [
-      { type: 'improved', text: 'ออก APK เวอร์ชันใหม่ให้ระบบเช็คอัปเดตและดาวน์โหลดได้ต่อเนื่อง' },
-      { type: 'improved', text: 'ปรับข้อมูลเวอร์ชันและ changelog ให้ตรงกับ release ล่าสุด' },
-    ],
-  },
-  {
-    version: '0.1.37',
-    date: '2026-06-29',
-    highlight: 'แท็บ Logs แสดงสถานะ Google Flow ได้ละเอียดขึ้น',
-    changes: [
-      { type: 'improved', text: 'Activity ของ Auto Workflow จะเก็บสถานะ Google Flow ไปพร้อมกับ log ล่าสุด' },
-      { type: 'improved', text: 'แท็บ Logs แสดงตัวเลขกำลังสร้าง คิว สำเร็จ ล้มเหลว เปอร์เซ็นต์ และจำนวน tile เมื่อมีข้อมูล' },
-      { type: 'improved', text: 'ช่วยให้ตามงาน Auto Mobile ได้ต่อเนื่อง แม้ออกจากหน้า Auto ไปดู Activity รวม' },
-    ],
-  },
-  {
-    version: '0.1.36',
-    date: '2026-06-29',
-    highlight: 'Activity Log แสดงผลตรวจ Prompt ชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่ม log แสดงผลตรวจ prompt หลังกรอกใน Google Flow ว่ากรอกได้ครบกี่ตัวอักษร' },
-      { type: 'improved', text: 'ถ้า Google Flow รับ prompt ไม่ครบ ระบบจะแจ้งจำนวนที่กรอกได้ เพื่อช่วยวิเคราะห์และ retype ได้ชัดขึ้น' },
-      { type: 'improved', text: 'ช่วยให้การติดตามปัญหาตอนกดสร้างรูปหรือวิดีโอใน Auto Mobile ทำได้ง่ายขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.35',
-    date: '2026-06-29',
-    highlight: 'ตรวจ Prompt ก่อนสร้างงานแม่นขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่มการตรวจสอบ prompt หลังกรอกใน Google Flow ให้จับกรณีกรอกไม่ครบได้ดีขึ้น' },
-      { type: 'improved', text: 'ลดโอกาสกดสร้างงานด้วย prompt ที่ขาดบางส่วนในหน้า Auto Mobile' },
-      { type: 'improved', text: 'ช่วยให้ระบบ retype prompt ทำงานได้ถูกจังหวะมากขึ้นเมื่อ Google Flow รับข้อความไม่ครบ' },
-    ],
-  },
-  {
-    version: '0.1.34',
-    date: '2026-06-29',
-    highlight: 'ปรับ Changelog เป็น Modal แบบใหม่',
-    changes: [
-      { type: 'improved', text: 'ปรับหน้าตา Changelog ให้ใช้งานใกล้เคียง Desktop มากขึ้น' },
-      { type: 'improved', text: 'จัดรายการอัปเดตเป็น modal พร้อม timeline และกลุ่มประเภทที่อ่านง่ายขึ้น' },
-      { type: 'improved', text: 'ปรับหน้าตาเวอร์ชันและรายละเอียดอัปเดตให้ดูสอดคล้องกันมากขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.33',
-    date: '2026-06-29',
-    highlight: 'ปรับเวลาใน Activity Log ให้แม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'Activity Log ที่แสดงเฉพาะรายการท้าย ๆ จะคำนวณเวลาห่างจาก log ก่อนหน้าจริง ไม่เริ่มเป็น +0s ผิดตำแหน่ง' },
-      { type: 'improved', text: 'รายละเอียด Auto และหน้า Activity ใช้เวลา elapsed ต่อรอบได้ตรงขึ้นเวลาไล่ดูงานย้อนหลัง' },
-    ],
-  },
-  {
-    version: '0.1.32',
-    date: '2026-06-29',
-    highlight: 'ปรับจำนวนวิดีโอให้ตรงกับโหมดหลายฉาก',
-    changes: [
-      { type: 'fixed', text: 'เมื่อเลือกวิดีโอหลายฉาก หน้า Auto จะแสดงจำนวนวิดีโอเป็น 1 ให้ตรงกับผลลัพธ์จริง' },
-      { type: 'improved', text: 'ปิดตัวเลือกจำนวนวิดีโอที่ไม่ใช้ในโหมดหลายฉาก เพื่อลดความสับสนตอนสร้างงาน' },
-    ],
-  },
-  {
-    version: '0.1.31',
-    date: '2026-06-29',
-    highlight: 'ปรับเสียงพากย์ให้แสดงเฉพาะโหมดหลายฉากจริง',
-    changes: [
-      { type: 'fixed', text: 'ถ้าลดจำนวนฉากกลับเป็น 1 ฉาก ระบบจะไม่แสดงตัวเลือกเสียงพากย์ค้างจากโหมดหลายฉากเดิม' },
-      { type: 'improved', text: 'ยังจำรูปแบบหลายฉากล่าสุดไว้ได้ เมื่อกลับมาเลือกหลายฉากอีกครั้ง' },
-      { type: 'improved', text: 'ลดความสับสนระหว่างเสียงพูดปกติและเสียงพากย์ในหน้า Auto Mobile' },
-    ],
-  },
-  {
-    version: '0.1.30',
-    date: '2026-06-29',
-    highlight: 'รูปฉากหลายฉาก retry เฉพาะฉากที่ล้มเหลว',
-    changes: [
-      { type: 'improved', text: 'ถ้ารูปฉากในวิดีโอหลายฉากสร้างไม่สำเร็จ ระบบจะลองใหม่เฉพาะฉากนั้นโดยแนบ reference เดิม' },
-      { type: 'improved', text: 'ลดโอกาสงานหลายฉากหยุดทั้งงานจาก error ชั่วคราวของ Google Flow' },
-      { type: 'improved', text: 'เพิ่มสถานะ Activity Log สำหรับ retry รูปฉากให้ตามงานได้ชัดขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.29',
-    date: '2026-06-29',
-    highlight: 'วิดีโอหลายฉาก retry ได้เฉพาะฉากที่ล้มเหลว',
-    changes: [
-      { type: 'improved', text: 'ถ้าวิดีโอหลายฉากสร้างบางฉากไม่สำเร็จ ระบบจะลองใหม่เฉพาะฉากนั้นโดยใช้รูปเดิม' },
-      { type: 'improved', text: 'รองรับ AI rewrite prompt ก่อน retry ฉากวิดีโอที่ล้มเหลว เพื่อลดการหยุดทั้งงาน' },
-      { type: 'improved', text: 'เพิ่มสถานะ Activity Log สำหรับ retry วิดีโอหลายฉากให้ตามงานได้ชัดขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.28',
-    date: '2026-06-29',
-    highlight: 'หน้า Auto เลือกตัวละครและฉากจากคลังได้จริง',
-    changes: [
-      { type: 'added', text: 'ตั้งค่ารูปภาพใน Auto สามารถเลือกตัวละครและฉากจากคลัง local ได้แล้ว' },
-      { type: 'improved', text: 'แนบรูป reference ตัวละครหรือฉากตอนสร้างรูป เพื่อให้ workflow ใกล้ desktop มากขึ้น' },
-      { type: 'improved', text: 'เพิ่ม log ขั้นตอนแนบตัวละครและฉากใน Activity Log' },
-    ],
-  },
-  {
-    version: '0.1.27',
-    date: '2026-06-29',
-    highlight: 'ปรับปรุงความพร้อมของระบบอัปเดตมือถือ',
-    changes: [
-      { type: 'improved', text: 'ออก APK เวอร์ชันใหม่สำหรับตรวจอัปเดตและดาวน์โหลดผ่านหน้า Mobile' },
-      { type: 'improved', text: 'ปรับข้อมูล changelog ให้ตรงกับ patch release ล่าสุด' },
-    ],
-  },
-  {
-    version: '0.1.26',
-    date: '2026-06-29',
-    highlight: 'ปรับ Activity Log ให้ตามเวลาทำงานได้ชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'แสดงเวลาที่ใช้และช่วงเวลาระหว่างแต่ละ log ในหน้ารายละเอียด activity' },
-      { type: 'improved', text: 'อัปเดตสถานะกำลังทำงานให้เห็นเวลารวมแบบต่อเนื่อง' },
-    ],
-  },
-  {
-    version: '0.1.25',
-    date: '2026-06-29',
-    highlight: 'อัปเดตเวอร์ชันสำหรับระบบอัปเดตอัตโนมัติ',
-    changes: [
-      { type: 'improved', text: 'เตรียม APK เวอร์ชันใหม่ให้ตรวจพบและดาวน์โหลดจากหน้าอัปเดตได้ต่อเนื่อง' },
-      { type: 'improved', text: 'ปรับข้อมูล changelog ให้ตรงกับเวอร์ชันล่าสุดของแอปมือถือ' },
-    ],
-  },
-  {
-    version: '0.1.24',
-    date: '2026-06-29',
-    highlight: 'ปรับ AI คิดบทหลายฉากให้ทำงานต่อได้ดีขึ้น',
-    changes: [
-      { type: 'fixed', text: 'ลดโอกาสงานหยุดเมื่อ AI ตอบบทหลายฉากมาไม่ตรงรูปแบบเป๊ะ' },
-      { type: 'improved', text: 'รองรับการอ่านบทฉากจากข้อความของ AI ได้ยืดหยุ่นขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.23',
-    date: '2026-06-29',
-    highlight: 'ปรับวิดีโอหลายฉากให้คุม reference ได้แม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แนบรูปสินค้าเป็น reference ทุกครั้งที่สร้างรูปฉากในวิดีโอหลายฉาก' },
-      { type: 'fixed', text: 'เปลี่ยนกลับเป็นขยายฉากอัตโนมัติเมื่อเลือกจำนวนฉากเป็น 1 ฉาก' },
-    ],
-  },
-  {
-    version: '0.1.22',
-    date: '2026-06-29',
-    highlight: 'ปรับวิดีโอหลายฉากให้ใช้สไตล์ภาพได้ครบขึ้น',
-    changes: [
-      { type: 'improved', text: 'คงสไตล์รูปภาพและรายละเอียดสินค้าเมื่อสร้างวิดีโอหลายฉาก แม้เลือกสร้างเฉพาะวิดีโอ' },
-      { type: 'improved', text: 'ปรับ prompt รูปของแต่ละฉากให้ต่อยอดจากค่าตั้งต้นได้สม่ำเสมอขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.21',
-    date: '2026-06-29',
-    highlight: 'เพิ่มการฟังตัวอย่างเสียงก่อนสร้างวิดีโอ',
-    changes: [
-      { type: 'added', text: 'เพิ่มปุ่ม Preview สำหรับฟังตัวอย่างเสียงพูดและเสียงพากย์ในตั้งค่าวิดีโอ' },
-      { type: 'improved', text: 'ช่วยให้เลือกโทนเสียงผู้หญิง ผู้ชาย และเสียงพากย์ได้แม่นขึ้นก่อนเริ่มงาน' },
-    ],
-  },
-  {
-    version: '0.1.20',
-    date: '2026-06-29',
-    highlight: 'ปรับ Auto Workflow และตัวเลือกเสียงให้ใช้งานต่อเนื่องขึ้น',
-    changes: [
-      { type: 'fixed', text: 'ปรับ Auto Workflow ให้ทำงานต่อได้เมื่อบางขั้นตอนสร้างงานไม่สำเร็จ' },
-      { type: 'improved', text: 'จัดกลุ่มเสียงพากย์ให้เลือกเสียงผู้หญิง ผู้ชาย และเสียงกลางได้ชัดขึ้น' },
-      { type: 'improved', text: 'ซ่อนตัวเลือกเสียงพูดเมื่อไม่ได้เปิดใช้เสียงในวิดีโอ' },
-    ],
-  },
-  {
-    version: '0.1.19',
-    date: '2026-06-29',
-    highlight: 'ปรับการตั้งค่าวิดีโอใน Google Flow ให้เลือก reference ได้ถูกต้องขึ้น',
-    changes: [
-      { type: 'fixed', text: 'ปรับการเลือกช่องอ้างอิงวิดีโอให้ตรงกับ Google Flow รุ่นล่าสุด' },
-      { type: 'improved', text: 'ลดโอกาสเลือกโหมดอ้างอิงผิดตอนสร้างวิดีโอจากรูปที่สร้างไว้' },
-    ],
-  },
-  {
-    version: '0.1.18',
-    date: '2026-06-29',
-    highlight: 'ปรับหน้าต่าง Google Flow ให้ติดตามงาน Auto Workflow ได้ละเอียดขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่มตัวนับรูปและวิดีโอที่สร้างได้เทียบกับจำนวนที่วางแผนไว้' },
-      { type: 'improved', text: 'แสดงเวลาที่ใช้และช่วงเวลาระหว่าง log บนหน้าต่าง Google Flow' },
-      { type: 'fixed', text: 'ปรับสถานะตอนกดหยุดงานให้แสดงเป็นขั้นตอนกำลังหยุดได้ชัดเจนขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.17',
-    date: '2026-06-29',
-    highlight: 'ปรับ Activity Log ของ Auto Workflow ให้อ่านสถานะได้ชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่มป้ายขั้นตอนใน log ของ Auto Workflow ทั้งหน้า Auto และหน้าประวัติ' },
-      { type: 'improved', text: 'แสดงเวลาที่ใช้และเวลาระหว่างเหตุการณ์ใน log ให้ดูต่อเนื่องขึ้น' },
-      { type: 'fixed', text: 'ปรับสถานะหลัง Retype และสถานะจบงานให้แสดงตรงกับขั้นตอนจริงมากขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.16',
-    date: '2026-06-29',
-    highlight: 'ปรับ Auto Workflow ให้ retry และนับผลลัพธ์ได้แม่นขึ้น',
-    changes: [
-      { type: 'fixed', text: 'รอผลรูปและวิดีโอให้ครบตามจำนวนที่ตั้งไว้ก่อนสรุปงาน' },
-      { type: 'improved', text: 'ปรับการนับผลสำเร็จและล้มเหลวใน Auto Workflow ให้ตรงกับจำนวนที่วางแผนไว้' },
-      { type: 'improved', text: 'เพิ่มการลองใช้ prompt จากงานล่าสุดก่อน retry แบบทำ Flow ใหม่' },
-    ],
-  },
-  {
-    version: '0.1.15',
-    date: '2026-06-29',
-    highlight: 'ปรับสถานะ Auto Workflow ระหว่างทำงานบน Google Flow ให้ชัดขึ้น',
-    changes: [
-      { type: 'improved', text: 'แสดงสถานะล่าสุดในหน้าต่าง Google Flow ระหว่างรันงาน' },
-      { type: 'improved', text: 'ปรับชื่อขั้นตอน Auto Workflow ให้สอดคล้องกันระหว่างหน้า Auto และหน้าต่าง Flow' },
-      { type: 'fixed', text: 'ปรับการนับผลลัพธ์รูปและวิดีโอหลังดึงเข้าคลังให้แม่นขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.14',
-    date: '2026-06-29',
-    highlight: 'ปรับวิดีโอหลายฉากและสถานะ Auto Workflow ให้ตรงงานจริงขึ้น',
-    changes: [
-      { type: 'fixed', text: 'ปรับวิดีโอหลายฉากมุมเดียวให้เลือกรูปล่าสุดเป็น reference ได้ถูกต้องขึ้น' },
-      { type: 'fixed', text: 'ปรับจำนวนวิดีโอที่วางแผนไว้ให้ตรงกับผลลัพธ์รวมของวิดีโอหลายฉาก' },
-      { type: 'improved', text: 'เพิ่มสถานะระหว่างตั้งค่า Flow สำหรับรูปและวิดีโอหลายฉากให้อ่านง่ายขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.13',
-    date: '2026-06-29',
-    highlight: 'ปรับการติดตาม Auto Workflow บน Google Flow ให้ชัดเจนขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่มแถบสถานะรอบ สินค้า ขั้นตอน และสถานะ Flow ระหว่างรันงาน' },
-      { type: 'improved', text: 'ปรับการส่งคำสั่งสร้างงานให้ลดปัญหา prompt ค้างหลังเริ่มสร้าง' },
-      { type: 'improved', text: 'แสดงงานที่กำลังทำในหน้าต่าง Google Flow ได้อ่านง่ายขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.12',
-    date: '2026-06-29',
-    highlight: 'ปรับ Auto Workflow ให้ตั้งค่ารอบและติดตามจำนวนงานได้ละเอียดขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่มตัวเลือกจำนวนรอบและหน่วงเวลาให้ยืดหยุ่นกว่าเดิม' },
-      { type: 'added', text: 'เพิ่มการแสดงจำนวนรูปและวิดีโอที่วางแผนไว้ระหว่างรันงาน' },
-      { type: 'improved', text: 'ปรับจำนวนฉากวิดีโอหลายฉากให้ตรงกับ Desktop มากขึ้น' },
-      { type: 'improved', text: 'ปรับสถานะรอบแบบไม่สิ้นสุดให้แสดงผลเข้าใจง่ายขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.11',
-    date: '2026-06-29',
-    highlight: 'ปรับการติดตามผล Google Flow ให้แม่นขึ้นระหว่างสร้างงาน',
-    changes: [
-      { type: 'improved', text: 'เพิ่มการรอให้ Google Flow เริ่มสร้างงานจริงก่อนสรุปล้มเหลว' },
-      { type: 'improved', text: 'เพิ่มการรอ URL และ Preview หลัง progress หาย เพื่อไม่พลาดผลงานที่เพิ่งเสร็จ' },
-      { type: 'fixed', text: 'แสดงข้อความล้มเหลวจาก Flow ใน Activity Log ได้ชัดเจนขึ้น' },
-      { type: 'improved', text: 'เพิ่มจำนวน tile ที่ตรวจพบใน log สถานะ Flow ระหว่างสร้างรูปและวิดีโอ' },
-    ],
-  },
-  {
-    version: '0.1.10',
-    date: '2026-06-29',
-    highlight: 'ปรับ Auto Workflow และ Activity Log ให้ตามงานบน Google Flow ได้ชัดเจนขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่ม Activity Log ของ Auto Workflow พร้อมเวลาในแต่ละเหตุการณ์' },
-      { type: 'added', text: 'เพิ่มตัวเลือกลบโปรเจกต์ Google Flow ล่าสุดหลังจบงานต่อสินค้า' },
-      { type: 'improved', text: 'ปรับการแสดงความคืบหน้าระหว่าง Google Flow กำลังสร้างรูปหรือวิดีโอ' },
-      { type: 'improved', text: 'เพิ่มเวลาใน log ที่แสดงบนหน้าต่าง Google Flow ระหว่างรันงาน' },
-    ],
-  },
-  {
-    version: '0.1.9',
-    date: '2026-06-29',
-    highlight: 'ปรับ Auto Workflow ให้ตั้งค่าและทำงานใกล้เคียง Desktop มากขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่มตัวเลือกให้ AI คิด Caption, Hashtags และ CTA แยกกันได้' },
-      { type: 'improved', text: 'ปรับตัวเลือกวิดีโอหลายฉากให้มีมุมเดิม หลายมุม และเสียงพากษ์' },
-      { type: 'improved', text: 'ปรับค่าเริ่มต้นและการตรวจโมเดล Flow ให้เหมาะกับการใช้งานบนมือถือมากขึ้น' },
-      { type: 'fixed', text: 'ปรับการบันทึกผลลัพธ์ให้ใช้ข้อความที่ AI คิดล่าสุดกับรูปและวิดีโอที่สร้าง' },
-    ],
-  },
-  {
-    version: '0.1.8',
-    date: '2026-06-28',
-    highlight: 'ปรับ Auto Workflow ให้ทำงานต่อเนื่องและตรวจสถานะได้ชัดเจนขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่มตัวเลือกสร้างโปรเจกต์ใหม่ใน Google Flow แยกต่อสินค้า' },
-      { type: 'improved', text: 'จำค่าตั้งค่า Auto Workflow และขั้นตอนที่เลือกไว้สำหรับการใช้งานครั้งถัดไป' },
-      { type: 'improved', text: 'เพิ่มเวลาและสถานะ Google Flow ใน Activity Log ระหว่างสร้างงาน' },
-      { type: 'improved', text: 'ปรับ retry การสร้างวิดีโอเดี่ยวให้ลองใหม่เป็นรอบพร้อมแจ้งสถานะชัดเจนขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.7',
-    date: '2026-06-28',
-    highlight: 'ปรับ Auto Workflow ให้รับมือ Google Flow error ได้ดีขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แจ้งเตือนเมื่อ Google Flow เปิดเป็นภาษาอื่นที่ทำให้ระบบหาเมนูไม่ตรง' },
-      { type: 'improved', text: 'เพิ่มการ retry งานวิดีโอเดี่ยวเมื่อ Google Flow สร้างไม่สำเร็จ' },
-      { type: 'improved', text: 'เพิ่มการให้ AI ช่วยปรับ prompt ก่อน retry เมื่อการสร้างวิดีโอมีปัญหา' },
-    ],
-  },
-  {
-    version: '0.1.6',
-    date: '2026-06-28',
-    highlight: 'แสดงสถานะ Auto Workflow ระหว่างทำงานกับ Google Flow ได้ละเอียดขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่ม log ระหว่างเปิดโปรเจกต์ใหม่ กรอก prompt และกดสร้างใน Google Flow' },
-      { type: 'improved', text: 'เพิ่ม log ระหว่างเลือกรูปล่าสุดและอัปโหลดรูป reference' },
-      { type: 'improved', text: 'ปรับหน้าความคืบหน้าให้บอกขั้นตอนแนบรูปและ retry ได้ชัดเจนขึ้น' },
-    ],
-  },
-  {
-    version: '0.1.5',
-    date: '2026-06-28',
-    highlight: 'ปรับความแม่นยำการแนบรูป reference ใน Auto Workflow',
-    changes: [
-      { type: 'improved', text: 'เพิ่มการตรวจสอบรูป reference ก่อนเริ่มสร้างวิดีโอ' },
-      { type: 'improved', text: 'เพิ่มการรอและลองอัปโหลดรูป reference ซ้ำเมื่อ Google Flow ขอให้เว้นจังหวะ' },
-      { type: 'improved', text: 'แสดงสถานะการตรวจ reference และ retry อัปโหลดในหน้าความคืบหน้า' },
-    ],
-  },
-  {
-    version: '0.1.4',
-    date: '2026-06-28',
-    highlight: 'ปรับ Auto Workflow ให้ติดตามสถานะได้ละเอียดขึ้น',
-    changes: [
-      { type: 'improved', text: 'เพิ่มเวลาเริ่มงาน เวลาล่าสุด และ log ล่าสุดในสถานะการทำงาน' },
-      { type: 'improved', text: 'เพิ่มสถานะ Google Flow ระหว่างสร้าง เช่น กำลังทำ คิว สำเร็จ และล้มเหลว' },
-      { type: 'improved', text: 'ปรับการตรวจหลังส่งคำสั่งสร้างให้ลองกรอก prompt ซ้ำเมื่อ Flow ยังไม่เริ่ม' },
-      { type: 'improved', text: 'เพิ่มการหน่วงเวลาระหว่างสินค้าตามค่าความเร็วที่เลือก' },
-    ],
-  },
-  {
-    version: '0.1.3',
-    date: '2026-06-28',
-    highlight: 'ปรับหน้าตา Changelog ให้ใกล้เคียง Desktop มากขึ้น',
-    changes: [
-      { type: 'changed', text: 'เปลี่ยน Changelog จาก bottom sheet เป็น modal กลางจอแบบ Desktop' },
-      { type: 'changed', text: 'จัดรายการอัปเดตเป็น timeline พร้อมจุดเวอร์ชันและเส้นลำดับแบบ Desktop' },
-      { type: 'changed', text: 'จัดกลุ่มรายการเป็น FEATURES, IMPROVEMENTS และ BUG FIXES เหมือน Desktop' },
-    ],
-  },
-  {
-    version: '0.1.2',
-    date: '2026-06-28',
-    highlight: 'ปรับปรุงคลังรูปภาพและวิดีโอให้ใช้งานได้จริงมากขึ้น',
-    changes: [
-      { type: 'fixed', text: 'แก้ปุ่มลบในคลังรูปภาพและวิดีโอให้ลบรายการที่เลือกได้ถูกต้อง' },
-      { type: 'added', text: 'เพิ่มการดูตัวอย่างรูปภาพจากในคลัง' },
-      { type: 'added', text: 'เพิ่มการเปิดเล่นวิดีโอจากคลังผ่าน Android viewer' },
-      { type: 'changed', text: 'ปรับการแก้ไขชื่อรายการในคลังให้บันทึกได้จากมือถือ' },
-    ],
-  },
-  {
-    version: '0.1.1',
-    date: '2026-06-28',
-    highlight: 'ปรับปรุงระบบอัปเดตแอปให้ชัดเจนขึ้น',
-    changes: [
-      { type: 'added', text: 'เพิ่มแถบความคืบหน้าระหว่างดาวน์โหลดอัปเดต' },
-      { type: 'added', text: 'เพิ่มการตรวจสอบไฟล์หลังดาวน์โหลด' },
-      { type: 'changed', text: 'ปรับการเช็คอัปเดตให้ครอบคลุมมากขึ้นหลังเข้าสู่ระบบ' },
-      { type: 'fixed', text: 'ปรับข้อความช่วยเหลือเมื่อ Android ต้องอนุญาตการติดตั้งแอป' },
-    ],
-  },
-  {
-    version: '0.1.0',
-    date: '2026-06-28',
-    highlight: 'เริ่มระบบ Mobile App พร้อมหน้าตรวจสอบเวอร์ชัน',
-    changes: [
-      { type: 'added', text: 'เพิ่มเมนูเช็คอัปเดตแอปจากในหน้าบัญชี' },
-      { type: 'added', text: 'เพิ่มหน้าเวอร์ชันและประวัติการเปลี่ยนแปลง' },
-      { type: 'changed', text: 'ปรับปรุงการแจ้งเตือนเมื่อมีเวอร์ชันใหม่' },
-      { type: 'fixed', text: 'ปรับพื้นฐานระบบให้พร้อมสำหรับการอัปเดตครั้งถัดไป' },
-    ],
-  },
+  }
 ];
+
+function cleanString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeChangeType(value: unknown): MobileChangelogItem['type'] {
+  const type = cleanString(value).toLowerCase();
+  if (type === 'feature' || type === 'features' || type === 'new') {
+    return 'feature';
+  }
+  if (type === 'fix' || type === 'fixes' || type === 'bug' || type === 'bugfix' || type === 'bug-fix') {
+    return 'fixed';
+  }
+  if (type === 'improvement' || type === 'improvements') {
+    return 'improved';
+  }
+  if (type === 'change' || type === 'changes') {
+    return 'changed';
+  }
+  if (type === 'remove') {
+    return 'removed';
+  }
+  if (
+    type === 'added' ||
+    type === 'fixed' ||
+    type === 'improved' ||
+    type === 'changed' ||
+    type === 'removed'
+  ) {
+    return type;
+  }
+  return 'improved';
+}
+
+function inferChangeTypeFromText(text: string, fallback: MobileChangelogItem['type'] = 'improved'): MobileChangelogItem['type'] {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (/^(แก้|fix|fixed|bug)/i.test(normalized)) return 'fixed';
+  if (/^(เพิ่ม|added|add|รองรับ)/i.test(normalized)) return 'added';
+  if (/^(ปรับ|ปรับปรุง|ลด|ซิงก์|improve|improved|support)/i.test(normalized)) return 'improved';
+  if (/^(เปลี่ยน|ย้าย|changed|change)/i.test(normalized)) return 'changed';
+  if (/^(ลบ|เอาออก|นำออก|removed|remove)/i.test(normalized)) return 'removed';
+  return fallback;
+}
+
+function isReleaseMetadataLine(line: string): boolean {
+  return /^(sha256|checksum|digest|versionCode|version_code|build|buildCode|minSupportedVersionCode|min_supported_version_code|minBuild|min_build|forceUpdate|force_update|force)\s*:/i.test(
+    line.trim()
+  );
+}
+
+function headingChangeType(line: string): MobileChangelogItem['type'] | null {
+  const normalized = line
+    .replace(/^#+\s*/, '')
+    .replace(/:$/, '')
+    .trim()
+    .toLowerCase();
+
+  if (/^(features?|added|new|เพิ่ม|ของใหม่)$/.test(normalized)) {
+    return 'added';
+  }
+  if (/^(improvements?|improved|ปรับปรุง)$/.test(normalized)) {
+    return 'improved';
+  }
+  if (/^(bug fixes?|fixes?|fixed|แก้ไข|แก้บั๊ก)$/.test(normalized)) {
+    return 'fixed';
+  }
+  if (/^(changes?|changed|เปลี่ยนแปลง)$/.test(normalized)) {
+    return 'changed';
+  }
+  if (/^(removed|remove|ลบ|นำออก)$/.test(normalized)) {
+    return 'removed';
+  }
+  return null;
+}
+
+function parseChangesText(textValue: string): MobileChangelogItem[] {
+  const changes: MobileChangelogItem[] = [];
+  let currentType: MobileChangelogItem['type'] | null = null;
+
+  for (const rawLine of textValue.replace(/\\n/g, '\n').split('\n')) {
+    const raw = rawLine.trim();
+    if (!raw) {
+      continue;
+    }
+
+    const isBullet = /^[-*]\s+/.test(raw);
+    const text = raw.replace(/^[-*]\s+/, '').trim();
+    if (!text || isReleaseMetadataLine(text)) {
+      continue;
+    }
+
+    const headingType = headingChangeType(text);
+    if (headingType && !isBullet) {
+      currentType = headingType;
+      continue;
+    }
+
+    changes.push({
+      type: currentType || inferChangeTypeFromText(text),
+      text,
+    });
+  }
+
+  return changes;
+}
+
+function parseRemoteChanges(changes: unknown): MobileChangelogItem[] {
+  if (Array.isArray(changes)) {
+    return changes
+      .map((change) => {
+        if (typeof change === 'string') {
+          const text = change.trim();
+          if (!text || isReleaseMetadataLine(text)) {
+            return null;
+          }
+          return text ? { type: inferChangeTypeFromText(text), text } : null;
+        }
+        if (!change || typeof change !== 'object') {
+          return null;
+        }
+        const candidate = change as { type?: unknown; text?: unknown };
+        const text = cleanString(candidate.text);
+        if (!text) {
+          return null;
+        }
+        if (isReleaseMetadataLine(text)) {
+          return null;
+        }
+        const normalizedType = normalizeChangeType(candidate.type);
+        return {
+          type: normalizedType === 'added' ? inferChangeTypeFromText(text, 'improved') : normalizedType,
+          text,
+        };
+      })
+      .filter(Boolean) as MobileChangelogItem[];
+  }
+
+  if (changes && typeof changes === 'object') {
+    const objectChange = changes as { items?: unknown; changes?: unknown; type?: unknown; text?: unknown };
+    if (Array.isArray(objectChange.items)) {
+      return parseRemoteChanges(objectChange.items);
+    }
+    if (Array.isArray(objectChange.changes)) {
+      return parseRemoteChanges(objectChange.changes);
+    }
+
+    const text = cleanString(objectChange.text);
+    if (!text || isReleaseMetadataLine(text)) {
+      return [];
+    }
+
+    return [{
+      type: normalizeChangeType(objectChange.type),
+      text,
+    }];
+  }
+
+  if (typeof changes !== 'string' || !changes.trim()) {
+    return [];
+  }
+
+  try {
+    return parseRemoteChanges(JSON.parse(changes));
+  } catch {
+    return parseChangesText(changes);
+  }
+}
+
+function normalizeRemoteRelease(release: RemoteRelease): MobileChangelogRelease | null {
+  const version = cleanString(release.version).replace(/^v/i, '');
+  if (!version) {
+    return null;
+  }
+
+  const changes = parseRemoteChanges(release.changes);
+  const highlight = cleanString(release.highlight);
+  const fallbackChanges: MobileChangelogItem[] = highlight
+    ? [{ type: 'improved', text: highlight }]
+    : [{ type: 'improved', text: `อัปเดต Kubdee AI Mobile เป็นเวอร์ชัน ${version}` }];
+
+  return {
+    version,
+    date: cleanString(release.date) || new Date().toISOString().split('T')[0] || '',
+    highlight,
+    changes: changes.length > 0 ? changes : fallbackChanges,
+  };
+}
+
+function isMobileChangelogRelease(value: unknown): value is MobileChangelogRelease {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const release = value as Partial<MobileChangelogRelease>;
+  return (
+    typeof release.version === 'string' &&
+    typeof release.date === 'string' &&
+    typeof release.highlight === 'string' &&
+    Array.isArray(release.changes)
+  );
+}
+
+function isCachedMobileChangelog(value: unknown): value is CachedMobileChangelog {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const cached = value as Partial<CachedMobileChangelog>;
+  return (
+    typeof cached.cachedAt === 'number' &&
+    Array.isArray(cached.releases) &&
+    cached.releases.every(isMobileChangelogRelease)
+  );
+}
+
+async function readCachedMobileChangelog(): Promise<CachedMobileChangelog | null> {
+  const raw = await AsyncStorage.getItem(MOBILE_CHANGELOG_CACHE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return isCachedMobileChangelog(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedMobileChangelog(releases: MobileChangelogRelease[]): Promise<void> {
+  await AsyncStorage.setItem(
+    MOBILE_CHANGELOG_CACHE_KEY,
+    JSON.stringify({
+      releases,
+      cachedAt: Date.now(),
+    } satisfies CachedMobileChangelog)
+  );
+}
+
+function localChangelogResult(error: string | null = null): MobileChangelogLoadResult {
+  return {
+    releases: MOBILE_CHANGELOG,
+    source: 'local',
+    error,
+  };
+}
+
+export async function loadMobileChangelog(token: string | null | undefined): Promise<MobileChangelogLoadResult> {
+  if (token) {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/user/releases?app=mobile`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Client-App': CLIENT_APP,
+          'X-App-Type': APP_TYPE,
+        },
+      });
+
+      let body: RemoteReleaseResponse = {};
+      try {
+        body = (await response.json()) as RemoteReleaseResponse;
+      } catch {
+        body = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(body.error || body.message || `โหลด changelog ไม่สำเร็จ (${response.status})`);
+      }
+
+      const releases = Array.isArray(body.releases)
+        ? body.releases
+            .map((release) => normalizeRemoteRelease(release as RemoteRelease))
+            .filter(Boolean) as MobileChangelogRelease[]
+        : [];
+
+      if (releases.length === 0) {
+        throw new Error('ไม่พบข้อมูล changelog จาก server');
+      }
+
+      try {
+        await writeCachedMobileChangelog(releases);
+      } catch {
+        // Cache is best-effort; valid remote data should still be shown.
+      }
+
+      return {
+        releases,
+        source: 'remote',
+        error: null,
+      };
+    } catch (error) {
+      const cached = await readCachedMobileChangelog();
+      if (cached?.releases.length) {
+        return {
+          releases: cached.releases,
+          source: 'cache',
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+
+      return localChangelogResult(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const cached = await readCachedMobileChangelog();
+  if (cached?.releases.length) {
+    return {
+      releases: cached.releases,
+      source: 'cache',
+      error: null,
+    };
+  }
+
+  return localChangelogResult();
+}
 
 export const CURRENT_CHANGELOG_VERSION = MOBILE_CHANGELOG[0]?.version ?? '0.2.0';
