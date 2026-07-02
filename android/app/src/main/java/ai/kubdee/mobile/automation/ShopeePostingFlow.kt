@@ -345,13 +345,7 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
 
   try {
     logShopeePostStep("แนบสินค้า Shopee")
-    if (
-      !clickByAnyText(
-        listOf("แตะเพื่อเพิ่มสินค้า", "เพิ่มสินค้า", "Tap to add product"),
-        exact = false,
-        allowedPackageName = TARGET_PACKAGE_SHOPEE
-      )
-    ) {
+    if (!tapShopeeAddProductButton()) {
       logShopeePostStep("ไม่พบปุ่มเพิ่มสินค้า ข้ามการแนบสินค้า")
       return
     }
@@ -435,6 +429,63 @@ internal fun KubdeeAccessibilityService.normalizeShopeeProductUrl(value: String)
   if (url.isBlank()) return ""
   if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) return ""
   return if (Regex("""(^https?://)?([^/]+\.)?shopee\.""", RegexOption.IGNORE_CASE).containsMatchIn(url)) url else ""
+}
+
+internal fun KubdeeAccessibilityService.tapShopeeAddProductButton(): Boolean {
+  if (
+    clickByAnyText(
+      listOf("แตะเพื่อเพิ่มสินค้า", "Tap to add product"),
+      exact = false,
+      allowedPackageName = TARGET_PACKAGE_SHOPEE
+    )
+  ) {
+    logShopeePostStep("กดแตะเพื่อเพิ่มสินค้าแล้ว")
+    return true
+  }
+
+  for (root in shopeeWindowRoots()) {
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val screen = screenBounds(root)
+    val addProductLabel = textNodes
+      .filter { node ->
+        (
+          node.text == "เพิ่มสินค้า" ||
+            node.text.equals("Add product", ignoreCase = true)
+          ) &&
+          node.bounds.top > screen.top + (screen.height() * 0.20f).toInt() &&
+          node.bounds.top < screen.top + (screen.height() * 0.60f).toInt()
+      }
+      .minByOrNull { it.bounds.top }
+      ?: continue
+
+    val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+    collectClickableNodes(root, candidates)
+    val rowAction = candidates
+      .filter { (bounds, node) ->
+        isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
+          bounds.width() > 0 &&
+          bounds.height() > 0 &&
+          bounds.centerX() >= screen.left + (screen.width() * 0.52f).toInt() &&
+          bounds.centerY() >= addProductLabel.bounds.top - dp(24) &&
+          bounds.centerY() <= addProductLabel.bounds.bottom + dp(24)
+      }
+      .maxByOrNull { it.first.centerX() }
+
+    if (rowAction != null && tapNodeCenter(rowAction.second)) {
+      logShopeePostStep("กดปุ่มแตะเพื่อเพิ่มสินค้าในแถวเพิ่มสินค้าแล้ว")
+      return true
+    }
+
+    val x = screen.right - dp(130)
+    val y = addProductLabel.bounds.centerY()
+    if (tapBlocking(x.toFloat(), y.toFloat(), timeoutMs = 1800L, durationMs = 80L)) {
+      logShopeePostStep("กดตำแหน่งปุ่มแตะเพื่อเพิ่มสินค้าในแถวเพิ่มสินค้าแล้ว")
+      return true
+    }
+  }
+
+  return false
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntry(): Boolean {

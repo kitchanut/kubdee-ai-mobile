@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.30',
+    date: '2026-07-02',
+    highlight: 'Shopee Post แนบสินค้าได้ตรงปุ่มขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การแนบสินค้าในหน้าโพสต์ Shopee หลังกรอกแคปชั่น ให้กดปุ่มแตะเพื่อเพิ่มสินค้าได้ตรงจุด' },
+      { type: 'improved', text: 'ลดโอกาสกดโดนข้อความหัวข้อเพิ่มสินค้าแทนปุ่มเพิ่มสินค้าจริงในหน้า Shopee Post' },
+    ],
+  },
+  {
     version: '0.2.29',
     date: '2026-07-02',
     highlight: 'Shopee Post แนบสินค้าได้เสถียรขึ้น',
