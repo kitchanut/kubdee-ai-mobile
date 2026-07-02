@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.32',
+    date: '2026-07-02',
+    highlight: 'Shopee Post กดไอคอนลิงก์ไม่โดน Stop บัง',
+    changes: [
+      { type: 'fixed', text: 'แก้การกดไอคอนลิงก์ในหน้าเพิ่มสินค้า Shopee ให้ซ่อนปุ่ม Stop ชั่วคราวก่อนกด ลดปัญหา overlay บังปุ่ม' },
+      { type: 'improved', text: 'ใช้พฤติกรรมกดแบบเดียวกับขั้นตอนกดแชร์ตอนดึงสินค้า เพื่อให้การ tap บนหน้าจอจริงเสถียรขึ้น' },
+    ],
+  },
+  {
     version: '0.2.31',
     date: '2026-07-02',
     highlight: 'Shopee Post กดไอคอนลิงก์แม่นขึ้น',

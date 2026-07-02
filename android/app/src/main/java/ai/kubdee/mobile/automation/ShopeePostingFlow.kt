@@ -516,7 +516,7 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntry(): Boolean {
   for (root in shopeeWindowRoots()) {
     val screen = screenBounds(root)
     val target = findShopeeProductLinkNode(root, screen)
-    if (target != null && tapNodeCenter(target)) {
+    if (target != null && tapShopeeLinkNodeCenterWithoutStopButton(target)) {
       logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วย icon")
       return true
     }
@@ -574,6 +574,16 @@ internal fun KubdeeAccessibilityService.isShopeeAddProductPickerScreen(): Boolea
   return false
 }
 
+internal fun KubdeeAccessibilityService.tapShopeeLinkNodeCenterWithoutStopButton(
+  node: AccessibilityNodeInfo,
+  durationMs: Long = 80L
+): Boolean {
+  val bounds = Rect()
+  node.getBoundsInScreen(bounds)
+  if (bounds.width() <= 0 || bounds.height() <= 0) return false
+  return tapBlockingWithoutStopButton(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = durationMs)
+}
+
 internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolean {
   for (root in shopeeWindowRoots()) {
     val screen = screenBounds(root)
@@ -605,7 +615,7 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
       }
       .maxByOrNull { it.first.centerX() }
 
-    if (linkAction != null && tapNodeCenter(linkAction.second)) {
+    if (linkAction != null && tapShopeeLinkNodeCenterWithoutStopButton(linkAction.second)) {
       logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ")
       return true
     }
