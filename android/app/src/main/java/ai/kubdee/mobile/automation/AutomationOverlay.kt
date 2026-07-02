@@ -298,9 +298,9 @@ internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): LinearLayout?
       WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
     PixelFormat.TRANSLUCENT
   ).apply {
-    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
     x = 0
-    y = automationOverlayTopOffset()
+    y = automationOverlayBottomOffset()
   }
 
   try {
@@ -441,9 +441,9 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
       WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
     PixelFormat.TRANSLUCENT
   ).apply {
-    gravity = Gravity.TOP or Gravity.END
+    gravity = Gravity.BOTTOM or Gravity.END
     x = dp(18)
-    y = automationOverlayTopOffset() + dp(10)
+    y = automationOverlayBottomOffset() + dp(10)
   }
 
   try {
@@ -463,8 +463,15 @@ internal val KubdeeAccessibilityService.automationWindowManager: WindowManager
 
 internal fun KubdeeAccessibilityService.automationOverlayTopOffset(): Int = statusBarHeightPx() + dp(8)
 
+internal fun KubdeeAccessibilityService.automationOverlayBottomOffset(): Int = navigationBarHeightPx() + dp(8)
+
 internal fun KubdeeAccessibilityService.statusBarHeightPx(): Int {
   val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+  return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
+}
+
+internal fun KubdeeAccessibilityService.navigationBarHeightPx(): Int {
+  val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
   return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
 }
 

@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.36',
+    date: '2026-07-02',
+    highlight: 'ย้าย log automation ลงล่างเพื่อไม่ทับหัวหน้า Shopee',
+    changes: [
+      { type: 'fixed', text: 'ย้าย overlay log และปุ่ม Stop ของ automation ไปด้านล่างจอ ลดโอกาสบัง header และไอคอนโซ่ของ Shopee' },
+      { type: 'improved', text: 'เว้นระยะ navigation bar ด้านล่าง เพื่อให้ log ลอยอยู่ในพื้นที่ที่เห็นได้ชัดแต่ไม่ชนขอบจอ' },
+    ],
+  },
+  {
     version: '0.2.35',
     date: '2026-07-02',
     highlight: 'Shopee Post หาไอคอนโซ่บนหน้าจอเล็กได้ถูกต้องขึ้น',
