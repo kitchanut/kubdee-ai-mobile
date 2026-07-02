@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.25',
+    date: '2026-07-02',
+    highlight: 'Shopee Import ดึงสินค้าถูกใจแม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับการยืนยันมุมมองผู้ซื้อในหน้าถูกใจ Shopee ให้แม่นขึ้นก่อนเริ่มดึงสินค้า' },
+      { type: 'improved', text: 'ลดโอกาสกดผิดตำแหน่งตอนสลับมุมมองและเพิ่ม log ให้เห็นสถานะหน้าถูกใจชัดขึ้น' },
+      { type: 'improved', text: 'ปรับการเปิดสินค้าในรายการถูกใจให้ระวังพื้นที่แถบเมนูมากขึ้นบนหน้าจอหลายขนาด' },
+    ],
+  },
+  {
     version: '0.2.23',
     date: '2026-07-01',
     highlight: 'Shopee Import ตรวจหน้า ฉัน ได้แม่นขึ้น',
