@@ -127,10 +127,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
       "Gallery",
       "Albums",
       "แคปชั่น",
+      "เพิ่มแคปชั่น",
       "Caption",
+      "Add caption",
+      "Add caption to your photos",
+      "Add caption to you photos",
       "แตะเพื่อเพิ่มสินค้า",
       "เพิ่มสินค้า",
       "Tap to add product",
+      "ระบุว่าเป็นเนื้อหาที่สร้างโดย AI",
+      "บันทึกลงในโทรศัพท์",
       "โพสต์",
       "Post"
     )
@@ -399,9 +405,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
         errorMessage = error.message ?: "Shopee import failed"
         Log.e(TAG, "Shopee import runner failed", error)
       } finally {
-        val shouldReturnToKubdee = errorMessage == null
-        if (shouldReturnToKubdee) {
+        if (errorMessage == null) {
           logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า (${importedCount} รายการ)")
+        } else {
+          logStep("กลับไป Kubdee AI เพื่อแจ้งผลดึงสินค้า: ${errorMessage ?: "unknown"}")
         }
         KubdeeAutomationIpc.sendShopeeImportFinished(
           this,
@@ -411,9 +418,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           stopped = stopRequested,
           profileLocalId = profileLocalId
         )
-        if (shouldReturnToKubdee) {
-          mainHandler.postDelayed({ launchKubdeeLibrary() }, 250L)
-        }
+        mainHandler.postDelayed({ launchKubdeeLibrary() }, 250L)
         if (shopeeImportThread === Thread.currentThread()) {
           shopeeImportThread = null
         }

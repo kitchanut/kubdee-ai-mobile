@@ -111,7 +111,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   });
   const promptedMobileUpdateIdRef = useRef('');
   const auth = useAuth();
-  const { importShopeeProducts } = useLibrary();
+  const { importShopeeProducts, refreshProducts } = useLibrary();
   const mobileVersionLabel = useMemo(() => getCurrentMobileVersionLabel(), []);
 
   const appendRecoveredShopeeLog = useCallback((message: string, ts = Date.now()): void => {
@@ -122,6 +122,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     selectedProfileId,
     importShopeeProducts,
     appendLog: appendRecoveredShopeeLog,
+    onProductsChanged: refreshProducts,
   });
 
   useEffect(() => {

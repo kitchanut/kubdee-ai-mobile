@@ -78,6 +78,7 @@ export default function ProductPanel({
     isSyncing,
     lastSyncedAt,
     syncError,
+    refreshProducts,
     syncProducts,
     importShopeeProducts,
     deleteProducts,
@@ -298,6 +299,7 @@ export default function ProductPanel({
       await shopeeProductSaver.waitForIdle();
       await shopeeProductSaver.savePendingProducts();
       await shopeeProductSaver.waitForIdle();
+      await refreshProducts();
 
       if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
         appendShopeeLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
@@ -333,6 +335,8 @@ export default function ProductPanel({
       toast.error(message);
     } catch (error) {
       await shopeeProductSaver.waitForIdle();
+      await shopeeProductSaver.savePendingProducts();
+      await refreshProducts();
       const message = error instanceof Error ? error.message : String(error);
       appendShopeeLog(message);
       toast.error(message);
@@ -345,6 +349,7 @@ export default function ProductPanel({
     appendShopeeLog,
     isShopeeImporting,
     isSyncing,
+    refreshProducts,
     selectedProfileId,
     shopeeProductSaver,
     syncShopeeImportQueue,

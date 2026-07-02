@@ -100,6 +100,18 @@ function cleanText(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function readUploadError(status: number, body: string | null | undefined): string {
+  const text = body?.trim();
+  if (!text) return `Upload failed (${status})`;
+
+  try {
+    const data = JSON.parse(text) as { error?: string; message?: string };
+    return data.error || data.message || text;
+  } catch {
+    return text;
+  }
+}
+
 function getFileExtension(value: string | null | undefined, fallback = 'jpg'): string {
   const source = cleanText(value) || '';
   const extension = source.split('?')[0]?.split('#')[0]?.match(/\.([a-zA-Z0-9]{2,5})$/)?.[1]?.toLowerCase();
@@ -196,30 +208,28 @@ async function uploadAffiliateProductImage(
 
   const mimeType = getImageMimeType(imagePath, product.imageMimeType);
   const extension = getFileExtension(imagePath, mimeType === 'image/png' ? 'png' : 'jpg');
-  const formData = new FormData();
-  formData.append('profileLocalId', product.profileLocalId);
-  formData.append('localProductId', product.localId);
-  formData.append('image', {
-    name: `${product.localId}.${extension}`,
-    type: mimeType,
-    uri: imagePath,
-  } as unknown as Blob);
-
-  const response = await fetch(`${BACKEND_URL}/api/user/affiliate-products/images`, {
-    method: 'POST',
+  const response = await FileSystem.uploadAsync(`${BACKEND_URL}/api/user/affiliate-products/images`, imagePath, {
+    fieldName: 'image',
     headers: {
       Authorization: `Bearer ${token}`,
       'X-Client-App': CLIENT_APP,
       'X-App-Type': APP_TYPE,
     },
-    body: formData,
+    httpMethod: 'POST',
+    mimeType,
+    parameters: {
+      profileLocalId: product.profileLocalId,
+      localProductId: product.localId,
+      fileName: `${product.localId}.${extension}`,
+    },
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
   });
 
-  if (!response.ok) {
-    throw new ApiRequestError(await readError(response), response.status);
+  if (response.status < 200 || response.status >= 300) {
+    throw new ApiRequestError(readUploadError(response.status, response.body), response.status);
   }
 
-  const data = (await response.json()) as AffiliateProductImageMeta;
+  const data = JSON.parse(response.body || '{}') as AffiliateProductImageMeta;
   return {
     didUpload: true,
     imageR2Key: cleanText(data.imageR2Key),

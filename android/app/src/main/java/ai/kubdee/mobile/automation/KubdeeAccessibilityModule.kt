@@ -150,7 +150,19 @@ class KubdeeAccessibilityModule(
       return
     }
 
-    promise.resolve(shopeeProductsJsonToWritableArray(intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCTS_JSON).orEmpty()))
+    promise.resolve(shopeeProductsJsonToWritableArray(resolveShopeeImportProductsJson(intent)))
+  }
+
+  private fun resolveShopeeImportProductsJson(intent: Intent): String {
+    val productsJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCTS_JSON).orEmpty()
+    try {
+      if (productsJson.isNotBlank() && JSONArray(productsJson).length() > 0) {
+        return productsJson
+      }
+    } catch (_: Exception) {
+      // Fall back to the durable queue below.
+    }
+    return KubdeeShopeeImportQueue.readProducts(reactContext).toString()
   }
 
   private fun handleShopeePostFinished(intent: Intent) {

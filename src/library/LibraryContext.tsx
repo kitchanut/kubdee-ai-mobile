@@ -78,6 +78,8 @@ interface LibraryContextType {
   isSyncing: boolean;
   lastSyncedAt: number | null;
   syncError: string | null;
+  /** Reload products from local SQLite without requiring cloud sync. */
+  refreshProducts: () => Promise<AffiliateProduct[]>;
   /** Resolves with the sync outcome, or null when skipped (no token / already syncing). */
   syncProducts: () => Promise<ProductSyncResult | null>;
   /** Import products scraped on-device from Shopee liked items and push them to Cloud. */
@@ -856,12 +858,13 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       deleteProducts,
       importShopeeProducts,
       products,
+      refreshProducts: refreshLocalProducts,
       isSyncing,
       lastSyncedAt,
       syncError,
       syncProducts,
     }),
-    [deleteProducts, importShopeeProducts, isSyncing, lastSyncedAt, products, syncError, syncProducts]
+    [deleteProducts, importShopeeProducts, isSyncing, lastSyncedAt, products, refreshLocalProducts, syncError, syncProducts]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;

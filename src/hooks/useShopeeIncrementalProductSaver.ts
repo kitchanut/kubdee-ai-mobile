@@ -25,6 +25,7 @@ interface UseShopeeIncrementalProductSaverOptions {
   selectedProfileId: string;
   importShopeeProducts: ImportShopeeProducts;
   appendLog: AppendLog;
+  onProductsChanged?: () => Promise<unknown> | unknown;
 }
 
 type ProfileAwareShopeeProduct = ShopeeImportProductInput & {
@@ -88,6 +89,7 @@ export function useShopeeIncrementalProductSaver({
   selectedProfileId,
   importShopeeProducts,
   appendLog,
+  onProductsChanged,
 }: UseShopeeIncrementalProductSaverOptions) {
   const activeRef = useRef(false);
   const selectedProfileIdRef = useRef(selectedProfileId);
@@ -326,7 +328,11 @@ export function useShopeeIncrementalProductSaver({
         appendLog('ยังมีสินค้าค้างบางรายการที่ยังบันทึกไม่สำเร็จ จะลองใหม่รอบถัดไป');
       }
 
-      return savedKeysRef.current.size;
+      const savedCount = savedKeysRef.current.size;
+      if (savedCount > 0) {
+        await onProductsChanged?.();
+      }
+      return savedCount;
     })();
 
     pendingRecoveryRef.current = recovery;
@@ -335,7 +341,7 @@ export function useShopeeIncrementalProductSaver({
     } finally {
       pendingRecoveryRef.current = null;
     }
-  }, [appendLog, queueProductSave, waitForIdle]);
+  }, [appendLog, onProductsChanged, queueProductSave, waitForIdle]);
 
   const saveRemainingProducts = useCallback(
     async (products: ProfileAwareShopeeProduct[]): Promise<ProductImportResult | null> => {

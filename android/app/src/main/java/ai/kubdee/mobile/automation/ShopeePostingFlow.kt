@@ -288,7 +288,15 @@ internal fun KubdeeAccessibilityService.fillShopeePostingCaption(video: ShopeePo
   val firstEditable = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
   if (firstEditable == null) {
     clickByAnyText(
-      listOf("แคปชั่น", "คำอธิบาย", "Caption", "Description"),
+      listOf(
+        "แคปชั่น",
+        "คำอธิบาย",
+        "Caption",
+        "Description",
+        "Add caption",
+        "Add caption to your photos",
+        "Add caption to you photos"
+      ),
       exact = false,
       allowedPackageName = TARGET_PACKAGE_SHOPEE
     )
@@ -574,6 +582,9 @@ internal fun KubdeeAccessibilityService.findShopeeAiGeneratedLabelToggleTarget()
       resourceId.endsWith("tv_ai_generated_title") ||
         resourceId.endsWith("tv_ai_generated_desc") ||
         "ป้ายกำกับ ai" in textKey ||
+        "ระบุว่าเป็นเนื้อหาที่สร้างโดย ai" in textKey ||
+        "เนื้อหาที่สร้างโดย ai" in textKey ||
+        "สร้างโดย ai" in textKey ||
         "เนื้อหาที่สร้างขึ้น" in textKey ||
         ("ai" in textKey && "เนื้อหา" in textKey)
     }

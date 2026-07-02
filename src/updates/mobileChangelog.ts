@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.27',
+    date: '2026-07-02',
+    highlight: 'Shopee Import และ Shopee Post เสถียรขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การซิงก์รูปสินค้า Shopee ขึ้น cloud บางเครื่องที่อัปโหลดไม่สำเร็จ' },
+      { type: 'fixed', text: 'หลังดึงสินค้า Shopee เสร็จ คลังสินค้าจะรีเฟรชจากข้อมูลในเครื่องทันที ไม่ต้องกดซิงก์เอง' },
+      { type: 'improved', text: 'รองรับหน้าจอโพสต์ Shopee รูปแบบใหม่ เช่น ช่องแคปชั่นและป้ายกำกับเนื้อหา AI' },
+    ],
+  },
+  {
     version: '0.2.26',
     date: '2026-07-02',
     highlight: 'คลังสินค้า Shopee เก็บรูปบน cloud ได้ครบขึ้น',

@@ -52,10 +52,16 @@ internal val SHOPEE_POSTING_SURFACE_TEXTS = listOf(
   "Gallery",
   "Albums",
   "แคปชั่น",
+  "เพิ่มแคปชั่น",
   "Caption",
+  "Add caption",
+  "Add caption to your photos",
+  "Add caption to you photos",
   "แตะเพื่อเพิ่มสินค้า",
   "เพิ่มสินค้า",
   "Tap to add product",
+  "ระบุว่าเป็นเนื้อหาที่สร้างโดย AI",
+  "บันทึกลงในโทรศัพท์",
   "โพสต์",
   "Post"
 )
