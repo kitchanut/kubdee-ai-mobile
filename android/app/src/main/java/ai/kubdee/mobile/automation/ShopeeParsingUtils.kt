@@ -196,8 +196,9 @@ internal fun KubdeeAccessibilityService.resolveShopeeUrl(rawUrl: String): String
 
   repeat(5) {
     checkStopRequested()
+    var connection: HttpURLConnection? = null
     try {
-      val connection = (URL(current).openConnection() as HttpURLConnection).apply {
+      connection = (URL(current).openConnection() as HttpURLConnection).apply {
         instanceFollowRedirects = false
         connectTimeout = 5000
         readTimeout = 5000
@@ -207,18 +208,72 @@ internal fun KubdeeAccessibilityService.resolveShopeeUrl(rawUrl: String): String
       }
       val status = connection.responseCode
       val location = connection.getHeaderField("Location")
-      connection.disconnect()
       if (status in 300..399 && !location.isNullOrBlank()) {
         current = URL(URL(current), location).toString()
         if (extractShopeeProductIdFromResolvedUrl(current) != null) return current
         return@repeat
       }
-      return connection.url?.toString() ?: current
+
+      val effectiveUrl = connection.url?.toString()?.takeIf { it.isNotBlank() } ?: current
+      if (
+        !effectiveUrl.equals(current, ignoreCase = true) &&
+        extractShopeeProductIdFromResolvedUrl(effectiveUrl) != null
+      ) {
+        return effectiveUrl
+      }
+
+      if (current.contains("s.shopee", ignoreCase = true)) {
+        val bodyCandidate = extractShopeeUrlFromRedirectBody(connection)
+        if (!bodyCandidate.isNullOrBlank()) {
+          current = URL(URL(current), bodyCandidate).toString()
+          if (extractShopeeProductIdFromResolvedUrl(current) != null) return current
+          return@repeat
+        }
+      }
+
+      return effectiveUrl
     } catch (_: Exception) {
       return current
+    } finally {
+      connection?.disconnect()
     }
   }
   return current
+}
+
+internal fun KubdeeAccessibilityService.extractShopeeUrlFromRedirectBody(connection: HttpURLConnection): String? {
+  val stream = try {
+    connection.inputStream
+  } catch (_: Exception) {
+    connection.errorStream
+  } ?: return null
+
+  val limit = 256 * 1024
+  val buffer = ByteArray(limit)
+  val length = try {
+    stream.use { input -> input.read(buffer, 0, limit) }
+  } catch (_: Exception) {
+    -1
+  }
+  if (length <= 0) return null
+
+  val body = String(buffer, 0, length, Charsets.UTF_8)
+    .replace("\\/", "/")
+    .replace("&amp;", "&")
+  val candidates = Regex("""https?://[^"'\\\s<>]*shopee\.[^"'\\\s<>]+""", RegexOption.IGNORE_CASE)
+    .findAll(body)
+    .map { match -> Uri.decode(match.value) }
+    .toList()
+  candidates.firstOrNull { extractShopeeProductIdFromResolvedUrl(it) != null }?.let { return it }
+
+  val pathCandidate = Regex("""/(?:product/)?(\d{4,})/(\d{4,})(?:[/?#][^"'\\\s<>]*)?""")
+    .find(body)
+    ?.value
+  if (!pathCandidate.isNullOrBlank()) {
+    return "https://shopee.co.th$pathCandidate"
+  }
+
+  return candidates.firstOrNull()
 }
 
 internal fun KubdeeAccessibilityService.extractShopeeProductIdFromResolvedUrl(url: String): String? {
