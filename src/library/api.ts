@@ -1,6 +1,10 @@
 import { readError } from '@/auth/api';
 import { APP_TYPE, BACKEND_URL, CLIENT_APP } from '@/auth/constants';
 import type { AuthApiResult } from '@/auth/types';
+import { File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Crypto from 'expo-crypto';
+import { cacheProductImages, stripLocalImagePathsForCloudSync } from '@/library/productImageCache';
 import type { AffiliateProduct } from '@/library/types';
 
 interface AffiliateProductsResponse {
@@ -57,6 +61,17 @@ interface SyncAffiliateProductsResponse {
   error?: string;
 }
 
+interface AffiliateProductImageMeta {
+  didUpload?: boolean;
+  imageR2Key?: string | null;
+  imageUrl?: string | null;
+  imageHash?: string | null;
+  imageMimeType?: string | null;
+  imageSize?: number | null;
+  imageUploadedAt?: number | null;
+  error?: string;
+}
+
 export interface DeleteAffiliateProductsResult {
   deleted: number;
   requested: number;
@@ -67,10 +82,185 @@ export interface SyncAffiliateProductsResult {
   skippedDeleted: number;
   skippedStale: number;
   restoredDeleted: number;
+  syncedProducts: SyncAffiliateProductInput[];
+  uploadedImages: number;
 }
 
 /** Server caps DELETE at 500 localIds per request. */
 const DELETE_CHUNK_SIZE = 500;
+
+class ApiRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+function cleanText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function getFileExtension(value: string | null | undefined, fallback = 'jpg'): string {
+  const source = cleanText(value) || '';
+  const extension = source.split('?')[0]?.split('#')[0]?.match(/\.([a-zA-Z0-9]{2,5})$/)?.[1]?.toLowerCase();
+  return extension && /^[a-z0-9]+$/.test(extension) ? extension : fallback;
+}
+
+function getImageMimeType(imagePath: string, fallback?: string | null): string {
+  const cleanFallback = cleanText(fallback);
+  if (cleanFallback?.startsWith('image/')) {
+    return cleanFallback;
+  }
+
+  switch (getFileExtension(imagePath)) {
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    case 'jpg':
+    case 'jpeg':
+    default:
+      return 'image/jpeg';
+  }
+}
+
+async function getLocalFileSize(uri: string): Promise<number | null> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists || info.isDirectory) return null;
+    return typeof info.size === 'number' && Number.isFinite(info.size) ? info.size : null;
+  } catch {
+    return null;
+  }
+}
+
+async function localImageExists(uri: string | null | undefined): Promise<boolean> {
+  const imagePath = cleanText(uri);
+  if (!imagePath) return false;
+
+  try {
+    const info = await FileSystem.getInfoAsync(imagePath);
+    return info.exists && !info.isDirectory;
+  } catch {
+    return false;
+  }
+}
+
+function arrayBufferToHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function sha256File(fileUri: string): Promise<string | null> {
+  try {
+    const bytes = await new File(fileUri).bytes();
+    const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
+    return arrayBufferToHex(digest);
+  } catch {
+    return null;
+  }
+}
+
+async function uploadAffiliateProductImage(
+  token: string,
+  product: SyncAffiliateProductInput
+): Promise<AffiliateProductImageMeta | null> {
+  const imagePath = cleanText(product.imagePath);
+  if (!imagePath || !await localImageExists(imagePath)) {
+    return null;
+  }
+
+  const localHash = await sha256File(imagePath);
+  if (
+    localHash &&
+    product.imageR2Key &&
+    product.imageUrl &&
+    product.imageHash === localHash &&
+    product.imageMimeType &&
+    product.imageSize &&
+    product.imageUploadedAt
+  ) {
+    return {
+      didUpload: false,
+      imageR2Key: product.imageR2Key,
+      imageUrl: product.imageUrl,
+      imageHash: localHash,
+      imageMimeType: product.imageMimeType,
+      imageSize: product.imageSize,
+      imageUploadedAt: typeof product.imageUploadedAt === 'number' ? product.imageUploadedAt : Number(product.imageUploadedAt),
+    };
+  }
+
+  const mimeType = getImageMimeType(imagePath, product.imageMimeType);
+  const extension = getFileExtension(imagePath, mimeType === 'image/png' ? 'png' : 'jpg');
+  const formData = new FormData();
+  formData.append('profileLocalId', product.profileLocalId);
+  formData.append('localProductId', product.localId);
+  formData.append('image', {
+    name: `${product.localId}.${extension}`,
+    type: mimeType,
+    uri: imagePath,
+  } as unknown as Blob);
+
+  const response = await fetch(`${BACKEND_URL}/api/user/affiliate-products/images`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'X-Client-App': CLIENT_APP,
+      'X-App-Type': APP_TYPE,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new ApiRequestError(await readError(response), response.status);
+  }
+
+  const data = (await response.json()) as AffiliateProductImageMeta;
+  return {
+    didUpload: true,
+    imageR2Key: cleanText(data.imageR2Key),
+    imageUrl: cleanText(data.imageUrl),
+    imageHash: cleanText(data.imageHash) || localHash,
+    imageMimeType: cleanText(data.imageMimeType) || mimeType,
+    imageSize: typeof data.imageSize === 'number' ? data.imageSize : await getLocalFileSize(imagePath),
+    imageUploadedAt: typeof data.imageUploadedAt === 'number' ? data.imageUploadedAt : Date.now(),
+  };
+}
+
+async function uploadAffiliateProductImages(
+  token: string,
+  products: SyncAffiliateProductInput[]
+): Promise<{ products: SyncAffiliateProductInput[]; uploadedImages: number }> {
+  const output: SyncAffiliateProductInput[] = [];
+  let uploadedImages = 0;
+
+  for (const product of products) {
+    const imageMeta = await uploadAffiliateProductImage(token, product);
+    if (!imageMeta?.imageR2Key || !imageMeta.imageUrl) {
+      output.push(product);
+      continue;
+    }
+
+    if (imageMeta.didUpload) {
+      uploadedImages += 1;
+    }
+    output.push({
+      ...product,
+      imageR2Key: imageMeta.imageR2Key,
+      imageUrl: imageMeta.imageUrl,
+      imageHash: imageMeta.imageHash ?? product.imageHash,
+      imageMimeType: imageMeta.imageMimeType ?? product.imageMimeType,
+      imageSize: imageMeta.imageSize ?? product.imageSize,
+      imageUploadedAt: imageMeta.imageUploadedAt ?? product.imageUploadedAt,
+    });
+  }
+
+  return { products: output, uploadedImages };
+}
 
 export async function fetchAffiliateProducts(
   token: string,
@@ -185,6 +375,9 @@ export async function syncAffiliateProducts(
   }
 ): Promise<AuthApiResult<SyncAffiliateProductsResult>> {
   try {
+    const cacheReadyProducts = await cacheProductImages(payload.products);
+    const uploaded = await uploadAffiliateProductImages(token, cacheReadyProducts);
+    const syncProducts = stripLocalImagePathsForCloudSync(uploaded.products);
     const response = await fetch(`${BACKEND_URL}/api/user/affiliate-products/sync`, {
       method: 'POST',
       headers: {
@@ -199,7 +392,7 @@ export async function syncAffiliateProducts(
         deviceId: payload.deviceId,
         mode: 'upsert',
         restoreDeleted: payload.restoreDeleted === true,
-        products: payload.products,
+        products: syncProducts,
       }),
     });
 
@@ -218,19 +411,21 @@ export async function syncAffiliateProducts(
       ok: true,
       status: response.status,
       data: {
-        products: data.synced?.products ?? payload.products.length,
+        products: data.synced?.products ?? syncProducts.length,
         skippedDeleted: data.skippedDeleted ?? 0,
         skippedStale: data.skippedStale ?? 0,
         restoredDeleted: data.restoredDeleted ?? 0,
+        syncedProducts: uploaded.products,
+        uploadedImages: uploaded.uploadedImages,
       },
       error: null,
     };
-  } catch {
+  } catch (error) {
     return {
       ok: false,
-      status: 0,
+      status: error instanceof ApiRequestError ? error.status : 0,
       data: null,
-      error: 'Online verification required. Please check your internet connection.',
+      error: error instanceof Error ? error.message : 'Online verification required. Please check your internet connection.',
     };
   }
 }

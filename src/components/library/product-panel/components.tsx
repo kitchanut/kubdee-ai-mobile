@@ -78,6 +78,7 @@ export function ProductCard({
   onDelete: () => void;
 }): React.JSX.Element {
   const platformLabel = getPlatformLabel(product.platform);
+  const imageUri = product.imagePath || product.imageUrl;
 
   return (
     <Pressable
@@ -97,9 +98,9 @@ export function ProductCard({
 
       <View className="flex-row items-center gap-2.5 p-2">
         <View className="h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border-2 border-white bg-kd-panel-muted dark:border-kd-border-strong dark:bg-kd-card-muted">
-          {product.imageUrl ? (
+          {imageUri ? (
             <Image
-              source={{ uri: product.imageUrl }}
+              source={{ uri: imageUri }}
               resizeMode="cover"
               accessibilityLabel={product.name}
               className="h-full w-full"

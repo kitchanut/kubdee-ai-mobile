@@ -37,7 +37,7 @@ export function toAutoPilotProduct(product: AffiliateProduct): AutoPilotProduct 
     id,
     catalogId: id,
     source: product,
-    preview: product.imageUrl || product.imagePath || null,
+    preview: product.imagePath || product.imageUrl || null,
     name: product.name,
     description: cleanText(product.description),
     productId: cleanText(product.externalProductId) || product.localId,

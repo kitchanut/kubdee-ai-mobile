@@ -15,6 +15,7 @@ import {
   upsertLocalProductsForSync,
   upsertLocalProductsFromCloud,
 } from '@/library/localProductDb';
+import { cacheProductImages } from '@/library/productImageCache';
 import type { AffiliateProduct } from '@/library/types';
 
 export interface ProductSyncResult {
@@ -37,6 +38,9 @@ export interface ShopeeImportProductInput {
   stock?: number | null;
   productUrl?: string | null;
   externalProductId?: string | null;
+  imageMimeType?: string | null;
+  imagePath?: string | null;
+  imageSize?: number | null;
   imageUrl?: string | null;
   status?: string | null;
   scrapedAt?: number | null;
@@ -348,13 +352,13 @@ function preserveExistingProductFields(
     caption: existing.caption,
     hashtags: existing.hashtags,
     cta: existing.cta,
-    imagePath: existing.imagePath ?? payload.imagePath,
+    imagePath: payload.imagePath ?? existing.imagePath,
     imageR2Key: existing.imageR2Key ?? payload.imageR2Key,
-    imageUrl: existing.imageUrl ?? payload.imageUrl,
-    imageHash: existing.imageHash ?? payload.imageHash,
-    imageMimeType: existing.imageMimeType ?? payload.imageMimeType,
-    imageSize: existing.imageSize ?? payload.imageSize,
-    imageUploadedAt: toNumber(existing.imageUploadedAt) ?? payload.imageUploadedAt,
+    imageUrl: payload.imageUrl ?? existing.imageUrl,
+    imageHash: payload.imageHash ?? existing.imageHash,
+    imageMimeType: payload.imageMimeType ?? existing.imageMimeType,
+    imageSize: payload.imageSize ?? existing.imageSize,
+    imageUploadedAt: payload.imageUploadedAt ?? toNumber(existing.imageUploadedAt),
     localCreatedAt: toNumber(existing.localCreatedAt) ?? fallbackCreatedAt,
   };
 }
@@ -387,6 +391,7 @@ function toShopeeSyncProducts(
     const productUrl = cleanText(product.productUrl);
     const externalProductId =
       cleanText(product.externalProductId) || getShopeeProductId(productUrl, name);
+    const imagePath = cleanText(product.imagePath);
     const imageUrl = cleanText(product.imageUrl);
     const price = normalizePrice(product.price);
     const identity = externalProductId || productUrl || `${name}\u0000${price ?? ''}`;
@@ -412,7 +417,10 @@ function toShopeeSyncProducts(
       productUrl,
       price,
       stock: typeof product.stock === 'number' && Number.isFinite(product.stock) ? product.stock : null,
+      imagePath,
       imageUrl,
+      imageMimeType: cleanText(product.imageMimeType),
+      imageSize: typeof product.imageSize === 'number' && Number.isFinite(product.imageSize) ? product.imageSize : null,
       platform: 'shopee',
       status: cleanText(product.status) || 'liked',
       scrapedAt: typeof product.scrapedAt === 'number' ? product.scrapedAt : now,
@@ -531,7 +539,8 @@ async function flushPendingProductSyncQueue(token: string): Promise<QueueSyncRes
     restoredDeleted += result.data?.restoredDeleted ?? 0;
     await markUpsertJobsSynced(
       upsertJobs.map((job) => job.id),
-      payloadProducts.map((product) => product.localId)
+      payloadProducts.map((product) => product.localId),
+      result.data?.syncedProducts ?? payloadProducts
     );
   }
 
@@ -635,9 +644,10 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
           ...products.filter((product) => product.profileLocalId === cleanProfileLocalId),
         ]);
       const deviceId = await getOrCreateSyncDeviceId();
+      const cachedImportedProducts = await cacheProductImages(importedProducts);
       const syncPayloadProducts = toShopeeSyncProducts(
         cleanProfileLocalId,
-        importedProducts,
+        cachedImportedProducts,
         deviceId,
         existingProducts
       );

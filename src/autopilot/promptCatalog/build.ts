@@ -5,6 +5,7 @@ export interface BuildProduct {
   name?: string;
   description?: string;
   productUrl?: string;
+  imagePath?: string;
   imageUrl?: string;
   caption?: string;
   hashtags?: string;
@@ -59,7 +60,7 @@ export function buildPrompt(
     product_name: product.name || 'สินค้า',
     product_description: product.description || '',
     product_url: product.productUrl || '',
-    product_image_url: product.imageUrl || '',
+    product_image_url: product.imagePath || product.imageUrl || '',
     caption: product.caption || '',
     hashtags: product.hashtags || '',
     cta: product.cta || '',

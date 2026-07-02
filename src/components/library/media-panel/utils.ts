@@ -40,7 +40,7 @@ export function getProductCode(product: AffiliateProduct): string {
 }
 
 export function getProductImageUri(product: AffiliateProduct | null | undefined): string | null {
-  return cleanText(product?.imageUrl) || cleanText(product?.imagePath) || null;
+  return cleanText(product?.imagePath) || cleanText(product?.imageUrl) || null;
 }
 
 export function getProductKey(product: AffiliateProduct): string {

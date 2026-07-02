@@ -256,8 +256,8 @@ function CatalogSelectRow({
         />
       </View>
       <View className="h-12 w-12 overflow-hidden rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
-        {product.imageUrl ? (
-          <Image source={{ uri: product.imageUrl }} className="h-full w-full" resizeMode="cover" />
+        {product.imagePath || product.imageUrl ? (
+          <Image source={{ uri: product.imagePath || product.imageUrl || '' }} className="h-full w-full" resizeMode="cover" />
         ) : (
           <View className="h-full w-full items-center justify-center">
             <ImageIcon size={16} color={theme.textSubtle} strokeWidth={1.8} />

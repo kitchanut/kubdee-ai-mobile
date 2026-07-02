@@ -12,6 +12,16 @@ export interface MobileChangelogRelease {
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.26',
+    date: '2026-07-02',
+    highlight: 'คลังสินค้า Shopee เก็บรูปบน cloud ได้ครบขึ้น',
+    changes: [
+      { type: 'improved', text: 'เมื่อดึงสินค้า Shopee ระบบจะเก็บรูปสินค้าไว้ในเครื่องก่อนใช้งาน ลดโอกาสรูปหายจากลิงก์ต้นทาง' },
+      { type: 'improved', text: 'ซิงก์รูปสินค้า Shopee ขึ้น cloud เพื่อให้เปิดใช้จากอุปกรณ์อื่นได้เสถียรขึ้น' },
+      { type: 'fixed', text: 'ปรับการแสดงรูปสินค้าในคลังและหน้า Auto ให้ใช้รูปที่บันทึกไว้ก่อนลิงก์จาก Shopee' },
+    ],
+  },
+  {
     version: '0.2.25',
     date: '2026-07-02',
     highlight: 'Shopee Import ดึงสินค้าถูกใจแม่นขึ้น',

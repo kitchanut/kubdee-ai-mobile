@@ -67,6 +67,17 @@ function mergeCloudProductWithLocalImage(
   cloudProduct: AffiliateProduct,
   existingProduct: AffiliateProduct | null
 ): AffiliateProduct {
+  const preservedLocalImage =
+    existingProduct?.imagePath && !cloudProduct.imagePath
+      ? {
+        imageHash: existingProduct.imageHash ?? cloudProduct.imageHash,
+        imageMimeType: existingProduct.imageMimeType ?? cloudProduct.imageMimeType,
+        imagePath: existingProduct.imagePath,
+        imageSize: existingProduct.imageSize ?? cloudProduct.imageSize,
+        imageUploadedAt: existingProduct.imageUploadedAt ?? cloudProduct.imageUploadedAt,
+      }
+      : null;
+
   if (
     existingProduct?.imageUrl &&
     !cloudProduct.imageUrl &&
@@ -76,11 +87,12 @@ function mergeCloudProductWithLocalImage(
   ) {
     return {
       ...cloudProduct,
+      ...(preservedLocalImage ?? {}),
       imageUrl: existingProduct.imageUrl,
     };
   }
 
-  return cloudProduct;
+  return preservedLocalImage ? { ...cloudProduct, ...preservedLocalImage } : cloudProduct;
 }
 
 function toAffiliateProduct(product: SyncAffiliateProductInput): AffiliateProduct {
@@ -121,6 +133,27 @@ function toAffiliateProduct(product: SyncAffiliateProductInput): AffiliateProduc
     updatedAt: localUpdatedAt,
     profileName: null,
     groupLocalId: null,
+  };
+}
+
+function mergeSyncedPayloadWithLocalProduct(
+  existingProduct: AffiliateProduct | null,
+  payload: SyncAffiliateProductInput,
+  timestamp: number
+): AffiliateProduct {
+  const baseProduct = existingProduct ?? toAffiliateProduct(payload);
+
+  return {
+    ...baseProduct,
+    imageHash: payload.imageHash ?? baseProduct.imageHash,
+    imageMimeType: payload.imageMimeType ?? baseProduct.imageMimeType,
+    imagePath: baseProduct.imagePath ?? payload.imagePath ?? null,
+    imageR2Key: payload.imageR2Key ?? baseProduct.imageR2Key,
+    imageSize: payload.imageSize ?? baseProduct.imageSize,
+    imageUploadedAt: payload.imageUploadedAt ?? baseProduct.imageUploadedAt,
+    imageUrl: payload.imageUrl ?? baseProduct.imageUrl,
+    lastSyncedAt: timestamp,
+    updatedAt: timestamp,
   };
 }
 
@@ -509,24 +542,44 @@ export async function getDueProductSyncJobs(limit = 100): Promise<ProductSyncQue
   });
 }
 
-export async function markUpsertJobsSynced(jobIds: number[], localIds: string[]): Promise<void> {
+export async function markUpsertJobsSynced(
+  jobIds: number[],
+  localIds: string[],
+  syncedProducts: SyncAffiliateProductInput[] = []
+): Promise<void> {
   if (jobIds.length === 0) return;
 
   await runDbTask(async (db) => {
     const timestamp = nowMs();
+    const syncedProductByLocalId = new Map(syncedProducts.map((product) => [product.localId, product]));
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       for (const localId of localIds) {
+        const syncedProduct = syncedProductByLocalId.get(localId);
+        let productJson: string | null = null;
+
+        if (syncedProduct) {
+          const existing = await txn.getFirstAsync<ExistingProductSyncRow>(
+            'SELECT product_json, sync_status FROM affiliate_products WHERE local_id = ? LIMIT 1',
+            localId
+          );
+          const existingProduct = existing ? parseProduct(existing) : null;
+          productJson = JSON.stringify(mergeSyncedPayloadWithLocalProduct(existingProduct, syncedProduct, timestamp));
+        }
+
         await txn.runAsync(
           `
             UPDATE affiliate_products
             SET sync_status = 'synced',
                 last_synced_at = ?,
-                updated_at = ?
+                updated_at = ?,
+                product_json = CASE WHEN ? IS NULL THEN product_json ELSE ? END
             WHERE local_id = ? AND sync_status = 'pending_upsert'
           `,
           timestamp,
           timestamp,
+          productJson,
+          productJson,
           localId
         );
       }

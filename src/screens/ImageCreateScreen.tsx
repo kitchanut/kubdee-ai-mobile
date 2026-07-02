@@ -312,8 +312,8 @@ export default function ImageCreateScreen({
                     style={{ width: 112 }}
                   >
                     <View className="bg-kd-card-muted" style={{ height: 112, width: 112 }}>
-                      {product.imageUrl || product.imagePath ? (
-                        <Image source={{ uri: product.imageUrl || product.imagePath || '' }} className="h-full w-full" resizeMode="cover" />
+                      {product.imagePath || product.imageUrl ? (
+                        <Image source={{ uri: product.imagePath || product.imageUrl || '' }} className="h-full w-full" resizeMode="cover" />
                       ) : null}
                     </View>
                     <Text numberOfLines={2} className="p-2 text-kd-micro font-semibold text-kd-text">
