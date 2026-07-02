@@ -240,6 +240,7 @@ internal data class ShopeeLikedProductReadinessStats(
   val rawPrices: Int,
   val texts: Int,
   val safeTop: Int,
+  val safeBottom: Int,
   val recommendation: Boolean
 )
 

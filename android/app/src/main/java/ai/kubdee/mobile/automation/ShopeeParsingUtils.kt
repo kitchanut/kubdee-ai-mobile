@@ -266,7 +266,7 @@ internal fun KubdeeAccessibilityService.isProductNameCandidate(text: String): Bo
   val blocked = listOf(
     "หน้าแรก", "mall", "live", "video", "สำหรับคุณ", "การแจ้งเตือน", "ฉัน",
     "สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "liked", "ค้นหา", "แก้ไข", "edit",
-    "โค้ดลด", "ส่วนลด", "coins", "coin", "เช็คอิน", "รับ", "ซื้อเลย",
+    "ทั้งหมด", "สถานะ", "หมวดหมู่", "โค้ดลด", "ส่วนลด", "coins", "coin", "เช็คอิน", "รับ", "ซื้อเลย",
     "ขายแล้ว", "ส่งฟรี", "วันที่", "แนะนำ", "ดูเพิ่มเติม", "ช้อปปี้ถูกชัวร์",
     "ถูกชัวร์", "spaylater", "payday", "flashsale", "มีบริการติดตั้ง", "ผ่อน"
   )
@@ -290,7 +290,58 @@ internal fun KubdeeAccessibilityService.likedProductSafeTop(textNodes: List<Text
   val searchBottom = textNodes
     .filter { it.text.contains("ค้นหา", ignoreCase = true) || it.text.contains("Search", ignoreCase = true) }
     .maxOfOrNull { it.bounds.bottom }
-  return ((listOfNotNull(markerBottom, searchBottom) + (screen.top + 120)).maxOrNull() ?: (screen.top + 120)) + 12
+  val buyerFilterBottom = buyerLikedFilterBottom(textNodes, screen)
+  return ((listOfNotNull(markerBottom, searchBottom, buyerFilterBottom) + (screen.top + 120)).maxOrNull()
+    ?: (screen.top + 120)) + 16
+}
+
+internal fun KubdeeAccessibilityService.likedProductSafeBottom(textNodes: List<TextNode>, screen: Rect): Int {
+  val fallbackBottom = screen.bottom - (screen.height() * 0.08f).toInt()
+  val bottomBarTop = textNodes
+    .filter { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.top >= screen.bottom - (screen.height() * 0.18f).toInt() &&
+        isBuyerLikedBottomBarLabel(node.text)
+    }
+    .minOfOrNull { it.bounds.top }
+  return minOf(fallbackBottom, (bottomBarTop ?: fallbackBottom) - 12).coerceAtLeast(screen.top + 240)
+}
+
+internal fun KubdeeAccessibilityService.buyerLikedFilterBottom(textNodes: List<TextNode>, screen: Rect): Int? {
+  val topLimit = screen.top + (screen.height() * 0.35f).toInt()
+  val filterNodes = textNodes.filter { node ->
+    node.node.isVisibleToUser &&
+      node.bounds.top <= topLimit &&
+      isBuyerLikedFilterLabel(node.text)
+  }
+  if (filterNodes.size < 2) return null
+  return filterNodes.maxOfOrNull { it.bounds.bottom }
+}
+
+private fun isBuyerLikedFilterLabel(text: String): Boolean {
+  val compact = text.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)
+  return listOf(
+    "ทั้งหมด",
+    "สถานะ",
+    "ส่วนลด",
+    "หมวดหมู่",
+    "all",
+    "status",
+    "discount",
+    "category"
+  ).any { compact == it.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT) }
+}
+
+private fun isBuyerLikedBottomBarLabel(text: String): Boolean {
+  val compact = text.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)
+  return listOf(
+    "เลือกแล้ว",
+    "นำออก",
+    "แชร์",
+    "selected",
+    "remove",
+    "share"
+  ).any { compact.contains(it.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)) }
 }
 
 internal fun KubdeeAccessibilityService.shopeeLikedColumnWidth(screen: Rect): Int =
@@ -306,7 +357,12 @@ internal fun KubdeeAccessibilityService.shopeeLikedCardBucket(tapBounds: Rect, p
   return "$column:${midY / yBucketSize}"
 }
 
-internal fun KubdeeAccessibilityService.isShopeeLikedProductTapBoundsSafe(tapBounds: Rect, screen: Rect, safeTop: Int): Boolean {
+internal fun KubdeeAccessibilityService.isShopeeLikedProductTapBoundsSafe(
+  tapBounds: Rect,
+  screen: Rect,
+  safeTop: Int,
+  safeBottom: Int = screen.bottom - (screen.height() * 0.08f).toInt()
+): Boolean {
   val tapX = tapBounds.centerX()
   val tapY = tapBounds.centerY()
   return tapBounds.width() > 0 &&
@@ -314,7 +370,7 @@ internal fun KubdeeAccessibilityService.isShopeeLikedProductTapBoundsSafe(tapBou
     tapX > screen.left &&
     tapX < screen.right &&
     tapY > safeTop &&
-    tapY < screen.bottom - (screen.height() * 0.08f).toInt()
+    tapY < safeBottom
 }
 
 internal fun KubdeeAccessibilityService.candidateRowBounds(node: AccessibilityNodeInfo, fallback: Rect, safeTop: Int, screen: Rect): Rect {
