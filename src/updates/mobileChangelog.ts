@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.37',
+    date: '2026-07-02',
+    highlight: 'ซ่อน overlay ระหว่างคุม Shopee เพื่อไม่ให้บังหรือถูกรวมใน Accessibility',
+    changes: [
+      { type: 'fixed', text: 'ซ่อน floating log และปุ่ม Stop ระหว่าง Shopee automation แทนการย้ายตำแหน่ง ลดโอกาสบังปุ่ม Shopee ทั้งด้านบนและด้านล่าง' },
+      { type: 'improved', text: 'ยังเก็บ log และส่งกลับหน้าแอปเหมือนเดิม แต่ไม่สร้าง overlay ทับหน้าจอ Shopee ระหว่างดึงสินค้าและโพสต์วิดีโอ' },
+    ],
+  },
+  {
     version: '0.2.36',
     date: '2026-07-02',
     highlight: 'ย้าย log automation ลงล่างเพื่อไม่ทับหัวหน้า Shopee',

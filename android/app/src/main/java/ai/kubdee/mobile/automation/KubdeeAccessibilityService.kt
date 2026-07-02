@@ -77,6 +77,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
   internal var automationStatusLabel = "RUNNING"
 
   @Volatile
+  internal var automationFloatingUiSuppressed = false
+
+  @Volatile
   internal var stopRequested = false
 
   @Volatile
@@ -395,6 +398,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       var importedCount = 0
       var errorMessage: String? = null
       try {
+        setAutomationFloatingUiSuppressedBlocking(true)
         val normalizedMaxItems = if (maxItems <= 0) 0 else maxItems
         importedCount = importShopeeLikedProducts(
           TARGET_PACKAGE_SHOPEE,
@@ -418,7 +422,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
           stopped = stopRequested,
           profileLocalId = profileLocalId
         )
-        mainHandler.postDelayed({ launchKubdeeLibrary() }, 250L)
+        mainHandler.postDelayed({
+          try {
+            launchKubdeeLibrary()
+          } finally {
+            setAutomationFloatingUiSuppressedBlocking(false)
+          }
+        }, 250L)
         if (shopeeImportThread === Thread.currentThread()) {
           shopeeImportThread = null
         }

@@ -60,6 +60,7 @@ internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): J
 
   return try {
     clearStopShopeeAutomation()
+    setAutomationFloatingUiSuppressedBlocking(true)
     resetAutomationLog()
     beginAutomationForeground("กำลังโพสต์วิดีโอ Shopee")
 
@@ -143,6 +144,7 @@ internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): J
   } finally {
     endAutomationForeground()
     hideAutomationOverlay(2500L)
+    setAutomationFloatingUiSuppressedBlocking(false)
   }
 }
 
@@ -641,7 +643,6 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
     }
   } finally {
     sleepStep(180L)
-    setAutomationFloatingUiVisibleBlocking(true)
   }
 
   successMessage?.let { message ->

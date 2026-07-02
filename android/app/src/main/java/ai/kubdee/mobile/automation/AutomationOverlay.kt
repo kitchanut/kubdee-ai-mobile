@@ -154,6 +154,10 @@ internal fun KubdeeAccessibilityService.ensureAutomationNotificationChannel() {
 internal fun KubdeeAccessibilityService.showAutomationOverlay(message: String) {
   mainHandler.post {
     if (KubdeeAccessibilityService.getInstance() !== this) return@post
+    if (automationFloatingUiSuppressed) {
+      removeAutomationOverlay()
+      return@post
+    }
     val overlay = ensureAutomationOverlay() ?: return@post
     updateAutomationOverlayContent()
     overlay.visibility = View.VISIBLE
@@ -196,11 +200,19 @@ internal fun KubdeeAccessibilityService.removeAutomationOverlay() {
 }
 
 internal fun KubdeeAccessibilityService.setAutomationStopButtonVisibleBlocking(visible: Boolean) {
+  val update = {
+    overlayStopButton?.visibility = if (visible && !automationFloatingUiSuppressed) android.view.View.VISIBLE else android.view.View.GONE
+  }
+  if (Looper.myLooper() == Looper.getMainLooper()) {
+    update()
+    return
+  }
+
   val latch = CountDownLatch(1)
   try {
     mainHandler.post {
       try {
-        overlayStopButton?.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        update()
       } finally {
         latch.countDown()
       }
@@ -212,13 +224,21 @@ internal fun KubdeeAccessibilityService.setAutomationStopButtonVisibleBlocking(v
 }
 
 internal fun KubdeeAccessibilityService.setAutomationFloatingUiVisibleBlocking(visible: Boolean) {
+  val update = {
+    val visibility = if (visible && !automationFloatingUiSuppressed) android.view.View.VISIBLE else android.view.View.GONE
+    overlayView?.visibility = visibility
+    overlayStopButton?.visibility = visibility
+  }
+  if (Looper.myLooper() == Looper.getMainLooper()) {
+    update()
+    return
+  }
+
   val latch = CountDownLatch(1)
   try {
     mainHandler.post {
       try {
-        val visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
-        overlayView?.visibility = visibility
-        overlayStopButton?.visibility = visibility
+        update()
       } finally {
         latch.countDown()
       }
@@ -229,8 +249,16 @@ internal fun KubdeeAccessibilityService.setAutomationFloatingUiVisibleBlocking(v
   }
 }
 
+internal fun KubdeeAccessibilityService.setAutomationFloatingUiSuppressedBlocking(suppressed: Boolean) {
+  automationFloatingUiSuppressed = suppressed
+  if (suppressed) {
+    setAutomationFloatingUiVisibleBlocking(false)
+    removeAutomationOverlay()
+  }
+}
+
 internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): LinearLayout? {
-  if (automationOverlayUnavailable) return null
+  if (automationOverlayUnavailable || automationFloatingUiSuppressed) return null
   overlayView?.let { return it }
 
   val title = TextView(this).apply {
@@ -268,6 +296,7 @@ internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): LinearLayout?
   }
   val root = LinearLayout(this).apply {
     orientation = LinearLayout.VERTICAL
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     setPadding(dp(10), dp(8), dp(84), dp(8))
     background = GradientDrawable().apply {
       setColor(Color.argb(232, 15, 23, 42))
@@ -408,7 +437,7 @@ internal fun KubdeeAccessibilityService.automationLogText(line: String): TextVie
   }
 
 internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
-  if (automationOverlayUnavailable) return null
+  if (automationOverlayUnavailable || automationFloatingUiSuppressed) return null
   overlayStopButton?.let { return it }
 
   val button = Button(this).apply {
@@ -421,6 +450,7 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
     minWidth = 0
     minimumHeight = 0
     minimumWidth = 0
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     setTextColor(Color.WHITE)
     setPadding(dp(8), 0, dp(8), 0)
     background = GradientDrawable().apply {
