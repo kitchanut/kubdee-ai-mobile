@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.35',
+    date: '2026-07-02',
+    highlight: 'Shopee Post หาไอคอนโซ่บนหน้าจอเล็กได้ถูกต้องขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การกรองไอคอนโซ่มุมขวาบนหน้าเพิ่มสินค้า Shopee ที่บางเครื่องมีขนาดเล็กกว่า threshold เดิม ทำให้ระบบหา node ไม่เจอ' },
+      { type: 'improved', text: 'ยังคงจำกัดการกดเฉพาะไอคอน ImageView ใน header หน้าเพิ่มสินค้า เพื่อไม่ให้เดากดตำแหน่งสุ่มและ debug ยาก' },
+    ],
+  },
+  {
     version: '0.2.34',
     date: '2026-07-02',
     highlight: 'Shopee Post แสดงเวอร์ชันและลดปัญหา overlay บังไอคอนโซ่',

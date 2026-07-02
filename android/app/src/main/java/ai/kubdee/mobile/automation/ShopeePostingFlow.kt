@@ -672,10 +672,12 @@ internal fun KubdeeAccessibilityService.findShopeeTopRightHeaderImage(
     val className = node.className?.toString().orEmpty().lowercase(Locale.ROOT)
     val headerTop = screen.top + statusBarHeightPx() - dp(8)
     val headerBottom = screen.top + statusBarHeightPx() + dp(88)
+    val minIconSize = dp(12)
+    val maxIconSize = dp(96)
     val isTopRightHeaderImage =
       className.contains("imageview") &&
-        bounds.width() in dp(24)..dp(72) &&
-        bounds.height() in dp(24)..dp(72) &&
+        bounds.width() in minIconSize..maxIconSize &&
+        bounds.height() in minIconSize..maxIconSize &&
         bounds.centerX() >= screen.right - dp(96) &&
         bounds.centerY() in headerTop..headerBottom
 
