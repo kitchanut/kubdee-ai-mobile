@@ -44,6 +44,16 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.28',
+    date: '2026-07-02',
+    highlight: 'Changelog โหลดจาก server และอ่านง่ายขึ้น',
+    changes: [
+      { type: 'improved', text: 'Changelog ในแอปรองรับข้อมูลจาก server และแยกหมวดอัปเดต เช่น Improvements และ Bug Fixes ได้แล้ว' },
+      { type: 'improved', text: 'เพิ่ม cache/fallback ให้ยังเปิดดูรายการอัปเดตได้แม้โหลดข้อมูลล่าสุดไม่สำเร็จ' },
+      { type: 'improved', text: 'ปรับตัวหนังสือ log บน Shopee overlay ให้อ่านสบายขึ้นและไม่เด่นเกินหน้าจอหลัก' },
+    ],
+  },
+  {
     version: '0.2.27',
     date: '2026-07-02',
     highlight: 'Shopee Import และ Shopee Post เสถียรขึ้น',

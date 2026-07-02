@@ -379,9 +379,9 @@ internal fun KubdeeAccessibilityService.automationChip(label: String, value: Str
 internal fun KubdeeAccessibilityService.automationLogText(line: String): TextView =
   TextView(this).apply {
     text = line
-    setTextColor(Color.argb(245, 248, 250, 252))
-    textSize = 10f
-    typeface = Typeface.DEFAULT_BOLD
+    setTextColor(Color.argb(225, 226, 232, 240))
+    textSize = 9.5f
+    typeface = Typeface.DEFAULT
     includeFontPadding = false
     maxLines = 1
     ellipsize = TextUtils.TruncateAt.END
