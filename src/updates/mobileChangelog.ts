@@ -44,6 +44,16 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.29',
+    date: '2026-07-02',
+    highlight: 'Shopee Post แนบสินค้าได้เสถียรขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การแนบสินค้าในหน้าโพสต์ Shopee ให้รองรับขั้นตอนแตะเพื่อเพิ่มสินค้าและวางลิงก์รูปแบบใหม่' },
+      { type: 'improved', text: 'ปรับการเปิดเมนู Shopee Post ให้ใช้ทางเดียวกับขั้นตอนดึงสินค้า ลดโอกาสเลื่อนหาเมนูเกินจำเป็น' },
+      { type: 'improved', text: 'เพิ่มการรอและลองซ้ำเมื่อหน้าเพิ่มสินค้า Shopee โหลดช้า' },
+    ],
+  },
+  {
     version: '0.2.28',
     date: '2026-07-02',
     highlight: 'Changelog โหลดจาก server และอ่านง่ายขึ้น',
