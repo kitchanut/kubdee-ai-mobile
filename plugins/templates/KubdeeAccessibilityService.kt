@@ -463,6 +463,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         }
       }
 
+      logStep("กลับไป Kubdee AI เพื่อเปิดรายการ Shopee Post")
       KubdeeAutomationIpc.sendShopeePostFinished(
         this,
         runId,
@@ -470,6 +471,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         error = result.optString("error").takeIf { it.isNotBlank() },
         stopped = result.optBoolean("stopped", false)
       )
+      mainHandler.postDelayed({ launchKubdeeShopeePostList() }, 250L)
       if (shopeePostThread === Thread.currentThread()) {
         shopeePostThread = null
       }

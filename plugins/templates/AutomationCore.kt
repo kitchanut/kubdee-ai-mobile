@@ -77,6 +77,17 @@ internal fun KubdeeAccessibilityService.launchKubdeeLibrary(): Boolean =
     }
   )
 
+internal fun KubdeeAccessibilityService.launchKubdeeShopeePostList(): Boolean =
+  startActivityOnMainThread(
+    Intent(Intent.ACTION_VIEW, Uri.parse("kubdeeai://shopee")).apply {
+      setPackage(packageName)
+      addCategory(Intent.CATEGORY_BROWSABLE)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+  )
+
 internal fun KubdeeAccessibilityService.closeShopeeBeforeFreshLaunch(packageName: String) {
   logStep("ปิด Shopee เดิมก่อนเริ่มงาน")
   performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)

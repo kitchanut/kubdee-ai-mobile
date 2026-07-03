@@ -44,6 +44,14 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.45',
+    date: '2026-07-03',
+    highlight: 'Shopee Post กลับมาหน้ารายการหลังทำงานจบ',
+    changes: [
+      { type: 'improved', text: 'หลังโพสต์ Shopee เสร็จหรือหยุดงาน แอปจะกลับมาที่หน้า Shopee Post เพื่อดูผลลัพธ์และ log ต่อได้ทันที' },
+    ],
+  },
+  {
     version: '0.2.44',
     date: '2026-07-03',
     highlight: 'Shopee Post เก็บ log ย้อนหลังได้เสถียรขึ้น',
