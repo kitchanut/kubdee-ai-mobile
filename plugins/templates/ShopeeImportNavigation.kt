@@ -323,6 +323,262 @@ internal fun KubdeeAccessibilityService.waitForShopeeLikedListVisible(timeoutMs:
     }
     return false
   }
+
+internal fun KubdeeAccessibilityService.openShopeeAffiliateOfferPage(): Boolean {
+    if (isShopeeAffiliateOfferPageVisible()) {
+      logStep("อยู่หน้า Affiliate > ข้อเสนอแล้ว")
+      return true
+    }
+
+    logStep("เปิด โปรแกรม Affiliate")
+    if (!scrollUntilTapText(SHOPEE_AFFILIATE_TEXTS, maxAttempts = 8)) {
+      logStep("ไม่พบเมนู โปรแกรม Affiliate")
+      return false
+    }
+
+    if (waitForShopeeAffiliateOfferPageVisible(10_000L)) {
+      logStep("หน้า Affiliate > ข้อเสนอ พร้อมแล้ว")
+      return true
+    }
+
+    logStep("ลองกด tab ข้อเสนอ ในโปรแกรม Affiliate")
+    if (tapShopeeAffiliateOffersTab() && waitForShopeeAffiliateOfferPageVisible(8_000L)) {
+      logStep("เข้า tab ข้อเสนอ สำเร็จ")
+      return true
+    }
+
+    return isShopeeAffiliateOfferPageVisible()
+  }
+
+internal fun KubdeeAccessibilityService.waitForShopeeAffiliateOfferPageVisible(timeoutMs: Long): Boolean {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkStopRequested()
+      dismissShopeeBlockingPopups()
+      if (isShopeeAffiliateOfferPageVisible()) return true
+      sleepStep(500L)
+    }
+    return false
+  }
+
+internal fun KubdeeAccessibilityService.selectShopeeAffiliateOfferCategory(category: String): Boolean {
+    val targetCategory = normalizeShopeeOfferCategory(category)
+    logStep("เลือกหมวดข้อเสนอ: $targetCategory")
+
+    findShopeeAffiliateOfferCategoryTab(targetCategory)?.let { candidate ->
+      return tapShopeeAffiliateOfferCategory(candidate, targetCategory)
+    }
+
+    repeat(3) {
+      checkStopRequested()
+      if (!swipeShopeeAffiliateOfferCategoryRow(backward = true)) return@repeat
+      sleepStep(450L)
+      findShopeeAffiliateOfferCategoryTab(targetCategory)?.let { candidate ->
+        return tapShopeeAffiliateOfferCategory(candidate, targetCategory)
+      }
+    }
+
+    repeat(8) { attempt ->
+      checkStopRequested()
+      findShopeeAffiliateOfferCategoryTab(targetCategory)?.let { candidate ->
+        return tapShopeeAffiliateOfferCategory(candidate, targetCategory)
+      }
+      if (attempt < 7) {
+        if (!swipeShopeeAffiliateOfferCategoryRow(backward = false)) return@repeat
+        sleepStep(550L)
+      }
+    }
+
+    logStep("ไม่พบหมวดข้อเสนอ: $targetCategory")
+    return false
+  }
+
+internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferCategoryTab(category: String): TextNode? {
+    val root = rootInActiveWindow ?: return null
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val topLimit = screen.top + (screen.height() * 0.28f).toInt()
+    val bottomLimit = screen.bottom - (screen.height() * 0.16f).toInt()
+    return textNodes
+      .filter { node ->
+        node.node.isVisibleToUser &&
+          cleanNodeText(node.text).equals(category, ignoreCase = true) &&
+          node.bounds.centerY() in topLimit..bottomLimit
+      }
+      .minWithOrNull(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+  }
+
+internal fun KubdeeAccessibilityService.tapShopeeAffiliateOfferCategory(candidate: TextNode, category: String): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val tapBounds = shopeeAffiliateOfferCategoryTapBounds(candidate, screen)
+    logStep(
+      "แตะหมวดข้อเสนอ '$category' ที่ ${tapBounds.centerX()},${tapBounds.centerY()} " +
+        "จาก text ${candidate.bounds.left},${candidate.bounds.top},${candidate.bounds.right},${candidate.bounds.bottom}"
+    )
+    val tapped = tapBlocking(
+      tapBounds.centerX().toFloat(),
+      tapBounds.centerY().toFloat(),
+      timeoutMs = 1800L,
+      durationMs = 100L
+    ) || (candidate.node.isClickable && candidate.node.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+    if (tapped) {
+      sleepStep(1200L)
+      dismissShopeeBlockingPopups()
+      logStep("เลือกหมวดข้อเสนอแล้ว: $category")
+    }
+    return tapped
+  }
+
+internal fun KubdeeAccessibilityService.shopeeAffiliateOfferCategoryTapBounds(candidate: TextNode, screen: Rect): Rect {
+    val textBounds = candidate.bounds
+    val horizontalPadding = minOf(dp(10), maxOf(dp(3), textBounds.width() / 8))
+    val halfHeight = maxOf(dp(20), (textBounds.height() / 2) + dp(12))
+    val centerY = textBounds.centerY()
+    return Rect(
+      (textBounds.left - horizontalPadding).coerceAtLeast(screen.left),
+      (centerY - halfHeight).coerceAtLeast(screen.top),
+      (textBounds.right + horizontalPadding).coerceAtMost(screen.right),
+      (centerY + halfHeight).coerceAtMost(screen.bottom)
+    )
+  }
+
+internal fun KubdeeAccessibilityService.swipeShopeeAffiliateOfferCategoryRow(backward: Boolean): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val rowY = findShopeeAffiliateOfferCategoryRowY(root, screen)
+      ?: (screen.top + screen.height() * 0.70f).toInt()
+    val startX = if (backward) {
+      screen.left + screen.width() * 0.20f
+    } else {
+      screen.right - screen.width() * 0.08f
+    }
+    val endX = if (backward) {
+      screen.right - screen.width() * 0.08f
+    } else {
+      screen.left + screen.width() * 0.20f
+    }
+    return swipeBlocking(startX, rowY.toFloat(), endX, rowY.toFloat(), 360L)
+  }
+
+internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferCategoryRowY(
+    root: AccessibilityNodeInfo,
+    screen: Rect
+  ): Int? {
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val topLimit = screen.top + (screen.height() * 0.28f).toInt()
+    val bottomLimit = screen.bottom - (screen.height() * 0.16f).toInt()
+    return textNodes
+      .filter { node ->
+        node.node.isVisibleToUser &&
+          node.bounds.centerY() in topLimit..bottomLimit &&
+          SHOPEE_OFFER_CATEGORY_TEXTS.any { label -> cleanNodeText(node.text).equals(label, ignoreCase = true) }
+      }
+      .maxByOrNull { it.bounds.top }
+      ?.bounds
+      ?.centerY()
+  }
+
+internal fun KubdeeAccessibilityService.tapShopeeAffiliateOffersTab(): Boolean {
+    if (isShopeeAffiliateOfferPageVisible()) return true
+
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val textNodes = mutableListOf<TextNode>()
+      collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+      val candidates = textNodes
+        .filter { candidate ->
+          candidate.text.equals("ข้อเสนอ", ignoreCase = true) &&
+            candidate.bounds.top >= screen.top + (screen.height() * 0.78f).toInt()
+        }
+        .sortedWith(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+
+      for (candidate in candidates) {
+        val tapBounds = bottomNavTapBounds(candidate.node, candidate.bounds, screen)
+        if (tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat(), durationMs = 120L)) return true
+        if (clickNode(candidate.node)) return true
+      }
+    }
+
+    val display = displayBounds()
+    return tapBlocking(
+      display.left + display.width() * 0.125f,
+      display.bottom - display.height() * 0.08f,
+      durationMs = 120L
+    )
+  }
+
+internal fun KubdeeAccessibilityService.isShopeeAffiliateOfferPageVisible(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    if (textNodes.isEmpty()) return false
+
+    val bottomNavStart = screen.bottom - (screen.height() * 0.14f).toInt()
+    val hasBottomOfferTab = textNodes.any { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.top >= bottomNavStart &&
+        node.text.equals("ข้อเสนอ", ignoreCase = true)
+    }
+    val categoryHits = textNodes.count { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.top < screen.bottom - (screen.height() * 0.10f).toInt() &&
+        (
+          SHOPEE_OFFER_CATEGORY_TEXTS.any { marker -> node.text.contains(marker, ignoreCase = true) } ||
+            listOf("สินค้ารีวิวรับเงินคืนได้", "ค่าคอมพิเศษ").any { marker ->
+              node.text.contains(marker, ignoreCase = true)
+            }
+        )
+    }
+    val affiliateHits = textNodes.count { node ->
+      node.node.isVisibleToUser &&
+        listOf("ค่าคอมมิชชั่น", "จำนวนคลิก", "คำสั่งซื้อ", "ค่าคอมโดยประมาณ").any { marker ->
+          node.text.contains(marker, ignoreCase = true)
+        }
+    }
+    val shareButtons = findShopeePartnerOfferShareButtons(root, screen, 0, screen.bottom)
+      .count { it.gridLike }
+
+    return hasBottomOfferTab && (categoryHits >= 2 || affiliateHits >= 1 || shareButtons > 0)
+  }
+
+internal fun KubdeeAccessibilityService.waitForShopeeAffiliateOffersReady(timeoutMs: Long): Boolean {
+    val start = System.currentTimeMillis()
+    var lastLog = 0L
+    var scrollAttempts = 0
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkStopRequested()
+      val offers = scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_OFFERS, logResult = false)
+      if (offers.isNotEmpty()) {
+        logStep("สินค้าในหน้าข้อเสนอโหลดแล้ว (${offers.size} การ์ด)")
+        return true
+      }
+
+      val now = System.currentTimeMillis()
+      if (now - lastLog > 3000L) {
+        logStep("รอสินค้าในหน้าข้อเสนอ ${((now - start) / 1000.0).formatOneDecimal()} วิ")
+        lastLog = now
+      }
+
+      if (isShopeeAffiliateOfferPageVisible() && scrollAttempts < 4) {
+        scrollAttempts += 1
+        scrollShopeeAffiliateOffersList()
+      } else {
+        sleepStep(750L)
+      }
+    }
+    return false
+  }
+
+internal fun KubdeeAccessibilityService.scrollShopeeAffiliateOffersList(): Boolean {
+    logStep("เลื่อนหน้าข้อเสนอแบบสั้น")
+    if (swipeUpByScreen(durationMs = 360L, startFraction = 0.78f, endFraction = 0.52f)) return true
+    return scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  }
+
 internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolean {
     if (isShopeePartnerLikedViewVisible()) {
       logStep("อยู่ในมุมมองพาร์ทเนอร์แล้ว")
@@ -472,7 +728,10 @@ internal fun KubdeeAccessibilityService.scrollShopeePartnerLikedList(): Boolean 
     if (swipeUpByScreen(durationMs = 360L, startFraction = 0.76f, endFraction = 0.52f)) return true
     return scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
   }
-internal fun KubdeeAccessibilityService.scrapeVisibleShopeePartnerOfferCandidates(logResult: Boolean = true): List<ShopeePartnerOfferCandidate> {
+internal fun KubdeeAccessibilityService.scrapeVisibleShopeePartnerOfferCandidates(
+    status: String = SHOPEE_IMPORT_SOURCE_LIKED,
+    logResult: Boolean = true
+  ): List<ShopeePartnerOfferCandidate> {
     val root = rootInActiveWindow ?: return emptyList()
     if (isShopeeShareSheetVisible()) closeShopeeShareSheet()
     val screen = screenBounds(root)
@@ -495,7 +754,8 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeePartnerOfferCandidate
         shareButton = shareButton,
         screen = screen,
         safeTop = safeTop,
-        safeBottom = safeBottom
+        safeBottom = safeBottom,
+        status = status
       )
       if (candidate == null) {
         noNameCount += 1
@@ -530,7 +790,10 @@ internal fun KubdeeAccessibilityService.partnerOfferSafeTop(textNodes: List<Text
             "Partner View",
             "เรียงตาม",
             "ข้อเสนอที่ดีกว่า",
-            "ไม่พร้อมโปรโมต"
+            "ไม่พร้อมโปรโมต",
+            *SHOPEE_OFFER_CATEGORY_TEXTS.toTypedArray(),
+            "สินค้ารีวิวรับเงินคืนได้",
+            "ค่าคอมพิเศษ"
           ).any { marker -> node.text.contains(marker, ignoreCase = true) }
       }
       .maxOfOrNull { it.bounds.bottom }
@@ -562,15 +825,27 @@ internal fun KubdeeAccessibilityService.collectShopeePartnerOfferShareButtons(
       val raw = "${readNodeText(node)} $resourceId".lowercase(Locale.ROOT)
       val looksLikeCardShare = raw.contains("offercard_control_icon_img_share") ||
         raw.contains("offer_card_control_icon_img_share")
+      val looksLikeAffiliateOfferShare = raw.contains("an_commrate_shareiconwithbg_img") ||
+        (raw.contains("commrate") && raw.contains("shareicon")) ||
+        (raw.contains("commrate") && raw.contains("share"))
+      val minShareX = if (looksLikeAffiliateOfferShare) {
+        screen.left + (screen.width() * 0.34f).toInt()
+      } else {
+        screen.left + (screen.width() * 0.68f).toInt()
+      }
       if (
-        looksLikeCardShare &&
+        (looksLikeCardShare || looksLikeAffiliateOfferShare) &&
         bounds.width() > 0 &&
         bounds.height() > 0 &&
         bounds.centerY() in safeTop..safeBottom &&
-        bounds.centerX() >= screen.left + (screen.width() * 0.68f).toInt()
+        bounds.centerX() >= minShareX
       ) {
         val clickBounds = findSmallClickableAncestorBounds(node, bounds, screen)
-        output += ShopeePartnerShareButton(bounds = clickBounds, iconBounds = Rect(bounds))
+        output += ShopeePartnerShareButton(
+          bounds = clickBounds,
+          iconBounds = Rect(bounds),
+          gridLike = looksLikeAffiliateOfferShare
+        )
       }
     }
 
@@ -607,8 +882,21 @@ internal fun KubdeeAccessibilityService.buildShopeePartnerOfferCandidate(
     shareButton: ShopeePartnerShareButton,
     screen: Rect,
     safeTop: Int,
-    safeBottom: Int
+    safeBottom: Int,
+    status: String
   ): ShopeePartnerOfferCandidate? {
+    if (shareButton.gridLike) {
+      return buildShopeeAffiliateOfferGridCandidate(
+        textNodes = textNodes,
+        imageNodes = imageNodes,
+        shareButton = shareButton,
+        screen = screen,
+        safeTop = safeTop,
+        safeBottom = safeBottom,
+        status = status
+      )
+    }
+
     val rowTop = (shareButton.bounds.top - (screen.height() * 0.15f).toInt()).coerceAtLeast(safeTop)
     val rowBottom = (shareButton.bounds.bottom + (screen.height() * 0.04f).toInt()).coerceAtMost(safeBottom)
     val rowTexts = textNodes.filter { node ->
@@ -649,10 +937,80 @@ internal fun KubdeeAccessibilityService.buildShopeePartnerOfferCandidate(
         productUrl = productUrl,
         externalProductId = externalProductId,
         imageUrl = imageUrl,
-        status = "liked",
+        status = status,
         scrapedAt = System.currentTimeMillis()
       ),
       tapBounds = findShopeePartnerDetailTapBounds(nameNode, shareButton, screen, safeTop),
+      safeTop = safeTop,
+      shareBounds = Rect(shareButton.bounds)
+    )
+  }
+
+internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidate(
+    textNodes: List<TextNode>,
+    imageNodes: List<ShopeeImageNode>,
+    shareButton: ShopeePartnerShareButton,
+    screen: Rect,
+    safeTop: Int,
+    safeBottom: Int,
+    status: String
+  ): ShopeePartnerOfferCandidate? {
+    val margin = maxOf(8, (screen.width() * 0.018f).toInt())
+    val centerX = shareButton.iconBounds.centerX()
+    val isLeftColumn = centerX < screen.centerX()
+    val columnLeft = if (isLeftColumn) screen.left + margin else screen.centerX()
+    val columnRight = if (isLeftColumn) screen.centerX() else screen.right - margin
+    val textTop = (shareButton.bounds.top - (screen.height() * 0.17f).toInt()).coerceAtLeast(safeTop)
+    val cardTop = (shareButton.bounds.top - (screen.height() * 0.40f).toInt()).coerceAtLeast(safeTop)
+    val cardBottom = (shareButton.bounds.bottom + (screen.height() * 0.05f).toInt()).coerceAtMost(safeBottom)
+    val rowTexts = textNodes.filter { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.centerX() in columnLeft..columnRight &&
+        node.bounds.centerY() in textTop..cardBottom
+    }
+    val nameNode = rowTexts
+      .filter { node ->
+        node.bounds.top < shareButton.bounds.top + 12 &&
+          node.bounds.right <= columnRight &&
+          isShopeePartnerProductNameCandidate(node.text)
+      }
+      .minWithOrNull(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+      ?: return null
+    val name = cleanShopeePartnerProductName(nameNode.text).take(180)
+    if (name.length < 5) return null
+
+    val price = findPriceNodes(rowTexts).minByOrNull { it.bounds.top }?.text?.let { normalizePrice(it) }
+    val productUrl = rowTexts.firstNotNullOfOrNull { extractUrl(it.text) }
+    val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
+      ?: fallbackShopeeProductIdFromName(name)
+    val stock = rowTexts.firstNotNullOfOrNull { extractStock(it.text) }
+    val imageUrl = imageNodes
+      .filter { image ->
+        image.bounds.centerX() in columnLeft..columnRight &&
+          image.bounds.centerY() in cardTop..cardBottom
+      }
+      .maxByOrNull { image -> image.bounds.width() * image.bounds.height() }
+      ?.imageUrl
+
+    val tapBounds = Rect(
+      maxOf(nameNode.bounds.left, columnLeft),
+      maxOf(nameNode.bounds.top, safeTop),
+      minOf(nameNode.bounds.right, columnRight),
+      minOf(maxOf(nameNode.bounds.bottom, nameNode.bounds.top + 48), shareButton.bounds.top - 8)
+    )
+
+    return ShopeePartnerOfferCandidate(
+      product = ShopeeLikedProduct(
+        name = name,
+        price = price,
+        stock = stock,
+        productUrl = productUrl,
+        externalProductId = externalProductId,
+        imageUrl = imageUrl,
+        status = status,
+        scrapedAt = System.currentTimeMillis()
+      ),
+      tapBounds = tapBounds,
       safeTop = safeTop,
       shareBounds = Rect(shareButton.bounds)
     )
@@ -691,6 +1049,7 @@ internal fun KubdeeAccessibilityService.isShopeePartnerProductNameCandidate(text
       "ค่าคอมมิชชั่น",
       "คอมมิชชั่น",
       "ขายแล้ว",
+      "ขายได้",
       "สินค้าคล้ายกัน",
       "เปลี่ยน",
       "เลือกแล้ว",

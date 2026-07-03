@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, RefreshControl, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, PermissionsAndroid, Platform, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import type { ListRenderItem } from 'react-native';
 import {
   Cloud,
@@ -29,7 +29,7 @@ import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from
 import type { AffiliateProduct } from '@/library/types';
 import {
   getAccessibilityStatus,
-  importShopeeLikedProducts as runNativeShopeeLikedImport,
+  importShopeeProducts as runNativeShopeeImport,
   openAccessibilitySettings,
 } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -51,6 +51,7 @@ import {
 import {
   ProductCard,
   SHOPEE_IMPORT_AMOUNT_OPTIONS,
+  SHOPEE_OFFER_CATEGORY_OPTIONS,
   SHOPEE_ORANGE,
   ShopeeImportOptionButton,
   formatShopeeImportResult,
@@ -61,7 +62,7 @@ import {
   getShopeeImportAmountLabel,
   getShopeeImportLimit,
 } from './product-panel';
-import type { ShopeeImportAmount, ShopeeImportSource, SortKey } from './product-panel';
+import type { ShopeeImportAmount, ShopeeImportSource, ShopeeOfferCategory, SortKey } from './product-panel';
 
 function formatProfileDebugId(profileId: string): string {
   const cleanProfileId = profileId.trim();
@@ -73,6 +74,60 @@ function formatUserDebugLabel(user: { id?: string | null; email?: string | null 
   const userId = user?.id?.trim();
   const shortUserId = userId ? userId.slice(0, 8) : 'no-user';
   return email ? `${email} (${shortUserId})` : shortUserId;
+}
+
+function getAndroidApiLevel(): number {
+  const version = Platform.Version;
+  return typeof version === 'number' ? version : Number.parseInt(String(version), 10) || 0;
+}
+
+async function ensureShopeeOfferImagePermission(
+  source: ShopeeImportSource,
+  appendLog: (message: string, ts?: number) => void
+): Promise<boolean> {
+  if (source !== 'offers' || Platform.OS !== 'android') {
+    return true;
+  }
+
+  const apiLevel = getAndroidApiLevel();
+  const permission = apiLevel >= 33
+    ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+    : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+
+  if (await PermissionsAndroid.check(permission)) {
+    return true;
+  }
+
+  appendLog('ต้องขอสิทธิ์อ่านรูปภาพ เพื่อดึงรูปสินค้าจากข้อเสนอ Shopee');
+  const result = await PermissionsAndroid.request(permission, {
+    title: 'อนุญาตอ่านรูปสินค้า',
+    message: 'Kubdee AI ต้องอ่านรูปที่ Shopee ดาวน์โหลดจากแผงแชร์ เพื่อบันทึกรูปสินค้าในข้อเสนอ Affiliate',
+    buttonPositive: 'อนุญาต',
+    buttonNegative: 'ยกเลิก',
+  });
+
+  if (result === PermissionsAndroid.RESULTS.GRANTED && await PermissionsAndroid.check(permission)) {
+    appendLog('ได้รับสิทธิ์อ่านรูปภาพแล้ว');
+    return true;
+  }
+
+  appendLog('หยุดนำเข้า: ยังไม่ได้อนุญาตอ่านรูปภาพแบบเต็ม จึงดึงรูปข้อเสนอไม่ได้');
+  Alert.alert(
+    'ต้องอนุญาตรูปภาพ',
+    apiLevel >= 33
+      ? 'โปรดอนุญาตรูปภาพทั้งหมด เพื่อให้ Kubdee AI อ่านรูปที่ Shopee ดาวน์โหลดระหว่างนำเข้าข้อเสนอได้'
+      : 'โปรดอนุญาตอ่านพื้นที่จัดเก็บ เพื่อให้ Kubdee AI อ่านรูปที่ Shopee ดาวน์โหลดระหว่างนำเข้าข้อเสนอได้',
+    [
+      { text: 'ยกเลิก', style: 'cancel' },
+      {
+        text: 'เปิดตั้งค่า',
+        onPress: () => {
+          void Linking.openSettings();
+        },
+      },
+    ]
+  );
+  return false;
 }
 
 export default function ProductPanel({
@@ -116,6 +171,7 @@ export default function ProductPanel({
   const [isShopeeImporting, setIsShopeeImporting] = useState(false);
   const [shopeeImportModalOpen, setShopeeImportModalOpen] = useState(false);
   const [shopeeImportSource, setShopeeImportSource] = useState<ShopeeImportSource>('liked');
+  const [shopeeOfferCategory, setShopeeOfferCategory] = useState<ShopeeOfferCategory>('แนะนำ');
   const [shopeeImportAmount, setShopeeImportAmount] = useState<ShopeeImportAmount>(50);
   const [customShopeeImportAmount, setCustomShopeeImportAmount] = useState('50');
 
@@ -299,7 +355,11 @@ export default function ProductPanel({
     appendShopeeLog(result.error || 'ซิงก์ cloud ยังไม่สำเร็จ จะลองใหม่รอบถัดไป');
   }, [appendShopeeLog, selectedProfileId, syncProducts, user]);
 
-  const runShopeeImport = useCallback(async (maxItems: number): Promise<void> => {
+  const runShopeeImport = useCallback(async (
+    source: ShopeeImportSource,
+    maxItems: number,
+    offerCategory?: ShopeeOfferCategory | null
+  ): Promise<void> => {
     if (!selectedProfileId) {
       toast.error('เลือกโปรไฟล์ก่อนนำเข้า Shopee');
       return;
@@ -312,7 +372,11 @@ export default function ProductPanel({
     setIsShopeeImporting(true);
     beginAutomationActivityRun('shopee-import');
     shopeeProductSaver.startSession(selectedProfileId);
-    appendShopeeLog(`เริ่มดึงสินค้า Shopee จากสิ่งที่ถูกใจ (${maxItems <= 0 ? 'ทั้งหมด' : `${maxItems} รายการ`})`);
+    const normalizedOfferCategory = source === 'offers' ? offerCategory || 'แนะนำ' : null;
+    const sourceLabel = source === 'offers'
+      ? `ข้อเสนอ Affiliate > ${normalizedOfferCategory}`
+      : 'สิ่งที่ถูกใจ';
+    appendShopeeLog(`เริ่มดึงสินค้า Shopee จาก${sourceLabel} (${maxItems <= 0 ? 'ทั้งหมด' : `${maxItems} รายการ`})`);
 
     try {
       await shopeeProductSaver.savePendingProducts();
@@ -321,7 +385,7 @@ export default function ProductPanel({
         appendShopeeLog('หยุดนำเข้า: ยังไม่ได้เปิด Accessibility Service');
         Alert.alert(
           'เปิด Accessibility ก่อน',
-          'Kubdee AI ต้องใช้ Accessibility เพื่อเข้า Shopee และอ่านรายการสินค้าถูกใจบนเครื่องนี้',
+          `Kubdee AI ต้องใช้ Accessibility เพื่อเข้า Shopee และอ่านสินค้า${sourceLabel}บนเครื่องนี้`,
           [
             { text: 'ยกเลิก', style: 'cancel' },
             {
@@ -335,8 +399,12 @@ export default function ProductPanel({
         return;
       }
 
+      if (!await ensureShopeeOfferImagePermission(source, appendShopeeLog)) {
+        return;
+      }
+
       await storePendingTab('library');
-      const scrapedProducts = await runNativeShopeeLikedImport(maxItems, selectedProfileId);
+      const scrapedProducts = await runNativeShopeeImport(source, maxItems, selectedProfileId, normalizedOfferCategory);
       await shopeeProductSaver.waitForIdle();
       await shopeeProductSaver.savePendingProducts();
       await shopeeProductSaver.waitForIdle();
@@ -344,7 +412,7 @@ export default function ProductPanel({
 
       if (scrapedProducts.length === 0 && shopeeProductSaver.getSavedCount() === 0) {
         appendShopeeLog('ไม่พบสินค้า Shopee ที่นำเข้าได้');
-        toast.warning('ไม่พบสินค้าใน Shopee ถูกใจ');
+        toast.warning(`ไม่พบสินค้าใน Shopee ${sourceLabel}`);
         return;
       }
 
@@ -410,11 +478,6 @@ export default function ProductPanel({
   }, [isShopeeImporting, isSyncing, selectedProfileId]);
 
   const startShopeeImportFromModal = useCallback((): void => {
-    if (shopeeImportSource === 'offers') {
-      toast.info('ข้อเสนอกำลังพัฒนา');
-      return;
-    }
-
     const limit = getShopeeImportLimit(shopeeImportAmount, customShopeeImportAmount);
     if (limit === null) {
       toast.error('กรุณากรอกจำนวนที่ต้องการดึง');
@@ -422,8 +485,12 @@ export default function ProductPanel({
     }
 
     setShopeeImportModalOpen(false);
-    void runShopeeImport(limit);
-  }, [customShopeeImportAmount, runShopeeImport, shopeeImportAmount, shopeeImportSource]);
+    void runShopeeImport(
+      shopeeImportSource,
+      limit,
+      shopeeImportSource === 'offers' ? shopeeOfferCategory : null
+    );
+  }, [customShopeeImportAmount, runShopeeImport, shopeeImportAmount, shopeeImportSource, shopeeOfferCategory]);
 
   const shopeeImportAmountOptions = useMemo(
     () => SHOPEE_IMPORT_AMOUNT_OPTIONS.filter((option) => shopeeImportSource === 'liked' || option.value !== 'all'),
@@ -579,6 +646,7 @@ export default function ProductPanel({
                   value={searchQuery}
                   onChange={setSearchQuery}
                   placeholder="ค้นหาชื่อ/รหัสสินค้า..."
+                  containerClassName="w-full shrink-0 self-stretch"
                 />
 
                 <View className="flex-row items-center justify-between">
@@ -713,12 +781,32 @@ export default function ProductPanel({
                 />
                 <ShopeeImportOptionButton
                   active={shopeeImportSource === 'offers'}
-                  disabled
                   label="ข้อเสนอ"
-                  soon
                   onPress={() => setShopeeImportSource('offers')}
                 />
               </View>
+
+              {shopeeImportSource === 'offers' ? (
+                <View className="mt-1.5 gap-2">
+                  <Text className="text-kd-caption font-semibold text-kd-text-subtle">หมวดข้อเสนอ</Text>
+                  <ScrollView
+                    horizontal
+                    keyboardShouldPersistTaps="handled"
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerClassName="gap-2 pr-4"
+                  >
+                    {SHOPEE_OFFER_CATEGORY_OPTIONS.map((option) => (
+                      <ShopeeImportOptionButton
+                        key={option.value}
+                        active={shopeeOfferCategory === option.value}
+                        fitContent
+                        label={option.label}
+                        onPress={() => setShopeeOfferCategory(option.value)}
+                      />
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
             </View>
 
             <View className="mt-4 gap-2">

@@ -155,7 +155,7 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
       closeShopeeShareSheet()
       val start = System.currentTimeMillis()
       while (System.currentTimeMillis() - start < 3_000L) {
-        if (isShopeePartnerLikedViewVisible()) break
+        if (isShopeeImportListVisible()) break
         sleepStep(250L)
       }
     }

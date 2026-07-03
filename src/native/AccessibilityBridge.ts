@@ -31,6 +31,9 @@ export interface NativeShopeeImportProduct extends NativeShopeeLikedProduct {
   ts: number;
 }
 
+export type NativeShopeeImportSource = 'liked' | 'offers';
+export type NativeShopeeOfferCategory = string;
+
 export interface NativeShopeePostLog {
   message: string;
   ts: number;
@@ -99,6 +102,12 @@ type NativeAccessibilityModule = {
   importShopeeLikedProducts?: (
     maxItems: number,
     profileLocalId?: string | null
+  ) => Promise<NativeShopeeLikedProduct[]>;
+  importShopeeProducts?: (
+    maxItems: number,
+    profileLocalId?: string | null,
+    importSource?: NativeShopeeImportSource | null,
+    offerCategory?: NativeShopeeOfferCategory | null
   ) => Promise<NativeShopeeLikedProduct[]>;
   getPendingShopeeImportProducts?: () => Promise<NativeShopeeImportProduct[]>;
   clearPendingShopeeImportProducts?: () => Promise<boolean>;
@@ -226,7 +235,31 @@ export async function importShopeeLikedProducts(
   maxItems = 40,
   profileLocalId?: string | null
 ): Promise<NativeShopeeLikedProduct[]> {
+  return importShopeeProducts('liked', maxItems, profileLocalId);
+}
+
+export async function importShopeeProducts(
+  importSource: NativeShopeeImportSource,
+  maxItems = 40,
+  profileLocalId?: string | null,
+  offerCategory?: NativeShopeeOfferCategory | null
+): Promise<NativeShopeeLikedProduct[]> {
+  const normalizedSource: NativeShopeeImportSource = importSource === 'offers' ? 'offers' : 'liked';
+  const normalizedOfferCategory =
+    normalizedSource === 'offers' ? offerCategory?.trim() || null : null;
+  if (Platform.OS === 'android' && nativeModule?.importShopeeProducts) {
+    return nativeModule.importShopeeProducts(
+      maxItems,
+      profileLocalId ?? null,
+      normalizedSource,
+      normalizedOfferCategory
+    );
+  }
+
   if (Platform.OS === 'android' && nativeModule?.importShopeeLikedProducts) {
+    if (normalizedSource !== 'liked') {
+      return [];
+    }
     return nativeModule.importShopeeLikedProducts(maxItems, profileLocalId ?? null);
   }
 

@@ -10,6 +10,28 @@ internal const val AUTOMATION_NOTIFICATION_CHANNEL_ID = "kubdee_automation"
 internal const val AUTOMATION_NOTIFICATION_ID = 2401
 internal const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
 internal const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = true
+internal const val SHOPEE_IMPORT_SOURCE_LIKED = "liked"
+internal const val SHOPEE_IMPORT_SOURCE_OFFERS = "offers"
+internal const val SHOPEE_OFFER_CATEGORY_RECOMMENDED = "แนะนำ"
+
+internal val SHOPEE_OFFER_CATEGORY_TEXTS = listOf(
+  SHOPEE_OFFER_CATEGORY_RECOMMENDED,
+  "เครื่องใช้ในบ้าน",
+  "กีฬาและกิจกรรมกลางแจ้ง",
+  "เสื้อผ้าแฟชั่นผู้ชาย",
+  "อาหารและเครื่องดื่ม",
+  "กลุ่มผลิตภัณฑ์เพื่อสุขภาพ"
+)
+
+internal fun normalizeShopeeImportSource(value: String?): String =
+  if (value?.trim()?.equals(SHOPEE_IMPORT_SOURCE_OFFERS, ignoreCase = true) == true) {
+    SHOPEE_IMPORT_SOURCE_OFFERS
+  } else {
+    SHOPEE_IMPORT_SOURCE_LIKED
+  }
+
+internal fun normalizeShopeeOfferCategory(value: String?): String =
+  value?.trim()?.takeIf { it.isNotEmpty() } ?: SHOPEE_OFFER_CATEGORY_RECOMMENDED
 
 internal val SHOPEE_LIKED_TEXTS = listOf(
   "สิ่งที่ฉันถูกใจ",
@@ -52,16 +74,10 @@ internal val SHOPEE_POSTING_SURFACE_TEXTS = listOf(
   "Gallery",
   "Albums",
   "แคปชั่น",
-  "เพิ่มแคปชั่น",
   "Caption",
-  "Add caption",
-  "Add caption to your photos",
-  "Add caption to you photos",
   "แตะเพื่อเพิ่มสินค้า",
   "เพิ่มสินค้า",
   "Tap to add product",
-  "ระบุว่าเป็นเนื้อหาที่สร้างโดย AI",
-  "บันทึกลงในโทรศัพท์",
   "โพสต์",
   "Post"
 )
@@ -227,7 +243,8 @@ internal data class ShopeePartnerOfferCandidate(
 
 internal data class ShopeePartnerShareButton(
   val bounds: Rect,
-  val iconBounds: Rect
+  val iconBounds: Rect,
+  val gridLike: Boolean
 )
 
 internal data class ShopeeLikedNameMatch(
@@ -246,7 +263,6 @@ internal data class ShopeeLikedProductReadinessStats(
   val rawPrices: Int,
   val texts: Int,
   val safeTop: Int,
-  val safeBottom: Int,
   val recommendation: Boolean
 )
 

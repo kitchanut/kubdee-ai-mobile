@@ -29,6 +29,8 @@ object KubdeeAutomationIpc {
   const val EXTRA_PRODUCTS_JSON = "productsJson"
   const val EXTRA_RESULT_JSON = "resultJson"
   const val EXTRA_PROFILE_LOCAL_ID = "profileLocalId"
+  const val EXTRA_IMPORT_SOURCE = "importSource"
+  const val EXTRA_OFFER_CATEGORY = "offerCategory"
 
   const val EXTRA_PRODUCT_NAME = "name"
   const val EXTRA_PRODUCT_PRICE = "price"

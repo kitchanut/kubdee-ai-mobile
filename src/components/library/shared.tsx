@@ -212,21 +212,25 @@ export function SearchBox({
   value,
   onChange,
   placeholder,
+  containerClassName = 'flex-1',
 }: {
   theme: KubdeeTheme;
   value: string;
   onChange: (next: string) => void;
   placeholder: string;
+  containerClassName?: string;
 }): React.JSX.Element {
   return (
-    <View className="h-8 flex-1 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2">
+    <View
+      className={`h-8 min-h-8 flex-row items-center gap-1.5 rounded-kd-md border border-kd-border bg-kd-input px-2 ${containerClassName}`}
+    >
       <Search size={12} color={theme.textSubtle} strokeWidth={2} />
       <TextInput
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={theme.textSubtle}
-        className="h-8 flex-1 p-0 text-kd-caption text-kd-text"
+        className="h-8 min-h-8 flex-1 p-0 text-kd-caption text-kd-text"
         style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
       />
       {value.length > 0 ? (

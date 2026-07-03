@@ -26,15 +26,19 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.text.TextUtils
 import android.util.Base64
 import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.CookieManager
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
+import __PACKAGE_NAME__.BuildConfig
 import ai.kubdee.mobile.R
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -150,12 +154,16 @@ internal fun KubdeeAccessibilityService.ensureAutomationNotificationChannel() {
 internal fun KubdeeAccessibilityService.showAutomationOverlay(message: String) {
   mainHandler.post {
     if (KubdeeAccessibilityService.getInstance() !== this) return@post
-    val textView = ensureAutomationOverlay() ?: return@post
-    textView.text = latestAutomationLogText()
-    textView.visibility = android.view.View.VISIBLE
+    if (automationFloatingUiSuppressed) {
+      removeAutomationOverlay()
+      return@post
+    }
+    val overlay = ensureAutomationOverlay() ?: return@post
+    updateAutomationOverlayContent()
+    overlay.visibility = View.VISIBLE
     ensureAutomationStopButton()?.let { button ->
       button.text = "Stop"
-      button.visibility = android.view.View.VISIBLE
+      button.visibility = View.VISIBLE
     }
   }
 }
@@ -176,6 +184,10 @@ internal fun KubdeeAccessibilityService.removeAutomationOverlay() {
       }
     }
     overlayView = null
+    overlayTitleView = null
+    overlaySubtitleView = null
+    overlayChipRow = null
+    overlayLogContainer = null
     overlayStopButton?.let { view ->
       try {
         automationWindowManager.removeView(view)
@@ -188,11 +200,19 @@ internal fun KubdeeAccessibilityService.removeAutomationOverlay() {
 }
 
 internal fun KubdeeAccessibilityService.setAutomationStopButtonVisibleBlocking(visible: Boolean) {
+  val update = {
+    overlayStopButton?.visibility = if (visible && !automationFloatingUiSuppressed) android.view.View.VISIBLE else android.view.View.GONE
+  }
+  if (Looper.myLooper() == Looper.getMainLooper()) {
+    update()
+    return
+  }
+
   val latch = CountDownLatch(1)
   try {
     mainHandler.post {
       try {
-        overlayStopButton?.visibility = if (visible) android.view.View.VISIBLE else android.view.View.GONE
+        update()
       } finally {
         latch.countDown()
       }
@@ -203,27 +223,103 @@ internal fun KubdeeAccessibilityService.setAutomationStopButtonVisibleBlocking(v
   }
 }
 
-internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): TextView? {
-  if (automationOverlayUnavailable) return null
+internal fun KubdeeAccessibilityService.setAutomationFloatingUiVisibleBlocking(visible: Boolean) {
+  val update = {
+    val visibility = if (visible && !automationFloatingUiSuppressed) android.view.View.VISIBLE else android.view.View.GONE
+    overlayView?.visibility = visibility
+    overlayStopButton?.visibility = visibility
+  }
+  if (Looper.myLooper() == Looper.getMainLooper()) {
+    update()
+    return
+  }
+
+  val latch = CountDownLatch(1)
+  try {
+    mainHandler.post {
+      try {
+        update()
+      } finally {
+        latch.countDown()
+      }
+    }
+    latch.await(500L, TimeUnit.MILLISECONDS)
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to update automation overlay visibility", error)
+  }
+}
+
+internal fun KubdeeAccessibilityService.setAutomationFloatingUiSuppressedBlocking(suppressed: Boolean) {
+  automationFloatingUiSuppressed = suppressed
+  if (suppressed) {
+    setAutomationFloatingUiVisibleBlocking(false)
+    removeAutomationOverlay()
+  }
+}
+
+internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): LinearLayout? {
+  if (automationOverlayUnavailable || automationFloatingUiSuppressed) return null
   overlayView?.let { return it }
 
-  val textView = TextView(this).apply {
+  val title = TextView(this).apply {
     setTextColor(Color.WHITE)
-    textSize = 11f
-    typeface = Typeface.MONOSPACE
-    maxLines = 18
-    setLineSpacing(1.0f, 1.08f)
-    setPadding(dp(12), dp(10), dp(12), dp(10))
+    textSize = 12f
+    typeface = Typeface.DEFAULT_BOLD
+    includeFontPadding = false
+    maxLines = 1
+    ellipsize = TextUtils.TruncateAt.END
+  }
+  val subtitle = TextView(this).apply {
+    setTextColor(Color.argb(205, 203, 213, 225))
+    textSize = 9.5f
+    includeFontPadding = false
+    maxLines = 1
+    ellipsize = TextUtils.TruncateAt.END
+  }
+  val titleColumn = LinearLayout(this).apply {
+    orientation = LinearLayout.VERTICAL
+    addView(title, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT,
+      LinearLayout.LayoutParams.WRAP_CONTENT
+    ))
+    addView(subtitle, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT,
+      LinearLayout.LayoutParams.WRAP_CONTENT
+    ).apply { topMargin = dp(2) })
+  }
+  val chipRow = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.CENTER_VERTICAL
+  }
+  val logContainer = LinearLayout(this).apply {
+    orientation = LinearLayout.VERTICAL
+  }
+  val root = LinearLayout(this).apply {
+    orientation = LinearLayout.VERTICAL
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    setPadding(dp(10), dp(8), dp(84), dp(8))
     background = GradientDrawable().apply {
-      setColor(Color.argb(230, 17, 24, 39))
-      cornerRadius = dp(14).toFloat()
-      setStroke(dp(1), Color.argb(80, 255, 255, 255))
+      setColor(Color.argb(232, 15, 23, 42))
+      cornerRadius = dp(16).toFloat()
+      setStroke(dp(1), Color.argb(70, 148, 163, 184))
     }
+    addView(titleColumn, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT,
+      LinearLayout.LayoutParams.WRAP_CONTENT
+    ))
+    addView(chipRow, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT,
+      LinearLayout.LayoutParams.WRAP_CONTENT
+    ).apply { topMargin = dp(7) })
+    addView(logContainer, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT,
+      LinearLayout.LayoutParams.WRAP_CONTENT
+    ).apply { topMargin = dp(6) })
   }
 
   val metrics = resources.displayMetrics
   val params = WindowManager.LayoutParams(
-    (metrics.widthPixels - dp(28)).coerceAtLeast(dp(260)),
+    (metrics.widthPixels - dp(16)).coerceAtLeast(dp(260)),
     WindowManager.LayoutParams.WRAP_CONTENT,
     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -237,24 +333,116 @@ internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): TextView? {
   }
 
   try {
-    automationWindowManager.addView(textView, params)
-    overlayView = textView
+    automationWindowManager.addView(root, params)
+    overlayView = root
+    overlayTitleView = title
+    overlaySubtitleView = subtitle
+    overlayChipRow = chipRow
+    overlayLogContainer = logContainer
+    updateAutomationOverlayContent()
   } catch (error: Exception) {
     Log.w(TAG, "Unable to show automation overlay", error)
     automationOverlayUnavailable = true
     overlayView = null
     return null
   }
-  return textView
+  return root
 }
 
+internal fun KubdeeAccessibilityService.updateAutomationOverlayContent() {
+  val (lines, logCount) = synchronized(automationLogLines) {
+    automationLogLines.takeLast(4) to automationLogLines.size
+  }
+  val stats = synchronized(automationStatsLock) {
+    AutomationStatsSnapshot(
+      startedAt = automationStartedAtMs,
+      taskLabel = automationTaskLabel,
+      unitLabel = automationUnitLabel,
+      currentCount = automationCurrentCount,
+      totalCount = automationTotalCount,
+      successCount = automationSuccessCount,
+      failedCount = automationFailedCount,
+      round = automationRound,
+      totalRounds = automationTotalRounds,
+      statusLabel = automationStatusLabel
+    )
+  }
+  val elapsedSeconds = ((System.currentTimeMillis() - (if (stats.startedAt > 0L) stats.startedAt else System.currentTimeMillis())) / 1000L)
+    .coerceAtLeast(0L)
+  val elapsed = "%02d:%02d".format(Locale.ROOT, elapsedSeconds / 60L, elapsedSeconds % 60L)
+  val progressValue = if (stats.totalCount > 0) {
+    "${stats.currentCount.coerceAtMost(stats.totalCount)}/${stats.totalCount}"
+  } else {
+    "${stats.currentCount}"
+  }
+  overlayTitleView?.text = stats.taskLabel.ifBlank { "Kubdee AI" }
+  overlaySubtitleView?.text = "v${BuildConfig.VERSION_NAME} · ${stats.statusLabel} · ใช้เวลา $elapsed · log $logCount"
+
+  overlayChipRow?.let { row ->
+    row.removeAllViews()
+    row.addView(automationChip("สถานะ", stats.statusLabel, Color.rgb(14, 165, 233)))
+    row.addView(automationChip(stats.unitLabel.ifBlank { "ITEM" }, progressValue, Color.rgb(16, 185, 129)))
+    if (stats.totalRounds > 0) {
+      row.addView(automationChip("รอบ", "${stats.round.coerceAtMost(stats.totalRounds)}/${stats.totalRounds}", Color.rgb(59, 130, 246)))
+    }
+    row.addView(automationChip("สำเร็จ", "${stats.successCount}", Color.rgb(34, 197, 94)))
+    if (stats.failedCount > 0) {
+      row.addView(automationChip("ล้มเหลว", "${stats.failedCount}", Color.rgb(248, 113, 113)))
+    }
+  }
+
+  overlayLogContainer?.let { container ->
+    container.removeAllViews()
+    if (lines.isEmpty()) {
+      container.addView(automationLogText("รอ log จาก Shopee automation..."))
+    } else {
+      lines.forEach { line ->
+        container.addView(automationLogText(line))
+      }
+    }
+  }
+}
+
+internal fun KubdeeAccessibilityService.automationChip(label: String, value: String, accent: Int): TextView =
+  TextView(this).apply {
+    text = "$label  $value"
+    setTextColor(Color.WHITE)
+    textSize = 9f
+    typeface = Typeface.DEFAULT_BOLD
+    includeFontPadding = false
+    maxLines = 1
+    ellipsize = TextUtils.TruncateAt.END
+    setPadding(dp(7), dp(4), dp(7), dp(4))
+    background = GradientDrawable().apply {
+      setColor(Color.argb(60, Color.red(accent), Color.green(accent), Color.blue(accent)))
+      cornerRadius = dp(7).toFloat()
+      setStroke(dp(1), Color.argb(95, Color.red(accent), Color.green(accent), Color.blue(accent)))
+    }
+    layoutParams = LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.WRAP_CONTENT,
+      LinearLayout.LayoutParams.WRAP_CONTENT
+    ).apply { rightMargin = dp(5) }
+  }
+
+internal fun KubdeeAccessibilityService.automationLogText(line: String): TextView =
+  TextView(this).apply {
+    text = line
+    setTextColor(Color.argb(225, 226, 232, 240))
+    textSize = 9.5f
+    typeface = Typeface.DEFAULT
+    includeFontPadding = false
+    maxLines = 1
+    ellipsize = TextUtils.TruncateAt.END
+    setPadding(0, dp(1), 0, dp(1))
+  }
+
 internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
-  if (automationOverlayUnavailable) return null
+  if (automationOverlayUnavailable || automationFloatingUiSuppressed) return null
   overlayStopButton?.let { return it }
 
   val button = Button(this).apply {
     text = "Stop"
-    textSize = 11f
+    textSize = 10f
     typeface = Typeface.DEFAULT_BOLD
     isAllCaps = false
     includeFontPadding = false
@@ -262,8 +450,9 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
     minWidth = 0
     minimumHeight = 0
     minimumWidth = 0
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     setTextColor(Color.WHITE)
-    setPadding(dp(10), 0, dp(10), 0)
+    setPadding(dp(8), 0, dp(8), 0)
     background = GradientDrawable().apply {
       setColor(Color.rgb(220, 38, 38))
       cornerRadius = dp(999).toFloat()
@@ -275,15 +464,15 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
   }
 
   val params = WindowManager.LayoutParams(
-    dp(92),
-    dp(32),
+    dp(72),
+    dp(30),
     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
       WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
     PixelFormat.TRANSLUCENT
   ).apply {
     gravity = Gravity.TOP or Gravity.END
-    x = dp(28)
+    x = dp(18)
     y = automationOverlayTopOffset() + dp(10)
   }
 
@@ -304,8 +493,15 @@ internal val KubdeeAccessibilityService.automationWindowManager: WindowManager
 
 internal fun KubdeeAccessibilityService.automationOverlayTopOffset(): Int = statusBarHeightPx() + dp(8)
 
+internal fun KubdeeAccessibilityService.automationOverlayBottomOffset(): Int = navigationBarHeightPx() + dp(8)
+
 internal fun KubdeeAccessibilityService.statusBarHeightPx(): Int {
   val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+  return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
+}
+
+internal fun KubdeeAccessibilityService.navigationBarHeightPx(): Int {
+  val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
   return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
 }
 

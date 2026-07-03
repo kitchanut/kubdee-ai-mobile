@@ -13,12 +13,20 @@ class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
         val requestedMaxItems = intent.getIntExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, 40)
         val maxItems = if (requestedMaxItems <= 0) 0 else requestedMaxItems
         val profileLocalId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID)
+        val importSource = normalizeShopeeImportSource(intent.getStringExtra(KubdeeAutomationIpc.EXTRA_IMPORT_SOURCE))
+        val offerCategory = normalizeShopeeOfferCategory(intent.getStringExtra(KubdeeAutomationIpc.EXTRA_OFFER_CATEGORY))
         if (runId.isBlank()) {
           Log.w(TAG, "Missing Shopee import run id")
           return
         }
 
-        val started = KubdeeAccessibilityService.dispatchShopeeImportStart(maxItems, runId, profileLocalId)
+        val started = KubdeeAccessibilityService.dispatchShopeeImportStart(
+          maxItems,
+          runId,
+          profileLocalId,
+          importSource,
+          offerCategory
+        )
         if (!started) {
           Log.w(TAG, "Accessibility service is not connected yet; queued Shopee import")
         }

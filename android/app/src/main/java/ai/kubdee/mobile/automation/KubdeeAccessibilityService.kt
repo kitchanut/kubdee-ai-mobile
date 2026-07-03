@@ -139,16 +139,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
       "Gallery",
       "Albums",
       "แคปชั่น",
-      "เพิ่มแคปชั่น",
       "Caption",
-      "Add caption",
-      "Add caption to your photos",
-      "Add caption to you photos",
       "แตะเพื่อเพิ่มสินค้า",
       "เพิ่มสินค้า",
       "Tap to add product",
-      "ระบุว่าเป็นเนื้อหาที่สร้างโดย AI",
-      "บันทึกลงในโทรศัพท์",
       "โพสต์",
       "Post"
     )
@@ -227,15 +221,29 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
     fun isRunning(): Boolean = currentService != null
 
-    fun dispatchShopeeImportStart(maxItems: Int, runId: String, profileLocalId: String?): Boolean {
+    fun dispatchShopeeImportStart(
+      maxItems: Int,
+      runId: String,
+      profileLocalId: String?,
+      importSource: String = SHOPEE_IMPORT_SOURCE_LIKED,
+      offerCategory: String = SHOPEE_OFFER_CATEGORY_RECOMMENDED
+    ): Boolean {
       pendingShopeeStopRequested = false
       val service = currentService
+      val normalizedImportSource = normalizeShopeeImportSource(importSource)
+      val normalizedOfferCategory = normalizeShopeeOfferCategory(offerCategory)
       if (service != null) {
-        service.startShopeeImportAsync(maxItems, runId, profileLocalId)
+        service.startShopeeImportAsync(maxItems, runId, profileLocalId, normalizedImportSource, normalizedOfferCategory)
         return true
       }
 
-      pendingShopeeImportCommand = PendingShopeeImportCommand(maxItems, runId, profileLocalId)
+      pendingShopeeImportCommand = PendingShopeeImportCommand(
+        maxItems,
+        runId,
+        profileLocalId,
+        normalizedImportSource,
+        normalizedOfferCategory
+      )
       return false
     }
 
@@ -279,7 +287,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
     private data class PendingShopeeImportCommand(
       val maxItems: Int,
       val runId: String,
-      val profileLocalId: String?
+      val profileLocalId: String?,
+      val importSource: String,
+      val offerCategory: String
     )
 
     private data class PendingShopeePostCommand(
@@ -297,7 +307,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
       requestStopShopeeAutomation()
     }
     takePendingShopeeImportCommand()?.let { command ->
-      startShopeeImportAsync(command.maxItems, command.runId, command.profileLocalId)
+      startShopeeImportAsync(
+        command.maxItems,
+        command.runId,
+        command.profileLocalId,
+        command.importSource,
+        command.offerCategory
+      )
     }
     takePendingShopeePostCommand()?.let { command ->
       startShopeePostAsync(command.payloadJson, command.runId)
@@ -390,7 +406,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
     stopRequested = false
   }
 
-  private fun startShopeeImportAsync(maxItems: Int, runId: String, profileLocalId: String?) {
+  private fun startShopeeImportAsync(
+    maxItems: Int,
+    runId: String,
+    profileLocalId: String?,
+    importSource: String = SHOPEE_IMPORT_SOURCE_LIKED,
+    offerCategory: String = SHOPEE_OFFER_CATEGORY_RECOMMENDED
+  ) {
     val runningThread = shopeeImportThread
     if (runningThread?.isAlive == true) {
       KubdeeAutomationIpc.sendShopeeImportFinished(
@@ -409,21 +431,23 @@ class KubdeeAccessibilityService : AccessibilityService() {
       var importedCount = 0
       var errorMessage: String? = null
       try {
-        setAutomationFloatingUiSuppressedBlocking(false)
         val normalizedMaxItems = if (maxItems <= 0) 0 else maxItems
+        val normalizedImportSource = normalizeShopeeImportSource(importSource)
+        val normalizedOfferCategory = normalizeShopeeOfferCategory(offerCategory)
         importedCount = importShopeeLikedProducts(
           TARGET_PACKAGE_SHOPEE,
           normalizedMaxItems,
-          profileLocalId
+          profileLocalId,
+          normalizedImportSource,
+          normalizedOfferCategory
         )
       } catch (error: Exception) {
         errorMessage = error.message ?: "Shopee import failed"
         Log.e(TAG, "Shopee import runner failed", error)
       } finally {
-        if (errorMessage == null) {
+        val shouldReturnToKubdee = errorMessage == null
+        if (shouldReturnToKubdee) {
           logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า (${importedCount} รายการ)")
-        } else {
-          logStep("กลับไป Kubdee AI เพื่อแจ้งผลดึงสินค้า: ${errorMessage ?: "unknown"}")
         }
         KubdeeAutomationIpc.sendShopeeImportFinished(
           this,
@@ -433,13 +457,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
           stopped = stopRequested,
           profileLocalId = profileLocalId
         )
-        mainHandler.postDelayed({
-          try {
-            launchKubdeeLibrary()
-          } finally {
-            setAutomationFloatingUiSuppressedBlocking(false)
-          }
-        }, 250L)
+        if (shouldReturnToKubdee) {
+          mainHandler.postDelayed({ launchKubdeeLibrary() }, 250L)
+        }
         if (shopeeImportThread === Thread.currentThread()) {
           shopeeImportThread = null
         }
@@ -449,7 +469,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
         automationLogKindForThread.remove()
       }
     }.also { worker ->
-      worker.name = "KubdeeShopeeLikedImport"
+      worker.name = if (normalizeShopeeImportSource(importSource) == SHOPEE_IMPORT_SOURCE_OFFERS) {
+        "KubdeeShopeeOfferImport"
+      } else {
+        "KubdeeShopeeLikedImport"
+      }
       shopeeImportThread = worker
       worker.start()
     }
@@ -510,18 +534,41 @@ class KubdeeAccessibilityService : AccessibilityService() {
   fun importShopeeLikedProducts(
     targetPackage: String,
     maxItems: Int,
-    profileLocalId: String? = null
+    profileLocalId: String? = null,
+    importSource: String = SHOPEE_IMPORT_SOURCE_LIKED,
+    offerCategory: String = SHOPEE_OFFER_CATEGORY_RECOMMENDED
   ): Int {
     val importedKeys = mutableSetOf<String>()
     val seenCandidateKeys = mutableSetOf<String>()
-    val importAllLikedItems = maxItems <= 0
-    val targetImportCount = if (importAllLikedItems) Int.MAX_VALUE else maxItems.coerceAtLeast(1)
-    try {
-      clearStopShopeeAutomation()
-      resetAutomationLog()
-      configureAutomationStats("Shopee Import", "ITEM", if (importAllLikedItems) 0 else targetImportCount)
+      val importAllLikedItems = maxItems <= 0
+      val targetImportCount = if (importAllLikedItems) Int.MAX_VALUE else maxItems.coerceAtLeast(1)
+      val normalizedImportSource = normalizeShopeeImportSource(importSource)
+      val normalizedOfferCategory = normalizeShopeeOfferCategory(offerCategory)
+      try {
+        clearStopShopeeAutomation()
+        resetAutomationLog()
+        configureAutomationStats(
+        if (normalizedImportSource == SHOPEE_IMPORT_SOURCE_OFFERS) {
+          "Shopee Offers Import · $normalizedOfferCategory"
+        } else {
+          "Shopee Import"
+        },
+        "ITEM",
+        if (importAllLikedItems) 0 else targetImportCount
+      )
       beginAutomationForeground("กำลังดึงสินค้า Shopee")
-      logStep(if (importAllLikedItems) "เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ (ดึงทั้งหมด)" else "เปิด Shopee > ฉัน > สิ่งที่ฉันถูกใจ (${targetImportCount} รายการ)")
+      val importTargetLabel = if (normalizedImportSource == SHOPEE_IMPORT_SOURCE_OFFERS) {
+        "โปรแกรม Affiliate > ข้อเสนอ > $normalizedOfferCategory"
+      } else {
+        "สิ่งที่ฉันถูกใจ"
+      }
+      logStep(
+        if (importAllLikedItems) {
+          "เปิด Shopee > ฉัน > $importTargetLabel (ดึงทั้งหมด)"
+        } else {
+          "เปิด Shopee > ฉัน > $importTargetLabel (${targetImportCount} รายการ)"
+        }
+      )
       closeShopeeBeforeFreshLaunch(targetPackage)
       if (!launchPackage(targetPackage, resetTask = true)) {
         throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
@@ -540,13 +587,122 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
       dismissShopeeBlockingPopups()
 
+      if (normalizedImportSource == SHOPEE_IMPORT_SOURCE_OFFERS) {
+        if (!openShopeeAffiliateOfferPage()) {
+          throw IllegalStateException("ไม่พบหน้า โปรแกรม Affiliate > ข้อเสนอ")
+        }
+
+        if (!selectShopeeAffiliateOfferCategory(normalizedOfferCategory)) {
+          throw IllegalStateException("ไม่พบหมวดข้อเสนอ $normalizedOfferCategory")
+        }
+
+        if (!waitForShopeeAffiliateOffersReady(18_000L)) {
+          throw IllegalStateException("ไม่พบสินค้าในหน้าข้อเสนอ Affiliate")
+        }
+
+        var noNewRounds = 0
+        val maxRounds = if (importAllLikedItems) 240 else maxOf(12, targetImportCount)
+        var shareAttemptCount = 0
+
+        for (round in 1..maxRounds) {
+          checkStopRequested()
+          val visibleProducts = scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_OFFERS)
+          var added = 0
+          for (candidate in visibleProducts) {
+            checkStopRequested()
+            val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
+            val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
+            if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
+              logStep("ข้ามสินค้าข้อเสนอที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
+              continue
+            }
+
+            shareAttemptCount += 1
+            logStep("กดแชร์สินค้าข้อเสนอ $shareAttemptCount: ${candidate.product.name.take(34)}")
+            val product = enrichShopeeProductFromPartnerShare(candidate)?.copy(status = SHOPEE_IMPORT_SOURCE_OFFERS)
+              ?: candidate.product.copy(status = SHOPEE_IMPORT_SOURCE_OFFERS)
+            val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
+            if (importedKeys.add(key)) {
+              seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
+              added += 1
+              updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
+              logStep("บันทึกสินค้าข้อเสนอแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
+              KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
+              if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+            }
+          }
+
+          logStep("หน้าข้อเสนอรอบ $round พบใหม่ $added รวม ${importedKeys.size}")
+          if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+
+          noNewRounds = if (added == 0) noNewRounds + 1 else 0
+          if (noNewRounds >= 3) break
+
+          if (!scrollShopeeAffiliateOffersList()) break
+          sleepStep(1500L)
+        }
+
+        return importedKeys.size
+      }
+
       if (!openShopeeLikedList()) {
         throw IllegalStateException("ไม่พบเมนู สิ่งที่ฉันถูกใจ")
       }
 
-      if (!ensureShopeeBuyerLikedView()) {
-        throw IllegalStateException("ไม่สามารถสลับเป็นมุมมองผู้ซื้อ")
+      val partnerViewReady = switchToShopeePartnerLikedView()
+      if (partnerViewReady) {
+        if (!waitForShopeePartnerOffersReady(18_000L)) {
+          throw IllegalStateException("ไม่พบสินค้าในมุมมองพาร์ทเนอร์")
+        }
+
+        var noNewRounds = 0
+        val maxRounds = if (importAllLikedItems) 240 else maxOf(12, targetImportCount)
+        var detailAttemptCount = 0
+
+        for (round in 1..maxRounds) {
+          checkStopRequested()
+          val visibleProducts = scrapeVisibleShopeePartnerOfferCandidates()
+          var added = 0
+          for (candidate in visibleProducts) {
+            checkStopRequested()
+            val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
+            val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
+            if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
+              logStep("ข้ามสินค้าที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
+              continue
+            }
+
+            detailAttemptCount += 1
+            logStep("เปิด detail จากการ์ดพาร์ทเนอร์ $detailAttemptCount: ${candidate.product.name.take(34)}")
+            val product = enrichShopeeProductFromDetail(
+              candidate.toLikedProductCandidate(),
+              copyProductUrl = COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT
+            ) ?: continue
+            val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
+            if (importedKeys.add(key)) {
+              seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
+              added += 1
+              updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
+              logStep("บันทึกสินค้าแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
+              KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
+              if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+            }
+          }
+
+          logStep("มุมมองพาร์ทเนอร์รอบ $round พบใหม่ $added รวม ${importedKeys.size}")
+          if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+
+          noNewRounds = if (added == 0) noNewRounds + 1 else 0
+          if (noNewRounds >= 3) break
+
+          if (!scrollShopeePartnerLikedList()) break
+          sleepStep(1500)
+        }
+
+        return importedKeys.size
       }
+
+      logStep("ใช้มุมมองพาร์ทเนอร์ไม่ได้ จะใช้วิธีเดิมแบบระมัดระวัง")
 
       if (!waitForShopeeLikedProductsReady(18_000L)) {
         throw IllegalStateException("ไม่พบสินค้าในหน้าถูกใจ")
@@ -558,13 +714,6 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
       for (round in 1..maxRounds) {
         checkStopRequested()
-        if (!isShopeeBuyerLikedViewVisible()) {
-          logStep("ก่อนสแกนรอบ $round พบว่ายังไม่ใช่มุมผู้ซื้อ (${describeShopeeLikedViewState()})")
-          if (!ensureShopeeBuyerLikedView()) {
-            logStep("หยุดดึงสินค้า เพราะสลับกลับมุมผู้ซื้อไม่สำเร็จ")
-            break
-          }
-        }
         val (visibleProducts, reachedRecommendations) = scrapeVisibleShopeeLikedProductCandidates()
         var added = 0
         var lostLikedList = false

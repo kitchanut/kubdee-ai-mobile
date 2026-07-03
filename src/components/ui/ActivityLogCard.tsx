@@ -31,9 +31,13 @@ export interface ActivityLogStat {
   backgroundColor?: string;
 }
 
+type ActivityLogCardVariant = 'default' | 'shopee';
+
 interface ActivityLogCardProps<TLog extends ActivityLogEntry = ActivityLogEntry> {
   theme: KubdeeTheme;
   logs: TLog[];
+  accentColor?: string;
+  accentSoftColor?: string;
   icon?: ComponentType<IconProps>;
   title?: string;
   running?: boolean;
@@ -52,11 +56,14 @@ interface ActivityLogCardProps<TLog extends ActivityLogEntry = ActivityLogEntry>
   onStop?: () => void;
   onClear?: () => void;
   formatTimestamp?: (timestamp: number) => string;
+  variant?: ActivityLogCardVariant;
 }
 
 export default function ActivityLogCard<TLog extends ActivityLogEntry = ActivityLogEntry>({
   theme,
   logs,
+  accentColor,
+  accentSoftColor,
   icon,
   title = 'Activity Log',
   running = false,
@@ -75,6 +82,7 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
   onStop,
   onClear,
   formatTimestamp = formatLogTime,
+  variant = 'default',
 }: ActivityLogCardProps<TLog>): React.JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(initiallyExpanded);
   const [copiedLogs, setCopiedLogs] = useState(false);
@@ -98,6 +106,9 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
       ? [latestTimeText, elapsedText, `${logs.length} รายการ`].filter(Boolean).join(' · ')
       : idleText;
   const Icon = icon ?? Info;
+  const isShopeeVariant = variant === 'shopee';
+  const accent = accentColor ?? theme.blue;
+  const accentSoft = accentSoftColor ?? alpha(accent, theme.isDark ? 0.18 : 0.1);
   const statusColor = getRunStatusColor({ running, stopping, latestLog }, theme);
   const latestDisplay = latestLog ? parseDisplayMessage(latestLog.message) : null;
   const scrollToLatestLog = useCallback((animated = false): void => {
@@ -156,16 +167,31 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
 
   return (
     <>
-      <View className="gap-2.5 rounded-kd-xl border border-kd-border bg-kd-panel p-2">
-        <View className="flex-row items-start justify-between gap-2">
+      <View
+        className={isShopeeVariant
+          ? 'overflow-hidden rounded-kd-xl border border-kd-border bg-kd-panel'
+          : 'gap-2.5 rounded-kd-xl border border-kd-border bg-kd-panel p-2'}
+      >
+        <View
+          className={isShopeeVariant
+            ? 'flex-row items-start justify-between gap-2 border-b border-kd-border px-3 py-2'
+            : 'flex-row items-start justify-between gap-2'}
+        >
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
-            <View className="h-8 w-8 shrink-0 items-center justify-center rounded-kd-lg bg-kd-card-muted dark:bg-kd-panel-muted">
-              <Icon size={15} color={theme.textMuted} strokeWidth={2.1} />
+            <View
+              className="h-8 w-8 shrink-0 items-center justify-center rounded-kd-lg"
+              style={{ backgroundColor: isShopeeVariant ? accentSoft : theme.cardMuted }}
+            >
+              <Icon size={15} color={isShopeeVariant ? accent : theme.textMuted} strokeWidth={2.1} />
             </View>
             <View className="min-w-0 flex-1">
               <View className="flex-row items-center gap-1.5">
                 <View className="h-2 w-2 rounded-full" style={{ backgroundColor: statusColor }} />
-                <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                <Text
+                  numberOfLines={1}
+                  className={isShopeeVariant ? 'text-kd-body font-black' : 'text-kd-body font-semibold text-kd-text'}
+                  style={isShopeeVariant ? { color: accent } : undefined}
+                >
                   {title}
                 </Text>
               </View>
@@ -176,7 +202,7 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
           </View>
 
           <View className="shrink-0 flex-row items-center gap-1">
-            {running && onStop ? (
+            {running && onStop && !isShopeeVariant ? (
               <Pressable
                 accessibilityRole="button"
                 disabled={stopping}
@@ -195,10 +221,16 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
               accessibilityLabel="เปิดรายละเอียดการทำงาน"
               accessibilityRole="button"
               onPress={() => setDrawerOpen(true)}
-              className="h-8 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-card-muted px-2.5 active:opacity-70 dark:bg-kd-panel-muted"
+              className="h-8 flex-row items-center justify-center gap-1.5 rounded-kd-md px-2.5 active:opacity-70"
+              style={{ backgroundColor: isShopeeVariant ? accentSoft : theme.cardMuted }}
             >
-              <Info size={13} color={theme.textMuted} strokeWidth={2.2} />
-              <Text className="text-kd-micro font-semibold text-kd-text-subtle">รายละเอียด</Text>
+              <Info size={13} color={isShopeeVariant ? accent : theme.textMuted} strokeWidth={2.2} />
+              <Text
+                className="text-kd-micro font-semibold"
+                style={{ color: isShopeeVariant ? accent : theme.textSubtle }}
+              >
+                รายละเอียด
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -208,7 +240,9 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
             accessibilityLabel="เปิดรายละเอียดการทำงาน"
             accessibilityRole="button"
             onPress={() => setDrawerOpen(true)}
-            className="rounded-kd-md bg-kd-card-muted px-2.5 py-2 active:opacity-75 dark:bg-kd-panel-muted"
+            className={isShopeeVariant
+              ? 'border-b border-kd-border bg-kd-screen px-3 py-2 active:opacity-75'
+              : 'rounded-kd-md bg-kd-card-muted px-2.5 py-2 active:opacity-75 dark:bg-kd-panel-muted'}
           >
             <View className="flex-row flex-wrap items-center gap-1">
               <Text className="text-kd-micro font-semibold text-kd-text-subtle">
@@ -225,12 +259,41 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
             </Text>
           </Pressable>
         ) : (
-          <View className="rounded-kd-md bg-kd-card-muted px-2.5 py-2 dark:bg-kd-panel-muted">
+          <View
+            className={isShopeeVariant
+              ? 'border-b border-kd-border bg-kd-screen px-3 py-2'
+              : 'rounded-kd-md bg-kd-card-muted px-2.5 py-2 dark:bg-kd-panel-muted'}
+          >
             <Text className="text-kd-caption leading-4 text-kd-text-subtle">{emptyText}</Text>
           </View>
         )}
 
-        {stats.length > 0 ? <ActivityLogStats stats={stats} theme={theme} /> : null}
+        {stats.length > 0 ? (
+          <View className={isShopeeVariant ? 'px-3 py-2' : ''}>
+            <ActivityLogStats stats={stats} theme={theme} />
+          </View>
+        ) : null}
+
+        {isShopeeVariant && running && onStop ? (
+          <View className="px-3 pb-3 pt-1">
+            <Pressable
+              accessibilityLabel={stopLabel}
+              accessibilityRole="button"
+              disabled={stopping}
+              onPress={onStop}
+              className="h-[42px] flex-row items-center justify-center gap-2 rounded-kd-xl bg-kd-text active:opacity-80 disabled:opacity-60"
+            >
+              {stopping ? (
+                <ActivityIndicator color={theme.white} size="small" />
+              ) : (
+                <X size={14} color={theme.white} strokeWidth={2.4} />
+              )}
+              <Text className="text-[13px] font-semibold text-white">
+                {stopping ? stoppingLabel : stopLabel}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       <Modal
@@ -256,11 +319,19 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
             <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
               <View className="flex-row items-center justify-between gap-2 pb-2">
                 <View className="min-w-0 flex-1 flex-row items-center gap-2">
-                  <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
-                    <Clock3 size={15} color={theme.textMuted} strokeWidth={2.1} />
+                  <View
+                    className="h-8 w-8 items-center justify-center rounded-kd-lg"
+                    style={{ backgroundColor: isShopeeVariant ? accentSoft : theme.panelMuted }}
+                  >
+                    <Clock3 size={15} color={isShopeeVariant ? accent : theme.textMuted} strokeWidth={2.1} />
                   </View>
                   <View className="min-w-0 flex-1">
-                    <Text className="text-[14px] font-semibold text-kd-text">รายละเอียดการทำงาน</Text>
+                    <Text
+                      className={isShopeeVariant ? 'text-[14px] font-black' : 'text-[14px] font-semibold text-kd-text'}
+                      style={isShopeeVariant ? { color: accent } : undefined}
+                    >
+                      รายละเอียดการทำงาน
+                    </Text>
                     <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
                       {title}
                       {runStartedAt ? ` · เริ่ม ${formatTimestamp(runStartedAt)}` : ''}
@@ -341,9 +412,17 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
                   const display = parseDisplayMessage(entry.message);
 
                   return (
-                    <View key={`${entry.ts}-${index}`} className="flex-row gap-2 rounded-kd-md bg-kd-card px-2.5 py-2">
-                      <View className="w-[68px]">
-                        <Text className="text-kd-micro font-medium text-kd-text-subtle">
+                    <View
+                      key={`${entry.ts}-${index}`}
+                      className={isShopeeVariant
+                        ? 'flex-row gap-2.5 border-b border-kd-border bg-kd-screen px-3 py-2.5'
+                        : 'flex-row gap-2 rounded-kd-md bg-kd-card px-2.5 py-2'}
+                    >
+                      <View className={isShopeeVariant ? 'w-[58px]' : 'w-[68px]'}>
+                        <Text
+                          className={isShopeeVariant ? 'text-kd-micro font-black' : 'text-kd-micro font-medium text-kd-text-subtle'}
+                          style={isShopeeVariant ? { color: accent } : undefined}
+                        >
                           {formatTimestamp(entry.ts)}
                         </Text>
                       </View>

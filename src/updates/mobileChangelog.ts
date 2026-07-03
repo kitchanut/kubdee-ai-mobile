@@ -44,6 +44,16 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.49',
+    date: '2026-07-04',
+    highlight: 'Shopee Import ดึงข้อเสนอ Affiliate ได้แม่นขึ้น',
+    changes: [
+      { type: 'feature', text: 'เพิ่มการดึงสินค้า Shopee จากหน้าข้อเสนอ Affiliate พร้อมเลือกหมวดข้อเสนอ เช่น แนะนำและเครื่องใช้ในบ้าน' },
+      { type: 'fixed', text: 'ปรับการแตะ tab หมวดข้อเสนอให้ตรงกับหมวดที่เลือก ลดปัญหาเลือกเครื่องใช้ในบ้านแล้วไปกดหมวดถัดไป' },
+      { type: 'improved', text: 'ซ่อน log panel ชั่วคราวตอนกดดาวน์โหลดรูปจากแผงแชร์ เพื่อลดโอกาสบังปุ่มของ Shopee' },
+    ],
+  },
+  {
     version: '0.2.47',
     date: '2026-07-04',
     highlight: 'Shopee Post คุมความยาวแคปชั่นได้ดีขึ้น',

@@ -109,8 +109,7 @@ internal fun KubdeeAccessibilityService.waitForShopeeLikedProductsReady(timeoutM
     if (now - lastLog > 3000) {
       logStep(
         "รอสินค้าในหน้าถูกใจโหลด ${((now - start) / 1000.0).formatOneDecimal()} วิ " +
-          "(nodes=${stats.nodes}, ราคา=${stats.prices}, rawPrice=${stats.rawPrices}, " +
-          "text=${stats.texts}, safeTop=${stats.safeTop}, safeBottom=${stats.safeBottom})"
+          "(nodes=${stats.nodes}, ราคา=${stats.prices}, rawPrice=${stats.rawPrices}, text=${stats.texts}, safeTop=${stats.safeTop})"
       )
       lastLog = now
     }
@@ -119,8 +118,8 @@ internal fun KubdeeAccessibilityService.waitForShopeeLikedProductsReady(timeoutM
 
   lastStats?.let { stats ->
     logStep(
-        "รอสินค้าครบ ${(timeoutMs / 1000.0).formatOneDecimal()} วิแล้วยังไม่เจอสินค้า " +
-        "(nodes=${stats.nodes}, ราคา=${stats.prices}, rawPrice=${stats.rawPrices}, text=${stats.texts}, safeTop=${stats.safeTop}, safeBottom=${stats.safeBottom})"
+      "รอสินค้าครบ ${(timeoutMs / 1000.0).formatOneDecimal()} วิแล้วยังไม่เจอสินค้า " +
+        "(nodes=${stats.nodes}, ราคา=${stats.prices}, rawPrice=${stats.rawPrices}, text=${stats.texts})"
     )
   }
   return false
@@ -135,24 +134,20 @@ internal fun KubdeeAccessibilityService.shopeeLikedProductCandidateStats(): Shop
       rawPrices = 0,
       texts = 0,
       safeTop = 0,
-      safeBottom = 0,
       recommendation = false
     )
   val screen = screenBounds(root)
   val textNodes = mutableListOf<TextNode>()
   collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
   val safeTop = likedProductSafeTop(textNodes, screen)
-  val safeBottom = likedProductSafeBottom(textNodes, screen)
   val recommendationTop = findShopeeRecommendationStartY(textNodes)
   val rawPriceNodes = findPriceNodes(textNodes)
   val priceNodes = rawPriceNodes.filter { node ->
-    node.bounds.top > safeTop &&
-      node.bounds.bottom < safeBottom &&
-      (recommendationTop == null || node.bounds.top < recommendationTop)
+    node.bounds.top > safeTop && (recommendationTop == null || node.bounds.top < recommendationTop)
   }
   val productTextNodes = textNodes.filter { node ->
     node.text.isNotBlank() &&
-      node.bounds.centerY() in safeTop..safeBottom &&
+      node.bounds.bottom > safeTop &&
       (recommendationTop == null || node.bounds.top < recommendationTop) &&
       !PRICE_REGEX.containsMatchIn(node.text) &&
       isProductNameCandidate(node.text)
@@ -165,7 +160,6 @@ internal fun KubdeeAccessibilityService.shopeeLikedProductCandidateStats(): Shop
     rawPrices = rawPriceNodes.size,
     texts = productTextNodes.size,
     safeTop = safeTop,
-    safeBottom = safeBottom,
     recommendation = recommendationTop != null
   )
 }
@@ -184,7 +178,7 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeeLikedProductCandidate
   if (textNodes.isEmpty()) return emptyList<ShopeeLikedProductCandidate>() to false
 
   val safeTop = likedProductSafeTop(textNodes, screen)
-  val safeBottom = likedProductSafeBottom(textNodes, screen)
+  val safeBottom = screen.bottom - (screen.height() * 0.08f).toInt()
   if (textNodes.any { node ->
       node.bounds.centerY() in safeTop..safeBottom && SHOPEE_PRODUCT_DETAIL_MARKERS.any { marker ->
         node.text.contains(marker, ignoreCase = true)
@@ -226,8 +220,7 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeeLikedProductCandidate
       imageNodes = visibleImageNodes,
       priceNode = priceNode,
       screen = screen,
-      safeTop = safeTop,
-      safeBottom = safeBottom
+      safeTop = safeTop
     )
     if (candidate == null) {
       noNameCount += 1
@@ -256,8 +249,7 @@ internal fun KubdeeAccessibilityService.buildProductCandidateFromPriceNode(
   imageNodes: List<ShopeeImageNode>,
   priceNode: TextNode,
   screen: Rect,
-  safeTop: Int,
-  safeBottom: Int
+  safeTop: Int
 ): ShopeeLikedProductCandidate? {
   val price = normalizePrice(priceNode.text) ?: return null
   val columnWidth = shopeeLikedColumnWidth(screen)
@@ -290,7 +282,7 @@ internal fun KubdeeAccessibilityService.buildProductCandidateFromPriceNode(
   val relatedTexts = visibleTextNodes.filter { textNode ->
     isSameShopeeLikedProductColumn(textNode.bounds, priceNode.bounds, columnWidth) &&
       textNode.bounds.bottom >= nameMatch.node.bounds.top - 24 &&
-      textNode.bounds.top <= minOf(priceNode.bounds.bottom + (screen.height() * 0.16f).toInt(), safeBottom)
+      textNode.bounds.top <= priceNode.bounds.bottom + (screen.height() * 0.16f).toInt()
   }
   val productUrl = relatedTexts.firstNotNullOfOrNull { extractUrl(it.text) }
   val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
@@ -316,7 +308,7 @@ internal fun KubdeeAccessibilityService.buildProductCandidateFromPriceNode(
   )
 
   val tapBounds = nameMatch.node.bounds
-  if (!isShopeeLikedProductTapBoundsSafe(tapBounds, screen, safeTop, safeBottom)) return null
+  if (!isShopeeLikedProductTapBoundsSafe(tapBounds, screen, safeTop)) return null
   return ShopeeLikedProductCandidate(product, Rect(tapBounds), safeTop)
 }
 

@@ -196,9 +196,8 @@ internal fun KubdeeAccessibilityService.resolveShopeeUrl(rawUrl: String): String
 
   repeat(5) {
     checkStopRequested()
-    var connection: HttpURLConnection? = null
     try {
-      connection = (URL(current).openConnection() as HttpURLConnection).apply {
+      val connection = (URL(current).openConnection() as HttpURLConnection).apply {
         instanceFollowRedirects = false
         connectTimeout = 5000
         readTimeout = 5000
@@ -208,72 +207,18 @@ internal fun KubdeeAccessibilityService.resolveShopeeUrl(rawUrl: String): String
       }
       val status = connection.responseCode
       val location = connection.getHeaderField("Location")
+      connection.disconnect()
       if (status in 300..399 && !location.isNullOrBlank()) {
         current = URL(URL(current), location).toString()
         if (extractShopeeProductIdFromResolvedUrl(current) != null) return current
         return@repeat
       }
-
-      val effectiveUrl = connection.url?.toString()?.takeIf { it.isNotBlank() } ?: current
-      if (
-        !effectiveUrl.equals(current, ignoreCase = true) &&
-        extractShopeeProductIdFromResolvedUrl(effectiveUrl) != null
-      ) {
-        return effectiveUrl
-      }
-
-      if (current.contains("s.shopee", ignoreCase = true)) {
-        val bodyCandidate = extractShopeeUrlFromRedirectBody(connection)
-        if (!bodyCandidate.isNullOrBlank()) {
-          current = URL(URL(current), bodyCandidate).toString()
-          if (extractShopeeProductIdFromResolvedUrl(current) != null) return current
-          return@repeat
-        }
-      }
-
-      return effectiveUrl
+      return connection.url?.toString() ?: current
     } catch (_: Exception) {
       return current
-    } finally {
-      connection?.disconnect()
     }
   }
   return current
-}
-
-internal fun KubdeeAccessibilityService.extractShopeeUrlFromRedirectBody(connection: HttpURLConnection): String? {
-  val stream = try {
-    connection.inputStream
-  } catch (_: Exception) {
-    connection.errorStream
-  } ?: return null
-
-  val limit = 256 * 1024
-  val buffer = ByteArray(limit)
-  val length = try {
-    stream.use { input -> input.read(buffer, 0, limit) }
-  } catch (_: Exception) {
-    -1
-  }
-  if (length <= 0) return null
-
-  val body = String(buffer, 0, length, Charsets.UTF_8)
-    .replace("\\/", "/")
-    .replace("&amp;", "&")
-  val candidates = Regex("""https?://[^"'\\\s<>]*shopee\.[^"'\\\s<>]+""", RegexOption.IGNORE_CASE)
-    .findAll(body)
-    .map { match -> Uri.decode(match.value) }
-    .toList()
-  candidates.firstOrNull { extractShopeeProductIdFromResolvedUrl(it) != null }?.let { return it }
-
-  val pathCandidate = Regex("""/(?:product/)?(\d{4,})/(\d{4,})(?:[/?#][^"'\\\s<>]*)?""")
-    .find(body)
-    ?.value
-  if (!pathCandidate.isNullOrBlank()) {
-    return "https://shopee.co.th$pathCandidate"
-  }
-
-  return candidates.firstOrNull()
 }
 
 internal fun KubdeeAccessibilityService.extractShopeeProductIdFromResolvedUrl(url: String): String? {
@@ -321,7 +266,7 @@ internal fun KubdeeAccessibilityService.isProductNameCandidate(text: String): Bo
   val blocked = listOf(
     "หน้าแรก", "mall", "live", "video", "สำหรับคุณ", "การแจ้งเตือน", "ฉัน",
     "สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "liked", "ค้นหา", "แก้ไข", "edit",
-    "ทั้งหมด", "สถานะ", "หมวดหมู่", "โค้ดลด", "ส่วนลด", "coins", "coin", "เช็คอิน", "รับ", "ซื้อเลย",
+    "โค้ดลด", "ส่วนลด", "coins", "coin", "เช็คอิน", "รับ", "ซื้อเลย",
     "ขายแล้ว", "ส่งฟรี", "วันที่", "แนะนำ", "ดูเพิ่มเติม", "ช้อปปี้ถูกชัวร์",
     "ถูกชัวร์", "spaylater", "payday", "flashsale", "มีบริการติดตั้ง", "ผ่อน"
   )
@@ -345,58 +290,7 @@ internal fun KubdeeAccessibilityService.likedProductSafeTop(textNodes: List<Text
   val searchBottom = textNodes
     .filter { it.text.contains("ค้นหา", ignoreCase = true) || it.text.contains("Search", ignoreCase = true) }
     .maxOfOrNull { it.bounds.bottom }
-  val buyerFilterBottom = buyerLikedFilterBottom(textNodes, screen)
-  return ((listOfNotNull(markerBottom, searchBottom, buyerFilterBottom) + (screen.top + 120)).maxOrNull()
-    ?: (screen.top + 120)) + 16
-}
-
-internal fun KubdeeAccessibilityService.likedProductSafeBottom(textNodes: List<TextNode>, screen: Rect): Int {
-  val fallbackBottom = screen.bottom - (screen.height() * 0.08f).toInt()
-  val bottomBarTop = textNodes
-    .filter { node ->
-      node.node.isVisibleToUser &&
-        node.bounds.top >= screen.bottom - (screen.height() * 0.18f).toInt() &&
-        isBuyerLikedBottomBarLabel(node.text)
-    }
-    .minOfOrNull { it.bounds.top }
-  return minOf(fallbackBottom, (bottomBarTop ?: fallbackBottom) - 12).coerceAtLeast(screen.top + 240)
-}
-
-internal fun KubdeeAccessibilityService.buyerLikedFilterBottom(textNodes: List<TextNode>, screen: Rect): Int? {
-  val topLimit = screen.top + (screen.height() * 0.35f).toInt()
-  val filterNodes = textNodes.filter { node ->
-    node.node.isVisibleToUser &&
-      node.bounds.top <= topLimit &&
-      isBuyerLikedFilterLabel(node.text)
-  }
-  if (filterNodes.size < 2) return null
-  return filterNodes.maxOfOrNull { it.bounds.bottom }
-}
-
-private fun isBuyerLikedFilterLabel(text: String): Boolean {
-  val compact = text.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)
-  return listOf(
-    "ทั้งหมด",
-    "สถานะ",
-    "ส่วนลด",
-    "หมวดหมู่",
-    "all",
-    "status",
-    "discount",
-    "category"
-  ).any { compact == it.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT) }
-}
-
-private fun isBuyerLikedBottomBarLabel(text: String): Boolean {
-  val compact = text.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)
-  return listOf(
-    "เลือกแล้ว",
-    "นำออก",
-    "แชร์",
-    "selected",
-    "remove",
-    "share"
-  ).any { compact.contains(it.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)) }
+  return ((listOfNotNull(markerBottom, searchBottom) + (screen.top + 120)).maxOrNull() ?: (screen.top + 120)) + 12
 }
 
 internal fun KubdeeAccessibilityService.shopeeLikedColumnWidth(screen: Rect): Int =
@@ -412,12 +306,7 @@ internal fun KubdeeAccessibilityService.shopeeLikedCardBucket(tapBounds: Rect, p
   return "$column:${midY / yBucketSize}"
 }
 
-internal fun KubdeeAccessibilityService.isShopeeLikedProductTapBoundsSafe(
-  tapBounds: Rect,
-  screen: Rect,
-  safeTop: Int,
-  safeBottom: Int = screen.bottom - (screen.height() * 0.08f).toInt()
-): Boolean {
+internal fun KubdeeAccessibilityService.isShopeeLikedProductTapBoundsSafe(tapBounds: Rect, screen: Rect, safeTop: Int): Boolean {
   val tapX = tapBounds.centerX()
   val tapY = tapBounds.centerY()
   return tapBounds.width() > 0 &&
@@ -425,7 +314,7 @@ internal fun KubdeeAccessibilityService.isShopeeLikedProductTapBoundsSafe(
     tapX > screen.left &&
     tapX < screen.right &&
     tapY > safeTop &&
-    tapY < safeBottom
+    tapY < screen.bottom - (screen.height() * 0.08f).toInt()
 }
 
 internal fun KubdeeAccessibilityService.candidateRowBounds(node: AccessibilityNodeInfo, fallback: Rect, safeTop: Int, screen: Rect): Rect {

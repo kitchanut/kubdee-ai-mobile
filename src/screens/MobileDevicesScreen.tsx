@@ -29,6 +29,7 @@ import {
   stopShopeeAutomation,
 } from '@/native/AccessibilityBridge';
 import type { AccessibilityStatus } from '@/native/AccessibilityBridge';
+import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 interface MobileDevicesScreenProps {
@@ -215,6 +216,8 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
 
           {importRun.logs.length > 0 || importRun.running ? (
             <ActivityLogCard
+              accentColor={SHOPEE_ORANGE}
+              accentSoftColor={SHOPEE_ORANGE_SOFT}
               icon={ShoppingBag}
               theme={theme}
               title={importRun.title}
@@ -226,7 +229,10 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
               runningText="กำลังดึงสินค้า Shopee"
               idleText="รอบล่าสุดเสร็จแล้ว"
               emptyText="ยังไม่มี log ของ Shopee import"
+              stopLabel="หยุดดึงสินค้า Shopee"
+              stoppingLabel="กำลังหยุด..."
               stats={importStats}
+              variant="shopee"
               onStop={() => {
                 void stopRun('shopee-import');
               }}
@@ -236,6 +242,8 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
 
           {postRun.logs.length > 0 || postRun.running ? (
             <ActivityLogCard
+              accentColor={SHOPEE_ORANGE}
+              accentSoftColor={SHOPEE_ORANGE_SOFT}
               icon={Send}
               theme={theme}
               title={postRun.title}
@@ -247,7 +255,10 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
               runningText="กำลังโพสต์ Shopee"
               idleText="รอบล่าสุดเสร็จแล้ว"
               emptyText="ยังไม่มี log ของ Shopee post"
+              stopLabel="หยุดโพส Shopee"
+              stoppingLabel="กำลังหยุด..."
               stats={postStats}
+              variant="shopee"
               onStop={() => {
                 void stopRun('shopee-post');
               }}

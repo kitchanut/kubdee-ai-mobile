@@ -23,6 +23,7 @@ export function ShopeeImportOptionButton({
   disabled = false,
   label,
   compact = false,
+  fitContent = false,
   soon = false,
   onPress,
 }: {
@@ -30,9 +31,12 @@ export function ShopeeImportOptionButton({
   disabled?: boolean;
   label: string;
   compact?: boolean;
+  fitContent?: boolean;
   soon?: boolean;
   onPress: () => void;
 }): React.JSX.Element {
+  const sizeClass = fitContent ? 'shrink-0' : compact ? 'min-w-[78px] flex-grow' : 'flex-1';
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -40,7 +44,7 @@ export function ShopeeImportOptionButton({
       disabled={disabled}
       onPress={onPress}
       className={`min-h-10 flex-row items-center justify-center gap-1.5 rounded-kd-lg border px-3 ${
-        compact ? 'min-w-[78px] flex-grow' : 'flex-1'
+        sizeClass
       } ${active ? '' : 'border-kd-border bg-kd-card'} ${disabled ? 'opacity-45' : ''}`}
       style={
         active

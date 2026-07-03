@@ -150,19 +150,7 @@ class KubdeeAccessibilityModule(
       return
     }
 
-    promise.resolve(shopeeProductsJsonToWritableArray(resolveShopeeImportProductsJson(intent)))
-  }
-
-  private fun resolveShopeeImportProductsJson(intent: Intent): String {
-    val productsJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCTS_JSON).orEmpty()
-    try {
-      if (productsJson.isNotBlank() && JSONArray(productsJson).length() > 0) {
-        return productsJson
-      }
-    } catch (_: Exception) {
-      // Fall back to the durable queue below.
-    }
-    return KubdeeShopeeImportQueue.readProducts(reactContext).toString()
+    promise.resolve(shopeeProductsJsonToWritableArray(intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PRODUCTS_JSON).orEmpty()))
   }
 
   private fun handleShopeePostFinished(intent: Intent) {
@@ -367,8 +355,31 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
+  fun importShopeeProducts(
+    maxItems: Double,
+    profileLocalId: String?,
+    importSource: String?,
+    offerCategory: String?,
+    promise: Promise
+  ) {
+    startShopeeImport(maxItems, profileLocalId, importSource, offerCategory, promise)
+  }
+
+  @ReactMethod
   fun importShopeeLikedProducts(maxItems: Double, profileLocalId: String?, promise: Promise) {
+    startShopeeImport(maxItems, profileLocalId, SHOPEE_IMPORT_SOURCE_LIKED, null, promise)
+  }
+
+  private fun startShopeeImport(
+    maxItems: Double,
+    profileLocalId: String?,
+    importSource: String?,
+    offerCategory: String?,
+    promise: Promise
+  ) {
     val cleanProfileLocalId = profileLocalId?.trim()?.takeIf { it.isNotEmpty() }
+    val normalizedImportSource = normalizeShopeeImportSource(importSource)
+    val normalizedOfferCategory = normalizeShopeeOfferCategory(offerCategory)
     val requestedMaxItems = maxItems.toInt()
     val normalizedMaxItems = if (requestedMaxItems <= 0) 0 else requestedMaxItems
     val timeoutMs = if (normalizedMaxItems == 0) {
@@ -394,6 +405,8 @@ class KubdeeAccessibilityModule(
     sendAutomationCommand(KubdeeAutomationIpc.ACTION_START_SHOPEE_IMPORT) {
       putExtra(KubdeeAutomationIpc.EXTRA_RUN_ID, runId)
       putExtra(KubdeeAutomationIpc.EXTRA_MAX_ITEMS, normalizedMaxItems)
+      putExtra(KubdeeAutomationIpc.EXTRA_IMPORT_SOURCE, normalizedImportSource)
+      putExtra(KubdeeAutomationIpc.EXTRA_OFFER_CATEGORY, normalizedOfferCategory)
       if (!cleanProfileLocalId.isNullOrBlank()) {
         putExtra(KubdeeAutomationIpc.EXTRA_PROFILE_LOCAL_ID, cleanProfileLocalId)
       }

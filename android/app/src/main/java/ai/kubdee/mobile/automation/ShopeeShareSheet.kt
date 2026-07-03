@@ -376,7 +376,14 @@ internal fun KubdeeAccessibilityService.findShopeeShareDrawerImageUrl(): String?
 
 internal fun KubdeeAccessibilityService.downloadFirstShopeeShareImage(startedAtMs: Long): String? {
     if (!isShopeeShareSheetVisible()) return null
-    if (!tapShopeeShareFirstImageDownloadButton()) {
+    val tappedDownload = try {
+      setAutomationFloatingUiSuppressedBlocking(true)
+      sleepStep(160L)
+      tapShopeeShareFirstImageDownloadButton()
+    } finally {
+      setAutomationFloatingUiSuppressedBlocking(false)
+    }
+    if (!tappedDownload) {
       logStep("ไม่พบปุ่มดาวน์โหลดรูปแรกในแผงแชร์")
       return null
     }
@@ -783,4 +790,4 @@ internal fun KubdeeAccessibilityService.returnToShopeeLikedList(): Boolean {
 }
 
 internal fun KubdeeAccessibilityService.isShopeeImportListVisible(): Boolean =
-  isShopeeLikedListVisible() || isShopeePartnerLikedViewVisible()
+  isShopeeLikedListVisible() || isShopeePartnerLikedViewVisible() || isShopeeAffiliateOfferPageVisible()
