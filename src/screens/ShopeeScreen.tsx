@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner-native';
 
 import {
+  MAX_AUTOMATION_LOGS_PER_RUN,
   beginAutomationActivityRun,
   pushAutomationActivityLog,
   setAutomationActivityRunning,
@@ -70,14 +71,14 @@ export default function ShopeeScreen({
     !!selectedProfileId;
 
   const appendPostLog = useCallback((message: string, ts = Date.now()): void => {
-    setPostLogs((current) => [...current, { message, ts }].slice(-100));
+    setPostLogs((current) => [...current, { message, ts }].slice(-MAX_AUTOMATION_LOGS_PER_RUN));
     setPostMessage(message);
     pushAutomationActivityLog('shopee-post', message, ts);
   }, []);
 
   useEffect(() => {
     const subscription = subscribeShopeePostLogs((entry) => {
-      setPostLogs((current) => [...current, entry].slice(-100));
+      setPostLogs((current) => [...current, entry].slice(-MAX_AUTOMATION_LOGS_PER_RUN));
       setPostMessage(entry.message);
     });
 

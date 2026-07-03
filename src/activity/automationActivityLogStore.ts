@@ -32,7 +32,7 @@ export interface AutomationActivitySnapshot {
   runs: Record<AutomationActivityKind, AutomationActivityRun>;
 }
 
-const MAX_LOGS_PER_RUN = 100;
+export const MAX_AUTOMATION_LOGS_PER_RUN = 300;
 const STORAGE_KEY = 'kubdee_ai_mobile_automation_activity_log_v1';
 
 const defaultTitles: Record<AutomationActivityKind, string> = {
@@ -133,7 +133,10 @@ function normalizeStoredRun(kind: AutomationActivityKind, value: unknown): Autom
 
   const now = Date.now();
   const logs = Array.isArray(value.logs)
-    ? value.logs.map(normalizeLogEntry).filter((entry): entry is AutomationActivityLogEntry => Boolean(entry)).slice(-MAX_LOGS_PER_RUN)
+    ? value.logs
+        .map(normalizeLogEntry)
+        .filter((entry): entry is AutomationActivityLogEntry => Boolean(entry))
+        .slice(-MAX_AUTOMATION_LOGS_PER_RUN)
     : [];
   const wasRunning = value.running === true;
   const startedAt = normalizeTimestamp(value.startedAt) ?? logs[0]?.ts ?? null;
@@ -148,7 +151,7 @@ function normalizeStoredRun(kind: AutomationActivityKind, value: unknown): Autom
         ts: now,
         stage: 'interrupted',
       },
-    ].slice(-MAX_LOGS_PER_RUN);
+    ].slice(-MAX_AUTOMATION_LOGS_PER_RUN);
     updatedAt = now;
   }
 
@@ -271,7 +274,7 @@ export function pushAutomationActivityLog(
 
   updateRun(kind, (run) => ({
     ...run,
-    logs: [...run.logs, { message: cleanMessage, ts, ...meta }].slice(-MAX_LOGS_PER_RUN),
+    logs: [...run.logs, { message: cleanMessage, ts, ...meta }].slice(-MAX_AUTOMATION_LOGS_PER_RUN),
     startedAt: run.startedAt ?? ts,
     updatedAt: ts,
   }));

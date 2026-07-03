@@ -226,7 +226,6 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
               runningText="กำลังดึงสินค้า Shopee"
               idleText="รอบล่าสุดเสร็จแล้ว"
               emptyText="ยังไม่มี log ของ Shopee import"
-              maxVisible={12}
               stats={importStats}
               onStop={() => {
                 void stopRun('shopee-import');
@@ -248,7 +247,6 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
               runningText="กำลังโพสต์ Shopee"
               idleText="รอบล่าสุดเสร็จแล้ว"
               emptyText="ยังไม่มี log ของ Shopee post"
-              maxVisible={12}
               stats={postStats}
               onStop={() => {
                 void stopRun('shopee-post');

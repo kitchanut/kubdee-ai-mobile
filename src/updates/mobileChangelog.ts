@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.39',
+    date: '2026-07-03',
+    highlight: 'Shopee Post แนบสินค้าและตั้งค่าโพสต์เสถียรขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับขั้นตอนหลังแนบสินค้า Shopee ให้กลับมาหน้าโพสต์นิ่งก่อนตั้งค่า toggle ลดปัญหาค้างที่ช่องแคปชั่น' },
+      { type: 'improved', text: 'เพิ่มการตรวจสถานะ toggle จากหน้าจอและ log ให้ดูย้อนหลังได้มากขึ้นในแอป' },
+    ],
+  },
+  {
     version: '0.2.38',
     date: '2026-07-02',
     highlight: 'Shopee Post ไม่กรอกผิดช่องค้นหาเมื่อกดไอคอนลิงก์ไม่สำเร็จ',

@@ -327,9 +327,9 @@ internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): LinearLayout?
       WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
     PixelFormat.TRANSLUCENT
   ).apply {
-    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
     x = 0
-    y = automationOverlayBottomOffset()
+    y = automationOverlayTopOffset()
   }
 
   try {
@@ -471,9 +471,9 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
       WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
     PixelFormat.TRANSLUCENT
   ).apply {
-    gravity = Gravity.BOTTOM or Gravity.END
+    gravity = Gravity.TOP or Gravity.END
     x = dp(18)
-    y = automationOverlayBottomOffset() + dp(10)
+    y = automationOverlayTopOffset() + dp(10)
   }
 
   try {

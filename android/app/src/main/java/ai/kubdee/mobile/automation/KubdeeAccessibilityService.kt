@@ -398,7 +398,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
       var importedCount = 0
       var errorMessage: String? = null
       try {
-        setAutomationFloatingUiSuppressedBlocking(true)
+        setAutomationFloatingUiSuppressedBlocking(false)
         val normalizedMaxItems = if (maxItems <= 0) 0 else maxItems
         importedCount = importShopeeLikedProducts(
           TARGET_PACKAGE_SHOPEE,

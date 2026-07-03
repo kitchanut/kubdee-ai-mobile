@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import {
+  MAX_AUTOMATION_LOGS_PER_RUN,
   type AutomationActivityKind,
   type AutomationActivityRun,
   useAutomationActivitySnapshot,
@@ -74,7 +75,7 @@ function ActivityRunCard({
         : ShoppingBag;
   const firstLog = run.logs[0] ?? null;
   const latestLog = run.logs[run.logs.length - 1] ?? null;
-  const logs = run.logs.slice(-8);
+  const logs = run.logs.slice(-MAX_AUTOMATION_LOGS_PER_RUN);
   const visibleStartIndex = Math.max(0, run.logs.length - logs.length);
   const elapsedMs = getRunElapsedMs(run);
   const latestFlowStats = getLatestFlowStats(run);
