@@ -260,7 +260,10 @@ internal fun KubdeeAccessibilityService.swipeBlocking(
 internal fun KubdeeAccessibilityService.logStep(message: String) {
   Log.d(TAG, "Shopee runner: $message")
   addAutomationLogLine(message)
-  KubdeeAutomationIpc.sendShopeeImportLog(this, message)
+  when (automationLogKindForThread.get() ?: activeShopeeAutomationLogKind ?: ShopeeAutomationLogKind.IMPORT) {
+    ShopeeAutomationLogKind.POST -> KubdeeAutomationIpc.sendShopeePostLog(this, message)
+    ShopeeAutomationLogKind.IMPORT -> KubdeeAutomationIpc.sendShopeeImportLog(this, message)
+  }
   showAutomationOverlay(message)
 }
 

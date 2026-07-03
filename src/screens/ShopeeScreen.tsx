@@ -6,6 +6,7 @@ import { toast } from 'sonner-native';
 import {
   MAX_AUTOMATION_LOGS_PER_RUN,
   beginAutomationActivityRun,
+  flushAutomationActivitySnapshot,
   pushAutomationActivityLog,
   setAutomationActivityRunning,
   setAutomationActivityStopping,
@@ -103,24 +104,38 @@ export default function ShopeeScreen({
       return;
     }
 
-    const videosWithoutProductUrl = postQueueVideos.filter((video) => !video.productUrl);
-    const productNameFallbackCount = videosWithoutProductUrl.filter((video) => !!getPostPayloadProductName(video)).length;
-    const missingProductInfoCount = videosWithoutProductUrl.length - productNameFallbackCount;
-    if (productNameFallbackCount > 0) {
-      toast.warning(`ไม่มีลิงก์สินค้า ${productNameFallbackCount} รายการ จะค้นหาด้วยชื่อสินค้าแทน`);
-    }
-    if (missingProductInfoCount > 0) {
-      toast.warning(`ไม่มีข้อมูลสินค้า ${missingProductInfoCount} รายการ จะโพสต์โดยไม่แนบสินค้า`);
-    }
-
     if (isPosting) {
       return;
     }
 
+    const videosWithoutProductUrl = postQueueVideos.filter((video) => !video.productUrl);
+    const productNameFallbackCount = videosWithoutProductUrl.filter((video) => !!getPostPayloadProductName(video)).length;
+    const missingProductInfoCount = videosWithoutProductUrl.length - productNameFallbackCount;
+
+    setIsPosting(true);
+    setIsStoppingPost(false);
+    setPostLogs([]);
+    beginAutomationActivityRun('shopee-post');
+    appendPostLog(`เริ่มโพสต์ Shopee ${postQueueVideos.length} วิดีโอ`);
+
     try {
+      await flushAutomationActivitySnapshot();
+
+      if (productNameFallbackCount > 0) {
+        const message = `ไม่มีลิงก์สินค้า ${productNameFallbackCount} รายการ จะค้นหาด้วยชื่อสินค้าแทน`;
+        appendPostLog(message);
+        toast.warning(message);
+      }
+      if (missingProductInfoCount > 0) {
+        const message = `ไม่มีข้อมูลสินค้า ${missingProductInfoCount} รายการ จะโพสต์โดยไม่แนบสินค้า`;
+        appendPostLog(message);
+        toast.warning(message);
+      }
+
       const status = await getAccessibilityStatus();
       if (!status.running) {
-        setPostMessage('กรุณาเปิด Kubdee AI ใน Accessibility ก่อน');
+        const message = 'หยุดโพสต์: ยังไม่ได้เปิด Accessibility Service';
+        appendPostLog(message);
         Alert.alert(
           'เปิด Accessibility ก่อน',
           'Kubdee AI ต้องใช้ Accessibility เพื่อเปิด Shopee และโพสต์วิดีโอผ่านเครื่องนี้',
@@ -139,16 +154,13 @@ export default function ShopeeScreen({
 
       const mediaAllowed = await requestAndroidVideoPermission();
       if (!mediaAllowed) {
-        toast.warning('ต้องอนุญาตอ่านวิดีโอเพื่อโพสต์ Shopee');
-        setPostMessage('ต้องอนุญาตอ่านวิดีโอเพื่อโพสต์ Shopee');
+        const message = 'หยุดโพสต์: ต้องอนุญาตอ่านวิดีโอเพื่อโพสต์ Shopee';
+        appendPostLog(message);
+        toast.warning(message);
         return;
       }
 
-      setIsPosting(true);
-      setIsStoppingPost(false);
-      setPostLogs([]);
-      beginAutomationActivityRun('shopee-post');
-      appendPostLog(`เริ่มโพสต์ Shopee ${postQueueVideos.length} วิดีโอ`);
+      await flushAutomationActivitySnapshot();
 
       const result = await postShopeeVideos(
         postQueueVideos.map((video) => ({
@@ -193,6 +205,7 @@ export default function ShopeeScreen({
       setIsPosting(false);
       setIsStoppingPost(false);
       setAutomationActivityRunning('shopee-post', false);
+      void flushAutomationActivitySnapshot();
     }
   }, [appendPostLog, isPosting, onClearPendingVideos, onRemovePendingVideo, postQueueVideos]);
 

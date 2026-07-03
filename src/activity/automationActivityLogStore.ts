@@ -200,14 +200,7 @@ function schedulePersist(): void {
   }
   persistTimer = setTimeout(() => {
     persistTimer = null;
-    void AsyncStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        version: 1,
-        savedAt: Date.now(),
-        runs: snapshot.runs,
-      })
-    ).catch(() => {});
+    void persistSnapshotNow().catch(() => {});
   }, 250);
 }
 
@@ -253,6 +246,31 @@ function subscribe(listener: () => void): () => void {
 
 function getSnapshot(): AutomationActivitySnapshot {
   return snapshot;
+}
+
+function serializeSnapshot(): string {
+  return JSON.stringify({
+    version: 1,
+    savedAt: Date.now(),
+    runs: snapshot.runs,
+  });
+}
+
+async function persistSnapshotNow(): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEY, serializeSnapshot());
+}
+
+export async function flushAutomationActivitySnapshot(): Promise<void> {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+
+  try {
+    await persistSnapshotNow();
+  } catch {
+    // Activity logs are diagnostic only; never break the active automation flow.
+  }
 }
 
 export function useAutomationActivitySnapshot(): AutomationActivitySnapshot {
@@ -314,9 +332,11 @@ export function useAutomationActivityNativeBridge(): void {
   useEffect(() => {
     const importSubscription = subscribeShopeeImportLogs((entry: NativeShopeeImportLog) => {
       pushAutomationActivityLog('shopee-import', entry.message, entry.ts);
+      void flushAutomationActivitySnapshot();
     });
     const postSubscription = subscribeShopeePostLogs((entry: NativeShopeePostLog) => {
       pushAutomationActivityLog('shopee-post', entry.message, entry.ts);
+      void flushAutomationActivitySnapshot();
     });
 
     return () => {

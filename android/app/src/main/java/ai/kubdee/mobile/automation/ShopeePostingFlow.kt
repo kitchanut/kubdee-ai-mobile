@@ -1058,20 +1058,76 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIconByTitleAnc
     .minByOrNull { it.bounds.top }
     ?: return false
 
-  val headerHeight = title.bounds.height().coerceIn(dp(32), dp(64))
-  val tapX = screen.right - (headerHeight * 1.25f)
-  val tapY = title.bounds.centerY().toFloat()
-  logShopeePostStep("ไม่พบ node ไอคอนโซ่ ใช้ header anchor จาก '${title.text}'")
+  val headerActions = findShopeeTopRightHeaderActions(root, screen)
+  for ((bounds, node) in headerActions) {
+    val clickResult = clickShopeeHeaderLinkCandidate(screen, node)
+    if (clickResult == ShopeeHeaderLinkClickResult.Opened) {
+      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วย header action (${bounds.flattenToString()})")
+      return true
+    }
+    if (clickResult == ShopeeHeaderLinkClickResult.NotOpened) {
+      logShopeePostStep("กด header action แล้ว แต่หน้าใส่ลิงก์ยังไม่เปิด (${bounds.flattenToString()})")
+      recoverShopeeAddProductPickerAfterWrongHeaderTap()
+    }
+  }
 
-  if (!tapBlockingWithoutStopButton(tapX, tapY, timeoutMs = 1800L, durationMs = 80L)) {
-    return false
+  val tapY = title.bounds.centerY().toFloat()
+  val headerHeightPx = title.bounds.height().coerceIn(32, 72).toFloat()
+  val tapXs = listOf(
+    screen.right - (headerHeightPx * 1.25f),
+    screen.right - headerHeightPx,
+    screen.right - (headerHeightPx * 1.5f),
+    screen.right - 52f,
+    screen.right - 60f,
+    screen.right - 68f,
+    screen.right - 78f,
+    screen.right - 90f
+  ).distinctBy { it.toInt() }
+
+  logShopeePostStep("ไม่พบ node ไอคอนโซ่ จะลองแตะพื้นที่ header ขวาจาก '${title.text}'")
+  for (tapX in tapXs) {
+    if (tapX <= screen.left + 24f || tapX >= screen.right) continue
+    if (!tapBlockingWithoutStopButton(tapX, tapY, timeoutMs = 1600L, durationMs = 80L)) continue
+    if (waitForShopeeProductLinkEntryScreen(1400L)) {
+      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยพิกัด header ขวา (${tapX.toInt()},${tapY.toInt()})")
+      return true
+    }
+    recoverShopeeAddProductPickerAfterWrongHeaderTap()
   }
-  return if (waitForShopeeProductLinkEntryScreen(2500L)) {
-    true
-  } else {
-    logShopeePostStep("แตะไอคอนโซ่จาก header anchor แล้ว แต่หน้าใส่ลิงก์ยังไม่เปิด")
-    false
-  }
+
+  logShopeePostStep("แตะพื้นที่ header ขวาแล้ว แต่หน้าใส่ลิงก์ยังไม่เปิด")
+  return false
+}
+
+internal fun KubdeeAccessibilityService.findShopeeTopRightHeaderActions(
+  root: AccessibilityNodeInfo,
+  screen: Rect
+): List<Pair<Rect, AccessibilityNodeInfo>> {
+  val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+  collectClickableNodes(root, candidates)
+  val headerTop = screen.top + statusBarHeightPx() - dp(8)
+  val headerBottom = screen.top + statusBarHeightPx() + dp(92)
+  val minX = screen.right - dp(156)
+  val maxWidth = (screen.width() * 0.34f).toInt().coerceAtLeast(dp(52))
+  return candidates
+    .filter { (bounds, node) ->
+      isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
+        node.isVisibleToUser &&
+        bounds.width() in dp(18)..maxWidth &&
+        bounds.height() in dp(18)..dp(112) &&
+        bounds.centerX() >= minX &&
+        bounds.centerX() <= screen.right &&
+        bounds.centerY() in headerTop..headerBottom
+    }
+    .distinctBy { (bounds, _) -> "${bounds.left}:${bounds.top}:${bounds.right}:${bounds.bottom}" }
+    .sortedWith(compareByDescending<Pair<Rect, AccessibilityNodeInfo>> { it.first.centerX() }.thenBy { it.first.width() })
+}
+
+internal fun KubdeeAccessibilityService.recoverShopeeAddProductPickerAfterWrongHeaderTap() {
+  if (isShopeeProductLinkEntryScreen() || isShopeeAddProductPickerScreen()) return
+  logShopeePostStep("แตะ header แล้วออกจากหน้าเพิ่มสินค้า จะย้อนกลับมาลองต่อ")
+  performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+  sleepStep(900L)
 }
 
 internal enum class ShopeeHeaderLinkClickResult {
@@ -1084,14 +1140,58 @@ internal fun KubdeeAccessibilityService.clickShopeeHeaderLinkCandidate(
   screen: Rect,
   node: AccessibilityNodeInfo
 ): ShopeeHeaderLinkClickResult {
-  val clickable = findShopeeHeaderClickableNode(node, screen) ?: return ShopeeHeaderLinkClickResult.NoClickableNode
-  val clicked = clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-  if (!clicked) return ShopeeHeaderLinkClickResult.NoClickableNode
-  return if (waitForShopeeProductLinkEntryScreen(2500L)) {
-    ShopeeHeaderLinkClickResult.Opened
+  val clickable = findShopeeHeaderClickableNode(node, screen)
+  if (clickable != null && clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+    if (waitForShopeeProductLinkEntryScreen(2500L)) {
+      return ShopeeHeaderLinkClickResult.Opened
+    }
+  }
+
+  val nodeBounds = Rect()
+  node.getBoundsInScreen(nodeBounds)
+  val bounds = if (isShopeeHeaderTapBounds(screen, nodeBounds)) {
+    nodeBounds
+  } else {
+    val clickableBounds = Rect()
+    clickable?.getBoundsInScreen(clickableBounds)
+    clickableBounds
+  }
+  if (isShopeeHeaderTapBounds(screen, bounds)) {
+    val tapped = tapBlockingWithoutStopButton(
+      bounds.centerX().toFloat(),
+      bounds.centerY().toFloat(),
+      timeoutMs = 1600L,
+      durationMs = 80L
+    )
+    if (tapped) {
+      return if (waitForShopeeProductLinkEntryScreen(1600L)) {
+        ShopeeHeaderLinkClickResult.Opened
+      } else {
+        ShopeeHeaderLinkClickResult.NotOpened
+      }
+    }
+  }
+
+  return if (clickable == null) {
+    ShopeeHeaderLinkClickResult.NoClickableNode
   } else {
     ShopeeHeaderLinkClickResult.NotOpened
   }
+}
+
+internal fun KubdeeAccessibilityService.isShopeeHeaderTapBounds(
+  screen: Rect,
+  bounds: Rect
+): Boolean {
+  val headerTop = screen.top + statusBarHeightPx() - dp(8)
+  val headerBottom = screen.top + statusBarHeightPx() + dp(96)
+  return bounds.width() > 0 &&
+    bounds.height() > 0 &&
+    bounds.centerY() in headerTop..headerBottom &&
+    bounds.centerX() >= screen.left + (screen.width() * 0.50f).toInt() &&
+    bounds.centerX() <= screen.right &&
+    bounds.width() <= (screen.width() * 0.45f).toInt() &&
+    bounds.height() <= dp(120)
 }
 
 internal fun KubdeeAccessibilityService.findShopeeHeaderClickableNode(

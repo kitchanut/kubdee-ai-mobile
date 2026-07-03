@@ -53,6 +53,11 @@ import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal enum class ShopeeAutomationLogKind {
+  IMPORT,
+  POST
+}
+
 class KubdeeAccessibilityService : AccessibilityService() {
   internal val mainHandler = Handler(Looper.getMainLooper())
   internal var overlayView: LinearLayout? = null
@@ -75,6 +80,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
   internal var automationRound = 0
   internal var automationTotalRounds = 0
   internal var automationStatusLabel = "RUNNING"
+  internal val automationLogKindForThread = ThreadLocal<ShopeeAutomationLogKind?>()
+
+  @Volatile
+  internal var activeShopeeAutomationLogKind: ShopeeAutomationLogKind? = null
 
   @Volatile
   internal var automationFloatingUiSuppressed = false
@@ -395,6 +404,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     val thread = Thread {
+      automationLogKindForThread.set(ShopeeAutomationLogKind.IMPORT)
+      activeShopeeAutomationLogKind = ShopeeAutomationLogKind.IMPORT
       var importedCount = 0
       var errorMessage: String? = null
       try {
@@ -432,6 +443,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (shopeeImportThread === Thread.currentThread()) {
           shopeeImportThread = null
         }
+        if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.IMPORT) {
+          activeShopeeAutomationLogKind = null
+        }
+        automationLogKindForThread.remove()
       }
     }.also { worker ->
       worker.name = "KubdeeShopeeLikedImport"
@@ -456,6 +471,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
 
     val thread = Thread {
+      automationLogKindForThread.set(ShopeeAutomationLogKind.POST)
+      activeShopeeAutomationLogKind = ShopeeAutomationLogKind.POST
       val result = try {
         postShopeeVideos(payloadJson)
       } catch (error: Exception) {
@@ -476,6 +493,10 @@ class KubdeeAccessibilityService : AccessibilityService() {
       if (shopeePostThread === Thread.currentThread()) {
         shopeePostThread = null
       }
+      if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.POST) {
+        activeShopeeAutomationLogKind = null
+      }
+      automationLogKindForThread.remove()
     }.also { worker ->
       worker.name = "KubdeeShopeePosting"
       shopeePostThread = worker

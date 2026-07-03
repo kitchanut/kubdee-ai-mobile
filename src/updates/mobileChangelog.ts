@@ -44,6 +44,16 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.44',
+    date: '2026-07-03',
+    highlight: 'Shopee Post เก็บ log ย้อนหลังได้เสถียรขึ้น',
+    changes: [
+      { type: 'fixed', text: 'บันทึก Activity ของ Shopee Post ตั้งแต่เริ่มกดโพสต์ รวมถึงกรณี Accessibility หรือ permission ยังไม่พร้อม' },
+      { type: 'improved', text: 'เขียน log ล่าสุดลงเครื่องทันทีระหว่าง native automation เพื่อลดปัญหาเปิดเมนู Mobile แล้วไม่เจอ log' },
+      { type: 'fixed', text: 'ปรับการแตะไอคอนโซ่ใน Shopee Post ให้ใช้ตำแหน่งจริงของหน้าจอแต่ละเครื่อง' },
+    ],
+  },
+  {
     version: '0.2.43',
     date: '2026-07-03',
     highlight: 'ซิงก์คลังสินค้าไม่สร้างรายการซ้ำ',
