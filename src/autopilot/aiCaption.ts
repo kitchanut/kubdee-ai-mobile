@@ -1,6 +1,15 @@
 import { refreshAuthToken } from '@/auth/api';
 import { APP_TYPE, BACKEND_URL } from '@/auth/constants';
 import { getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
+import {
+  SHOPEE_AI_CAPTION_WORD_LIMIT,
+  SHOPEE_AI_CTA_WORD_LIMIT,
+  SHOPEE_AI_HASHTAG_WORD_LIMIT,
+  SHOPEE_AI_TOTAL_WORD_LIMIT,
+  SHOPEE_POST_WORD_LIMIT,
+  getShopeeSafeHashtagCount,
+  limitShopeePostTextParts,
+} from '@/autopilot/shopeePostTextLimit';
 import type { AutoPilotProduct, AutoPilotSettings } from '@/autopilot/types';
 
 interface AiGenerateResponse {
@@ -17,6 +26,8 @@ export interface AutoPilotAiContentResult {
   hashtags?: string;
   cta?: string;
   error?: string;
+  wasLimited?: boolean;
+  wordCount?: number;
 }
 
 export function getAutoPilotAiContentLabels(settings: AutoPilotSettings): string {
@@ -35,12 +46,13 @@ function buildAutoPilotCaptionPrompt({
   settings: AutoPilotSettings;
 }): string {
   const jsonLines: string[] = [];
+  const hashtagCount = getShopeeSafeHashtagCount(settings.aiHashtagCount);
   if (settings.aiGenerateCaption) {
-    jsonLines.push('  "caption": "Caption ภาษาไทยสั้น กระชับ เหมาะกับ TikTok"');
+    jsonLines.push(`  "caption": "Caption ภาษาไทยสั้น กระชับ เหมาะกับ Shopee Video ไม่เกิน ${SHOPEE_AI_CAPTION_WORD_LIMIT} คำ"`);
   }
   if (settings.aiGenerateHashtags) {
     const hashtagExample = Array.from(
-      { length: settings.aiHashtagCount },
+      { length: hashtagCount },
       (_, index) => `#แท็ก${index + 1}`
     ).join(' ');
     jsonLines.push(`  "hashtags": "${hashtagExample}"`);
@@ -49,7 +61,7 @@ function buildAutoPilotCaptionPrompt({
     jsonLines.push('  "cta": "ข้อความปุ่ม CTA"');
   }
 
-  return `คุณคือผู้เชี่ยวชาญด้านการเขียนข้อความขายสินค้าสำหรับ TikTok Shop และ affiliate video.
+  return `คุณคือผู้เชี่ยวชาญด้านการเขียนข้อความขายสินค้าสำหรับ Shopee Video และ affiliate video.
 
 คิด ${getAutoPilotAiContentLabels(settings) || 'Caption/Hashtags/CTA'} สำหรับสินค้านี้ โดยตอบเป็น JSON เท่านั้น ห้ามมี markdown หรือคำอธิบายอื่น
 
@@ -65,9 +77,12 @@ function buildAutoPilotCaptionPrompt({
 กฎ:
 - ใช้ภาษาไทยเป็นหลัก อ่านง่าย เหมาะกับคลิปสั้น
 - หลีกเลี่ยงคำโฆษณาเกินจริง คำต้องห้าม คำเกี่ยวกับความรุนแรง การพนัน ยาเสพติด เพศ และการเงินเสี่ยง
+- Shopee จำกัดข้อความในช่องแคปชั่นรวม Caption + CTA + Hashtags ไม่เกิน ${SHOPEE_POST_WORD_LIMIT} คำ
+- เพื่อความปลอดภัย ให้เขียนรวมทุก field ไม่เกิน ${SHOPEE_AI_TOTAL_WORD_LIMIT} คำเท่านั้น
+- Caption ควรอยู่ประมาณ 70-${SHOPEE_AI_CAPTION_WORD_LIMIT} คำ ถ้าไม่แน่ใจให้สั้นลง
 - Caption ต้องไม่ใส่ hashtag เพราะ hashtags แยกต่างหาก
-- Hashtags ต้องมี ${settings.aiHashtagCount} แท็กเท่านั้น ขึ้นต้นด้วย #
-- CTA ต้องสั้น ไม่เกิน 3-4 คำ และเหมาะกับการกดซื้อในแพลตฟอร์ม
+- Hashtags ต้องมี ${hashtagCount} แท็กเท่านั้น ขึ้นต้นด้วย # และรวมไม่เกิน ${SHOPEE_AI_HASHTAG_WORD_LIMIT} คำ
+- CTA ต้องสั้น ไม่เกิน ${SHOPEE_AI_CTA_WORD_LIMIT} คำ และเหมาะกับการกดซื้อในแพลตฟอร์ม
 
 ตอบกลับเป็น JSON รูปแบบนี้เท่านั้น:
 {
@@ -161,11 +176,28 @@ export async function generateAutoPilotProductContent({
       return { success: false, error: 'Parse AI response ไม่ได้' };
     }
 
+    const limitedText = limitShopeePostTextParts(
+      {
+        caption: settings.aiGenerateCaption && typeof parsed.caption === 'string' ? parsed.caption : '',
+        hashtags: settings.aiGenerateHashtags && typeof parsed.hashtags === 'string' ? parsed.hashtags : '',
+        cta: settings.aiGenerateCta && typeof parsed.cta === 'string' ? parsed.cta : '',
+      },
+      {
+        totalWordLimit: SHOPEE_AI_TOTAL_WORD_LIMIT,
+        captionWordLimit: SHOPEE_AI_CAPTION_WORD_LIMIT,
+        hashtagWordLimit: SHOPEE_AI_HASHTAG_WORD_LIMIT,
+        hashtagCountLimit: getShopeeSafeHashtagCount(settings.aiHashtagCount),
+        ctaWordLimit: SHOPEE_AI_CTA_WORD_LIMIT,
+      }
+    );
+
     return {
       success: true,
-      caption: typeof parsed.caption === 'string' ? parsed.caption.trim() : '',
-      hashtags: typeof parsed.hashtags === 'string' ? parsed.hashtags.trim() : '',
-      cta: typeof parsed.cta === 'string' ? parsed.cta.trim() : '',
+      caption: limitedText.caption,
+      hashtags: limitedText.hashtags,
+      cta: limitedText.cta,
+      wasLimited: limitedText.wasLimited,
+      wordCount: limitedText.wordCount,
     };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };

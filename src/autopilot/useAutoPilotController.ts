@@ -20,6 +20,7 @@ import {
   generateAutoPilotProductContent,
   getAutoPilotAiContentLabels,
 } from '@/autopilot/aiCaption';
+import { SHOPEE_AI_TOTAL_WORD_LIMIT } from '@/autopilot/shopeePostTextLimit';
 import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
 import {
   getAutoPilotProductId,
@@ -802,6 +803,9 @@ export function useAutoPilotController({
             }
             if (updates.cta) {
               appendLog('info', `AI CTA: ${updates.cta}`);
+            }
+            if (result.wasLimited) {
+              appendLog('info', `AI ปรับข้อความ Shopee ให้อยู่ใน ${result.wordCount ?? 0}/${SHOPEE_AI_TOTAL_WORD_LIMIT} คำ`);
             }
             return { product, updates };
           })

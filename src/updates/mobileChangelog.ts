@@ -44,6 +44,14 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.47',
+    date: '2026-07-04',
+    highlight: 'Shopee Post คุมความยาวแคปชั่นได้ดีขึ้น',
+    changes: [
+      { type: 'improved', text: 'AI คิดแคปชั่นและแฮชแท็กสำหรับ Shopee ให้สั้นลง และระบบจะปรับข้อความก่อนโพสต์ไม่ให้เกินขีดจำกัดของ Shopee' },
+    ],
+  },
+  {
     version: '0.2.46',
     date: '2026-07-03',
     highlight: 'คลังวิดีโอแทนที่ไฟล์เดิมได้',

@@ -23,7 +23,8 @@ import {
   stopShopeeAutomation,
   subscribeShopeePostLogs,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeePostLog, NativeShopeePostingResult } from '@/native/AccessibilityBridge';
+import type { NativeShopeePostLog, NativeShopeePostingResult, NativeShopeePostingVideoInput } from '@/native/AccessibilityBridge';
+import { SHOPEE_POST_SAFE_WORD_LIMIT, limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
 import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 
@@ -162,19 +163,37 @@ export default function ShopeeScreen({
 
       await flushAutomationActivitySnapshot();
 
-      const result = await postShopeeVideos(
-        postQueueVideos.map((video) => ({
-          fileUri: video.fileUri || '',
-          productName: getPostPayloadProductName(video),
-          productId: getPostPayloadProductCode(video),
-          productUrl: video.productUrl || null,
+      const postPayloadItems = postQueueVideos.map((video) => {
+        const productName = getPostPayloadProductName(video);
+        const productCode = getPostPayloadProductCode(video);
+        const limitedText = limitShopeePostTextParts({
           caption: video.caption,
-          hashtags: video.hashtags,
           cta: video.cta,
+          fallbackCaption: productName,
+          hashtags: video.hashtags,
+        });
+        const payload: NativeShopeePostingVideoInput = {
+          fileUri: video.fileUri || '',
+          productName,
+          productId: productCode,
+          productUrl: video.productUrl || null,
+          caption: limitedText.caption || null,
+          hashtags: limitedText.hashtags || null,
+          cta: limitedText.cta || null,
           galleryVideoId: video.id,
           platform: video.platform || 'shopee',
-        }))
-      );
+        };
+        return { limitedText, payload };
+      });
+      const limitedPostTextCount = postPayloadItems.filter((item) => item.limitedText.wasLimited).length;
+      if (limitedPostTextCount > 0) {
+        const maxWordCount = Math.max(...postPayloadItems.map((item) => item.limitedText.wordCount), 0);
+        appendPostLog(
+          `ปรับแคปชั่น/แฮชแท็กให้อยู่ไม่เกิน ${SHOPEE_POST_SAFE_WORD_LIMIT} คำ ${limitedPostTextCount} รายการ (สูงสุด ${maxWordCount} คำ)`
+        );
+      }
+
+      const result = await postShopeeVideos(postPayloadItems.map((item) => item.payload));
 
       if (result.stopped) {
         const message = `หยุดโพสต์ Shopee แล้ว (${result.postedCount || 0}/${postQueueVideos.length})`;
