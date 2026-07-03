@@ -15,6 +15,11 @@ interface ExistingProductSyncRow {
   sync_status: string | null;
 }
 
+interface CloudProductUpsertOptions {
+  profileLocalId?: string;
+  reconcile?: boolean;
+}
+
 interface SyncQueueRow {
   id: number;
   operation: ProductSyncOperation;
@@ -100,6 +105,59 @@ function mergeCloudProductWithLocalImage(
   }
 
   return preservedLocalImage ? { ...cloudProduct, ...preservedLocalImage } : cloudProduct;
+}
+
+async function tombstoneDuplicateProductIdentityRows(
+  db: SQLite.SQLiteDatabase,
+  product: AffiliateProduct,
+  timestamp: number
+): Promise<void> {
+  const profileLocalId = normalizeText(product.profileLocalId);
+  const platform = normalizePlatform(product.platform);
+  const externalProductId = normalizeText(product.externalProductId);
+  const localId = normalizeText(product.localId);
+
+  if (!profileLocalId || !platform || !externalProductId || !localId) {
+    return;
+  }
+
+  const duplicateRows = await db.getAllAsync<{ local_id: string }>(
+    `
+      SELECT local_id
+      FROM affiliate_products
+      WHERE profile_local_id = ?
+        AND platform = ?
+        AND external_product_id = ?
+        AND local_id <> ?
+    `,
+    profileLocalId,
+    platform,
+    externalProductId,
+    localId
+  );
+
+  for (const duplicate of duplicateRows) {
+    await db.runAsync(
+      `
+        DELETE FROM product_sync_queue
+        WHERE local_id = ?
+      `,
+      duplicate.local_id
+    );
+
+    await db.runAsync(
+      `
+        UPDATE affiliate_products
+        SET deleted_at = ?,
+            sync_status = 'synced',
+            updated_at = ?
+        WHERE local_id = ?
+      `,
+      timestamp,
+      timestamp,
+      duplicate.local_id
+    );
+  }
 }
 
 function toAffiliateProduct(product: SyncAffiliateProductInput): AffiliateProduct {
@@ -414,10 +472,15 @@ export async function getLocalProducts(options: { profileLocalId?: string } = {}
   });
 }
 
-export async function upsertLocalProductsFromCloud(products: AffiliateProduct[]): Promise<void> {
+export async function upsertLocalProductsFromCloud(
+  products: AffiliateProduct[],
+  options: CloudProductUpsertOptions = {}
+): Promise<void> {
   await runDbTask(async (db) => {
     const timestamp = nowMs();
     const remoteIds = new Set(products.map((product) => product.localId).filter(Boolean));
+    const reconcile = options.reconcile !== false;
+    const profileLocalId = normalizeText(options.profileLocalId);
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       for (const product of products) {
@@ -425,39 +488,75 @@ export async function upsertLocalProductsFromCloud(products: AffiliateProduct[])
           'SELECT product_json, sync_status FROM affiliate_products WHERE local_id = ? LIMIT 1',
           product.localId
         );
-        if (existing?.sync_status?.startsWith('pending_')) {
+        if (existing?.sync_status === 'pending_upsert') {
           continue;
+        }
+        if (!reconcile && existing?.sync_status === 'pending_delete') {
+          await txn.runAsync(
+            `
+              DELETE FROM product_sync_queue
+              WHERE operation = 'delete' AND local_id = ?
+            `,
+            product.localId
+          );
         }
 
         const existingProduct = existing ? parseProduct(existing) : null;
         const mergedProduct = mergeCloudProductWithLocalImage(product, existingProduct);
 
+        await tombstoneDuplicateProductIdentityRows(txn, mergedProduct, timestamp);
         await upsertProductRow(txn, {
           ...mergedProduct,
           lastSyncedAt: timestamp,
         }, 'synced');
       }
 
-      if (remoteIds.size === 0) {
-        await txn.runAsync(
-          `
-            UPDATE affiliate_products
-            SET deleted_at = ?, updated_at = ?
-            WHERE deleted_at IS NULL AND sync_status = 'synced'
-          `,
-          timestamp,
-          timestamp
-        );
+      if (!reconcile) {
         return;
       }
 
-      const cleanRows = await txn.getAllAsync<{ local_id: string }>(
-        `
-          SELECT local_id
-          FROM affiliate_products
-          WHERE deleted_at IS NULL AND sync_status = 'synced'
-        `
-      );
+      if (remoteIds.size === 0) {
+        if (profileLocalId) {
+          await txn.runAsync(
+            `
+              UPDATE affiliate_products
+              SET deleted_at = ?, updated_at = ?
+              WHERE deleted_at IS NULL AND sync_status = 'synced' AND profile_local_id = ?
+            `,
+            timestamp,
+            timestamp,
+            profileLocalId
+          );
+        } else {
+          await txn.runAsync(
+            `
+              UPDATE affiliate_products
+              SET deleted_at = ?, updated_at = ?
+              WHERE deleted_at IS NULL AND sync_status = 'synced'
+            `,
+            timestamp,
+            timestamp
+          );
+        }
+        return;
+      }
+
+      const cleanRows = profileLocalId
+        ? await txn.getAllAsync<{ local_id: string }>(
+          `
+            SELECT local_id
+            FROM affiliate_products
+            WHERE deleted_at IS NULL AND sync_status = 'synced' AND profile_local_id = ?
+          `,
+          profileLocalId
+        )
+        : await txn.getAllAsync<{ local_id: string }>(
+          `
+            SELECT local_id
+            FROM affiliate_products
+            WHERE deleted_at IS NULL AND sync_status = 'synced'
+          `
+        );
 
       for (const row of cleanRows) {
         if (remoteIds.has(row.local_id)) continue;

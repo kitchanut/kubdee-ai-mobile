@@ -21,6 +21,8 @@ import type { AffiliateProduct } from '@/library/types';
 export interface ProductSyncResult {
   success: boolean;
   count: number;
+  profileCount: number | null;
+  remoteCount: number | null;
   error: string | null;
 }
 
@@ -62,6 +64,11 @@ export interface ProductImportOptions {
   sync?: boolean;
 }
 
+export interface ProductSyncOptions {
+  profileLocalId?: string;
+  reconcile?: boolean;
+}
+
 interface QueueSyncResult {
   success: boolean;
   status: number | null;
@@ -81,7 +88,7 @@ interface LibraryContextType {
   /** Reload products from local SQLite without requiring cloud sync. */
   refreshProducts: () => Promise<AffiliateProduct[]>;
   /** Resolves with the sync outcome, or null when skipped (no token / already syncing). */
-  syncProducts: () => Promise<ProductSyncResult | null>;
+  syncProducts: (options?: ProductSyncOptions) => Promise<ProductSyncResult | null>;
   /** Import products scraped on-device from Shopee liked items and push them to Cloud. */
   importShopeeProducts: (
     profileLocalId: string,
@@ -597,7 +604,10 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     return localProducts;
   }, []);
 
-  const syncProducts = useCallback(async (): Promise<ProductSyncResult | null> => {
+  const syncProducts = useCallback(async (options: ProductSyncOptions = {}): Promise<ProductSyncResult | null> => {
+    const syncProfileLocalId = cleanText(options.profileLocalId);
+    const reconcile = options.reconcile !== false;
+
     if (!token) {
       await refreshLocalProducts();
       return null;
@@ -622,30 +632,48 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
         }
       }
 
-      let result = await fetchAffiliateProducts(activeToken);
+      let result = await fetchAffiliateProducts(
+        activeToken,
+        syncProfileLocalId ? { profileLocalId: syncProfileLocalId } : undefined
+      );
 
       if (!result.ok && result.status === 401) {
         await recheckPlan();
         const refreshedTokens = await getStoredAuthTokens();
         if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
           activeToken = refreshedTokens.accessToken;
-          result = await fetchAffiliateProducts(activeToken);
+          result = await fetchAffiliateProducts(
+            activeToken,
+            syncProfileLocalId ? { profileLocalId: syncProfileLocalId } : undefined
+          );
         }
       }
 
       if (result.ok && result.data) {
-        await upsertLocalProductsFromCloud(result.data);
+        await upsertLocalProductsFromCloud(result.data, {
+          profileLocalId: syncProfileLocalId ?? undefined,
+          reconcile,
+        });
         const localProducts = await refreshLocalProducts();
+        const profileCount = syncProfileLocalId
+          ? localProducts.filter((product) => product.profileLocalId === syncProfileLocalId).length
+          : null;
         const error = queueResult.success ? null : queueResult.error;
         setSyncError(error);
         setLastSyncedAt(Date.now());
-        return { count: localProducts.length, error, success: queueResult.success };
+        return {
+          count: localProducts.length,
+          profileCount,
+          remoteCount: result.data.length,
+          error,
+          success: queueResult.success,
+        };
       }
 
       const message = result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ';
       await refreshLocalProducts();
       setSyncError(message);
-      return { count: 0, error: message, success: false };
+      return { count: 0, profileCount: syncProfileLocalId ? 0 : null, remoteCount: null, error: message, success: false };
     } finally {
       isSyncingRef.current = false;
       setIsSyncing(false);

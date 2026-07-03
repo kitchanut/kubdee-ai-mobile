@@ -19,6 +19,7 @@ import {
   pushAutomationActivityLog,
   setAutomationActivityRunning,
 } from '@/activity/automationActivityLogStore';
+import { useAuth } from '@/auth/AuthContext';
 import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
@@ -62,6 +63,18 @@ import {
 } from './product-panel';
 import type { ShopeeImportAmount, ShopeeImportSource, SortKey } from './product-panel';
 
+function formatProfileDebugId(profileId: string): string {
+  const cleanProfileId = profileId.trim();
+  return cleanProfileId ? cleanProfileId.slice(0, 8) : 'ทั้งหมด';
+}
+
+function formatUserDebugLabel(user: { id?: string | null; email?: string | null } | null): string {
+  const email = user?.email?.trim();
+  const userId = user?.id?.trim();
+  const shortUserId = userId ? userId.slice(0, 8) : 'no-user';
+  return email ? `${email} (${shortUserId})` : shortUserId;
+}
+
 export default function ProductPanel({
   selectedProfileId,
   theme,
@@ -73,6 +86,7 @@ export default function ProductPanel({
 }): React.JSX.Element {
   const accent = getAccentTone(theme, theme.emerald);
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const {
     products: allProducts,
     isSyncing,
@@ -120,13 +134,20 @@ export default function ProductPanel({
       return;
     }
 
+    const profileDebugId = formatProfileDebugId(selectedProfileId);
+
     if (result.success) {
-      toast.success(`ซิงก์แล้ว ${result.count} รายการ`);
+      const syncedCount = result.profileCount ?? result.count;
+      if (syncedCount === 0 && result.remoteCount === 0 && selectedProfileId) {
+        toast.warning(`โปรไฟล์นี้ไม่มีสินค้า cloud (${profileDebugId})`);
+        return;
+      }
+      toast.success(`ซิงก์แล้ว ${syncedCount} รายการ (${profileDebugId})`);
       return;
     }
 
     toast.error(result.error || 'ซิงก์คลังสินค้าไม่สำเร็จ');
-  }, []);
+  }, [selectedProfileId]);
 
   const showDeleteResult = useCallback((result: ProductDeleteResult | null): void => {
     if (!result) {
@@ -236,27 +257,47 @@ export default function ProductPanel({
       return;
     }
 
-    void syncProducts().then(showSyncResult);
-  }, [isSyncing, showSyncResult, syncProducts]);
+    const profileDebugId = formatProfileDebugId(selectedProfileId);
+    appendShopeeLog(`เริ่มซิงก์สินค้า cloud user=${formatUserDebugLabel(user)} profile=${profileDebugId}`);
+    void syncProducts(
+      selectedProfileId ? { profileLocalId: selectedProfileId, reconcile: false } : { reconcile: false }
+    ).then((result) => {
+      if (result) {
+        const syncedCount = result.profileCount ?? result.count;
+        const remoteCount = typeof result.remoteCount === 'number' ? result.remoteCount : '-';
+        const status = result.success ? 'สำเร็จ' : 'ไม่สำเร็จ';
+        appendShopeeLog(
+          `ผลซิงก์ cloud ${status} user=${formatUserDebugLabel(user)} profile=${profileDebugId} local=${syncedCount} remote=${remoteCount}`
+        );
+      }
+      showSyncResult(result);
+    });
+  }, [appendShopeeLog, isSyncing, selectedProfileId, showSyncResult, syncProducts, user]);
 
   const handleTikTokComingSoon = useCallback((): void => {
     Alert.alert('กำลังพัฒนา', 'ฟีเจอร์ TikTok กำลังพัฒนา');
   }, []);
 
   const syncShopeeImportQueue = useCallback(async (): Promise<void> => {
-    const result = await syncProducts();
+    const result = await syncProducts(
+      selectedProfileId ? { profileLocalId: selectedProfileId, reconcile: false } : { reconcile: false }
+    );
     if (!result) {
       appendShopeeLog('บันทึกไว้ในเครื่องแล้ว รอซิงก์ cloud');
       return;
     }
 
     if (result.success) {
-      appendShopeeLog(`ซิงก์ cloud แล้ว ${result.count} รายการ`);
+      const profileCount = result.profileCount ?? result.count;
+      const remotePart = typeof result.remoteCount === 'number'
+        ? ` · cloud ส่งกลับ ${result.remoteCount}`
+        : '';
+      appendShopeeLog(`ซิงก์ cloud แล้ว user=${formatUserDebugLabel(user)} profile=${formatProfileDebugId(selectedProfileId)} โปรไฟล์นี้ ${profileCount} รายการ${remotePart}`);
       return;
     }
 
     appendShopeeLog(result.error || 'ซิงก์ cloud ยังไม่สำเร็จ จะลองใหม่รอบถัดไป');
-  }, [appendShopeeLog, syncProducts]);
+  }, [appendShopeeLog, selectedProfileId, syncProducts, user]);
 
   const runShopeeImport = useCallback(async (maxItems: number): Promise<void> => {
     if (!selectedProfileId) {

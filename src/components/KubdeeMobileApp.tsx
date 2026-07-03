@@ -59,6 +59,11 @@ const SELECTED_PROFILE_STORAGE_KEY = 'kubdee_ai_mobile_selected_profile_id';
 const SEEN_CHANGELOG_STORAGE_KEY = 'kubdee_ai_mobile_seen_changelog_version';
 const THEME_MODE_STORAGE_KEY = 'kubdee_ai_mobile_theme_mode';
 
+function selectedProfileStorageKey(userId: string | null | undefined): string {
+  const cleanUserId = userId?.trim();
+  return cleanUserId ? `${SELECTED_PROFILE_STORAGE_KEY}:${cleanUserId}` : SELECTED_PROFILE_STORAGE_KEY;
+}
+
 function uniqueProductIds(productIds: string[]): string[] {
   return Array.from(new Set(productIds.map((productId) => productId.trim()).filter(Boolean)));
 }
@@ -199,8 +204,19 @@ export default function KubdeeMobileApp(): React.JSX.Element {
 
   useEffect(() => {
     let active = true;
+    const userId = auth.user?.id?.trim() || '';
 
-    AsyncStorage.getItem(SELECTED_PROFILE_STORAGE_KEY)
+    if (!userId) {
+      setSelectedProfileId('');
+      setHasLoadedSelectedProfile(true);
+      return () => {
+        active = false;
+      };
+    }
+
+    setHasLoadedSelectedProfile(false);
+
+    AsyncStorage.getItem(selectedProfileStorageKey(userId))
       .then((profileId) => {
         if (active && profileId?.trim()) {
           setSelectedProfileId(profileId.trim());
@@ -218,20 +234,27 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     return () => {
       active = false;
     };
-  }, []);
+  }, [auth.user?.id]);
 
   useEffect(() => {
     if (!hasLoadedSelectedProfile) {
       return;
     }
 
-    if (selectedProfileId) {
-      void AsyncStorage.setItem(SELECTED_PROFILE_STORAGE_KEY, selectedProfileId);
+    const userId = auth.user?.id?.trim();
+    if (!userId) {
+      void AsyncStorage.removeItem(SELECTED_PROFILE_STORAGE_KEY);
       return;
     }
 
-    void AsyncStorage.removeItem(SELECTED_PROFILE_STORAGE_KEY);
-  }, [hasLoadedSelectedProfile, selectedProfileId]);
+    if (selectedProfileId) {
+      void AsyncStorage.setItem(selectedProfileStorageKey(userId), selectedProfileId);
+      void AsyncStorage.removeItem(SELECTED_PROFILE_STORAGE_KEY);
+      return;
+    }
+
+    void AsyncStorage.removeItem(selectedProfileStorageKey(userId));
+  }, [auth.user?.id, hasLoadedSelectedProfile, selectedProfileId]);
 
   useEffect(() => {
     if (

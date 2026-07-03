@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.43',
+    date: '2026-07-03',
+    highlight: 'ซิงก์คลังสินค้าไม่สร้างรายการซ้ำ',
+    changes: [
+      { type: 'fixed', text: 'แก้ปัญหากดซิงก์ cloud แล้วสินค้า Shopee ซ้ำในเครื่องเมื่อสินค้าเดียวกันมาจากคนละอุปกรณ์' },
+      { type: 'improved', text: 'ปรับการรวมข้อมูลคลังสินค้าให้ใช้ข้อมูล cloud เป็นหลักและเก็บรายการสินค้าไว้ชุดเดียว' },
+    ],
+  },
+  {
     version: '0.2.42',
     date: '2026-07-03',
     highlight: 'คลังสินค้าแสดงรูปจาก cloud ได้เสถียรขึ้น',

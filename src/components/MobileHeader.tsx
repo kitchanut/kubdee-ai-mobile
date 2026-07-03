@@ -29,6 +29,10 @@ const logoDark = require('../../assets/logo-dark.png');
 const logoLight = require('../../assets/logo-light.png');
 const headerActionSize = 34;
 
+function shortProfileId(profileId: string): string {
+  return profileId.trim().slice(0, 8);
+}
+
 interface MobileHeaderProps {
   theme: KubdeeTheme;
   runningCount: number;
@@ -83,6 +87,15 @@ export default function MobileHeader({
   const devicesFull = maxDevices > 0 && (user?.activeDevices ?? 0) >= maxDevices;
   const planTone = getPlanTone(theme, planKey, isPlanExpired);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
+  const duplicateProfileNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const profile of profiles) {
+      const name = profile.name.trim().toLowerCase();
+      if (!name) continue;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return counts;
+  }, [profiles]);
   const profileSelectEnabled = profiles.length > 0 && !isSyncingProfiles;
   const selectedProfileLabel = selectedProfile
     ? selectedProfile.name
@@ -222,6 +235,10 @@ export default function MobileHeader({
                     ? null
                     : groupById.get(profile.groupId) ?? null;
                   const initial = (profile.name || 'P').trim().charAt(0).toUpperCase();
+                  const hasDuplicateName = (duplicateProfileNames.get(profile.name.trim().toLowerCase()) ?? 0) > 1;
+                  const profileSubtitle = hasDuplicateName
+                    ? `${group?.name || 'ไม่มีกลุ่ม'} · ${shortProfileId(profile.id)}`
+                    : group?.name || 'ไม่มีกลุ่ม';
 
                   return (
                     <Pressable
@@ -255,7 +272,7 @@ export default function MobileHeader({
                           {profile.name}
                         </Text>
                         <Text className="text-kd-tiny font-medium leading-3 text-kd-text-subtle" numberOfLines={1}>
-                          {group?.name || 'ไม่มีกลุ่ม'}
+                          {profileSubtitle}
                         </Text>
                       </View>
                     </Pressable>
