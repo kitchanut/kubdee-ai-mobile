@@ -50,6 +50,7 @@ type MediaPanelModalsProps = {
   insets: { bottom: number; top: number };
   isAddingMedia: boolean;
   isLoadingProducts: boolean;
+  isReplacingEditVideo: boolean;
   isUploadingMedia: boolean;
   kind: MediaKind;
   openCloudInbox: () => void | Promise<void>;
@@ -60,6 +61,7 @@ type MediaPanelModalsProps = {
   productPickerOpen: boolean;
   productPickerQuery: string;
   removeUploadDraft: (id: string) => void;
+  replaceEditVideoFile: () => void | Promise<void>;
   saveEdit: () => void | Promise<void>;
   selectedCloudTransferIds: Set<string>;
   setCloudInboxOpen: (value: boolean) => void;
@@ -122,6 +124,7 @@ export function MediaPanelModals({
   insets,
   isAddingMedia,
   isLoadingProducts,
+  isReplacingEditVideo,
   isUploadingMedia,
   kind,
   openCloudInbox,
@@ -132,6 +135,7 @@ export function MediaPanelModals({
   productPickerOpen,
   productPickerQuery,
   removeUploadDraft,
+  replaceEditVideoFile,
   saveEdit,
   selectedCloudTransferIds,
   setCloudInboxOpen,
@@ -789,6 +793,41 @@ export function MediaPanelModals({
 
               {kind === 'videos' ? (
                 <View className="gap-2">
+                  <View className="rounded-kd-lg border border-kd-border bg-kd-card-muted p-3">
+                    <View className="flex-row items-center gap-3">
+                      <View className="h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-kd-md bg-kd-panel">
+                        {editMedia?.thumbnailUri ? (
+                          <NativeImage source={{ uri: editMedia.thumbnailUri }} className="h-full w-full" resizeMode="cover" />
+                        ) : (
+                          <Video size={19} color={theme.textSubtle} strokeWidth={1.7} />
+                        )}
+                      </View>
+                      <View className="min-w-0 flex-1">
+                        <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                          {editMedia?.title || 'วิดีโอ'}
+                        </Text>
+                        <Text numberOfLines={1} className="mt-0.5 text-kd-caption text-kd-text-subtle">
+                          {editMedia?.size || '-'}
+                        </Text>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={isReplacingEditVideo}
+                        onPress={() => void replaceEditVideoFile()}
+                        className="h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-red px-3 disabled:opacity-50"
+                      >
+                        {isReplacingEditVideo ? (
+                          <ActivityIndicator color={theme.white} size="small" />
+                        ) : (
+                          <Upload size={13} color={theme.white} strokeWidth={2.3} />
+                        )}
+                        <Text className="text-kd-caption font-semibold text-white">
+                          {isReplacingEditVideo ? 'กำลังแทนที่' : 'แทนที่'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+
                   <View className="flex-row items-center justify-between">
                     <Text className="text-kd-caption font-semibold text-kd-text-subtle">ผูกกับสินค้า</Text>
                     <Pressable

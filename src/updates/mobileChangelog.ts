@@ -44,6 +44,14 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.46',
+    date: '2026-07-03',
+    highlight: 'คลังวิดีโอแทนที่ไฟล์เดิมได้',
+    changes: [
+      { type: 'feature', text: 'เพิ่มปุ่มแทนที่ในหน้าแก้ไขวิดีโอ เพื่อเลือกวิดีโอใหม่มาแทนรายการเดิมได้โดยยังคงข้อมูลสินค้าและข้อความโพสต์ไว้' },
+    ],
+  },
+  {
     version: '0.2.45',
     date: '2026-07-03',
     highlight: 'Shopee Post กลับมาหน้ารายการหลังทำงานจบ',

@@ -69,7 +69,14 @@ type GeneratedMediaAssetPatch = Partial<
   Pick<
     GeneratedMediaAsset,
     | 'title'
+    | 'fileUri'
+    | 'fileName'
+    | 'mimeType'
     | 'thumbnailUri'
+    | 'sizeBytes'
+    | 'width'
+    | 'height'
+    | 'durationMs'
     | 'productId'
     | 'productName'
     | 'productCode'
@@ -78,6 +85,7 @@ type GeneratedMediaAssetPatch = Partial<
     | 'hashtags'
     | 'cta'
     | 'platform'
+    | 'source'
   >
 >;
 
@@ -382,7 +390,34 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       const nextAsset: GeneratedMediaAsset = {
         ...currentAsset,
         title: patch.title === undefined ? currentAsset.title : cleanText(patch.title) || currentAsset.title,
+        fileUri: patch.fileUri === undefined ? currentAsset.fileUri : cleanText(patch.fileUri) || null,
+        fileName: patch.fileName === undefined ? currentAsset.fileName : cleanText(patch.fileName) || null,
+        mimeType: patch.mimeType === undefined ? currentAsset.mimeType : cleanText(patch.mimeType) || null,
         thumbnailUri: patch.thumbnailUri === undefined ? currentAsset.thumbnailUri : cleanText(patch.thumbnailUri) || null,
+        sizeBytes:
+          patch.sizeBytes === undefined
+            ? currentAsset.sizeBytes
+            : typeof patch.sizeBytes === 'number' && Number.isFinite(patch.sizeBytes) && patch.sizeBytes > 0
+              ? patch.sizeBytes
+              : null,
+        width:
+          patch.width === undefined
+            ? currentAsset.width
+            : typeof patch.width === 'number' && Number.isFinite(patch.width) && patch.width > 0
+              ? patch.width
+              : null,
+        height:
+          patch.height === undefined
+            ? currentAsset.height
+            : typeof patch.height === 'number' && Number.isFinite(patch.height) && patch.height > 0
+              ? patch.height
+              : null,
+        durationMs:
+          patch.durationMs === undefined
+            ? currentAsset.durationMs
+            : typeof patch.durationMs === 'number' && Number.isFinite(patch.durationMs) && patch.durationMs > 0
+              ? patch.durationMs
+              : null,
         productId: patch.productId === undefined ? currentAsset.productId : cleanText(patch.productId),
         productName: patch.productName === undefined ? currentAsset.productName : cleanText(patch.productName) || 'สินค้า',
         productCode: patch.productCode === undefined ? currentAsset.productCode : cleanText(patch.productCode) || cleanText(patch.productId) || 'unknown',
@@ -391,6 +426,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
         hashtags: patch.hashtags === undefined ? currentAsset.hashtags : cleanText(patch.hashtags) || null,
         cta: patch.cta === undefined ? currentAsset.cta : cleanText(patch.cta) || null,
         platform: patch.platform === undefined ? currentAsset.platform : cleanText(patch.platform) || null,
+        source: patch.source === undefined ? currentAsset.source : normalizeSource(patch.source),
       };
 
       await addMediaAsset({

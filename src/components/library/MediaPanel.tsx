@@ -157,6 +157,7 @@ export default function MediaPanel({
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [isAddingMedia, setIsAddingMedia] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [isReplacingEditVideo, setIsReplacingEditVideo] = useState(false);
   const [uploadDrafts, setUploadDrafts] = useState<UploadDraft[]>([]);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -693,6 +694,75 @@ export default function MediaPanel({
     toast.success('บันทึกแล้ว');
   };
 
+  const replaceEditVideoFile = async (): Promise<void> => {
+    if (kind !== 'videos' || !editMedia || isReplacingEditVideo) {
+      return;
+    }
+
+    setIsReplacingEditVideo(true);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        toast.warning('กรุณาอนุญาตให้เข้าถึงคลังวิดีโอก่อน');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: false,
+        mediaTypes: ['videos'],
+        quality: 1,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset || !getPickedAssetMatchesKind('videos', asset)) {
+        toast.warning('กรุณาเลือกวิดีโอเท่านั้น');
+        return;
+      }
+
+      const copiedAsset = await copyPickedMediaToLibrary('videos', asset, 0);
+      const updated = await updateGeneratedMediaAsset(editMedia.id, {
+        fileUri: copiedAsset.fileUri,
+        fileName: copiedAsset.fileName,
+        mimeType: copiedAsset.mimeType,
+        thumbnailUri: copiedAsset.thumbnailUri,
+        sizeBytes: copiedAsset.sizeBytes,
+        width: copiedAsset.width,
+        height: copiedAsset.height,
+        durationMs: copiedAsset.durationMs,
+        source: 'mobile-local-upload',
+      });
+
+      if (!updated) {
+        toast.error('ไม่พบรายการที่จะแทนที่วิดีโอ');
+        return;
+      }
+
+      const nextMedia: MediaSubItem = {
+        ...editMedia,
+        uri: updated.fileUri,
+        mimeType: updated.mimeType,
+        thumbnailUri: updated.thumbnailUri,
+        size: formatAssetSize(updated.sizeBytes),
+        portrait:
+          typeof updated.width === 'number' && typeof updated.height === 'number'
+            ? updated.height >= updated.width
+            : editMedia.portrait,
+      };
+
+      setEditMedia(nextMedia);
+      setPreviewMedia((current) => (current?.id === editMedia.id ? nextMedia : current));
+      toast.success('แทนที่วิดีโอแล้ว');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'แทนที่วิดีโอไม่สำเร็จ');
+    } finally {
+      setIsReplacingEditVideo(false);
+    }
+  };
+
   const editSelected = (): void => {
     const ids = Array.from(selectedIds);
     if (ids.length !== 1) {
@@ -1172,6 +1242,7 @@ export default function MediaPanel({
         insets={insets}
         isAddingMedia={isAddingMedia}
         isLoadingProducts={isLoadingProducts}
+        isReplacingEditVideo={isReplacingEditVideo}
         isUploadingMedia={isUploadingMedia}
         kind={kind}
         openCloudInbox={openCloudInbox}
@@ -1182,6 +1253,7 @@ export default function MediaPanel({
         productPickerOpen={productPickerOpen}
         productPickerQuery={productPickerQuery}
         removeUploadDraft={removeUploadDraft}
+        replaceEditVideoFile={replaceEditVideoFile}
         saveEdit={saveEdit}
         selectedCloudTransferIds={selectedCloudTransferIds}
         setCloudInboxOpen={setCloudInboxOpen}
