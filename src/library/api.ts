@@ -19,6 +19,12 @@ interface DeleteAffiliateProductsResponse {
   error?: string;
 }
 
+export interface DeleteAffiliateProductKey {
+  profileLocalId: string;
+  platform?: string | null;
+  externalProductId: string;
+}
+
 export interface SyncAffiliateProductInput {
   localId: string;
   profileLocalId: string;
@@ -371,7 +377,8 @@ export async function fetchAffiliateProducts(
  */
 export async function deleteAffiliateProducts(
   token: string,
-  localIds: string[]
+  localIds: string[],
+  keys: DeleteAffiliateProductKey[] = []
 ): Promise<AuthApiResult<DeleteAffiliateProductsResult>> {
   try {
     let status = 200;
@@ -388,7 +395,10 @@ export async function deleteAffiliateProducts(
           'X-Client-App': CLIENT_APP,
           'X-App-Type': APP_TYPE,
         },
-        body: JSON.stringify({ localIds: chunk }),
+        body: JSON.stringify({
+          localIds: chunk,
+          keys: index === 0 ? keys : [],
+        }),
       });
 
       if (!response.ok) {

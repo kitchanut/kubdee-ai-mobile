@@ -31,8 +31,15 @@ export interface ProductSyncQueueJob {
   localId: string;
   profileLocalId: string | null;
   platform: string | null;
+  deleteKey: ProductDeleteSyncKey | null;
   payload: SyncAffiliateProductInput | null;
   attempts: number;
+}
+
+export interface ProductDeleteSyncKey {
+  profileLocalId: string;
+  platform: string | null;
+  externalProductId: string;
 }
 
 const DATABASE_NAME = 'kubdee-products.db';
@@ -168,9 +175,24 @@ function parseProduct(row: LocalProductRow): AffiliateProduct | null {
 
 function parseQueueJob(row: SyncQueueRow): ProductSyncQueueJob | null {
   let payload: SyncAffiliateProductInput | null = null;
+  let deleteKey: ProductDeleteSyncKey | null = null;
   if (row.payload_json) {
     try {
-      payload = JSON.parse(row.payload_json) as SyncAffiliateProductInput;
+      const parsed = JSON.parse(row.payload_json) as Partial<SyncAffiliateProductInput>;
+      payload = parsed as SyncAffiliateProductInput;
+      if (
+        row.operation === 'delete' &&
+        typeof parsed.profileLocalId === 'string' &&
+        parsed.profileLocalId.trim() &&
+        typeof parsed.externalProductId === 'string' &&
+        parsed.externalProductId.trim()
+      ) {
+        deleteKey = {
+          profileLocalId: parsed.profileLocalId.trim(),
+          platform: normalizePlatform(parsed.platform),
+          externalProductId: parsed.externalProductId.trim(),
+        };
+      }
     } catch {
       payload = null;
     }
@@ -186,6 +208,7 @@ function parseQueueJob(row: SyncQueueRow): ProductSyncQueueJob | null {
     localId: row.local_id,
     profileLocalId: row.profile_local_id,
     platform: row.platform,
+    deleteKey,
     payload,
     attempts: row.attempts,
   };
@@ -323,6 +346,14 @@ async function upsertProductRow(
   );
 
   if (queuePayload) {
+    await db.runAsync(
+      `
+        DELETE FROM product_sync_queue
+        WHERE operation = 'delete' AND local_id = ?
+      `,
+      queuePayload.localId
+    );
+
     await db.runAsync(
       `
         INSERT INTO product_sync_queue (
@@ -470,12 +501,23 @@ export async function markProductsDeletedForSync(localIds: string[]): Promise<vo
     await db.withExclusiveTransactionAsync(async (txn) => {
       for (const localId of localIds) {
         const row = await txn.getFirstAsync<{
+          external_product_id: string | null;
           profile_local_id: string | null;
           platform: string | null;
         }>(
-          'SELECT profile_local_id, platform FROM affiliate_products WHERE local_id = ? LIMIT 1',
+          'SELECT external_product_id, profile_local_id, platform FROM affiliate_products WHERE local_id = ? LIMIT 1',
           localId
         );
+        const profileLocalId = normalizeText(row?.profile_local_id);
+        const platform = normalizePlatform(row?.platform);
+        const externalProductId = normalizeText(row?.external_product_id);
+        const deletePayload = profileLocalId && externalProductId
+          ? JSON.stringify({
+            profileLocalId,
+            platform,
+            externalProductId,
+          })
+          : null;
 
         await txn.runAsync(
           `
@@ -504,18 +546,20 @@ export async function markProductsDeletedForSync(localIds: string[]): Promise<vo
               created_at,
               updated_at
             )
-            VALUES ('delete', ?, ?, ?, NULL, 0, NULL, 0, ?, ?)
+            VALUES ('delete', ?, ?, ?, ?, 0, NULL, 0, ?, ?)
             ON CONFLICT(operation, local_id) DO UPDATE SET
               profile_local_id = excluded.profile_local_id,
               platform = excluded.platform,
+              payload_json = excluded.payload_json,
               attempts = 0,
               last_error = NULL,
               next_attempt_at = 0,
               updated_at = excluded.updated_at
           `,
           localId,
-          row?.profile_local_id ?? null,
-          row?.platform ?? null,
+          profileLocalId,
+          platform,
+          deletePayload,
           timestamp,
           timestamp
         );

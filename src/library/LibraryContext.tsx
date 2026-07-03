@@ -482,7 +482,15 @@ async function flushPendingProductSyncQueue(token: string): Promise<QueueSyncRes
   const deleteJobs = jobs.filter((job) => job.operation === 'delete');
   if (deleteJobs.length > 0) {
     const localIds = Array.from(new Set(deleteJobs.map((job) => job.localId)));
-    const result = await deleteAffiliateProducts(token, localIds);
+    const deleteKeys = Array.from(
+      new Map(
+        deleteJobs
+          .map((job) => job.deleteKey)
+          .filter((key): key is NonNullable<typeof key> => !!key)
+          .map((key) => [`${key.profileLocalId}\u0000${key.platform ?? ''}\u0000${key.externalProductId}`, key])
+      ).values()
+    );
+    const result = await deleteAffiliateProducts(token, localIds, deleteKeys);
     if (!result.ok) {
       const message = result.error || 'ลบสินค้าใน cloud ไม่สำเร็จ';
       if (result.status !== 401) {
@@ -539,6 +547,22 @@ async function flushPendingProductSyncQueue(token: string): Promise<QueueSyncRes
     skippedDeleted += result.data?.skippedDeleted ?? 0;
     skippedStale += result.data?.skippedStale ?? 0;
     restoredDeleted += result.data?.restoredDeleted ?? 0;
+
+    if (skippedDeleted > 0) {
+      const message = `ซิงก์สินค้าไม่ครบ: cloud ยังมีสถานะลบ ${skippedDeleted} รายการ`;
+      await markSyncJobsFailed(upsertJobs.map((job) => job.id), message);
+      return {
+        deleted,
+        error: message,
+        restoredDeleted,
+        skippedDeleted,
+        skippedStale,
+        status: result.status,
+        success: false,
+        synced,
+      };
+    }
+
     await markUpsertJobsSynced(
       upsertJobs.map((job) => job.id),
       payloadProducts.map((product) => product.localId),
