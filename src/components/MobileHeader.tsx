@@ -1,5 +1,4 @@
 import {
-  ChartNoAxesColumn,
   ChevronDown,
   FileText,
   Globe2,
@@ -43,7 +42,6 @@ interface MobileHeaderProps {
   themeMode: ThemeMode;
   onCheckUpdate: () => void;
   onChangelogPress: () => void;
-  onLogsPress: () => void;
   onProfilePress: () => void;
   onSelectedProfileChange: (profileId: string) => void;
   onThemeModeChange: (mode: ThemeMode) => void;
@@ -62,7 +60,6 @@ export default function MobileHeader({
   themeMode,
   onCheckUpdate,
   onChangelogPress,
-  onLogsPress,
   onProfilePress,
   onSelectedProfileChange,
   onThemeModeChange,
@@ -122,11 +119,6 @@ export default function MobileHeader({
   const handleOpenWebsite = (): void => {
     closeProfileMenu();
     void Linking.openURL(BACKEND_URL);
-  };
-
-  const handleOpenLogs = (): void => {
-    closeProfileMenu();
-    onLogsPress();
   };
 
   const handleCheckUpdate = (): void => {
@@ -439,7 +431,6 @@ export default function MobileHeader({
               theme={theme}
               onPress={handleCheckUpdate}
             />
-            <PopoverMenuButton icon={ChartNoAxesColumn} label="Logs" theme={theme} onPress={handleOpenLogs} />
             <PopoverMenuButton icon={Globe2} label="ไปเว็บไซต์" theme={theme} onPress={handleOpenWebsite} />
             <PopoverMenuButton danger icon={LogOut} label="ออกจากระบบ" theme={theme} onPress={handleLogout} />
           </Pressable>

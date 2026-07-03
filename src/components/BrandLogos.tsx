@@ -1,5 +1,7 @@
 import Svg, { Circle, Path } from 'react-native-svg';
 
+import { SHOPEE_ORANGE } from '@/theme/brandColors';
+
 interface BrandLogoProps {
   size?: number;
   isDark?: boolean;
@@ -39,7 +41,7 @@ export function TikTokLogo({ size = 18, isDark = false, color }: BrandLogoProps)
 
 export function ShopeeLogo({
   size = 18,
-  color = '#EE4D2D',
+  color = SHOPEE_ORANGE,
   cutoutColor = '#ffffff',
 }: BrandLogoProps): React.JSX.Element {
   return (

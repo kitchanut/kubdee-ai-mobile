@@ -83,6 +83,14 @@ function normalizeStep(value: unknown): AutoPilotStepType | undefined {
   return value === 'image' || value === 'video' ? value : undefined;
 }
 
+function sortLogEntries<TLog extends AutomationActivityLogEntry>(logs: TLog[]): TLog[] {
+  return [...logs].sort((a, b) => a.ts - b.ts);
+}
+
+function trimLogEntries<TLog extends AutomationActivityLogEntry>(logs: TLog[]): TLog[] {
+  return sortLogEntries(logs).slice(-MAX_AUTOMATION_LOGS_PER_RUN);
+}
+
 function normalizeFlowStats(value: unknown): AutoPilotFlowStats | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -136,6 +144,7 @@ function normalizeStoredRun(kind: AutomationActivityKind, value: unknown): Autom
     ? value.logs
         .map(normalizeLogEntry)
         .filter((entry): entry is AutomationActivityLogEntry => Boolean(entry))
+        .sort((a, b) => a.ts - b.ts)
         .slice(-MAX_AUTOMATION_LOGS_PER_RUN)
     : [];
   const wasRunning = value.running === true;
@@ -151,7 +160,7 @@ function normalizeStoredRun(kind: AutomationActivityKind, value: unknown): Autom
         ts: now,
         stage: 'interrupted',
       },
-    ].slice(-MAX_AUTOMATION_LOGS_PER_RUN);
+    ].sort((a, b) => a.ts - b.ts).slice(-MAX_AUTOMATION_LOGS_PER_RUN);
     updatedAt = now;
   }
 
@@ -274,9 +283,9 @@ export function pushAutomationActivityLog(
 
   updateRun(kind, (run) => ({
     ...run,
-    logs: [...run.logs, { message: cleanMessage, ts, ...meta }].slice(-MAX_AUTOMATION_LOGS_PER_RUN),
+    logs: trimLogEntries([...run.logs, { message: cleanMessage, ts, ...meta }]),
     startedAt: run.startedAt ?? ts,
-    updatedAt: ts,
+    updatedAt: Math.max(run.updatedAt ?? 0, ts),
   }));
 }
 

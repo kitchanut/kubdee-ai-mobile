@@ -5,6 +5,7 @@ import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-na
 
 import { ShopeeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
+import { SHOPEE_ORANGE } from '@/theme/brandColors';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
@@ -463,9 +464,10 @@ export function SelectionBar({
               accessibilityRole="button"
               disabled={!onShopee}
               onPress={onShopee}
-              className="h-7 w-7 items-center justify-center rounded-full bg-kd-orange"
+              className="h-7 w-7 items-center justify-center rounded-full"
+              style={{ backgroundColor: SHOPEE_ORANGE }}
             >
-              <ShopeeLogo size={14} color={theme.white} cutoutColor="#EE4D2D" />
+              <ShopeeLogo size={14} color={theme.white} cutoutColor={SHOPEE_ORANGE} />
             </Pressable>
           ) : null}
           {showCloudUpload ? (

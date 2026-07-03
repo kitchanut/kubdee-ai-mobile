@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from 'react-native';
-import { Clock3, Info, Square, Trash2, X } from 'lucide-react-native';
+import { Check, Clock3, Copy, Info, Square, Trash2, X } from 'lucide-react-native';
 
 import { getAutoPilotStageLabel } from '@/autopilot/stageLabels';
 import type { AutoPilotFlowStats, AutoPilotStepType } from '@/autopilot/types';
@@ -76,10 +77,14 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
   formatTimestamp = formatLogTime,
 }: ActivityLogCardProps<TLog>): React.JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(initiallyExpanded);
+  const [copiedLogs, setCopiedLogs] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const now = useRunningNow(running);
-  const visibleLogs = useMemo(() => logs.slice(-maxVisible), [logs, maxVisible]);
-  const latestLog = logs[logs.length - 1] ?? null;
-  const runStartedAt = startedAt ?? logs[0]?.ts ?? null;
+  const orderedLogs = useMemo(() => sortLogsByTime(logs), [logs]);
+  const visibleLogs = useMemo(() => orderedLogs.slice(-maxVisible), [orderedLogs, maxVisible]);
+  const latestLog = orderedLogs[orderedLogs.length - 1] ?? null;
+  const runStartedAt = startedAt ?? orderedLogs[0]?.ts ?? null;
   const runUpdatedAt = updatedAt ?? latestLog?.ts ?? null;
   const elapsedTarget = running ? now : runUpdatedAt;
   const elapsedText =
@@ -92,10 +97,62 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
     : latestLog
       ? [latestTimeText, elapsedText, `${logs.length} รายการ`].filter(Boolean).join(' · ')
       : idleText;
-  const visibleStartIndex = Math.max(0, logs.length - visibleLogs.length);
   const Icon = icon ?? Info;
   const statusColor = getRunStatusColor({ running, stopping, latestLog }, theme);
   const latestDisplay = latestLog ? parseDisplayMessage(latestLog.message) : null;
+  const scrollToLatestLog = useCallback((animated = false): void => {
+    if (!drawerOpen || visibleLogs.length === 0) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated });
+    });
+  }, [drawerOpen, visibleLogs.length]);
+
+  const handleCopyLogs = useCallback(async (): Promise<void> => {
+    if (logs.length === 0) {
+      return;
+    }
+
+    await Clipboard.setStringAsync(
+      formatLogsForClipboard({
+        formatTimestamp,
+        logs: orderedLogs,
+        startedAt: runStartedAt,
+        title,
+        updatedAt: latestLog?.ts ?? runUpdatedAt,
+      })
+    );
+    setCopiedLogs(true);
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current);
+    }
+    copyResetTimerRef.current = setTimeout(() => {
+      setCopiedLogs(false);
+      copyResetTimerRef.current = null;
+    }, 1600);
+  }, [formatTimestamp, latestLog?.ts, orderedLogs, runStartedAt, runUpdatedAt, title]);
+
+  useEffect(() => {
+    if (!drawerOpen) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      scrollToLatestLog(false);
+    }, 80);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [drawerOpen, scrollToLatestLog]);
+
+  useEffect(() => () => {
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current);
+    }
+  }, []);
 
   return (
     <>
@@ -231,6 +288,21 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
                     </Pressable>
                   ) : null}
                   <Pressable
+                    accessibilityLabel={copiedLogs ? 'คัดลอก log แล้ว' : 'คัดลอก log'}
+                    accessibilityRole="button"
+                    disabled={logs.length === 0}
+                    onPress={() => {
+                      void handleCopyLogs();
+                    }}
+                    className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted active:opacity-70 disabled:opacity-50 dark:bg-kd-card-muted"
+                  >
+                    {copiedLogs ? (
+                      <Check size={14} color={theme.emerald} strokeWidth={2.3} />
+                    ) : (
+                      <Copy size={14} color={theme.textSubtle} strokeWidth={2} />
+                    )}
+                  </Pressable>
+                  <Pressable
                     accessibilityLabel={clearLabel}
                     accessibilityRole="button"
                     disabled={logs.length === 0 || running || !onClear}
@@ -252,10 +324,12 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
             </View>
 
             <ScrollView
+              ref={scrollViewRef}
               nestedScrollEnabled
               showsVerticalScrollIndicator={false}
               contentContainerClassName="gap-1.5 px-3 py-3"
               contentContainerStyle={{ paddingBottom: 24 }}
+              onContentSizeChange={() => scrollToLatestLog(false)}
             >
               {visibleLogs.length === 0 ? (
                 <View className="min-h-[120px] items-center justify-center gap-1.5">
@@ -264,10 +338,6 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
                 </View>
               ) : (
                 visibleLogs.map((entry, index) => {
-                  const absoluteIndex = visibleStartIndex + index;
-                  const previousEntry = absoluteIndex > 0 ? logs[absoluteIndex - 1] : null;
-                  const deltaMs = previousEntry ? Math.max(0, entry.ts - previousEntry.ts) : 0;
-                  const sinceStartMs = runStartedAt != null ? Math.max(0, entry.ts - runStartedAt) : deltaMs;
                   const display = parseDisplayMessage(entry.message);
 
                   return (
@@ -275,9 +345,6 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
                       <View className="w-[68px]">
                         <Text className="text-kd-micro font-medium text-kd-text-subtle">
                           {formatTimestamp(entry.ts)}
-                        </Text>
-                        <Text className="mt-0.5 text-kd-tiny text-kd-text-subtle">
-                          +{formatLogDuration(deltaMs)} · {formatLogDuration(sinceStartMs)}
                         </Text>
                       </View>
                       <View className="min-w-0 flex-1">
@@ -412,6 +479,41 @@ function parseDisplayMessage(message: string): { message: string; stageLabel: st
     stageLabel: match[1]?.trim() || null,
     message: match[2]?.trim() || message,
   };
+}
+
+function sortLogsByTime<TLog extends ActivityLogEntry>(logs: TLog[]): TLog[] {
+  return [...logs].sort((a, b) => a.ts - b.ts);
+}
+
+function formatLogsForClipboard({
+  formatTimestamp,
+  logs,
+  startedAt,
+  title,
+  updatedAt,
+}: {
+  formatTimestamp: (timestamp: number) => string;
+  logs: ActivityLogEntry[];
+  startedAt: number | null;
+  title: string;
+  updatedAt: number | null;
+}): string {
+  const header = [
+    title,
+    startedAt ? `เริ่ม: ${formatTimestamp(startedAt)}` : null,
+    updatedAt ? `ล่าสุด: ${formatTimestamp(updatedAt)}` : null,
+    `จำนวน: ${logs.length} รายการ`,
+  ].filter(Boolean);
+
+  const lines = logs.map((entry) => {
+    const display = parseDisplayMessage(entry.message);
+    const stepLabel = entry.step ? getCurrentStepLabel(entry.step) : null;
+    const stageLabel = display.stageLabel || (entry.stage ? getAutoPilotStageLabel(entry.stage, '') : null);
+    const metaLabel = [stepLabel, stageLabel].filter(Boolean).join(' · ');
+    return `${formatTimestamp(entry.ts)}${metaLabel ? ` [${metaLabel}]` : ''} ${display.message}`;
+  });
+
+  return `${header.join('\n')}\n\n${lines.join('\n')}`;
 }
 
 function getRunStatusColor(

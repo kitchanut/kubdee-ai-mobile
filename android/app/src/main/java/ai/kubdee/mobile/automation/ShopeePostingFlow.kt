@@ -1494,7 +1494,7 @@ internal fun KubdeeAccessibilityService.disableShopeeContentReusePermissionBestE
       return
     }
 
-    if (!clickShopeeToggleTarget(target)) {
+    if (!clickShopeeToggleTarget(target, desiredOn = false)) {
       logShopeePostStep("กด toggle reuse/เผยแพร่ต่อไม่สำเร็จ ข้ามขั้นตอนนี้")
       return
     }
@@ -1523,7 +1523,8 @@ internal fun KubdeeAccessibilityService.disableShopeeContentReusePermissionStric
     }
     if (tapShopeePostingToggleByLabel(
         listOf("นำเนื้อหาไปใช้ซ้ำ", "เผยแพร่ต่อ", "Duet", "ตัดต่อ", "sticker"),
-        "reuse/เผยแพร่ต่อ"
+        "reuse/เผยแพร่ต่อ",
+        desiredOn = false
       )
     ) {
       sleepStep(900L)
@@ -1547,7 +1548,8 @@ internal fun KubdeeAccessibilityService.disableShopeeContentReusePermissionStric
     }
     if (tapShopeePostingToggleByLabel(
         listOf("นำเนื้อหาไปใช้ซ้ำ", "เผยแพร่ต่อ", "Duet", "ตัดต่อ", "sticker"),
-        "reuse/เผยแพร่ต่อ"
+        "reuse/เผยแพร่ต่อ",
+        desiredOn = false
       )
     ) {
       sleepStep(900L)
@@ -1565,7 +1567,7 @@ internal fun KubdeeAccessibilityService.disableShopeeContentReusePermissionStric
     return
   }
 
-  if (!clickShopeeToggleTarget(target)) {
+  if (!clickShopeeToggleTarget(target, desiredOn = false)) {
     throw IllegalStateException("กด toggle reuse/เผยแพร่ต่อไม่สำเร็จ")
   }
   sleepStep(800L)
@@ -1610,7 +1612,7 @@ internal fun KubdeeAccessibilityService.enableShopeeAiGeneratedLabelBestEffort()
       return
     }
 
-    if (!clickShopeeToggleTarget(target)) {
+    if (!clickShopeeToggleTarget(target, desiredOn = true)) {
       logShopeePostStep("กด toggle ป้ายกำกับ AI ไม่สำเร็จ ข้ามขั้นตอนนี้")
       return
     }
@@ -1627,19 +1629,21 @@ internal fun KubdeeAccessibilityService.enableShopeeAiGeneratedLabelBestEffort()
 
 internal fun KubdeeAccessibilityService.enableShopeeAiGeneratedLabelStrict() {
   logShopeePostStep("เปิดป้ายกำกับ AI")
+  if (setShopeePostingVisualToggleBySlot(
+      slot = ShopeePostingToggleSlot.AiGeneratedLabel,
+      desiredOn = true,
+      logName = "ป้ายกำกับ AI"
+    )
+  ) {
+    return
+  }
+
   val target = findShopeeAiGeneratedLabelToggleTarget()
   if (target == null) {
-    if (setShopeePostingVisualToggleBySlot(
-        slot = ShopeePostingToggleSlot.AiGeneratedLabel,
-        desiredOn = true,
-        logName = "ป้ายกำกับ AI"
-      )
-    ) {
-      return
-    }
     if (tapShopeePostingToggleByLabel(
         listOf("ป้ายกำกับ AI", "เนื้อหาที่สร้างโดย AI", "สร้างโดย AI", "AI"),
-        "ป้ายกำกับ AI"
+        "ป้ายกำกับ AI",
+        desiredOn = true
       )
     ) {
       sleepStep(900L)
@@ -1653,17 +1657,10 @@ internal fun KubdeeAccessibilityService.enableShopeeAiGeneratedLabelStrict() {
   }
 
   if (!target.node.isCheckable) {
-    if (setShopeePostingVisualToggleBySlot(
-        slot = ShopeePostingToggleSlot.AiGeneratedLabel,
-        desiredOn = true,
-        logName = "ป้ายกำกับ AI"
-      )
-    ) {
-      return
-    }
     if (tapShopeePostingToggleByLabel(
         listOf("ป้ายกำกับ AI", "เนื้อหาที่สร้างโดย AI", "สร้างโดย AI", "AI"),
-        "ป้ายกำกับ AI"
+        "ป้ายกำกับ AI",
+        desiredOn = true
       )
     ) {
       sleepStep(900L)
@@ -1681,7 +1678,7 @@ internal fun KubdeeAccessibilityService.enableShopeeAiGeneratedLabelStrict() {
     return
   }
 
-  if (!clickShopeeToggleTarget(target)) {
+  if (!clickShopeeToggleTarget(target, desiredOn = true)) {
     throw IllegalStateException("กด toggle ป้ายกำกับ AI ไม่สำเร็จ")
   }
   sleepStep(800L)
@@ -1710,10 +1707,28 @@ internal data class ShopeeVisualToggleTarget(
   val greyPixels: Int
 )
 
-internal fun KubdeeAccessibilityService.shopeePostingToggleTapX(bounds: Rect): Float {
-  val leftTap = bounds.left + dp(8)
-  val maxTap = bounds.right - dp(4)
-  return leftTap.coerceIn(bounds.left + 1, maxOf(bounds.left + 1, maxTap)).toFloat()
+internal fun KubdeeAccessibilityService.shopeePostingToggleTapX(bounds: Rect, desiredOn: Boolean? = null): Float {
+  val safeLeft = bounds.left + 1
+  val safeRight = maxOf(safeLeft, bounds.right - 1)
+  val tapX = when (desiredOn) {
+    true -> bounds.right - dp(8)
+    false -> bounds.left + dp(8)
+    null -> bounds.centerX()
+  }
+  return tapX.coerceIn(safeLeft, safeRight).toFloat()
+}
+
+internal fun KubdeeAccessibilityService.shopeePostingToggleFallbackTapX(screen: Rect, desiredOn: Boolean?): Float {
+  val tapX = when (desiredOn) {
+    true -> screen.right - dp(48)
+    false -> screen.right - dp(96)
+    null -> screen.right - dp(72)
+  }
+  return tapX.coerceIn(screen.left + 1, screen.right - 1).toFloat()
+}
+
+internal fun shopeePostingToggleDirectionLabel(desiredOn: Boolean): String {
+  return if (desiredOn) "ฝั่งขวา/เปิด" else "ฝั่งซ้าย/ปิด"
 }
 
 internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
@@ -1746,8 +1761,13 @@ internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
     logShopeePostStep("สถานะ toggle $logName จากภาพไม่ชัด จะลองกดตามตำแหน่งสวิตช์")
   }
 
+  val tapX = shopeePostingToggleTapX(target.bounds, desiredOn)
+  logShopeePostStep(
+    "แตะ toggle $logName จากภาพ ${shopeePostingToggleDirectionLabel(desiredOn)} " +
+      "ที่ ${tapX.toInt()},${target.bounds.centerY()}"
+  )
   if (!tapBlockingWithoutStopButton(
-      shopeePostingToggleTapX(target.bounds),
+      tapX,
       target.bounds.centerY().toFloat(),
       timeoutMs = 1800L,
       durationMs = 80L
@@ -1890,8 +1910,8 @@ internal fun scanShopeePostingVisualToggles(bitmap: Bitmap): List<ShopeeVisualTo
 
   val xStart = (width * 0.78f).toInt().coerceIn(0, width - 1)
   val xEnd = (width * 0.98f).toInt().coerceIn(xStart + 1, width)
-  val yStart = (height * 0.32f).toInt().coerceIn(0, height - 1)
-  val yEnd = (height * 0.70f).toInt().coerceIn(yStart + 1, height)
+  val yStart = 0
+  val yEnd = height
   val rowCounts = IntArray(yEnd - yStart)
 
   for (y in yStart until yEnd) {
@@ -1925,7 +1945,8 @@ internal fun scanShopeePostingVisualToggles(bitmap: Bitmap): List<ShopeeVisualTo
   }
     .filter { target ->
       target.bounds.width() in (width * 0.05f).toInt()..(width * 0.22f).toInt() &&
-        target.bounds.height() in (height * 0.012f).toInt()..(height * 0.08f).toInt()
+        target.bounds.height() in (height * 0.012f).toInt()..(height * 0.08f).toInt() &&
+        target.bounds.width() >= target.bounds.height() * 1.35f
     }
     .sortedBy { it.bounds.centerY() }
     .distinctBy { it.bounds.centerY() / 24 }
@@ -1990,7 +2011,8 @@ internal fun isShopeeSwitchGrey(color: Int): Boolean {
 
 internal fun KubdeeAccessibilityService.tapShopeePostingToggleByLabel(
   labels: List<String>,
-  logName: String
+  logName: String,
+  desiredOn: Boolean? = null
 ): Boolean {
   for (root in shopeeWindowRoots()) {
     val screen = screenBounds(root)
@@ -2006,10 +2028,18 @@ internal fun KubdeeAccessibilityService.tapShopeePostingToggleByLabel(
       .minByOrNull { it.bounds.top }
       ?: continue
 
-    val tapX = screen.right - dp(72)
+    val tapX = shopeePostingToggleFallbackTapX(screen, desiredOn)
     val tapY = label.bounds.centerY().toFloat()
-    logShopeePostStep("แตะ toggle $logName จาก label '${label.text.take(28)}'")
-    if (tapBlockingWithoutStopButton(tapX.toFloat(), tapY, timeoutMs = 1800L, durationMs = 80L)) {
+    logShopeePostStep(
+      "แตะ toggle $logName จาก label '${label.text.take(28)}'" +
+        desiredOn?.let { " ${shopeePostingToggleDirectionLabel(it)}" }.orEmpty()
+    )
+    val visualTarget = detectShopeePostingVisualToggles()
+      .filter { toggle -> kotlin.math.abs(toggle.bounds.centerY() - label.bounds.centerY()) <= dp(90) }
+      .minByOrNull { toggle -> kotlin.math.abs(toggle.bounds.centerY() - label.bounds.centerY()) }
+    val finalTapX = visualTarget?.let { shopeePostingToggleTapX(it.bounds, desiredOn) } ?: tapX
+    val finalTapY = visualTarget?.bounds?.centerY()?.toFloat() ?: tapY
+    if (tapBlockingWithoutStopButton(finalTapX, finalTapY, timeoutMs = 1800L, durationMs = 80L)) {
       return true
     }
   }
@@ -2139,9 +2169,12 @@ internal fun KubdeeAccessibilityService.findNearbyShopeeToggle(
   return null
 }
 
-internal fun KubdeeAccessibilityService.clickShopeeToggleTarget(target: ShopeeToggleTarget): Boolean {
+internal fun KubdeeAccessibilityService.clickShopeeToggleTarget(target: ShopeeToggleTarget, desiredOn: Boolean? = null): Boolean {
   if (clickNode(target.node)) return true
-  return tapBlockingWithoutStopButton(shopeePostingToggleTapX(target.bounds), target.bounds.centerY().toFloat())
+  return tapBlockingWithoutStopButton(
+    shopeePostingToggleTapX(target.bounds, desiredOn),
+    target.bounds.centerY().toFloat()
+  )
 }
 
 internal fun KubdeeAccessibilityService.toggleCenterY(bounds: Rect): Int = (bounds.top + bounds.bottom) / 2

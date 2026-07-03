@@ -8,7 +8,7 @@ import {
   Send,
   ShoppingBag,
 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import {
@@ -73,17 +73,16 @@ function ActivityRunCard({
       : run.kind === 'shopee-post'
         ? Send
         : ShoppingBag;
-  const firstLog = run.logs[0] ?? null;
-  const latestLog = run.logs[run.logs.length - 1] ?? null;
-  const logs = run.logs.slice(-MAX_AUTOMATION_LOGS_PER_RUN);
-  const visibleStartIndex = Math.max(0, run.logs.length - logs.length);
+  const orderedLogs = useMemo(() => sortLogsByTime(run.logs), [run.logs]);
+  const latestLog = orderedLogs[orderedLogs.length - 1] ?? null;
+  const logs = orderedLogs.slice(-MAX_AUTOMATION_LOGS_PER_RUN);
   const elapsedMs = getRunElapsedMs(run);
-  const latestFlowStats = getLatestFlowStats(run);
+  const latestFlowStats = getLatestFlowStats(logs);
   const statusColor = run.stopping
     ? theme.amber
     : run.running
       ? theme.blue
-      : run.logs.length > 0
+      : orderedLogs.length > 0
         ? theme.emerald
         : theme.textSubtle;
 
@@ -106,7 +105,7 @@ function ActivityRunCard({
         </View>
         <View className="flex-row items-center gap-1">
           <Clock3 size={12} color={theme.textSubtle} strokeWidth={2} />
-          <Text className="text-kd-micro font-bold text-kd-text-subtle">{run.logs.length}</Text>
+          <Text className="text-kd-micro font-bold text-kd-text-subtle">{orderedLogs.length}</Text>
         </View>
       </View>
 
@@ -135,10 +134,6 @@ function ActivityRunCard({
       ) : (
         <View className="gap-1.5">
           {logs.map((log, index) => {
-            const absoluteIndex = visibleStartIndex + index;
-            const previousLog = absoluteIndex > 0 ? run.logs[absoluteIndex - 1] : null;
-            const deltaMs = previousLog ? Math.max(0, log.ts - previousLog.ts) : 0;
-            const sinceStartMs = firstLog ? Math.max(0, log.ts - firstLog.ts) : 0;
             const parsed =
               run.kind === 'auto-pilot'
                 ? parseStagePrefix(log.message)
@@ -155,9 +150,6 @@ function ActivityRunCard({
                 <View className="w-[66px]">
                   <Text className="text-kd-micro font-bold text-kd-text-subtle">
                     {formatLogTime(log.ts)}
-                  </Text>
-                  <Text className="text-kd-tiny text-kd-text-subtle">
-                    +{formatDuration(deltaMs)} · {formatDuration(sinceStartMs)}
                   </Text>
                 </View>
                 <View className="min-w-0 flex-1">
@@ -262,17 +254,18 @@ function getActivityStageLabel(
 }
 
 function getRunElapsedMs(run: AutomationActivityRun): number | null {
-  const startedAt = run.startedAt ?? run.logs[0]?.ts ?? null;
+  const logs = sortLogsByTime(run.logs);
+  const startedAt = run.startedAt ?? logs[0]?.ts ?? null;
   if (!startedAt) {
     return null;
   }
-  const latestAt = run.running ? Date.now() : run.updatedAt ?? run.logs[run.logs.length - 1]?.ts ?? startedAt;
+  const latestAt = run.running ? Date.now() : run.updatedAt ?? logs[logs.length - 1]?.ts ?? startedAt;
   return Math.max(0, latestAt - startedAt);
 }
 
-function getLatestFlowStats(run: AutomationActivityRun): AutoPilotFlowStats | null {
-  for (let index = run.logs.length - 1; index >= 0; index -= 1) {
-    const log = run.logs[index];
+function getLatestFlowStats(logs: AutomationActivityRun['logs']): AutoPilotFlowStats | null {
+  for (let index = logs.length - 1; index >= 0; index -= 1) {
+    const log = logs[index];
     if (log?.flowStats) {
       return log.flowStats;
     }
@@ -294,6 +287,10 @@ function getLatestFlowStats(run: AutomationActivityRun): AutoPilotFlowStats | nu
   }
 
   return null;
+}
+
+function sortLogsByTime<TLog extends AutomationActivityRun['logs'][number]>(logs: TLog[]): TLog[] {
+  return [...logs].sort((a, b) => a.ts - b.ts);
 }
 
 function formatDuration(ms: number): string {

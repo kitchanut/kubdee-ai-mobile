@@ -3,6 +3,7 @@ import { Image as ImageIcon, Pencil, Trash2 } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import type { AffiliateProduct } from '@/library/types';
+import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { CardBackdrop, libraryCardStops } from '../shared';
 import {
@@ -38,15 +39,20 @@ export function ShopeeImportOptionButton({
       onPress={onPress}
       className={`min-h-10 flex-row items-center justify-center gap-1.5 rounded-kd-lg border px-3 ${
         compact ? 'min-w-[78px] flex-grow' : 'flex-1'
-      } ${
+      } ${active ? '' : 'border-kd-border bg-kd-card'} ${disabled ? 'opacity-45' : ''}`}
+      style={
         active
-          ? 'border-kd-orange/80 bg-kd-orange/10'
-          : 'border-kd-border bg-kd-card'
-      } ${disabled ? 'opacity-45' : ''}`}
+          ? {
+              backgroundColor: SHOPEE_ORANGE_SOFT,
+              borderColor: SHOPEE_ORANGE,
+            }
+          : undefined
+      }
     >
       <Text
         numberOfLines={1}
-        className={`text-kd-body font-semibold ${active ? 'text-kd-orange' : 'text-kd-text-subtle'}`}
+        className={`text-kd-body font-semibold ${active ? '' : 'text-kd-text-subtle'}`}
+        style={active ? { color: SHOPEE_ORANGE } : undefined}
       >
         {label}
       </Text>

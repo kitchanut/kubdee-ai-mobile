@@ -23,6 +23,7 @@ import {
   subscribeShopeePostLogs,
 } from '@/native/AccessibilityBridge';
 import type { NativeShopeePostLog, NativeShopeePostingResult } from '@/native/AccessibilityBridge';
+import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 interface ShopeeScreenProps {
@@ -219,7 +220,7 @@ export default function ShopeeScreen({
       <View className="flex-row border-b border-kd-border px-2">
         <SubTab
           active={subMode === 'post'}
-          color={theme.orange}
+          color={SHOPEE_ORANGE}
           icon={Video}
           label="โพส"
           theme={theme}
@@ -254,7 +255,9 @@ export default function ShopeeScreen({
                         onPress={onOpenVideoLibrary}
                         className="h-7 justify-center active:opacity-70"
                       >
-                        <Text className="text-kd-caption font-bold text-kd-orange">เพิ่มวิดีโอ</Text>
+                        <Text className="text-kd-caption font-bold" style={{ color: SHOPEE_ORANGE }}>
+                          เพิ่มวิดีโอ
+                        </Text>
                       </Pressable>
                     ) : null}
                     <Pressable
@@ -286,8 +289,11 @@ export default function ShopeeScreen({
                 ))
               ) : (
                 <View className="min-h-[520px] items-center justify-center px-8">
-                  <View className="h-14 w-14 items-center justify-center rounded-full bg-kd-orange-soft">
-                    <Video size={24} color={theme.orange} strokeWidth={1.8} />
+                  <View
+                    className="h-14 w-14 items-center justify-center rounded-full"
+                    style={{ backgroundColor: SHOPEE_ORANGE_SOFT }}
+                  >
+                    <Video size={24} color={SHOPEE_ORANGE} strokeWidth={1.8} />
                   </View>
                   <Text className="mt-2 text-kd-body font-black text-kd-text">ยังไม่มีวิดีโอในคิว</Text>
                   <Text className="mt-1 text-center text-kd-caption leading-4 text-kd-text-subtle">
@@ -297,7 +303,8 @@ export default function ShopeeScreen({
                     <Pressable
                       accessibilityRole="button"
                       onPress={onOpenVideoLibrary}
-                      className="mt-3 h-9 flex-row items-center justify-center gap-1.5 rounded-kd-md bg-kd-orange px-3 active:opacity-75"
+                      className="mt-3 h-9 flex-row items-center justify-center gap-1.5 rounded-kd-md px-3 active:opacity-75"
+                      style={{ backgroundColor: SHOPEE_ORANGE }}
                     >
                       <FolderOpen size={14} color={theme.white} strokeWidth={2.2} />
                       <Text className="text-kd-body font-black text-white">ไปคลังวิดีโอ</Text>
@@ -350,7 +357,8 @@ export default function ShopeeScreen({
                 onPress={() => {
                   void handlePostShopeeVideos();
                 }}
-                className="h-[50px] flex-row items-center justify-center gap-2 rounded-kd-xl bg-kd-orange active:opacity-80 disabled:opacity-60"
+                className="h-[50px] flex-row items-center justify-center gap-2 rounded-kd-xl active:opacity-80 disabled:opacity-60"
+                style={{ backgroundColor: SHOPEE_ORANGE }}
               >
                 <Send size={16} color={theme.white} strokeWidth={2.2} />
                 <Text className="text-[13px] font-semibold text-white">
@@ -490,7 +498,9 @@ function PostVideoRow({
 
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-1.5">
-          <Text className="text-kd-body font-black text-kd-orange">#{index + 1}</Text>
+          <Text className="text-kd-body font-black" style={{ color: SHOPEE_ORANGE }}>
+            #{index + 1}
+          </Text>
           <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-body font-bold text-kd-text">
             {productLabel}
           </Text>
@@ -500,7 +510,8 @@ function PostVideoRow({
         </Text>
         <Text
           numberOfLines={1}
-          className={`mt-0.5 text-kd-caption ${hasProductUrl ? 'text-kd-orange' : hasProductInfo ? 'text-kd-text-subtle' : hasFile ? 'text-kd-amber' : 'text-kd-amber'}`}
+          className={`mt-0.5 text-kd-caption ${hasProductUrl ? '' : hasProductInfo ? 'text-kd-text-subtle' : hasFile ? 'text-kd-amber' : 'text-kd-amber'}`}
+          style={hasProductUrl ? { color: SHOPEE_ORANGE } : undefined}
         >
           {hasFile ? productStatus : 'ไฟล์ไม่พร้อม'}
         </Text>

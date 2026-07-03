@@ -658,7 +658,6 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 themeMode={themeMode}
                 versionLabel={mobileVersionLabel}
                 onChangelogPress={openMobileChangelog}
-                onLogsPress={() => setActiveTab('logs')}
                 onCheckUpdate={() => {
                   void checkForMobileUpdate(true);
                 }}

@@ -1,7 +1,6 @@
 import type { ShopeeImportAmount } from './types';
+export { SHOPEE_ORANGE } from '@/theme/brandColors';
 
-/** Shopee brand orange — matches the ShopeeLogo default fill */
-export const SHOPEE_ORANGE = '#EE4D2D';
 export const SHOPEE_IMPORT_ALL_SENTINEL = 0;
 export const SHOPEE_IMPORT_AMOUNT_OPTIONS: Array<{ label: string; value: ShopeeImportAmount }> = [
   { label: '10', value: 10 },
