@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import type { SyncAffiliateProductInput } from '@/library/api';
@@ -18,6 +19,12 @@ type CachedImageMetadata = {
 };
 
 const PRODUCT_IMAGE_DIRECTORY = 'product-images';
+const SUPPORTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
+type SupportedImageType = {
+  extension: 'jpg' | 'png' | 'webp' | 'gif';
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+};
 
 function cleanText(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -42,14 +49,103 @@ export function isLocalProductImagePath(value: string | null | undefined): boole
   return !!path && (path.startsWith('file://') || path.startsWith('content://'));
 }
 
-function extensionFromMimeType(mimeType: string | null | undefined): string | null {
-  const mime = cleanText(mimeType)?.toLowerCase();
+export function isDisplayableProductImageUri(value: string | null | undefined): boolean {
+  const uri = cleanText(value);
+  return !!uri && (
+    isHttpUrl(uri) ||
+    uri.startsWith('file://') ||
+    uri.startsWith('content://') ||
+    uri.startsWith('data:image/')
+  );
+}
+
+function normalizeSupportedMimeType(mimeType: string | null | undefined): SupportedImageType['mimeType'] | null {
+  const mime = cleanText(mimeType)?.toLowerCase().split(';')[0]?.trim();
   if (!mime) return null;
-  if (mime.includes('png')) return 'png';
-  if (mime.includes('webp')) return 'webp';
-  if (mime.includes('gif')) return 'gif';
-  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
+  if (mime === 'image/jpg') return 'image/jpeg';
+  return SUPPORTED_IMAGE_MIME_TYPES.has(mime) ? mime as SupportedImageType['mimeType'] : null;
+}
+
+function imageTypeFromMimeType(mimeType: string | null | undefined): SupportedImageType | null {
+  const mime = normalizeSupportedMimeType(mimeType);
+  switch (mime) {
+    case 'image/png':
+      return { extension: 'png', mimeType: 'image/png' };
+    case 'image/webp':
+      return { extension: 'webp', mimeType: 'image/webp' };
+    case 'image/gif':
+      return { extension: 'gif', mimeType: 'image/gif' };
+    case 'image/jpeg':
+      return { extension: 'jpg', mimeType: 'image/jpeg' };
+    default:
+      return null;
+  }
+}
+
+function extensionFromMimeType(mimeType: string | null | undefined): string | null {
+  return imageTypeFromMimeType(mimeType)?.extension ?? null;
+}
+
+function imageTypeFromExtension(extension: string | null | undefined): SupportedImageType | null {
+  switch (extension?.toLowerCase()) {
+    case 'png':
+      return { extension: 'png', mimeType: 'image/png' };
+    case 'webp':
+      return { extension: 'webp', mimeType: 'image/webp' };
+    case 'gif':
+      return { extension: 'gif', mimeType: 'image/gif' };
+    case 'jpg':
+    case 'jpeg':
+      return { extension: 'jpg', mimeType: 'image/jpeg' };
+    default:
+      return null;
+  }
+}
+
+function supportedExtensionFromUri(uri: string): string | null {
+  return imageTypeFromExtension(extensionFromUri(uri))?.extension ?? null;
+}
+
+function byteString(bytes: Uint8Array, start: number, length: number): string {
+  return Array.from(bytes.slice(start, start + length))
+    .map((byte) => String.fromCharCode(byte))
+    .join('');
+}
+
+function imageTypeFromBytes(bytes: Uint8Array): SupportedImageType | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { extension: 'jpg', mimeType: 'image/jpeg' };
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return { extension: 'png', mimeType: 'image/png' };
+  }
+  if (bytes.length >= 6 && (byteString(bytes, 0, 6) === 'GIF87a' || byteString(bytes, 0, 6) === 'GIF89a')) {
+    return { extension: 'gif', mimeType: 'image/gif' };
+  }
+  if (bytes.length >= 12 && byteString(bytes, 0, 4) === 'RIFF' && byteString(bytes, 8, 4) === 'WEBP') {
+    return { extension: 'webp', mimeType: 'image/webp' };
+  }
   return null;
+}
+
+async function sniffSupportedImageType(uri: string): Promise<SupportedImageType | null> {
+  try {
+    const bytes = await new File(uri).bytes();
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
+    return imageTypeFromBytes(data);
+  } catch {
+    return null;
+  }
 }
 
 function extensionFromUri(uri: string): string | null {
@@ -60,18 +156,7 @@ function extensionFromUri(uri: string): string | null {
 }
 
 function mimeTypeFromExtension(extension: string): string {
-  switch (extension.toLowerCase()) {
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'gif':
-      return 'image/gif';
-    case 'jpg':
-    case 'jpeg':
-    default:
-      return 'image/jpeg';
-  }
+  return imageTypeFromExtension(extension)?.mimeType ?? 'image/jpeg';
 }
 
 function headerValue(headers: Record<string, string> | undefined, key: string): string | null {
@@ -115,16 +200,23 @@ async function productImageDirectory(): Promise<string> {
 function cacheFileName(input: ImageCacheInput, sourceUri: string): string {
   const extension =
     extensionFromMimeType(input.imageMimeType) ||
-    extensionFromUri(sourceUri) ||
+    supportedExtensionFromUri(sourceUri) ||
     'jpg';
   const identity = cleanText(input.externalProductId) || cleanText(input.name) || sourceUri;
   return `product-${hashString(identity)}-${hashString(sourceUri)}.${extension}`;
 }
 
-async function cacheLocalImage(input: ImageCacheInput, sourceUri: string): Promise<CachedImageMetadata> {
+async function cacheLocalImage(input: ImageCacheInput, sourceUri: string): Promise<CachedImageMetadata | null> {
   if (sourceUri.startsWith('file://') && await localFileExists(sourceUri)) {
+    const detected = await sniffSupportedImageType(sourceUri);
+    const imageType =
+      detected ||
+      imageTypeFromMimeType(input.imageMimeType) ||
+      imageTypeFromExtension(extensionFromUri(sourceUri));
+    if (!imageType) return null;
+
     return {
-      imageMimeType: input.imageMimeType ?? mimeTypeFromExtension(extensionFromUri(sourceUri) || 'jpg'),
+      imageMimeType: imageType.mimeType,
       imagePath: sourceUri,
       imageSize: input.imageSize ?? await fileSize(sourceUri),
     };
@@ -136,20 +228,34 @@ async function cacheLocalImage(input: ImageCacheInput, sourceUri: string): Promi
     await FileSystem.copyAsync({ from: sourceUri, to: targetUri });
   }
 
+  const detected = await sniffSupportedImageType(targetUri);
+  const imageType =
+    detected ||
+    imageTypeFromMimeType(input.imageMimeType) ||
+    imageTypeFromExtension(extensionFromUri(targetUri));
+  if (!imageType) return null;
+
   return {
-    imageMimeType: input.imageMimeType ?? mimeTypeFromExtension(extensionFromUri(targetUri) || 'jpg'),
+    imageMimeType: imageType.mimeType,
     imagePath: targetUri,
     imageSize: input.imageSize ?? await fileSize(targetUri),
   };
 }
 
-async function cacheRemoteImage(input: ImageCacheInput, sourceUrl: string): Promise<CachedImageMetadata> {
+async function cacheRemoteImage(input: ImageCacheInput, sourceUrl: string): Promise<CachedImageMetadata | null> {
   const directory = await productImageDirectory();
   const targetUri = `${directory}${cacheFileName(input, sourceUrl)}`;
 
   if (await localFileExists(targetUri)) {
+    const detected = await sniffSupportedImageType(targetUri);
+    const imageType =
+      detected ||
+      imageTypeFromMimeType(input.imageMimeType) ||
+      imageTypeFromExtension(extensionFromUri(targetUri));
+    if (!imageType) return null;
+
     return {
-      imageMimeType: input.imageMimeType ?? mimeTypeFromExtension(extensionFromUri(targetUri) || 'jpg'),
+      imageMimeType: imageType.mimeType,
       imagePath: targetUri,
       imageSize: input.imageSize ?? await fileSize(targetUri),
     };
@@ -157,13 +263,20 @@ async function cacheRemoteImage(input: ImageCacheInput, sourceUrl: string): Prom
 
   const result = await FileSystem.downloadAsync(sourceUrl, targetUri);
   if (result.status < 200 || result.status >= 300) {
-    await FileSystem.deleteAsync(targetUri, { idempotent: true }).catch(() => undefined);
     throw new Error(`download failed: ${result.status}`);
   }
 
   const contentType = headerValue(result.headers, 'content-type');
+  const detected = await sniffSupportedImageType(result.uri);
+  const imageType =
+    detected ||
+    imageTypeFromMimeType(contentType) ||
+    imageTypeFromMimeType(input.imageMimeType) ||
+    imageTypeFromExtension(extensionFromUri(result.uri));
+  if (!imageType) return null;
+
   return {
-    imageMimeType: extensionFromMimeType(contentType) ? contentType : input.imageMimeType ?? mimeTypeFromExtension(extensionFromUri(targetUri) || 'jpg'),
+    imageMimeType: imageType.mimeType,
     imagePath: result.uri,
     imageSize: await fileSize(result.uri),
   };
@@ -172,8 +285,15 @@ async function cacheRemoteImage(input: ImageCacheInput, sourceUrl: string): Prom
 export async function cacheProductImage(input: ImageCacheInput): Promise<CachedImageMetadata | null> {
   const existingPath = cleanText(input.imagePath);
   if (existingPath && await localFileExists(existingPath)) {
+    const detected = await sniffSupportedImageType(existingPath);
+    const imageType =
+      detected ||
+      imageTypeFromMimeType(input.imageMimeType) ||
+      imageTypeFromExtension(extensionFromUri(existingPath));
+    if (!imageType) return null;
+
     return {
-      imageMimeType: input.imageMimeType ?? mimeTypeFromExtension(extensionFromUri(existingPath) || 'jpg'),
+      imageMimeType: imageType.mimeType,
       imagePath: existingPath,
       imageSize: input.imageSize ?? await fileSize(existingPath),
     };
@@ -202,7 +322,16 @@ export async function cacheProductImages<T extends ImageCacheInput>(products: T[
   for (const product of products) {
     const cached = await cacheProductImage(product);
     if (!cached?.imagePath) {
-      output.push(product);
+      output.push(
+        isLocalProductImagePath(product.imagePath) && cleanText(product.imageUrl)
+          ? {
+              ...product,
+              imageMimeType: null,
+              imagePath: null,
+              imageSize: null,
+            }
+          : product
+      );
       continue;
     }
 
@@ -219,7 +348,8 @@ export async function cacheProductImages<T extends ImageCacheInput>(products: T[
 
 export function stripLocalImagePathsForCloudSync(products: SyncAffiliateProductInput[]): SyncAffiliateProductInput[] {
   return products.map((product) => {
-    if (!isLocalProductImagePath(product.imagePath)) {
+    const imagePath = cleanText(product.imagePath);
+    if (!imagePath || isHttpUrl(imagePath)) {
       return product;
     }
 

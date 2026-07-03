@@ -1,7 +1,9 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import { Image as ImageIcon, Pencil, Trash2 } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
+import { isDisplayableProductImageUri } from '@/library/productImageCache';
 import type { AffiliateProduct } from '@/library/types';
 import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -84,7 +86,16 @@ export function ProductCard({
   onDelete: () => void;
 }): React.JSX.Element {
   const platformLabel = getPlatformLabel(product.platform);
-  const imageUri = product.imagePath || product.imageUrl;
+  const imageCandidates = useMemo(
+    () => Array.from(new Set([product.imagePath, product.imageUrl].filter((uri): uri is string => isDisplayableProductImageUri(uri)))),
+    [product.imagePath, product.imageUrl]
+  );
+  const [failedImageUris, setFailedImageUris] = useState<string[]>([]);
+  const imageUri = imageCandidates.find((uri) => !failedImageUris.includes(uri)) ?? null;
+
+  useEffect(() => {
+    setFailedImageUris([]);
+  }, [product.localId, product.imagePath, product.imageUrl]);
 
   return (
     <Pressable
@@ -110,6 +121,9 @@ export function ProductCard({
               resizeMode="cover"
               accessibilityLabel={product.name}
               className="h-full w-full"
+              onError={() => {
+                setFailedImageUris((current) => current.includes(imageUri) ? current : [...current, imageUri]);
+              }}
             />
           ) : (
             <ImageIcon size={20} color={theme.textSubtle} strokeWidth={1.5} />

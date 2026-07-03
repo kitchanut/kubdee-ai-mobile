@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, View } from 'react-native';
 import { ChevronRight, Check, FolderOpen, Image as ImageIcon, Package, Save, Search, X } from 'lucide-react-native';
 import { getAutoPilotProductId } from '@/autopilot/productAdapter';
@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { isDisplayableProductImageUri } from '@/library/productImageCache';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
@@ -234,6 +235,16 @@ function CatalogSelectRow({
   onPress: () => void;
 }): React.JSX.Element {
   const productId = product.externalProductId || product.localId;
+  const imageCandidates = useMemo(
+    () => Array.from(new Set([product.imagePath, product.imageUrl].filter((uri): uri is string => isDisplayableProductImageUri(uri)))),
+    [product.imagePath, product.imageUrl]
+  );
+  const [failedImageUris, setFailedImageUris] = useState<string[]>([]);
+  const imageUri = imageCandidates.find((uri) => !failedImageUris.includes(uri)) ?? null;
+
+  useEffect(() => {
+    setFailedImageUris([]);
+  }, [product.localId, product.imagePath, product.imageUrl]);
 
   return (
     <Pressable
@@ -256,8 +267,15 @@ function CatalogSelectRow({
         />
       </View>
       <View className="h-12 w-12 overflow-hidden rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
-        {product.imagePath || product.imageUrl ? (
-          <Image source={{ uri: product.imagePath || product.imageUrl || '' }} className="h-full w-full" resizeMode="cover" />
+        {imageUri ? (
+          <Image
+            source={{ uri: imageUri }}
+            className="h-full w-full"
+            resizeMode="cover"
+            onError={() => {
+              setFailedImageUris((current) => current.includes(imageUri) ? current : [...current, imageUri]);
+            }}
+          />
         ) : (
           <View className="h-full w-full items-center justify-center">
             <ImageIcon size={16} color={theme.textSubtle} strokeWidth={1.8} />

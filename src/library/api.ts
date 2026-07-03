@@ -88,6 +88,7 @@ export interface SyncAffiliateProductsResult {
 
 /** Server caps DELETE at 500 localIds per request. */
 const DELETE_CHUNK_SIZE = 500;
+const SUPPORTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 class ApiRequestError extends Error {
   constructor(message: string, readonly status: number) {
@@ -118,9 +119,30 @@ function getFileExtension(value: string | null | undefined, fallback = 'jpg'): s
   return extension && /^[a-z0-9]+$/.test(extension) ? extension : fallback;
 }
 
+function normalizeSupportedImageMimeType(value: string | null | undefined): string | null {
+  const mimeType = cleanText(value)?.toLowerCase().split(';')[0]?.trim();
+  if (!mimeType) return null;
+  if (mimeType === 'image/jpg') return 'image/jpeg';
+  return SUPPORTED_IMAGE_MIME_TYPES.has(mimeType) ? mimeType : null;
+}
+
+function extensionForMimeType(mimeType: string): string {
+  switch (mimeType) {
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/gif':
+      return 'gif';
+    case 'image/jpeg':
+    default:
+      return 'jpg';
+  }
+}
+
 function getImageMimeType(imagePath: string, fallback?: string | null): string {
-  const cleanFallback = cleanText(fallback);
-  if (cleanFallback?.startsWith('image/')) {
+  const cleanFallback = normalizeSupportedImageMimeType(fallback);
+  if (cleanFallback) {
     return cleanFallback;
   }
 
@@ -136,6 +158,12 @@ function getImageMimeType(imagePath: string, fallback?: string | null): string {
     default:
       return 'image/jpeg';
   }
+}
+
+function getUploadImageExtension(imagePath: string, mimeType: string): string {
+  const byMime = extensionForMimeType(mimeType);
+  const byPath = getFileExtension(imagePath, byMime);
+  return normalizeSupportedImageMimeType(`image/${byPath}`) ? byPath : byMime;
 }
 
 async function getLocalFileSize(uri: string): Promise<number | null> {
@@ -207,7 +235,7 @@ async function uploadAffiliateProductImage(
   }
 
   const mimeType = getImageMimeType(imagePath, product.imageMimeType);
-  const extension = getFileExtension(imagePath, mimeType === 'image/png' ? 'png' : 'jpg');
+  const extension = getUploadImageExtension(imagePath, mimeType);
   const response = await FileSystem.uploadAsync(`${BACKEND_URL}/api/user/affiliate-products/images`, imagePath, {
     fieldName: 'image',
     headers: {
@@ -249,7 +277,25 @@ async function uploadAffiliateProductImages(
   let uploadedImages = 0;
 
   for (const product of products) {
-    const imageMeta = await uploadAffiliateProductImage(token, product);
+    let imageMeta: AffiliateProductImageMeta | null = null;
+    try {
+      imageMeta = await uploadAffiliateProductImage(token, product);
+    } catch (error) {
+      if (
+        error instanceof ApiRequestError &&
+        (error.status === 400 || error.status === 413 || error.status === 415)
+      ) {
+        output.push({
+          ...product,
+          imageMimeType: null,
+          imagePath: null,
+          imageSize: null,
+        });
+        continue;
+      }
+      throw error;
+    }
+
     if (!imageMeta?.imageR2Key || !imageMeta.imageUrl) {
       output.push(product);
       continue;

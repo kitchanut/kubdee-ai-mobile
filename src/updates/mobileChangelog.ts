@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.42',
+    date: '2026-07-03',
+    highlight: 'คลังสินค้าแสดงรูปจาก cloud ได้เสถียรขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้ปัญหาภาพสินค้าในคลังไม่ขึ้นเมื่อสินค้าถูกสร้างหรือซิงก์มาจากอุปกรณ์อื่น' },
+      { type: 'improved', text: 'ปรับการซิงก์รูปสินค้าให้ข้ามไฟล์รูปที่ไม่รองรับโดยไม่ทำให้การซิงก์ทั้งคลังล้ม' },
+    ],
+  },
+  {
     version: '0.2.41',
     date: '2026-07-03',
     highlight: 'Shopee Post เปิดป้ายกำกับ AI ได้แม่นขึ้น',
