@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.40',
+    date: '2026-07-03',
+    highlight: 'Shopee Post ตั้งค่า toggle ก่อนโพสต์ได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การกด toggle อนุญาตให้นำเนื้อหาไปใช้ซ้ำ/เผยแพร่ต่อ และป้ายกำกับ AI บางเครื่องที่กดกลางปุ่มแล้วไม่เปลี่ยนสถานะ' },
+      { type: 'improved', text: 'ปรับตำแหน่งแตะ toggle ให้ตรงกับพฤติกรรม Shopee บนมือถือจริงมากขึ้นก่อนโพสต์วิดีโอ' },
+    ],
+  },
+  {
     version: '0.2.39',
     date: '2026-07-03',
     highlight: 'Shopee Post แนบสินค้าและตั้งค่าโพสต์เสถียรขึ้น',

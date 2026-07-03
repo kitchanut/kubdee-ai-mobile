@@ -1710,6 +1710,12 @@ internal data class ShopeeVisualToggleTarget(
   val greyPixels: Int
 )
 
+internal fun KubdeeAccessibilityService.shopeePostingToggleTapX(bounds: Rect): Float {
+  val leftTap = bounds.left + dp(8)
+  val maxTap = bounds.right - dp(4)
+  return leftTap.coerceIn(bounds.left + 1, maxOf(bounds.left + 1, maxTap)).toFloat()
+}
+
 internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
   slot: ShopeePostingToggleSlot,
   desiredOn: Boolean,
@@ -1741,7 +1747,7 @@ internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
   }
 
   if (!tapBlockingWithoutStopButton(
-      target.bounds.centerX().toFloat(),
+      shopeePostingToggleTapX(target.bounds),
       target.bounds.centerY().toFloat(),
       timeoutMs = 1800L,
       durationMs = 80L
@@ -2135,7 +2141,7 @@ internal fun KubdeeAccessibilityService.findNearbyShopeeToggle(
 
 internal fun KubdeeAccessibilityService.clickShopeeToggleTarget(target: ShopeeToggleTarget): Boolean {
   if (clickNode(target.node)) return true
-  return tapBlockingWithoutStopButton(target.bounds.centerX().toFloat(), target.bounds.centerY().toFloat())
+  return tapBlockingWithoutStopButton(shopeePostingToggleTapX(target.bounds), target.bounds.centerY().toFloat())
 }
 
 internal fun KubdeeAccessibilityService.toggleCenterY(bounds: Rect): Int = (bounds.top + bounds.bottom) / 2
