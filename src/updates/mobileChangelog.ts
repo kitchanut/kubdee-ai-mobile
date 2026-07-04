@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.57',
+    date: '2026-07-04',
+    highlight: 'Shopee Post เปิดป้ายกำกับ AI ได้เสถียรขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับการเปิดป้ายกำกับ AI ใน Shopee Post ให้ตรวจสวิตช์จากภาพหน้าจอก่อนกด ลดปัญหาบางเครื่องกด toggle ไม่ติด' },
+      { type: 'improved', text: 'เพิ่มการยืนยันสถานะหลังแตะ toggle และ log ให้เห็นชัดว่าเปิดหรือปิดสำเร็จจริงก่อนโพสต์' },
+    ],
+  },
+  {
     version: '0.2.56',
     date: '2026-07-04',
     highlight: 'Shopee Post กดไอคอนโซ่เพิ่มสินค้าได้แม่นขึ้น',
