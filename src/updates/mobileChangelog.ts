@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.51',
+    date: '2026-07-04',
+    highlight: 'Shopee Offers Import เจอสินค้าได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้ปัญหาบางเครื่องดึงสินค้าจากข้อเสนอ Shopee แล้วไม่พบสินค้า แม้เห็นการ์ดสินค้าอยู่บนหน้าจอ' },
+      { type: 'improved', text: 'เพิ่ม log สั้น ๆ ตอนหา resource id ปุ่มแชร์ไม่เจอ และเปลี่ยนไปอ่านกริดจากราคาและชื่อสินค้าแทน' },
+    ],
+  },
+  {
     version: '0.2.50',
     date: '2026-07-04',
     highlight: 'คลังสินค้าแก้ไขสินค้าได้จากมือถือ',

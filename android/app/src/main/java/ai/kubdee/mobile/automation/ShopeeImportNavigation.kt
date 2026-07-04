@@ -861,6 +861,7 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeePartnerOfferCandidate
     val products = linkedMapOf<String, ShopeePartnerOfferCandidate>()
     var noNameCount = 0
     var duplicateCount = 0
+    var fallbackCount = 0
     for (shareButton in shareButtons) {
       val candidate = buildShopeePartnerOfferCandidate(
         textNodes = textNodes,
@@ -884,10 +885,48 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeePartnerOfferCandidate
       products[key] = candidate
     }
 
+    if (status == SHOPEE_IMPORT_SOURCE_OFFERS) {
+      val clickableNodes = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+      collectClickableNodes(root, clickableNodes)
+      val fallbackCandidates = buildShopeeAffiliateOfferGridCandidatesFromPriceNodes(
+        textNodes = textNodes,
+        imageNodes = imageNodes,
+        clickableNodes = clickableNodes,
+        screen = screen,
+        safeTop = safeTop,
+        safeBottom = safeBottom,
+        status = status
+      )
+      for (candidate in fallbackCandidates) {
+        val key = candidate.product.externalProductId ?: stableProductKey(candidate.product)
+        if (products.containsKey(key)) {
+          duplicateCount += 1
+          continue
+        }
+        products[key] = candidate
+        fallbackCount += 1
+      }
+    }
+
     if (logResult) {
+      if (status == SHOPEE_IMPORT_SOURCE_OFFERS) {
+        when {
+          fallbackCount > 0 -> {
+            val fallbackReason = if (shareButtons.isEmpty()) {
+              "ไม่พบ resource id ปุ่มแชร์ Shopee"
+            } else {
+              "resource id ปุ่มแชร์ Shopee เจอไม่ครบ"
+            }
+            logStep("$fallbackReason -> ใช้วิธีอ่านกริดจากราคา+ชื่อสินค้าแทน (+$fallbackCount การ์ด)")
+          }
+          shareButtons.isEmpty() -> {
+            logStep("ไม่พบ resource id ปุ่มแชร์ Shopee -> fallback ราคา+ชื่อสินค้ายังไม่พบการ์ด")
+          }
+        }
+      }
       logStep(
         "สแกนมุมมองพาร์ทเนอร์พบ ${products.size} การ์ด " +
-          "(share=${shareButtons.size}, noName=$noNameCount, ซ้ำ=$duplicateCount)"
+          "(share=${shareButtons.size}, fallback=$fallbackCount, noName=$noNameCount, ซ้ำ=$duplicateCount)"
       )
     }
     return products.values.toList()
@@ -1129,6 +1168,243 @@ internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidate(
       shareBounds = Rect(shareButton.bounds)
     )
   }
+internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidatesFromPriceNodes(
+    textNodes: List<TextNode>,
+    imageNodes: List<ShopeeImageNode>,
+    clickableNodes: List<Pair<Rect, AccessibilityNodeInfo>>,
+    screen: Rect,
+    safeTop: Int,
+    safeBottom: Int,
+    status: String
+  ): List<ShopeePartnerOfferCandidate> {
+    val visibleTextNodes = textNodes.filter { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.centerY() in safeTop..safeBottom
+    }
+    val visibleImageNodes = imageNodes.filter { image ->
+      image.bounds.centerY() in safeTop..safeBottom
+    }
+    val priceNodes = findPriceNodes(visibleTextNodes)
+      .filter { node -> node.bounds.centerY() in safeTop..safeBottom }
+      .sortedWith(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+
+    val candidates = mutableListOf<ShopeePartnerOfferCandidate>()
+    val seenBuckets = mutableSetOf<String>()
+    for (priceNode in priceNodes) {
+      val candidate = buildShopeeAffiliateOfferGridCandidateFromPriceNode(
+        visibleTextNodes = visibleTextNodes,
+        imageNodes = visibleImageNodes,
+        clickableNodes = clickableNodes,
+        priceNode = priceNode,
+        screen = screen,
+        safeTop = safeTop,
+        safeBottom = safeBottom,
+        status = status
+      ) ?: continue
+      val bucket = shopeeAffiliateOfferGridCardBucket(candidate.tapBounds, priceNode.bounds, screen)
+      if (seenBuckets.add(bucket)) {
+        candidates += candidate
+      }
+    }
+    return candidates
+  }
+
+internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidateFromPriceNode(
+    visibleTextNodes: List<TextNode>,
+    imageNodes: List<ShopeeImageNode>,
+    clickableNodes: List<Pair<Rect, AccessibilityNodeInfo>>,
+    priceNode: TextNode,
+    screen: Rect,
+    safeTop: Int,
+    safeBottom: Int,
+    status: String
+  ): ShopeePartnerOfferCandidate? {
+    val price = normalizePrice(priceNode.text) ?: return null
+    val margin = maxOf(8, (screen.width() * 0.018f).toInt())
+    val isLeftColumn = priceNode.bounds.centerX() < screen.centerX()
+    val columnLeft = if (isLeftColumn) screen.left + margin else screen.centerX()
+    val columnRight = if (isLeftColumn) screen.centerX() else screen.right - margin
+    val columnWidth = columnRight - columnLeft
+    if (columnWidth <= 0) return null
+
+    val cardTop = (priceNode.bounds.top - (screen.height() * 0.36f).toInt()).coerceAtLeast(safeTop)
+    val cardBottom = findShopeeAffiliateOfferGridCardBottom(
+      priceBounds = priceNode.bounds,
+      imageNodes = imageNodes,
+      screen = screen,
+      columnLeft = columnLeft,
+      columnRight = columnRight,
+      safeBottom = safeBottom
+    )
+    val cardTexts = visibleTextNodes.filter { node ->
+      node.bounds.centerX() in columnLeft..columnRight &&
+        node.bounds.centerY() in cardTop..cardBottom
+    }
+    val nameNode = findShopeeAffiliateOfferGridNameNode(
+      cardTexts = cardTexts,
+      priceBounds = priceNode.bounds,
+      screen = screen
+    ) ?: return null
+    val name = cleanShopeePartnerProductName(nameNode.text).take(180)
+    if (name.length < 5) return null
+
+    val productUrl = cardTexts.firstNotNullOfOrNull { extractUrl(it.text) }
+    val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
+      ?: fallbackShopeeProductIdFromName(name)
+    val stock = cardTexts.firstNotNullOfOrNull { extractStock(it.text) }
+    val imageUrl = imageNodes
+      .filter { image ->
+        image.bounds.centerX() in columnLeft..columnRight &&
+          image.bounds.centerY() in cardTop..cardBottom
+      }
+      .maxByOrNull { image -> image.bounds.width() * image.bounds.height() }
+      ?.imageUrl
+
+    val tapBounds = Rect(
+      maxOf(nameNode.bounds.left, columnLeft),
+      maxOf(nameNode.bounds.top, safeTop),
+      minOf(nameNode.bounds.right, columnRight),
+      minOf(maxOf(nameNode.bounds.bottom, nameNode.bounds.top + 48), priceNode.bounds.top - 8)
+    )
+    if (tapBounds.width() <= 0 || tapBounds.height() <= 0) return null
+
+    val shareBounds = findShopeeAffiliateOfferGridFallbackShareBounds(
+      clickableNodes = clickableNodes,
+      priceBounds = priceNode.bounds,
+      screen = screen,
+      columnLeft = columnLeft,
+      columnRight = columnRight,
+      cardBottom = cardBottom,
+      safeTop = safeTop,
+      safeBottom = safeBottom
+    )
+
+    return ShopeePartnerOfferCandidate(
+      product = ShopeeLikedProduct(
+        name = name,
+        price = price,
+        stock = stock,
+        productUrl = productUrl,
+        externalProductId = externalProductId,
+        imageUrl = imageUrl,
+        status = status,
+        scrapedAt = System.currentTimeMillis()
+      ),
+      tapBounds = tapBounds,
+      safeTop = safeTop,
+      shareBounds = shareBounds
+    )
+  }
+
+internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferGridNameNode(
+    cardTexts: List<TextNode>,
+    priceBounds: Rect,
+    screen: Rect
+  ): TextNode? =
+    cardTexts
+      .mapNotNull { node ->
+        val text = cleanShopeePartnerProductName(node.text)
+        val gap = priceBounds.top - node.bounds.bottom
+        if (
+          gap < -24 ||
+          gap > (screen.height() * 0.22f).toInt() ||
+          node.bounds.top >= priceBounds.bottom ||
+          !isShopeePartnerProductNameCandidate(text)
+        ) {
+          return@mapNotNull null
+        }
+        ShopeeLikedNameMatch(
+          verticalGap = kotlin.math.abs(gap),
+          negativeBottom = -node.bounds.bottom,
+          left = node.bounds.left,
+          top = node.bounds.top,
+          name = text,
+          node = node
+        )
+      }
+      .sortedWith(
+        compareBy<ShopeeLikedNameMatch> { it.verticalGap }
+          .thenBy { it.negativeBottom }
+          .thenBy { it.left }
+          .thenBy { it.top }
+      )
+      .firstOrNull()
+      ?.node
+
+internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferGridCardBottom(
+    priceBounds: Rect,
+    imageNodes: List<ShopeeImageNode>,
+    screen: Rect,
+    columnLeft: Int,
+    columnRight: Int,
+    safeBottom: Int
+  ): Int {
+    val nextImageTop = imageNodes
+      .filter { image ->
+        image.bounds.centerX() in columnLeft..columnRight &&
+          image.bounds.top > priceBounds.bottom + (screen.height() * 0.08f).toInt()
+      }
+      .minOfOrNull { it.bounds.top - 8 }
+    val estimatedBottom = priceBounds.bottom + (screen.height() * 0.19f).toInt()
+    return listOfNotNull(nextImageTop, estimatedBottom, safeBottom).minOrNull()
+      ?.coerceAtLeast(priceBounds.bottom + 48)
+      ?.coerceAtMost(safeBottom)
+      ?: safeBottom
+  }
+
+internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferGridFallbackShareBounds(
+    clickableNodes: List<Pair<Rect, AccessibilityNodeInfo>>,
+    priceBounds: Rect,
+    screen: Rect,
+    columnLeft: Int,
+    columnRight: Int,
+    cardBottom: Int,
+    safeTop: Int,
+    safeBottom: Int
+  ): Rect {
+    val columnWidth = columnRight - columnLeft
+    val preferredX = columnRight - maxOf(34, (screen.width() * 0.045f).toInt())
+    val preferredY = priceBounds.bottom + (screen.height() * 0.065f).toInt()
+    val minY = maxOf(priceBounds.top - 12, safeTop)
+    val maxY = maxOf(
+      minY,
+      minOf(cardBottom - 8, priceBounds.bottom + (screen.height() * 0.18f).toInt(), safeBottom)
+    )
+    val clickable = clickableNodes
+      .filter { (bounds, node) ->
+        node.isVisibleToUser &&
+          node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
+          bounds.centerX() >= columnLeft + (columnWidth * 0.58f).toInt() &&
+          bounds.centerX() <= columnRight + 8 &&
+          bounds.centerY() in minY..maxY &&
+          bounds.width() in 20..maxOf(120, (columnWidth * 0.42f).toInt()) &&
+          bounds.height() in 20..maxOf(120, (screen.height() * 0.12f).toInt())
+      }
+      .minByOrNull { (bounds, _) ->
+        val areaPenalty = kotlin.math.abs((bounds.width() * bounds.height()) - 3600) / 20
+        kotlin.math.abs(bounds.centerX() - preferredX) +
+          kotlin.math.abs(bounds.centerY() - preferredY) +
+          areaPenalty
+      }
+      ?.first
+    if (clickable != null) return Rect(clickable)
+
+    val size = maxOf(48, minOf(72, (screen.width() * 0.055f).toInt()))
+    val centerX = preferredX.coerceIn(columnLeft + size / 2, columnRight - size / 2)
+    val centerY = preferredY.coerceIn(minY, maxY)
+    return Rect(centerX - size / 2, centerY - size / 2, centerX + size / 2, centerY + size / 2)
+  }
+
+internal fun KubdeeAccessibilityService.shopeeAffiliateOfferGridCardBucket(
+    tapBounds: Rect,
+    priceBounds: Rect,
+    screen: Rect
+  ): String {
+    val column = if (priceBounds.centerX() < screen.centerX()) 0 else 1
+    val yBucketSize = maxOf(170, screen.height() / 6)
+    val midY = (tapBounds.centerY() + priceBounds.centerY()) / 2
+    return "$column:${midY / yBucketSize}"
+  }
 internal fun KubdeeAccessibilityService.findShopeePartnerDetailTapBounds(
     nameNode: TextNode,
     shareButton: ShopeePartnerShareButton,
@@ -1169,6 +1445,13 @@ internal fun KubdeeAccessibilityService.isShopeePartnerProductNameCandidate(text
       "เลือกแล้ว",
       "นำออก",
       "แชร์",
+      "extracomm",
+      "extra commission",
+      "ร้านแนะนำ",
+      "สินค้ารีวิวรับเงินคืนได้",
+      "ค่าคอมพิเศษ",
+      "ค่าเชิญจากผู้ขาย",
+      "ค่าส่งจากผู้ขาย",
       "เรียงตาม",
       "ข้อเสนอ",
       "ไม่พร้อมโปรโมต"
