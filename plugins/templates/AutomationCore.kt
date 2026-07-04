@@ -228,7 +228,16 @@ internal fun KubdeeAccessibilityService.videoCharacterInstruction(settings: JSON
     else -> "ตัวละครวิดีโอ: ใช้ตัวละคร/มือ/สินค้าให้ต่อเนื่องจากรูปอ้างอิง"
   }
 
-internal fun KubdeeAccessibilityService.tapBlocking(x: Float, y: Float, timeoutMs: Long = 2500, durationMs: Long = 80L): Boolean {
+internal fun KubdeeAccessibilityService.tapBlocking(
+  x: Float,
+  y: Float,
+  timeoutMs: Long = 2500,
+  durationMs: Long = 80L,
+  showTapIndicator: Boolean = shouldShowAutomationTapIndicator()
+): Boolean {
+  if (showTapIndicator) {
+    showAutomationTapIndicator(x, y)
+  }
   var completed = false
   val latch = CountDownLatch(1)
   dispatchLineGesture(x, y, x, y, durationMs) { success ->

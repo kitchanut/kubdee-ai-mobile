@@ -13,8 +13,10 @@ import android.content.ContentValues
 import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Canvas
 import android.graphics.Color
 import android.net.Uri
+import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -188,6 +190,7 @@ internal fun KubdeeAccessibilityService.removeAutomationOverlay() {
     overlaySubtitleView = null
     overlayChipRow = null
     overlayLogContainer = null
+    removeAutomationTapIndicator()
     overlayStopButton?.let { view ->
       try {
         automationWindowManager.removeView(view)
@@ -498,6 +501,103 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
   }
 
   return button
+}
+
+internal fun KubdeeAccessibilityService.shouldShowAutomationTapIndicator(): Boolean =
+  automationLogKindForThread.get() == ShopeeAutomationLogKind.POST
+
+internal fun KubdeeAccessibilityService.showAutomationTapIndicator(
+  x: Float,
+  y: Float,
+  visibleMs: Long = 700L
+) {
+  if (automationOverlayUnavailable) return
+
+  val show: () -> Unit = {
+    removeAutomationTapIndicator()
+
+    val size = dp(52)
+    val marker = AutomationTapIndicatorView(this).apply {
+      importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    }
+    val params = WindowManager.LayoutParams(
+      size,
+      size,
+      WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+      PixelFormat.TRANSLUCENT
+    ).apply {
+      gravity = Gravity.TOP or Gravity.START
+      this.x = (x - size / 2f).toInt()
+      this.y = (y - size / 2f).toInt()
+    }
+
+    try {
+      automationWindowManager.addView(marker, params)
+      automationTapIndicatorView = marker
+      mainHandler.postDelayed({
+        if (automationTapIndicatorView === marker) {
+          removeAutomationTapIndicator()
+        }
+      }, visibleMs)
+    } catch (error: Exception) {
+      Log.w(TAG, "Unable to show automation tap indicator", error)
+    }
+  }
+
+  if (Looper.myLooper() == Looper.getMainLooper()) {
+    show()
+  } else {
+    mainHandler.post(show)
+  }
+}
+
+internal fun KubdeeAccessibilityService.removeAutomationTapIndicator() {
+  val remove: () -> Unit = {
+    automationTapIndicatorView?.let { view ->
+      try {
+        automationWindowManager.removeView(view)
+      } catch (_: Exception) {
+        // Marker may already be detached by Android or a newer marker.
+      }
+    }
+    automationTapIndicatorView = null
+  }
+
+  if (Looper.myLooper() == Looper.getMainLooper()) {
+    remove()
+  } else {
+    mainHandler.post(remove)
+  }
+}
+
+private class AutomationTapIndicatorView(context: android.content.Context) : View(context) {
+  private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.FILL
+    color = Color.argb(55, 239, 68, 68)
+  }
+  private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = 4f
+    color = Color.argb(235, 239, 68, 68)
+  }
+  private val centerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.FILL
+    color = Color.WHITE
+  }
+
+  override fun onDraw(canvas: Canvas) {
+    super.onDraw(canvas)
+    val centerX = width / 2f
+    val centerY = height / 2f
+    val radius = (minOf(width, height) / 2f) - 5f
+    canvas.drawCircle(centerX, centerY, radius, fillPaint)
+    canvas.drawCircle(centerX, centerY, radius, ringPaint)
+    canvas.drawCircle(centerX, centerY, 5f, centerPaint)
+  }
 }
 
 internal val KubdeeAccessibilityService.automationWindowManager: WindowManager

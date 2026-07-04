@@ -66,6 +66,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
   internal var overlaySubtitleView: TextView? = null
   internal var overlayChipRow: LinearLayout? = null
   internal var overlayLogContainer: LinearLayout? = null
+  internal var automationTapIndicatorView: android.view.View? = null
   internal var automationOverlayUnavailable = false
   internal val automationLogLines = mutableListOf<String>()
   internal val automationStatsLock = Any()
