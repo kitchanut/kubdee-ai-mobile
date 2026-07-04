@@ -332,37 +332,16 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
       productUrl.isNotBlank() &&
       tapShopeeProductLinkEntry()
     ) {
-      sleepStep(1200L)
-      val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
-      if (edit != null) {
-        clickNode(edit)
-        sleepStep(400L)
-        setNodeText(edit, productUrl)
-        sleepStep(800L)
-        if (
-          clickByAnyText(
-            listOf("เพิ่ม", "Add", "ตกลง", "OK", "ยืนยัน", "Confirm"),
-            exact = false,
-            allowedPackageName = TARGET_PACKAGE_SHOPEE
-          )
-        ) {
-          sleepStep(2000L)
-          clickByAnyText(
-            listOf("เพิ่ม", "Add", "เลือก", "Select", "เสร็จ", "Done"),
-            exact = false,
-            allowedPackageName = TARGET_PACKAGE_SHOPEE
-          )
-          sleepStep(1800L)
-          logShopeePostStep("แนบสินค้าด้วยลิงก์แล้ว")
-          return
-        }
+      sleepStep(1000L)
+      if (fillAndAttachShopeeProductLink(productUrl)) {
+        logShopeePostStep("แนบสินค้าด้วยลิงก์แล้ว")
+        return
       }
       logShopeePostStep("แนบสินค้าด้วยลิงก์ไม่สำเร็จ จะกลับไปค้นหาด้วยชื่อสินค้า")
-      performBack()
-      sleepStep(900L)
+      prepareShopeeAddProductPickerAfterLinkFailure()
     }
 
-    if (productName.isNotBlank()) {
+    if (productName.isNotBlank() && ensureShopeeAddProductPickerOpenForSearch()) {
       clickByAnyText(
         listOf("กดถูกใจ", "ถูกใจ", "Liked", "ค้นหา", "Search"),
         exact = false,
@@ -389,7 +368,11 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
             exact = false,
             allowedPackageName = TARGET_PACKAGE_SHOPEE
           )
-          sleepStep(1600L)
+          if (!waitForShopeePostingEditorVisible(maxAttempts = 6, delayMs = 900L)) {
+            logShopeePostStep("แนบสินค้าด้วยชื่อสินค้าแล้ว แต่ยังไม่กลับ editor -> กดกลับหนึ่งครั้ง")
+            performBack()
+            waitForShopeePostingEditorVisible(maxAttempts = 4, delayMs = 700L)
+          }
           logShopeePostStep("แนบสินค้าด้วยชื่อสินค้าแล้ว")
           return
         }
@@ -593,6 +576,666 @@ internal fun KubdeeAccessibilityService.normalizeShopeeProductUrl(value: String)
   if (url.isBlank()) return ""
   if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) return ""
   return if (Regex("""(^https?://)?([^/]+\.)?shopee\.""", RegexOption.IGNORE_CASE).containsMatchIn(url)) url else ""
+}
+
+internal fun KubdeeAccessibilityService.fillAndAttachShopeeProductLink(productUrl: String): Boolean {
+  logShopeePostStep("กรอกลิงก์สินค้า: เริ่ม (${shortShopeeUrlForLog(productUrl)})")
+  var lastInputDebug = ""
+
+  if (!waitForShopeeProductLinkInputScreen()) {
+    logShopeePostStep("กรอกลิงก์สินค้า: ยังไม่อยู่หน้ากรอกลิงก์ (${
+      shopeeProductLinkInputDebugSnapshot()
+    })")
+    return false
+  }
+
+  repeat(4) { index ->
+    val attempt = index + 1
+    sleepStep(if (attempt == 1) 300L else 700L)
+    if (isShopeePostingEditorVisible()) {
+      lastInputDebug = shopeeProductLinkInputDebugSnapshot()
+      logShopeePostStep("กรอกลิงก์สินค้า: เจอหน้า editor แทนช่องลิงก์ หยุดกันกรอกผิดช่อง ($lastInputDebug)")
+      return false
+    }
+
+    var visibleLinkNode = findShopeeProductLinkVisibleNodeInInput(productUrl)
+    val edit = findShopeeProductLinkEditableNode()
+    if (edit == null) {
+      if (visibleLinkNode != null) {
+        logShopeePostStep(
+          "กรอกลิงก์สินค้า: ไม่พบ editable แต่เห็นลิงก์ในช่องแล้ว -> กดนำเข้า (${visibleLinkNode.bounds.flattenToString()})"
+        )
+        sleepStep(1000L)
+        if (!clickShopeeProductLinkImportButton(visibleLinkNode.bounds)) {
+          logShopeePostStep("กรอกลิงก์สินค้า: ไม่พบปุ่มนำเข้า (${shopeeProductLinkActionDebugSnapshot()})")
+          return@repeat
+        }
+        if (waitAndChooseShopeeProductLinkResult(productUrl)) {
+          return true
+        }
+        logShopeePostStep("กรอกลิงก์สินค้า: กดนำเข้าแล้ว แต่ยังไม่พบปุ่มเลือกสินค้า")
+        return@repeat
+      }
+      lastInputDebug = shopeeProductLinkInputDebugSnapshot()
+      logShopeePostStep("กรอกลิงก์สินค้า: ยังไม่พบช่องกรอก (ครั้ง $attempt/4, $lastInputDebug)")
+      return@repeat
+    }
+
+    val bounds = Rect()
+    edit.getBoundsInScreen(bounds)
+    clickNode(edit)
+    sleepStep(250L)
+    val setOk = setNodeText(edit, productUrl)
+    sleepStep(450L)
+    visibleLinkNode = findShopeeProductLinkVisibleNodeInInput(productUrl)
+    var linkVerified = visibleLinkNode != null || edit.text?.toString()?.contains(productUrl) == true
+    logShopeePostStep(
+      "กรอกลิงก์สินค้า: setText=${if (setOk) "ok" else "fail"} verify=${if (linkVerified) "ok" else "pending"} bounds=${bounds.flattenToString()}"
+    )
+
+    if (!linkVerified) {
+      val pasteOk = pasteShopeeProductLinkInto(edit, productUrl)
+      sleepStep(500L)
+      visibleLinkNode = findShopeeProductLinkVisibleNodeInInput(productUrl)
+      val pastedText = visibleLinkNode != null || edit.text?.toString()?.contains(productUrl) == true
+      logShopeePostStep("กรอกลิงก์สินค้า: paste=${if (pasteOk) "ok" else "fail"} verify=${if (pastedText) "ok" else "pending"}")
+      linkVerified = pastedText
+    }
+
+    if (!linkVerified) {
+      logShopeePostStep("กรอกลิงก์สินค้า: ยังยืนยันไม่ได้ว่าลิงก์อยู่ในช่อง ไม่กดนำเข้า")
+      return@repeat
+    }
+
+    logShopeePostStep("กรอกลิงก์สินค้า: เห็นลิงก์ในช่องแล้ว รอ 1.8 วิ ก่อนกดนำเข้า")
+    sleepStep(1800L)
+
+    if (!clickShopeeProductLinkImportButton(bounds)) {
+      logShopeePostStep("กรอกลิงก์สินค้า: ไม่พบปุ่มนำเข้า (${shopeeProductLinkActionDebugSnapshot()})")
+      return@repeat
+    }
+
+    if (waitAndChooseShopeeProductLinkResult(productUrl)) {
+      return true
+    }
+    logShopeePostStep("กรอกลิงก์สินค้า: ยืนยันลิงก์แล้ว แต่ยังไม่พบปุ่มเลือกสินค้า")
+  }
+
+  if (lastInputDebug.isNotBlank()) {
+    logShopeePostStep("กรอกลิงก์สินค้า: ล้มเหลว ($lastInputDebug)")
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.waitForShopeeProductLinkInputScreen(): Boolean {
+  repeat(6) { index ->
+    if (isShopeeProductLinkInputScreen()) return true
+    if (isShopeePostingEditorVisible()) return false
+    sleepStep(if (index == 0) 350L else 500L)
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.waitAndChooseShopeeProductLinkResult(productUrl: String): Boolean {
+  repeat(10) { index ->
+    sleepStep(if (index == 0) 1200L else 700L)
+
+    if (isShopeePostingEditorVisible()) {
+      if (isShopeeProductLinkTextVisible(productUrl)) {
+        logShopeePostStep("กรอกลิงก์สินค้า: URL กลับไปอยู่หน้า editor ยังไม่ใช่การแนบสินค้า")
+        return false
+      }
+      if (isShopeePostingProductAttachedVisible()) {
+        logShopeePostStep("กรอกลิงก์สินค้า: กลับ editor และพบข้อมูลสินค้าแล้ว")
+        return true
+      }
+      return false
+    }
+
+    if (clickShopeeProductLinkSelectAllButton()) {
+      sleepStep(900L)
+      if (clickShopeeProductLinkAddSelectedButton()) {
+        sleepStep(1800L)
+        if (waitForShopeePostingEditorVisible(maxAttempts = 5, delayMs = 700L)) {
+          logShopeePostStep("กรอกลิงก์สินค้า: กลับ editor หลังเพิ่มสินค้าจากลิงก์")
+          return true
+        }
+        if (!isShopeeProductLinkTextVisible(productUrl)) return true
+        logShopeePostStep("กรอกลิงก์สินค้า: กดเพิ่มแล้วแต่ยังไม่กลับ editor")
+        return false
+      }
+      logShopeePostStep("กรอกลิงก์สินค้า: เลือกทั้งหมดแล้ว แต่ไม่พบปุ่มเพิ่ม")
+      return@repeat
+    }
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.findShopeeProductLinkEditableNode(): AccessibilityNodeInfo? {
+  val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (!isShopeeProductLinkInputScreenRoot(root, screen)) continue
+    var visited = 0
+    collectShopeeProductLinkEditableNodes(root, screen, candidates) {
+      visited += 1
+      visited <= 700
+    }
+  }
+
+  return candidates
+    .filter { (bounds, _) -> bounds.width() > 0 && bounds.height() > 0 }
+    .maxWithOrNull(
+      compareBy<Pair<Rect, AccessibilityNodeInfo>> { (_, node) -> if (node.isFocused) 1 else 0 }
+        .thenBy { (bounds, _) -> bounds.width() }
+        .thenByDescending { (bounds, _) -> bounds.top }
+    )
+    ?.second
+}
+
+internal fun KubdeeAccessibilityService.collectShopeeProductLinkEditableNodes(
+  node: AccessibilityNodeInfo?,
+  screen: Rect,
+  output: MutableList<Pair<Rect, AccessibilityNodeInfo>>,
+  shouldContinue: () -> Boolean
+) {
+  if (node == null || !shouldContinue()) return
+  if (
+    node.isVisibleToUser &&
+    node.isEditable &&
+    !isBlockedEditableNode(node) &&
+    isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)
+  ) {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    if (
+      bounds.width() >= screen.width() / 3 &&
+      bounds.height() >= dp(24) &&
+      bounds.top >= screen.top + statusBarHeightPx() &&
+      bounds.bottom <= screen.bottom - dp(80)
+    ) {
+      output += Rect(bounds) to node
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    collectShopeeProductLinkEditableNodes(node.getChild(index), screen, output, shouldContinue)
+  }
+}
+
+internal fun KubdeeAccessibilityService.pasteShopeeProductLinkInto(
+  edit: AccessibilityNodeInfo,
+  productUrl: String
+): Boolean {
+  val clipboard = getSystemService(ClipboardManager::class.java) ?: return false
+  return try {
+    clipboard.setPrimaryClip(ClipData.newPlainText("kubdee-shopee-product-url", productUrl))
+    clickNode(edit)
+    sleepStep(180L)
+    edit.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+  } catch (_: Exception) {
+    false
+  }
+}
+
+internal fun KubdeeAccessibilityService.clickShopeeProductLinkActionButton(
+  texts: List<String>,
+  phase: String
+): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    val isEditor = isShopeePostingEditorRoot(root, screen)
+    if (isEditor) continue
+    val candidates = mutableListOf<TextNode>()
+    var visited = 0
+    collectShopeeProductLinkActionCandidates(root, screen, texts, candidates) {
+      visited += 1
+      visited <= 900
+    }
+    val target = candidates
+      .filter { candidate ->
+        candidate.bounds.centerY() >= screen.top + statusBarHeightPx() + dp(96)
+      }
+      .sortedWith(
+        compareByDescending<TextNode> { if (findClickableNode(it.node) != null) 1 else 0 }
+          .thenByDescending { it.bounds.bottom }
+          .thenByDescending { it.bounds.right }
+      )
+      .firstOrNull()
+      ?: continue
+
+    if (clickNode(target.node)) {
+      logShopeePostStep("กรอกลิงก์สินค้า: กดปุ่ม$phase '${target.text}' ที่ ${target.bounds.centerX()},${target.bounds.centerY()}")
+      return true
+    }
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.clickShopeeProductLinkImportButton(inputBounds: Rect): Boolean {
+  if (clickShopeeProductLinkActionButton(listOf("นำเข้า", "Import"), "นำเข้าลิงก์")) {
+    return true
+  }
+
+  val tapped = withAutomationFloatingUiHiddenForShopeeTap {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      if (!isShopeeProductLinkInputScreenRoot(root, screen)) continue
+      val x = inputBounds.centerX().coerceIn(screen.left + dp(24), screen.right - dp(24))
+      val y = (inputBounds.bottom + maxOf(dp(36), screen.height() / 16))
+        .coerceIn(inputBounds.bottom + dp(18), screen.bottom - maxOf(dp(180), screen.height() / 4))
+      if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+        logShopeePostStep("กรอกลิงก์สินค้า: กดปุ่มนำเข้าจากตำแหน่งใต้ช่องลิงก์ ($x,$y)")
+        return@withAutomationFloatingUiHiddenForShopeeTap true
+      }
+    }
+    false
+  }
+  return tapped
+}
+
+internal fun KubdeeAccessibilityService.clickShopeeProductLinkSelectAllButton(): Boolean {
+  if (clickShopeeProductLinkActionButton(listOf("เลือกทั้งหมด", "Select all"), "เลือกทั้งหมด")) {
+    return true
+  }
+
+  val tapped = withAutomationFloatingUiHiddenForShopeeTap {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      if (isShopeePostingEditorRoot(root, screen)) continue
+      val textNodes = mutableListOf<TextNode>()
+      collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+      val listHeader = textNodes.firstOrNull { node ->
+        val text = cleanNodeText(node.text)
+        text.contains("รายการสินค้า", ignoreCase = true) ||
+          text.contains("Product list", ignoreCase = true)
+      }
+      if (listHeader != null) {
+        val x = (listHeader.bounds.left + dp(18)).coerceIn(screen.left + dp(16), screen.right - dp(16))
+        val y = (listHeader.bounds.bottom + dp(38)).coerceIn(listHeader.bounds.bottom + dp(16), screen.bottom - dp(120))
+        if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+          logShopeePostStep("กรอกลิงก์สินค้า: กดเลือกทั้งหมดจากตำแหน่งใต้หัวรายการ ($x,$y)")
+          return@withAutomationFloatingUiHiddenForShopeeTap true
+        }
+      }
+    }
+    false
+  }
+  return tapped
+}
+
+internal fun KubdeeAccessibilityService.clickShopeeProductLinkAddSelectedButton(): Boolean {
+  if (clickShopeeProductLinkAddSelectedTextButton()) {
+    return true
+  }
+
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (isShopeePostingEditorRoot(root, screen)) continue
+    val x = (screen.right - maxOf(dp(72), screen.width() / 8)).coerceIn(screen.left + dp(24), screen.right - dp(24))
+    val y = (screen.bottom - maxOf(dp(56), screen.height() / 18)).coerceIn(screen.top + dp(120), screen.bottom - dp(24))
+    if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+      logShopeePostStep("กรอกลิงก์สินค้า: กดเพิ่มจากปุ่มมุมขวาล่าง ($x,$y)")
+      return true
+    }
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.clickShopeeProductLinkAddSelectedTextButton(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (isShopeePostingEditorRoot(root, screen)) continue
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val target = textNodes
+      .filter { node ->
+        isShopeeProductLinkAddSelectedText(node.text) &&
+          node.bounds.centerY() >= screen.top + (screen.height() * 0.45f).toInt()
+      }
+      .sortedWith(
+        compareByDescending<TextNode> { if (findClickableNode(it.node) != null) 1 else 0 }
+          .thenByDescending { it.bounds.bottom }
+          .thenByDescending { it.bounds.right }
+      )
+      .firstOrNull()
+      ?: continue
+
+    if (clickNode(target.node)) {
+      logShopeePostStep("กรอกลิงก์สินค้า: กดปุ่มเพิ่มสินค้าจากลิงก์ '${target.text}' ที่ ${target.bounds.centerX()},${target.bounds.centerY()}")
+      return true
+    }
+  }
+  return false
+}
+
+internal fun isShopeeProductLinkAddSelectedText(text: String): Boolean {
+  val compact = text.trim().replace(" ", "")
+  if (compact.isBlank()) return false
+  return compact == "เพิ่ม" ||
+    compact.startsWith("เพิ่ม(") ||
+    compact.startsWith("เพิ่มสินค้า") ||
+    compact == "Add" ||
+    compact.startsWith("Add(") ||
+    compact.startsWith("Addproduct", ignoreCase = true)
+}
+
+internal fun KubdeeAccessibilityService.isShopeeProductLinkTextVisibleInInput(productUrl: String): Boolean {
+  return findShopeeProductLinkVisibleNodeInInput(productUrl) != null
+}
+
+internal fun KubdeeAccessibilityService.findShopeeProductLinkVisibleNodeInInput(productUrl: String): TextNode? {
+  val candidates = mutableListOf<TextNode>()
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (!isShopeeProductLinkInputScreenRoot(root, screen)) continue
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    candidates += textNodes.filter { node ->
+      node.bounds.width() > 0 &&
+        node.bounds.height() > 0 &&
+        node.bounds.top >= screen.top + statusBarHeightPx() &&
+        node.bounds.bottom <= screen.bottom &&
+        looksLikeShopeeProductLinkText(node.text, productUrl)
+    }
+  }
+  return candidates
+    .sortedWith(
+      compareByDescending<TextNode> { it.bounds.width() }
+        .thenBy { it.bounds.top }
+    )
+    .firstOrNull()
+}
+
+internal fun KubdeeAccessibilityService.isShopeeProductLinkTextVisible(productUrl: String): Boolean {
+  for (root in shopeeWindowRoots()) {
+    var visited = 0
+    if (
+      containsShopeeProductLinkText(root, productUrl) {
+        visited += 1
+        visited <= 900
+      }
+    ) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.shopeeProductLinkInputDebugSnapshot(): String {
+  val parts = mutableListOf<String>()
+  for (root in shopeeWindowRoots()) {
+    val samples = mutableListOf<String>()
+    var visited = 0
+    collectShopeeProductLinkTextSamples(root, samples) {
+      visited += 1
+      visited <= 180 && samples.size < 5
+    }
+    val sample = samples.joinToString("/")
+    if (sample.isNotBlank()) parts += sample
+  }
+  return "text=${parts.firstOrNull().orEmpty()}"
+}
+
+internal fun KubdeeAccessibilityService.shopeeProductLinkActionDebugSnapshot(): String {
+  val parts = mutableListOf<String>()
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (!isShopeeProductLinkInputScreenRoot(root, screen)) continue
+    val candidates = mutableListOf<TextNode>()
+    var visited = 0
+    collectShopeeProductLinkActionSamples(root, screen, candidates) {
+      visited += 1
+      visited <= 500 && candidates.size < 8
+    }
+    val sample = candidates.joinToString(" | ") { candidate ->
+      "${candidate.text}:${candidate.bounds.flattenToString()}"
+    }
+    if (sample.isNotBlank()) parts += sample
+  }
+  return "actions=${parts.firstOrNull().orEmpty()}"
+}
+
+internal fun KubdeeAccessibilityService.isShopeeProductLinkInputScreen(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (isShopeeProductLinkInputScreenRoot(root, screen)) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.isShopeeProductLinkInputScreenRoot(
+  root: AccessibilityNodeInfo?,
+  screen: Rect
+): Boolean {
+  if (root == null || isShopeePostingEditorRoot(root, screen)) return false
+
+  val textNodes = mutableListOf<TextNode>()
+  collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  val texts = textNodes.map { cleanNodeText(it.text) }
+  val strongLinkMarker = texts.any { text ->
+    text.contains("กรอกลิงก์สินค้า", ignoreCase = true) ||
+      text.contains("กรอกลิงค์สินค้า", ignoreCase = true) ||
+      text.contains("ใส่ลิงก์สินค้า", ignoreCase = true) ||
+      text.contains("ใส่ลิงค์สินค้า", ignoreCase = true) ||
+      text.contains("วางลิงก์สินค้า", ignoreCase = true) ||
+      text.contains("วางลิงค์สินค้า", ignoreCase = true) ||
+      text.contains("Product link", ignoreCase = true) ||
+      text.contains("Paste product", ignoreCase = true) ||
+      text.contains("Enter product", ignoreCase = true)
+  }
+  if (!strongLinkMarker) return false
+
+  val hasEditorMarker = texts.any { text ->
+    text.contains("เพิ่มแคปชั่น", ignoreCase = true) ||
+      text.contains("เลือกภาพปก", ignoreCase = true) ||
+      text.contains("แฮชแท็ก", ignoreCase = true) ||
+      text.equals("โพสต์", ignoreCase = true) ||
+      text.equals("Post", ignoreCase = true)
+  }
+  return !hasEditorMarker
+}
+
+internal fun KubdeeAccessibilityService.isShopeePostingEditorVisible(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (isShopeePostingEditorRoot(root, screen)) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.waitForShopeePostingEditorVisible(
+  maxAttempts: Int = 6,
+  delayMs: Long = 700L
+): Boolean {
+  repeat(maxAttempts) { index ->
+    if (isShopeePostingEditorVisible()) return true
+    sleepStep(if (index == 0) 250L else delayMs)
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.isShopeePostingEditorRoot(
+  root: AccessibilityNodeInfo?,
+  screen: Rect
+): Boolean {
+  val textNodes = mutableListOf<TextNode>()
+  collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  var markerCount = 0
+  for (node in textNodes) {
+    val text = cleanNodeText(node.text)
+    if (
+      text.contains("เพิ่มแคปชั่น", ignoreCase = true) ||
+      text.contains("เลือกภาพปก", ignoreCase = true) ||
+      text.contains("แฮชแท็ก", ignoreCase = true) ||
+      text.contains("อนุญาตให้นำเนื้อหา", ignoreCase = true) ||
+      text.contains("บันทึกลงในโทรศัพท์", ignoreCase = true) ||
+      text.contains("Add caption", ignoreCase = true) ||
+      text.contains("Cover", ignoreCase = true) ||
+      text.contains("Hashtag", ignoreCase = true)
+    ) {
+      markerCount += 1
+    }
+  }
+  return markerCount >= 2
+}
+
+internal fun KubdeeAccessibilityService.isShopeePostingProductAttachedVisible(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (!isShopeePostingEditorRoot(root, screen)) continue
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    if (
+      textNodes.any { node ->
+        val text = cleanNodeText(node.text)
+        (
+          text.contains("สินค้า", ignoreCase = true) ||
+            text.contains("Product", ignoreCase = true)
+          ) &&
+          !text.contains("แตะเพื่อเพิ่มสินค้า", ignoreCase = true) &&
+          !text.equals("เพิ่มสินค้า", ignoreCase = true) &&
+          node.bounds.top >= screen.top + (screen.height() * 0.16f).toInt() &&
+          node.bounds.bottom <= screen.bottom - (screen.height() * 0.20f).toInt()
+      }
+    ) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.prepareShopeeAddProductPickerAfterLinkFailure(): Boolean {
+  if (isShopeeProductLinkInputScreen()) {
+    performBack()
+    sleepStep(900L)
+  }
+  return ensureShopeeAddProductPickerOpenForSearch()
+}
+
+internal fun KubdeeAccessibilityService.ensureShopeeAddProductPickerOpenForSearch(): Boolean {
+  if (isShopeeAddProductPickerScreen()) return true
+  if (isShopeePostingEditorVisible()) {
+    logShopeePostStep("กลับมา editor แล้ว เปิดเมนูเพิ่มสินค้าอีกครั้งเพื่อค้นหาจากชื่อ")
+    return tapShopeeAddProductEntry()
+  }
+  performBack()
+  sleepStep(700L)
+  if (isShopeeAddProductPickerScreen()) return true
+  if (isShopeePostingEditorVisible()) {
+    logShopeePostStep("กลับมา editor หลัง back เปิดเมนูเพิ่มสินค้าอีกครั้ง")
+    return tapShopeeAddProductEntry()
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.collectShopeeProductLinkActionCandidates(
+  node: AccessibilityNodeInfo?,
+  screen: Rect,
+  texts: List<String>,
+  output: MutableList<TextNode>,
+  shouldContinue: () -> Boolean
+) {
+  if (node == null || !shouldContinue()) return
+  if (node.isVisibleToUser && isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) {
+    val text = cleanNodeText(readNodeText(node))
+    if (texts.any { text.equals(it, ignoreCase = true) }) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      if (
+        bounds.width() > 0 &&
+        bounds.height() > 0 &&
+        bounds.top >= screen.top + statusBarHeightPx() &&
+        bounds.bottom <= screen.bottom
+      ) {
+        output += TextNode(text, Rect(bounds), node)
+      }
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    collectShopeeProductLinkActionCandidates(node.getChild(index), screen, texts, output, shouldContinue)
+  }
+}
+
+internal fun KubdeeAccessibilityService.collectShopeeProductLinkActionSamples(
+  node: AccessibilityNodeInfo?,
+  screen: Rect,
+  output: MutableList<TextNode>,
+  shouldContinue: () -> Boolean
+) {
+  if (node == null || !shouldContinue()) return
+  if (node.isVisibleToUser && isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) {
+    val text = cleanNodeText(readNodeText(node))
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    if (
+      text.isNotBlank() &&
+      bounds.width() > 0 &&
+      bounds.height() > 0 &&
+      bounds.top >= screen.top + statusBarHeightPx() &&
+      bounds.bottom <= screen.bottom
+    ) {
+      output += TextNode(text.take(18), Rect(bounds), node)
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    collectShopeeProductLinkActionSamples(node.getChild(index), screen, output, shouldContinue)
+  }
+}
+
+internal fun KubdeeAccessibilityService.containsShopeeProductLinkText(
+  node: AccessibilityNodeInfo?,
+  productUrl: String,
+  shouldContinue: () -> Boolean
+): Boolean {
+  if (node == null || !shouldContinue()) return false
+  if (
+    node.isVisibleToUser &&
+    isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
+    looksLikeShopeeProductLinkText(readNodeText(node), productUrl)
+  ) {
+    return true
+  }
+
+  for (index in 0 until node.childCount) {
+    if (containsShopeeProductLinkText(node.getChild(index), productUrl, shouldContinue)) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.collectShopeeProductLinkTextSamples(
+  node: AccessibilityNodeInfo?,
+  output: MutableList<String>,
+  shouldContinue: () -> Boolean
+) {
+  if (node == null || !shouldContinue()) return
+  if (node.isVisibleToUser && isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) {
+    val text = cleanNodeText(readNodeText(node))
+    if (text.isNotBlank()) output += text
+  }
+
+  for (index in 0 until node.childCount) {
+    collectShopeeProductLinkTextSamples(node.getChild(index), output, shouldContinue)
+  }
+}
+
+internal fun looksLikeShopeeProductLinkText(text: String, productUrl: String): Boolean {
+  val clean = text.trim()
+  if (clean.isBlank()) return false
+  if (productUrl.isNotBlank() && clean.contains(productUrl, ignoreCase = true)) return true
+  val hasShopeeHost =
+    clean.contains("shopee.", ignoreCase = true) ||
+      clean.contains("s.shopee", ignoreCase = true) ||
+      clean.contains("shp.ee", ignoreCase = true)
+  if (!hasShopeeHost) return false
+  return clean.contains("http://", ignoreCase = true) ||
+    clean.contains("https://", ignoreCase = true) ||
+    clean.contains("www.", ignoreCase = true) ||
+    clean.contains("s.shopee", ignoreCase = true) ||
+    clean.contains("shp.ee", ignoreCase = true)
+}
+
+internal fun shortShopeeUrlForLog(productUrl: String): String {
+  val host = runCatching { Uri.parse(productUrl).host.orEmpty() }.getOrDefault("")
+  return "${host.ifBlank { "url" }} len=${productUrl.length}"
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntry(): Boolean {
@@ -930,11 +1573,36 @@ internal fun KubdeeAccessibilityService.collectShopeeHeaderDebugNodes(
 
 internal fun KubdeeAccessibilityService.tapShopeePostButton() {
   logShopeePostStep("กดโพสต์")
-  if (!clickByAnyText(listOf("โพสต์", "Post"), exact = true, allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
+  if (!waitForShopeePostingEditorVisible(maxAttempts = 4, delayMs = 700L)) {
+    performBack()
+    waitForShopeePostingEditorVisible(maxAttempts = 4, delayMs = 700L)
+  }
+
+  if (
+    !clickByAnyText(listOf("โพสต์", "Post"), exact = true, allowedPackageName = TARGET_PACKAGE_SHOPEE) &&
+    !tapShopeeBottomPostButtonFallback()
+  ) {
     throw IllegalStateException("ไม่พบปุ่มโพสต์")
   }
   logShopeePostStep("กดโพสต์แล้ว รอ Shopee รับคำสั่ง")
   sleepStep(2000L)
+}
+
+internal fun KubdeeAccessibilityService.tapShopeeBottomPostButtonFallback(): Boolean {
+  val tapped = withAutomationFloatingUiHiddenForShopeeTap {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      if (!isShopeePostingEditorRoot(root, screen)) continue
+      val x = screen.centerX().coerceIn(screen.left + dp(24), screen.right - dp(24))
+      val y = (screen.bottom - maxOf(dp(64), screen.height() / 18)).coerceIn(screen.top + dp(80), screen.bottom - dp(24))
+      if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+        logShopeePostStep("กดโพสต์ด้วย fallback ปุ่มล่าง ($x,$y)")
+        return@withAutomationFloatingUiHiddenForShopeeTap true
+      }
+    }
+    false
+  }
+  return tapped
 }
 
 internal fun KubdeeAccessibilityService.disableShopeeContentReusePermissionBestEffort() {
