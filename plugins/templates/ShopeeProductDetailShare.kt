@@ -98,10 +98,10 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromDetail(
       ?: fallbackShopeeProductIdFromName(product.name)
 
     when {
-      detailImageUrl != null -> logStep("ได้รูปจากหน้า detail")
-      shareDrawerImageUrl != null -> logStep("ได้รูปจากแผงแชร์สินค้า")
-      product.imageUrl != null -> logStep("ใช้รูปจากการ์ดสินค้า")
-      else -> logStep("ยังไม่พบรูปสินค้า ใช้ข้อมูลสินค้าเท่าที่มี")
+      detailImageUrl != null -> logStep("รูปสินค้า: ได้จากหน้า detail")
+      shareDrawerImageUrl != null -> logStep("รูปสินค้า: ได้จากแผงแชร์สินค้า")
+      product.imageUrl != null -> logStep("รูปสินค้า: ใช้จากการ์ดสินค้า")
+      else -> logStep("รูปสินค้า: ไม่พบจาก detail/แผงแชร์/การ์ด")
     }
     if (productUrl != null) {
       logStep("ได้ลิงก์สินค้า")
@@ -143,6 +143,12 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
         logStep("ได้ลิงก์สินค้าจากการ์ด")
       } else {
         logStep("ยังไม่ได้ลิงก์สินค้า ใช้ข้อมูลบนการ์ดเท่าที่มี")
+      }
+      when {
+        downloadedImageUri != null -> logStep("รูปสินค้า: ดาวน์โหลดจากแผงแชร์สำเร็จ")
+        shareImageUrl != null -> logStep("รูปสินค้า: ดาวน์โหลดไม่ได้ -> ใช้ URL จากแผงแชร์")
+        product.imageUrl != null -> logStep("รูปสินค้า: ใช้ URL จากการ์ดข้อเสนอ")
+        else -> logStep("รูปสินค้า: ไม่พบจากดาวน์โหลด/แผงแชร์/การ์ดข้อเสนอ")
       }
 
       return product.copy(

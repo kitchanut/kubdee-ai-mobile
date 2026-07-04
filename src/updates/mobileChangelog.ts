@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.52',
+    date: '2026-07-04',
+    highlight: 'Shopee Import ดูสาเหตุรูปสินค้าไม่ขึ้นได้ชัดขึ้น',
+    changes: [
+      { type: 'improved', text: 'เพิ่ม log ตอนดึงรูปสินค้า Shopee เพื่อบอกว่ารูปมาจากแผงแชร์ การ์ดสินค้า URL หรือไม่มีรูป' },
+      { type: 'improved', text: 'เพิ่มสรุปผล cache รูปสินค้า ช่วยแยกปัญหาสิทธิ์รูปภาพ MediaStore URL และไฟล์รูปที่โหลดไม่ได้' },
+    ],
+  },
+  {
     version: '0.2.51',
     date: '2026-07-04',
     highlight: 'Shopee Offers Import เจอสินค้าได้แม่นขึ้น',

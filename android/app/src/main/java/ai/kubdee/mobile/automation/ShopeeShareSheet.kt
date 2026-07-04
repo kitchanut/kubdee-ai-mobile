@@ -375,7 +375,10 @@ internal fun KubdeeAccessibilityService.findShopeeShareDrawerImageUrl(): String?
   }
 
 internal fun KubdeeAccessibilityService.downloadFirstShopeeShareImage(startedAtMs: Long): String? {
-    if (!isShopeeShareSheetVisible()) return null
+    if (!isShopeeShareSheetVisible()) {
+      logStep("รูปสินค้า: ยังไม่เห็นแผงแชร์ จึงดาวน์โหลดรูปไม่ได้")
+      return null
+    }
     val tappedDownload = try {
       setAutomationFloatingUiSuppressedBlocking(true)
       sleepStep(160L)
@@ -384,16 +387,16 @@ internal fun KubdeeAccessibilityService.downloadFirstShopeeShareImage(startedAtM
       setAutomationFloatingUiSuppressedBlocking(false)
     }
     if (!tappedDownload) {
-      logStep("ไม่พบปุ่มดาวน์โหลดรูปแรกในแผงแชร์")
+      logStep("รูปสินค้า: หา resource id ปุ่มดาวน์โหลดไม่เจอ -> ใช้ URL จากแผงแชร์/การ์ดแทน")
       return null
     }
 
-    logStep("กดดาวน์โหลดรูปแรกแล้ว รอไฟล์รูป")
+    logStep("รูปสินค้า: กดดาวน์โหลดรูปแรกแล้ว รอไฟล์รูป")
     val imageUri = waitForLatestShopeeDownloadedImage(startedAtMs, timeoutMs = 10_000L)
     if (imageUri != null) {
-      logStep("โหลดรูปแรกสำเร็จ")
+      logStep("รูปสินค้า: โหลดรูปแรกสำเร็จ")
     } else {
-      logStep("ยังไม่พบไฟล์รูปแรกหลังดาวน์โหลด ใช้ข้อมูลบนการ์ดต่อ")
+      logStep("รูปสินค้า: ดาวน์โหลดแล้วแต่ยังไม่พบไฟล์ใน MediaStore -> ใช้ URL จากแผงแชร์/การ์ดแทน")
     }
     return imageUri
   }

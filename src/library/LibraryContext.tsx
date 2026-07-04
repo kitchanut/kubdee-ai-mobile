@@ -90,6 +90,7 @@ export interface ProductImportResult {
 }
 
 export interface ProductImportOptions {
+  debugLog?: (message: string) => void;
   existingProducts?: AffiliateProduct[];
   refresh?: boolean;
   sync?: boolean;
@@ -817,7 +818,7 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
           ...products.filter((product) => product.profileLocalId === cleanProfileLocalId),
         ]);
       const deviceId = await getOrCreateSyncDeviceId();
-      const cachedImportedProducts = await cacheProductImages(importedProducts);
+      const cachedImportedProducts = await cacheProductImages(importedProducts, { debugLog: options.debugLog });
       const syncPayloadProducts = toShopeeSyncProducts(
         cleanProfileLocalId,
         cachedImportedProducts,

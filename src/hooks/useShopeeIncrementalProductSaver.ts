@@ -56,6 +56,18 @@ function shortProductName(product: ProfileAwareShopeeProduct): string {
   return cleanText(product.name).slice(0, 34) || 'สินค้า Shopee';
 }
 
+function describeIncomingImageSource(product: ProfileAwareShopeeProduct): string {
+  const imagePath = cleanText(product.imagePath);
+  const imageUrl = cleanText(product.imageUrl);
+  const source = imagePath || imageUrl;
+  if (!source) return 'ไม่มีรูป';
+  if (source.startsWith('content://')) return `${imagePath ? 'imagePath' : 'imageUrl'}=content`;
+  if (source.startsWith('file://')) return `${imagePath ? 'imagePath' : 'imageUrl'}=file`;
+  if (/^https?:\/\//i.test(source)) return `${imagePath ? 'imagePath' : 'imageUrl'}=http`;
+  if (source.startsWith('data:image/')) return `${imagePath ? 'imagePath' : 'imageUrl'}=data`;
+  return `${imagePath ? 'imagePath' : 'imageUrl'}=ไม่รองรับ`;
+}
+
 function isLikelyShopeeProduct(product: ProfileAwareShopeeProduct): boolean {
   const name = cleanText(product.name);
   if (name.length < 6) return false;
@@ -175,7 +187,7 @@ export function useShopeeIncrementalProductSaver({
             const result = await importShopeeProducts(
               profileId,
               batchProducts.map((entry) => entry.product),
-              { existingProducts, refresh: false, sync: false }
+              { existingProducts, refresh: false, sync: false, debugLog: appendLog }
             );
 
             if (result?.success) {
@@ -252,7 +264,10 @@ export function useShopeeIncrementalProductSaver({
 
       const receivedCount = queuedKeysRef.current.size;
       if (receivedCount <= 3 || receivedCount % 10 === 0) {
-        appendLog(`รับสินค้า Shopee แล้ว ${receivedCount} รายการ ล่าสุด: ${productName}`, ts);
+        appendLog(
+          `รับสินค้า Shopee แล้ว ${receivedCount} รายการ ล่าสุด: ${productName} | รูป: ${describeIncomingImageSource(productWithProfile)}`,
+          ts
+        );
       }
 
       scheduleQueuedProductFlush();
@@ -381,7 +396,7 @@ export function useShopeeIncrementalProductSaver({
 
       for (const [profileId, profileProducts] of productsByProfile) {
         const existingProducts = await getExistingProductsForProfile(profileId);
-        const result = await importShopeeProducts(profileId, profileProducts, { existingProducts });
+        const result = await importShopeeProducts(profileId, profileProducts, { existingProducts, debugLog: appendLog });
         if (!result) continue;
 
         combined.imported += result.imported;

@@ -18,8 +18,27 @@ type CachedImageMetadata = {
   imageSize: number | null;
 };
 
+type ImageCacheDebugLog = (message: string) => void;
+
+type ImageCacheSource = 'existing' | 'local' | 'remote' | 'none' | 'unsupported';
+
+type ImageCacheStatus = 'success' | 'missing-source' | 'unsupported-source' | 'unsupported-type' | 'failed';
+
+type ImageCacheResult = {
+  cached: CachedImageMetadata | null;
+  notes: string[];
+  reason: string | null;
+  source: ImageCacheSource;
+  status: ImageCacheStatus;
+};
+
+type CacheProductImagesOptions = {
+  debugLog?: ImageCacheDebugLog;
+};
+
 const PRODUCT_IMAGE_DIRECTORY = 'product-images';
 const SUPPORTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const IMAGE_CACHE_DETAIL_LOG_LIMIT = 12;
 
 type SupportedImageType = {
   extension: 'jpg' | 'png' | 'webp' | 'gif';
@@ -29,6 +48,30 @@ type SupportedImageType = {
 function cleanText(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function productDebugName(input: ImageCacheInput): string {
+  return cleanText(input.name)?.slice(0, 34) || cleanText(input.externalProductId) || 'สินค้า Shopee';
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function formatImageCacheSource(source: ImageCacheSource): string {
+  switch (source) {
+    case 'existing':
+      return 'ไฟล์เดิม';
+    case 'local':
+      return 'ไฟล์เครื่อง';
+    case 'remote':
+      return 'URL';
+    case 'unsupported':
+      return 'แหล่งรูปไม่รองรับ';
+    case 'none':
+    default:
+      return 'ไม่มีแหล่งรูป';
+  }
 }
 
 function hashString(value: string): string {
@@ -282,46 +325,150 @@ async function cacheRemoteImage(input: ImageCacheInput, sourceUrl: string): Prom
   };
 }
 
-export async function cacheProductImage(input: ImageCacheInput): Promise<CachedImageMetadata | null> {
+async function resolveCachedProductImage(input: ImageCacheInput): Promise<ImageCacheResult> {
+  const notes: string[] = [];
   const existingPath = cleanText(input.imagePath);
-  if (existingPath && await localFileExists(existingPath)) {
-    const detected = await sniffSupportedImageType(existingPath);
-    const imageType =
-      detected ||
-      imageTypeFromMimeType(input.imageMimeType) ||
-      imageTypeFromExtension(extensionFromUri(existingPath));
-    if (!imageType) return null;
+  if (existingPath) {
+    if (await localFileExists(existingPath)) {
+      const detected = await sniffSupportedImageType(existingPath);
+      const imageType =
+        detected ||
+        imageTypeFromMimeType(input.imageMimeType) ||
+        imageTypeFromExtension(extensionFromUri(existingPath));
+      if (!imageType) {
+        return {
+          cached: null,
+          notes,
+          reason: 'ชนิดไฟล์เดิมไม่รองรับ',
+          source: 'existing',
+          status: 'unsupported-type',
+        };
+      }
 
-    return {
-      imageMimeType: imageType.mimeType,
-      imagePath: existingPath,
-      imageSize: input.imageSize ?? await fileSize(existingPath),
-    };
+      return {
+        cached: {
+          imageMimeType: imageType.mimeType,
+          imagePath: existingPath,
+          imageSize: input.imageSize ?? await fileSize(existingPath),
+        },
+        notes,
+        reason: null,
+        source: 'existing',
+        status: 'success',
+      };
+    }
+
+    if (cleanText(input.imageUrl)) {
+      notes.push('imagePath เดิมเปิดไม่ได้ -> ลอง imageUrl');
+    } else {
+      return {
+        cached: null,
+        notes,
+        reason: 'imagePath เดิมเปิดไม่ได้',
+        source: 'existing',
+        status: 'failed',
+      };
+    }
   }
 
   const sourceUri = cleanText(input.imageUrl);
-  if (!sourceUri) return null;
+  if (!sourceUri) {
+    return {
+      cached: null,
+      notes,
+      reason: 'ไม่มี imagePath/imageUrl',
+      source: 'none',
+      status: 'missing-source',
+    };
+  }
 
   try {
     if (isLocalProductImagePath(sourceUri)) {
-      return await cacheLocalImage(input, sourceUri);
+      const cached = await cacheLocalImage(input, sourceUri);
+      return {
+        cached,
+        notes,
+        reason: cached?.imagePath ? null : 'ชนิดไฟล์จากเครื่องไม่รองรับ',
+        source: 'local',
+        status: cached?.imagePath ? 'success' : 'unsupported-type',
+      };
     }
     if (isHttpUrl(sourceUri)) {
-      return await cacheRemoteImage(input, sourceUri);
+      const cached = await cacheRemoteImage(input, sourceUri);
+      return {
+        cached,
+        notes,
+        reason: cached?.imagePath ? null : 'ชนิดไฟล์จาก URL ไม่รองรับ',
+        source: 'remote',
+        status: cached?.imagePath ? 'success' : 'unsupported-type',
+      };
     }
-  } catch {
-    return null;
+  } catch (error) {
+    return {
+      cached: null,
+      notes,
+      reason: errorMessage(error),
+      source: isLocalProductImagePath(sourceUri) ? 'local' : isHttpUrl(sourceUri) ? 'remote' : 'unsupported',
+      status: 'failed',
+    };
   }
 
-  return null;
+  return {
+    cached: null,
+    notes,
+    reason: 'ชนิดแหล่งรูปไม่รองรับ',
+    source: 'unsupported',
+    status: 'unsupported-source',
+  };
 }
 
-export async function cacheProductImages<T extends ImageCacheInput>(products: T[]): Promise<T[]> {
+export async function cacheProductImage(input: ImageCacheInput): Promise<CachedImageMetadata | null> {
+  return (await resolveCachedProductImage(input)).cached;
+}
+
+export async function cacheProductImages<T extends ImageCacheInput>(
+  products: T[],
+  options: CacheProductImagesOptions = {}
+): Promise<T[]> {
   const output: T[] = [];
+  const sourceCounts: Record<ImageCacheSource, number> = {
+    existing: 0,
+    local: 0,
+    remote: 0,
+    none: 0,
+    unsupported: 0,
+  };
+  const statusCounts: Record<ImageCacheStatus, number> = {
+    success: 0,
+    'missing-source': 0,
+    'unsupported-source': 0,
+    'unsupported-type': 0,
+    failed: 0,
+  };
+  let detailLogCount = 0;
+
+  const logDetail = (message: string): void => {
+    if (!options.debugLog) return;
+    if (detailLogCount < IMAGE_CACHE_DETAIL_LOG_LIMIT) {
+      options.debugLog(message);
+    } else if (detailLogCount === IMAGE_CACHE_DETAIL_LOG_LIMIT) {
+      options.debugLog('cache รูป: ซ่อนรายละเอียดเพิ่มเติม เพื่อลด log รก');
+    }
+    detailLogCount += 1;
+  };
 
   for (const product of products) {
-    const cached = await cacheProductImage(product);
+    const result = await resolveCachedProductImage(product);
+    const cached = result.cached;
+    sourceCounts[result.source] += 1;
+    statusCounts[result.status] += 1;
+
+    for (const note of result.notes) {
+      logDetail(`cache รูป: ${note} - ${productDebugName(product)}`);
+    }
+
     if (!cached?.imagePath) {
+      logDetail(`cache รูป: ${result.reason || 'ไม่สำเร็จ'} (${formatImageCacheSource(result.source)}) - ${productDebugName(product)}`);
       output.push(
         isLocalProductImagePath(product.imagePath) && cleanText(product.imageUrl)
           ? {
@@ -341,6 +488,15 @@ export async function cacheProductImages<T extends ImageCacheInput>(products: T[
       imagePath: cached.imagePath,
       imageSize: product.imageSize ?? cached.imageSize,
     });
+  }
+
+  if (options.debugLog && products.length > 0) {
+    const failedCount = products.length - statusCounts.success;
+    options.debugLog(
+      `cache รูปสรุป: สำเร็จ ${statusCounts.success}/${products.length} ` +
+      `(ไฟล์เดิม ${sourceCounts.existing}, ไฟล์เครื่อง ${sourceCounts.local}, URL ${sourceCounts.remote}), ` +
+      `ไม่มีแหล่งรูป ${statusCounts['missing-source']}, ล้มเหลว ${failedCount}`
+    );
   }
 
   return output;
