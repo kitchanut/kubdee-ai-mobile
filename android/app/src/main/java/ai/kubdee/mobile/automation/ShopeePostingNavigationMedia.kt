@@ -341,8 +341,21 @@ internal fun KubdeeAccessibilityService.prepareShopeePostingVideoUri(source: Str
     return PreparedShopeeVideo(targetUri, fileName)
   } catch (error: Exception) {
     contentResolver.delete(targetUri, null, null)
-    throw error
+    throw friendlyShopeePostingVideoSourceError(error)
   }
+}
+
+internal fun friendlyShopeePostingVideoSourceError(error: Exception): IllegalStateException {
+  val raw = error.message?.trim().orEmpty()
+  val reason = when {
+    raw.contains("No item at content://media", ignoreCase = true) ->
+      "เปิดไฟล์วิดีโอไม่ได้ ไฟล์อาจถูกลบหรือสิทธิ์หมดอายุ กรุณาลบคลิปนี้ออกแล้วเพิ่มวิดีโอใหม่"
+    raw.contains("FileNotFoundException", ignoreCase = true) ->
+      "เปิดไฟล์วิดีโอไม่ได้ ไฟล์อาจถูกลบหรือย้ายที่ กรุณาลบคลิปนี้ออกแล้วเพิ่มวิดีโอใหม่"
+    raw.isNotBlank() -> raw
+    else -> "เปิดไฟล์วิดีโอต้นทางไม่สำเร็จ กรุณาลบคลิปนี้ออกแล้วเพิ่มวิดีโอใหม่"
+  }
+  return IllegalStateException(reason, error)
 }
 
 internal fun KubdeeAccessibilityService.waitForPreparedShopeeVideoIndexed(displayName: String, timeoutMs: Long): Boolean {

@@ -56,6 +56,7 @@ internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): J
   val results = JSONArray()
   var postedCount = 0
   var successCount = 0
+  var firstFailureMessage: String? = null
   var videos: List<ShopeePostingVideo> = emptyList()
 
   return try {
@@ -101,6 +102,9 @@ internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): J
         throw error
       } catch (error: Exception) {
         val message = error.message ?: "โพสต์ Shopee ไม่สำเร็จ"
+        if (firstFailureMessage == null) {
+          firstFailureMessage = "คลิป ${index + 1}: $message"
+        }
         incrementAutomationFailedCount()
         results.put(JSONObject().apply {
           put("videoIndex", index)
@@ -117,7 +121,7 @@ internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): J
       put("postedCount", postedCount)
       put("successCount", successCount)
       if (successCount == 0) {
-        put("error", "Shopee posting ไม่สำเร็จทุกคลิป")
+        put("error", firstFailureMessage ?: "Shopee posting ไม่สำเร็จทุกคลิป")
       }
       put("results", results)
     }
@@ -412,6 +416,30 @@ internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
     logShopeePostStep("กดตรง 'แตะเพื่อเพิ่มสินค้า' แล้วเมนูยังไม่เปิด -> ใช้ fallback แถวเพิ่มสินค้า")
   }
 
+  val fallbackTapPoints = withAutomationFloatingUiHiddenForShopeeTap {
+    findShopeeAddProductFallbackTapPoints()
+  }
+  for ((safeX, safeY) in fallbackTapPoints) {
+    val tapped = withAutomationFloatingUiHiddenForShopeeTap {
+      tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)
+    }
+    if (tapped) {
+      logShopeePostStep("กดเพิ่มสินค้าที่ $safeX,$safeY (fallback แถวเพิ่มสินค้า)")
+      sleepStep(1100L)
+      if (isShopeeAddProductMenuOpen()) {
+        logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
+        return true
+      }
+      logShopeePostStep("กด fallback แล้วเมนูยังไม่เปิด")
+    }
+  }
+
+  logShopeePostStep("ไม่พบทางเข้าเมนูเพิ่มสินค้า")
+  return false
+}
+
+internal fun KubdeeAccessibilityService.findShopeeAddProductFallbackTapPoints(): List<Pair<Int, Int>> {
+  val output = mutableListOf<Pair<Int, Int>>()
   for (root in shopeeWindowRoots()) {
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
@@ -427,34 +455,34 @@ internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
     for ((x, y) in tapPoints) {
       val safeX = x.coerceIn(screen.left + dp(12), screen.right - dp(12))
       val safeY = y.coerceIn(screen.top + dp(12), screen.bottom - dp(12))
-      logShopeePostStep("กดเพิ่มสินค้าที่ $safeX,$safeY (fallback แถวเพิ่มสินค้า)")
-      if (tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)) {
-        sleepStep(1100L)
-        if (isShopeeAddProductMenuOpen()) {
-          logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
-          return true
-        }
-        logShopeePostStep("กด fallback แล้วเมนูยังไม่เปิด")
-      }
+      output.add(safeX to safeY)
     }
   }
-
-  logShopeePostStep("ไม่พบทางเข้าเมนูเพิ่มสินค้า")
-  return false
+  return output.distinct()
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeAddProductPrimaryText(): Boolean {
-  for (root in shopeeWindowRoots()) {
-    val screen = screenBounds(root)
-    val textNodes = mutableListOf<TextNode>()
-    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
-    val target = findShopeeAddProductPrimaryTextNode(textNodes, screen) ?: continue
-    val safeX = target.bounds.centerX().coerceIn(screen.left + dp(12), screen.right - dp(12))
-    val safeY = target.bounds.centerY().coerceIn(screen.top + dp(12), screen.bottom - dp(12))
-    logShopeePostStep("กดตรง 'แตะเพื่อเพิ่มสินค้า' ที่ $safeX,$safeY")
-    if (tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)) return true
+  var tapPoint: Pair<Int, Int>? = null
+  val tapped = withAutomationFloatingUiHiddenForShopeeTap {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val textNodes = mutableListOf<TextNode>()
+      collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+      val target = findShopeeAddProductPrimaryTextNode(textNodes, screen) ?: continue
+      val safeX = target.bounds.centerX().coerceIn(screen.left + dp(12), screen.right - dp(12))
+      val safeY = target.bounds.centerY().coerceIn(screen.top + dp(12), screen.bottom - dp(12))
+      if (tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)) {
+        tapPoint = safeX to safeY
+        return@withAutomationFloatingUiHiddenForShopeeTap true
+      }
+    }
+    false
   }
-  return false
+  if (tapped) {
+    val (safeX, safeY) = tapPoint ?: (0 to 0)
+    logShopeePostStep("กดตรง 'แตะเพื่อเพิ่มสินค้า' ที่ $safeX,$safeY")
+  }
+  return tapped
 }
 
 internal fun KubdeeAccessibilityService.isShopeeAddProductPrimaryTextVisible(): Boolean {
@@ -568,28 +596,152 @@ internal fun KubdeeAccessibilityService.normalizeShopeeProductUrl(value: String)
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntry(): Boolean {
-  if (
+  val clickedByText = withAutomationFloatingUiHiddenForShopeeTap {
     clickByAnyText(
       listOf("กรอกลิงก์สินค้า", "ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"),
       exact = false,
       allowedPackageName = TARGET_PACKAGE_SHOPEE
     )
-  ) {
+  }
+  if (clickedByText) {
     logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยข้อความ")
     return true
   }
 
-  for (root in shopeeWindowRoots()) {
-    val screen = screenBounds(root)
-    val target = findShopeeProductLinkNode(root, screen)
-    if (target != null && tapNodeCenter(target)) {
-      logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วย icon")
-      return true
+  if (tapShopeeProductLinkHeaderIcon()) {
+    return true
+  }
+
+  var iconPoint: Pair<Int, Int>? = null
+  val tappedByNode = withAutomationFloatingUiHiddenForShopeeTap {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val target = findShopeeProductLinkNode(root, screen) ?: continue
+      val bounds = Rect()
+      target.getBoundsInScreen(bounds)
+      if (tapNodeCenter(target)) {
+        iconPoint = bounds.centerX() to bounds.centerY()
+        return@withAutomationFloatingUiHiddenForShopeeTap true
+      }
     }
+    false
+  }
+  if (tappedByNode) {
+    val (x, y) = iconPoint ?: (0 to 0)
+    logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วย icon ($x,$y)")
+    return true
   }
 
   logShopeePostStep("ไม่พบทางเข้าเมนูลิงก์สินค้า")
   return false
+}
+
+internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolean {
+  var sawAddProductScreen = false
+  var successMessage: String? = null
+
+  withAutomationFloatingUiHiddenForShopeeTap {
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      if (!isShopeeAddProductPickerScreenRoot(root, screen)) continue
+      sawAddProductScreen = true
+
+      val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+      collectClickableNodes(root, candidates)
+      val linkAction = candidates
+        .filter { (bounds, node) ->
+          val raw = listOfNotNull(
+            node.text?.toString(),
+            node.contentDescription?.toString(),
+            node.viewIdResourceName
+          ).joinToString(" ").lowercase(Locale.ROOT)
+          isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
+            bounds.width() > 0 &&
+            bounds.height() > 0 &&
+            bounds.centerX() >= screen.left + (screen.width() * 0.58f).toInt() &&
+            bounds.centerY() >= screen.top + statusBarHeightPx() &&
+            bounds.centerY() <= screen.top + statusBarHeightPx() + dp(88) &&
+            (
+              "link" in raw ||
+                "url" in raw ||
+                "chain" in raw ||
+                "ลิงก์" in raw ||
+                "ลิงค์" in raw
+              )
+        }
+        .maxByOrNull { it.first.centerX() }
+
+      if (linkAction != null) {
+        val bounds = linkAction.first
+        if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
+          successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ (${bounds.centerX()},${bounds.centerY()})"
+          return@withAutomationFloatingUiHiddenForShopeeTap
+        }
+      }
+
+      val headerIconAction = findShopeeTopRightHeaderIcon(root, screen)
+      if (headerIconAction != null) {
+        val (bounds, node) = headerIconAction
+        val className = node.className?.toString()?.substringAfterLast('.') ?: "node"
+        if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
+          successMessage = "เปิดกรอกลิงก์สินค้าด้วย $className ไอคอนโซ่ (${bounds.centerX()},${bounds.centerY()})"
+          return@withAutomationFloatingUiHiddenForShopeeTap
+        }
+      }
+
+      val estimatedHeaderIconPoint = estimateShopeeProductLinkHeaderIconPoint(root, screen)
+      if (estimatedHeaderIconPoint != null) {
+        val (x, y) = estimatedHeaderIconPoint
+        if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 80L)) {
+          successMessage = "เปิดกรอกลิงก์สินค้าด้วยตำแหน่งไอคอนโซ่จาก header bounds ($x,$y)"
+          return@withAutomationFloatingUiHiddenForShopeeTap
+        }
+      }
+    }
+  }
+
+  successMessage?.let { message ->
+    logShopeePostStep(message)
+    return true
+  }
+
+  if (sawAddProductScreen) {
+    logShopeePostStep("ไม่พบ node ไอคอนโซ่บน header หน้าเพิ่มสินค้า")
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.isShopeeAddProductPickerScreen(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    if (isShopeeAddProductPickerScreenRoot(root, screen)) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.isShopeeAddProductPickerScreenRoot(
+  root: AccessibilityNodeInfo?,
+  screen: Rect
+): Boolean {
+  val textNodes = mutableListOf<TextNode>()
+  collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  val hasHeader = textNodes.any { node ->
+    (
+      node.text == "เพิ่มสินค้า" ||
+        node.text.equals("Add product", ignoreCase = true)
+      ) &&
+      node.bounds.top <= screen.top + statusBarHeightPx() + dp(88)
+  }
+  if (!hasHeader) return false
+
+  return textNodes.any { node ->
+    node.text.contains("ค้นหาสินค้า") ||
+      node.text.contains("ที่กดถูกใจ") ||
+      node.text.contains("Affiliate", ignoreCase = true) ||
+      node.text.contains("Liked", ignoreCase = true) ||
+      node.text.contains("Product", ignoreCase = true) ||
+      node.text.contains("ลิงก์สินค้า", ignoreCase = true)
+  }
 }
 
 internal fun KubdeeAccessibilityService.findShopeeProductLinkNode(
@@ -607,6 +759,8 @@ internal fun KubdeeAccessibilityService.findShopeeProductLinkNode(
     ).joinToString(" ").lowercase(Locale.ROOT)
     val looksLikeLink =
       "link" in raw ||
+        "url" in raw ||
+        "chain" in raw ||
         "ลิงก์" in raw ||
         "ลิงค์" in raw
     if (
@@ -625,6 +779,153 @@ internal fun KubdeeAccessibilityService.findShopeeProductLinkNode(
     if (found != null) return found
   }
   return null
+}
+
+internal fun KubdeeAccessibilityService.findShopeeTopRightHeaderIcon(
+  node: AccessibilityNodeInfo?,
+  screen: Rect
+): Pair<Rect, AccessibilityNodeInfo>? {
+  val titleBounds = findShopeeAddProductHeaderTitleBounds(node, screen)
+  val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+  collectShopeeTopRightHeaderIconCandidates(node, screen, titleBounds, candidates)
+  if (candidates.isEmpty()) {
+    val debugNodes = mutableListOf<String>()
+    collectShopeeHeaderDebugNodes(node, screen, titleBounds, debugNodes)
+    logShopeePostStep(
+      "หาไอคอนโซ่: ไม่พบ candidate header ขวาบน (title=${titleBounds?.flattenToString() ?: "-"}, nodes=${debugNodes.take(6).joinToString(" | ")})"
+    )
+  }
+  return candidates.maxWithOrNull(
+    compareBy<Pair<Rect, AccessibilityNodeInfo>> { (_, candidate) ->
+      val className = candidate.className?.toString().orEmpty().lowercase(Locale.ROOT)
+      if (className.contains("imageview")) 1 else 0
+    }.thenBy { it.first.centerX() }
+  )
+}
+
+internal fun KubdeeAccessibilityService.findShopeeAddProductHeaderTitleBounds(
+  node: AccessibilityNodeInfo?,
+  screen: Rect
+): Rect? {
+  if (node == null) return null
+
+  if (node.isVisibleToUser && isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val text = node.text?.toString().orEmpty()
+    val isHeaderTitle =
+      (text == "เพิ่มสินค้า" || text.equals("Add product", ignoreCase = true)) &&
+        bounds.width() > 0 &&
+        bounds.height() > 0 &&
+        bounds.top <= screen.top + statusBarHeightPx() + dp(96)
+
+    if (isHeaderTitle) {
+      return Rect(bounds)
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    val childTitle = findShopeeAddProductHeaderTitleBounds(node.getChild(index), screen)
+    if (childTitle != null) return childTitle
+  }
+
+  return null
+}
+
+internal fun KubdeeAccessibilityService.estimateShopeeProductLinkHeaderIconPoint(
+  node: AccessibilityNodeInfo?,
+  screen: Rect
+): Pair<Int, Int>? {
+  val titleBounds = findShopeeAddProductHeaderTitleBounds(node, screen) ?: return null
+  val iconSize = titleBounds.height().coerceAtLeast(maxOf(24, screen.width() / 30))
+  val minX = titleBounds.right + maxOf(6, iconSize / 8)
+  val maxX = screen.right - maxOf(8, iconSize / 4)
+  if (minX > maxX) return null
+
+  val x = (titleBounds.right + iconSize / 2).coerceIn(minX, maxX)
+  val y = titleBounds.centerY().coerceIn(titleBounds.top, titleBounds.bottom)
+  return x to y
+}
+
+internal fun KubdeeAccessibilityService.collectShopeeTopRightHeaderIconCandidates(
+  node: AccessibilityNodeInfo?,
+  screen: Rect,
+  titleBounds: Rect?,
+  output: MutableList<Pair<Rect, AccessibilityNodeInfo>>
+) {
+  if (node == null) return
+
+  val packageName = node.packageName?.toString().orEmpty()
+  if (node.isVisibleToUser && (packageName.isBlank() || packageName == TARGET_PACKAGE_SHOPEE)) {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val className = node.className?.toString().orEmpty().lowercase(Locale.ROOT)
+    val raw = listOfNotNull(
+      node.text?.toString(),
+      node.contentDescription?.toString(),
+      node.viewIdResourceName
+    ).joinToString(" ").trim()
+    val headerPadding = titleBounds?.height()?.coerceAtLeast(12) ?: maxOf(24, screen.height() / 80)
+    val headerTop = titleBounds?.let { it.top - headerPadding }
+      ?: (screen.top + statusBarHeightPx() - maxOf(8, screen.height() / 240))
+    val headerBottom = titleBounds?.let { it.bottom + headerPadding }
+      ?: (screen.top + statusBarHeightPx() + maxOf(96, screen.height() / 10))
+    val rightAreaStart = titleBounds?.let { title ->
+      (title.right - headerPadding).coerceAtLeast(screen.left + (screen.width() * 0.52f).toInt())
+    } ?: (screen.left + (screen.width() * 0.62f).toInt())
+    val minIconSizePx = maxOf(14, screen.width() / 48)
+    val maxIconSizePx = maxOf(72, screen.width() / 5)
+    val isTopRightHeaderImage =
+      (
+        className.contains("imageview") ||
+          className == "android.view.view" ||
+          className.contains("button")
+        ) &&
+        raw.isBlank() &&
+        bounds.width() in minIconSizePx..maxIconSizePx &&
+        bounds.height() in minIconSizePx..maxIconSizePx &&
+        bounds.centerX() >= rightAreaStart &&
+        bounds.centerY() in headerTop..headerBottom
+
+    if (isTopRightHeaderImage) {
+      output.add(Rect(bounds) to node)
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    collectShopeeTopRightHeaderIconCandidates(node.getChild(index), screen, titleBounds, output)
+  }
+}
+
+internal fun KubdeeAccessibilityService.collectShopeeHeaderDebugNodes(
+  node: AccessibilityNodeInfo?,
+  screen: Rect,
+  titleBounds: Rect?,
+  output: MutableList<String>
+) {
+  if (node == null || output.size >= 12) return
+
+  val packageName = node.packageName?.toString().orEmpty()
+  if (node.isVisibleToUser && (packageName.isBlank() || packageName == TARGET_PACKAGE_SHOPEE)) {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val headerPadding = titleBounds?.height()?.coerceAtLeast(12) ?: maxOf(24, screen.height() / 80)
+    val headerTop = titleBounds?.let { it.top - headerPadding }
+      ?: (screen.top + statusBarHeightPx() - maxOf(8, screen.height() / 240))
+    val headerBottom = titleBounds?.let { it.bottom + headerPadding }
+      ?: (screen.top + statusBarHeightPx() + maxOf(96, screen.height() / 10))
+    if (bounds.centerX() >= screen.left + (screen.width() * 0.45f).toInt() && bounds.centerY() in headerTop..headerBottom) {
+      val className = node.className?.toString()?.substringAfterLast('.') ?: "node"
+      val raw = listOfNotNull(node.text?.toString(), node.contentDescription?.toString(), node.viewIdResourceName)
+        .joinToString("/")
+        .take(24)
+      output.add("$className:${bounds.flattenToString()}:${raw.ifBlank { "-" }}")
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    collectShopeeHeaderDebugNodes(node.getChild(index), screen, titleBounds, output)
+  }
 }
 
 internal fun KubdeeAccessibilityService.tapShopeePostButton() {

@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.56',
+    date: '2026-07-04',
+    highlight: 'Shopee Post กดไอคอนโซ่เพิ่มสินค้าได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับการเปิดช่องกรอกลิงก์สินค้าให้คำนวณตำแหน่งไอคอนโซ่จาก header ของ Shopee เมื่อระบบมองไม่เห็นไอคอนโดยตรง' },
+      { type: 'improved', text: 'เพิ่ม log ให้เห็นชัดว่าระบบใช้ตำแหน่งจาก header bounds และแนบสินค้าด้วยลิงก์สำเร็จหรือไม่' },
+    ],
+  },
+  {
     version: '0.2.55',
     date: '2026-07-04',
     highlight: 'Shopee Post กดเพิ่มสินค้าได้ตรงขึ้น',

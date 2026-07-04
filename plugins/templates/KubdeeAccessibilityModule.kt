@@ -440,6 +440,12 @@ class KubdeeAccessibilityModule(
       return
     }
 
+    val preflightError = validateShopeePostVideoPayload(payloadJson)
+    if (preflightError != null) {
+      promise.reject("SHOPEE_POST_VIDEO_UNAVAILABLE", preflightError)
+      return
+    }
+
     if (!openPackageBlocking(TARGET_PACKAGE_SHOPEE)) {
       promise.reject("APP_NOT_FOUND", "Package not found: $TARGET_PACKAGE_SHOPEE")
       return
@@ -458,6 +464,66 @@ class KubdeeAccessibilityModule(
       putExtra(KubdeeAutomationIpc.EXTRA_RUN_ID, runId)
       putExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON, payloadJson)
     }
+  }
+
+  private fun validateShopeePostVideoPayload(payloadJson: String): String? {
+    val videos = try {
+      JSONObject(payloadJson).optJSONArray("videos")
+    } catch (_: Exception) {
+      return "ข้อมูลวิดีโอสำหรับ Shopee Post ไม่ถูกต้อง"
+    } ?: return "ไม่มีวิดีโอสำหรับโพสต์ Shopee"
+
+    if (videos.length() <= 0) {
+      return "ไม่มีวิดีโอสำหรับโพสต์ Shopee"
+    }
+
+    for (index in 0 until videos.length()) {
+      val item = videos.optJSONObject(index)
+        ?: return "วิดีโอรายการที่ ${index + 1} ไม่มีข้อมูลไฟล์"
+      val fileUri = item.optString("fileUri", item.optString("filePath", "")).trim()
+      if (fileUri.isBlank()) {
+        return "วิดีโอรายการที่ ${index + 1} ไม่มีไฟล์สำหรับโพสต์"
+      }
+      val error = validateShopeePostVideoSource(fileUri, index)
+      if (error != null) return error
+    }
+
+    return null
+  }
+
+  private fun validateShopeePostVideoSource(source: String, index: Int): String? {
+    val label = "วิดีโอรายการที่ ${index + 1}"
+    val uri = Uri.parse(source)
+    return try {
+      when (uri.scheme?.lowercase(Locale.ROOT)) {
+        "content" -> {
+          val input = reactContext.contentResolver.openInputStream(uri)
+            ?: return "$label เปิดไฟล์วิดีโอไม่ได้ กรุณาลบออกแล้วเพิ่มใหม่"
+          input.use { }
+          null
+        }
+        "file" -> validateShopeePostVideoFile(label, File(uri.path.orEmpty()))
+        "http", "https" -> null
+        "data" -> if (source.substringAfter(',', missingDelimiterValue = "").isBlank()) "$label data URL วิดีโอไม่ถูกต้อง" else null
+        null, "" -> validateShopeePostVideoFile(label, File(source))
+        else -> {
+          val input = reactContext.contentResolver.openInputStream(uri)
+            ?: return "$label เปิดไฟล์วิดีโอไม่ได้ กรุณาลบออกแล้วเพิ่มใหม่"
+          input.use { }
+          null
+        }
+      }
+    } catch (_: Exception) {
+      "$label เปิดไฟล์วิดีโอไม่ได้ ไฟล์อาจถูกลบหรือสิทธิ์หมดอายุ กรุณาลบคลิปนี้ออกแล้วเพิ่มวิดีโอใหม่"
+    }
+  }
+
+  private fun validateShopeePostVideoFile(label: String, file: File): String? {
+    if (!file.exists() || !file.isFile || file.length() <= 0L) {
+      return "$label เปิดไฟล์วิดีโอไม่ได้ ไฟล์อาจถูกลบหรือย้ายที่ กรุณาลบออกแล้วเพิ่มใหม่"
+    }
+    FileInputStream(file).use { }
+    return null
   }
 
   @ReactMethod

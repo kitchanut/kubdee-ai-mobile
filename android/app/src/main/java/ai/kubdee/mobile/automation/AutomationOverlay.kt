@@ -257,6 +257,18 @@ internal fun KubdeeAccessibilityService.setAutomationFloatingUiSuppressedBlockin
   }
 }
 
+internal inline fun <T> KubdeeAccessibilityService.withAutomationFloatingUiHiddenForShopeeTap(action: () -> T): T {
+  val previousSuppressed = automationFloatingUiSuppressed
+  setAutomationFloatingUiSuppressedBlocking(true)
+  try {
+    runCatching { Thread.sleep(160L) }
+    return action()
+  } finally {
+    runCatching { Thread.sleep(120L) }
+    setAutomationFloatingUiSuppressedBlocking(previousSuppressed)
+  }
+}
+
 internal fun KubdeeAccessibilityService.ensureAutomationOverlay(): LinearLayout? {
   if (automationOverlayUnavailable || automationFloatingUiSuppressed) return null
   overlayView?.let { return it }
