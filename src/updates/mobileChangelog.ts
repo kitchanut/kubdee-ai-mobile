@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.54',
+    date: '2026-07-04',
+    highlight: 'Shopee Offers ลองกดแชร์ซ้ำอัตโนมัติ',
+    changes: [
+      { type: 'fixed', text: 'เพิ่มการลองกดแชร์สินค้าข้อเสนอ Shopee ด้วยตำแหน่งสำรองก่อนข้ามรายการเมื่อแผงแชร์ไม่เปิด' },
+      { type: 'improved', text: 'ปรับ log ให้เห็นชัดว่าระบบกดแชร์ด้วย resource id, clickable area หรือ fallback จากแถวค่าคอมมิชชั่น' },
+    ],
+  },
+  {
     version: '0.2.53',
     date: '2026-07-04',
     highlight: 'Shopee Offers เปิดแชร์และดึงรูปได้แม่นขึ้น',

@@ -1087,6 +1087,17 @@ internal fun KubdeeAccessibilityService.buildShopeePartnerOfferCandidate(
       cardBottom = rowBottom,
       safeTop = safeTop
     )
+    val shareTargets = buildShopeePartnerResourceIdShareTargets(
+      shareButton = shareButton,
+      cardTexts = rowTexts,
+      priceBounds = shareButton.iconBounds,
+      screen = screen,
+      columnLeft = screen.left,
+      columnRight = screen.right,
+      cardBottom = rowBottom,
+      safeTop = safeTop,
+      safeBottom = safeBottom
+    )
 
     return ShopeePartnerOfferCandidate(
       product = ShopeeLikedProduct(
@@ -1101,7 +1112,9 @@ internal fun KubdeeAccessibilityService.buildShopeePartnerOfferCandidate(
       ),
       tapBounds = findShopeePartnerDetailTapBounds(nameNode, shareButton, screen, safeTop),
       safeTop = safeTop,
-      shareBounds = Rect(shareButton.bounds)
+      shareBounds = shareTargets.first().bounds,
+      shareSource = shareTargets.first().source,
+      shareRetryTargets = shareTargets.drop(1)
     )
   }
 
@@ -1161,6 +1174,17 @@ internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidate(
       minOf(nameNode.bounds.right, columnRight),
       minOf(maxOf(nameNode.bounds.bottom, nameNode.bounds.top + 48), shareButton.bounds.top - 8)
     )
+    val shareTargets = buildShopeePartnerResourceIdShareTargets(
+      shareButton = shareButton,
+      cardTexts = rowTexts,
+      priceBounds = shareButton.iconBounds,
+      screen = screen,
+      columnLeft = columnLeft,
+      columnRight = columnRight,
+      cardBottom = cardBottom,
+      safeTop = safeTop,
+      safeBottom = safeBottom
+    )
 
     return ShopeePartnerOfferCandidate(
       product = ShopeeLikedProduct(
@@ -1175,8 +1199,53 @@ internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidate(
       ),
       tapBounds = tapBounds,
       safeTop = safeTop,
-      shareBounds = Rect(shareButton.bounds)
+      shareBounds = shareTargets.first().bounds,
+      shareSource = shareTargets.first().source,
+      shareRetryTargets = shareTargets.drop(1)
     )
+  }
+
+internal fun KubdeeAccessibilityService.buildShopeePartnerResourceIdShareTargets(
+    shareButton: ShopeePartnerShareButton,
+    cardTexts: List<TextNode>,
+    priceBounds: Rect,
+    screen: Rect,
+    columnLeft: Int,
+    columnRight: Int,
+    cardBottom: Int,
+    safeTop: Int,
+    safeBottom: Int
+  ): List<ShopeeShareTapTarget> {
+    val targets = mutableListOf(
+      ShopeeShareTapTarget(Rect(shareButton.iconBounds), "resource id ปุ่มแชร์")
+    )
+    targets += ShopeeShareTapTarget(Rect(shareButton.bounds), "resource id clickable")
+
+    val commissionNode = findShopeeAffiliateOfferGridCommissionNode(
+      cardTexts = cardTexts,
+      priceBounds = priceBounds,
+      screen = screen,
+      columnLeft = columnLeft,
+      columnRight = columnRight,
+      cardBottom = cardBottom,
+      safeTop = safeTop,
+      safeBottom = safeBottom
+    )
+    if (commissionNode != null) {
+      targets += ShopeeShareTapTarget(
+        estimateShopeeAffiliateOfferGridShareBoundsFromCommission(
+          commissionNode = commissionNode,
+          screen = screen,
+          columnLeft = columnLeft,
+          columnRight = columnRight,
+          safeTop = safeTop,
+          safeBottom = safeBottom
+        ),
+        "fallback แถวค่าคอม"
+      )
+    }
+
+    return targets.distinctBy { "${it.bounds.centerX()}:${it.bounds.centerY()}" }
   }
 internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidatesFromPriceNodes(
   textNodes: List<TextNode>,
@@ -1444,12 +1513,14 @@ internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferGridFallbackShar
         return shareIcon to "ImageView ขวาแถวค่าคอม"
       }
 
-      val size = maxOf(48, minOf(72, (screen.width() * 0.055f).toInt()))
-      val centerX = (commissionNode.bounds.right + maxOf(size / 2, (screen.width() * 0.06f).toInt()))
-        .coerceIn(columnLeft + size / 2, columnRight - size / 2)
-      val centerY = commissionNode.bounds.centerY()
-        .coerceIn(safeTop + size / 2, safeBottom - size / 2)
-      return Rect(centerX - size / 2, centerY - size / 2, centerX + size / 2, centerY + size / 2) to
+      return estimateShopeeAffiliateOfferGridShareBoundsFromCommission(
+        commissionNode = commissionNode,
+        screen = screen,
+        columnLeft = columnLeft,
+        columnRight = columnRight,
+        safeTop = safeTop,
+        safeBottom = safeBottom
+      ) to
         "fallback แถวค่าคอม"
     }
 
@@ -1538,6 +1609,22 @@ internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferGridShareIconNea
           kotlin.math.abs(bounds.left - commissionNode.bounds.right)
       }
       ?.let { Rect(it) }
+  }
+
+internal fun KubdeeAccessibilityService.estimateShopeeAffiliateOfferGridShareBoundsFromCommission(
+    commissionNode: TextNode,
+    screen: Rect,
+    columnLeft: Int,
+    columnRight: Int,
+    safeTop: Int,
+    safeBottom: Int
+  ): Rect {
+    val size = maxOf(48, minOf(72, (screen.width() * 0.055f).toInt()))
+    val centerX = (commissionNode.bounds.right + maxOf(size / 2, (screen.width() * 0.06f).toInt()))
+      .coerceIn(columnLeft + size / 2, columnRight - size / 2)
+    val centerY = commissionNode.bounds.centerY()
+      .coerceIn(safeTop + size / 2, safeBottom - size / 2)
+    return Rect(centerX - size / 2, centerY - size / 2, centerX + size / 2, centerY + size / 2)
   }
 
 internal fun KubdeeAccessibilityService.shopeeAffiliateOfferGridCardBucket(

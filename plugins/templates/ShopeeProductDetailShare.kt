@@ -127,8 +127,8 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
     }
 
     try {
-      if (!waitForShopeeShareSheetVisible(7_000L)) {
-        logStep("ไม่พบแผงแชร์หลังแตะการ์ด ข้าม: ${product.name.take(34)}")
+      if (!waitForShopeeShareSheetVisible(3_800L) && !retryShopeePartnerOfferShare(candidate)) {
+        logStep("ไม่พบแผงแชร์หลังแตะการ์ดทุกวิธี ข้าม: ${product.name.take(34)}")
         return null
       }
 
@@ -168,8 +168,27 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
   }
 
 internal fun KubdeeAccessibilityService.tapShopeePartnerOfferShare(candidate: ShopeePartnerOfferCandidate): Boolean {
-    val bounds = candidate.shareBounds
-    logStep("กดแชร์การ์ดที่ ${bounds.centerX()},${bounds.centerY()} (${candidate.shareSource})")
+    return tapShopeePartnerOfferShareTarget(
+      ShopeeShareTapTarget(Rect(candidate.shareBounds), candidate.shareSource)
+    )
+  }
+
+internal fun KubdeeAccessibilityService.retryShopeePartnerOfferShare(candidate: ShopeePartnerOfferCandidate): Boolean {
+    val tried = mutableSetOf<String>()
+    tried.add("${candidate.shareBounds.centerX()}:${candidate.shareBounds.centerY()}")
+    for (target in candidate.shareRetryTargets) {
+      val key = "${target.bounds.centerX()}:${target.bounds.centerY()}"
+      if (!tried.add(key)) continue
+      logStep("แผงแชร์ยังไม่ขึ้น -> ลองกดแชร์อีกวิธี (${target.source})")
+      if (!tapShopeePartnerOfferShareTarget(target)) continue
+      if (waitForShopeeShareSheetVisible(3_800L)) return true
+    }
+    return false
+  }
+
+internal fun KubdeeAccessibilityService.tapShopeePartnerOfferShareTarget(target: ShopeeShareTapTarget): Boolean {
+    val bounds = target.bounds
+    logStep("กดแชร์การ์ดที่ ${bounds.centerX()},${bounds.centerY()} (${target.source})")
     return tapBlockingWithoutStopButton(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
   }
 

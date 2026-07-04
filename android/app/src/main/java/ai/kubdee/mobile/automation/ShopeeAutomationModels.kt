@@ -239,7 +239,13 @@ internal data class ShopeePartnerOfferCandidate(
   val tapBounds: Rect,
   val safeTop: Int,
   val shareBounds: Rect,
-  val shareSource: String = "resource id ปุ่มแชร์"
+  val shareSource: String = "resource id ปุ่มแชร์",
+  val shareRetryTargets: List<ShopeeShareTapTarget> = emptyList()
+)
+
+internal data class ShopeeShareTapTarget(
+  val bounds: Rect,
+  val source: String
 )
 
 internal data class ShopeePartnerShareButton(
