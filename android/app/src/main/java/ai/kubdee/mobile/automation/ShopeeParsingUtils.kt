@@ -151,18 +151,24 @@ internal fun KubdeeAccessibilityService.findShopeeLikedProductImageUrl(
   if (imageNodes.isEmpty()) return null
 
   val columnWidth = shopeeLikedColumnWidth(screen)
+  val cardTop = (nameBounds.top - (screen.height() * 0.36f).toInt()).coerceAtLeast(safeTop)
+  val cardBottom = (priceBounds.bottom + (screen.height() * 0.12f).toInt()).coerceAtMost(screen.bottom)
+  val sameColumnImages = imageNodes.filter { image ->
+    val centerY = image.bounds.centerY()
+    centerY in cardTop..cardBottom &&
+      image.bounds.width() >= 32 &&
+      image.bounds.height() >= 32 &&
+      isSameShopeeLikedProductColumn(image.bounds, priceBounds, columnWidth)
+  }
   val regionTop = (minOf(nameBounds.top, priceBounds.top) - (screen.height() * 0.34f).toInt())
     .coerceAtLeast(safeTop)
   val regionBottom = (priceBounds.bottom + (screen.height() * 0.10f).toInt())
     .coerceAtMost(screen.bottom)
 
-  return imageNodes
+  sameColumnImages
     .filter { image ->
       val centerY = image.bounds.centerY()
-      centerY in regionTop..regionBottom &&
-        image.bounds.width() >= 32 &&
-        image.bounds.height() >= 32 &&
-        isSameShopeeLikedProductColumn(image.bounds, priceBounds, columnWidth)
+      centerY in regionTop..regionBottom
     }
     .minByOrNull { image ->
       val belowPricePenalty = if (image.bounds.top > priceBounds.bottom) 10_000 else 0
@@ -171,6 +177,12 @@ internal fun KubdeeAccessibilityService.findShopeeLikedProductImageUrl(
       val verticalPenalty = kotlin.math.abs(image.bounds.bottom - nameBounds.top)
       belowPricePenalty + belowNamePenalty + centerPenalty + verticalPenalty
     }
+    ?.imageUrl
+    ?.let { return it }
+
+  return sameColumnImages
+    .filter { image -> image.bounds.bottom <= nameBounds.top + (screen.height() * 0.08f).toInt() }
+    .maxByOrNull { image -> image.bounds.bottom }
     ?.imageUrl
 }
 

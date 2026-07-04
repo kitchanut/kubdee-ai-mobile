@@ -67,6 +67,29 @@ internal fun KubdeeAccessibilityService.collectClickableNodes(node: Accessibilit
   }
 }
 
+internal fun KubdeeAccessibilityService.collectVisibleImageViewNodes(
+  node: AccessibilityNodeInfo?,
+  output: MutableList<Pair<Rect, AccessibilityNodeInfo>>,
+  allowedPackageName: String? = null
+) {
+  if (node == null) return
+  if (
+    node.isVisibleToUser &&
+    (allowedPackageName == null || node.packageName?.toString() == allowedPackageName) &&
+    node.className?.toString() == "android.widget.ImageView"
+  ) {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    if (bounds.width() > 0 && bounds.height() > 0) {
+      output.add(Rect(bounds) to node)
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    collectVisibleImageViewNodes(node.getChild(index), output, allowedPackageName)
+  }
+}
+
 internal fun KubdeeAccessibilityService.readNodeText(node: AccessibilityNodeInfo): String {
   val parts = listOfNotNull(
     node.text?.toString(),

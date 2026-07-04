@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.53',
+    date: '2026-07-04',
+    highlight: 'Shopee Offers เปิดแชร์และดึงรูปได้แม่นขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับการกดแชร์สินค้าในข้อเสนอ Shopee ให้ใช้ไอคอนหรือพิกัดจากแถวค่าคอมมิชชั่นเมื่อหา resource id ไม่เจอ' },
+      { type: 'improved', text: 'เพิ่ม log แหล่งที่ใช้กดแชร์และจำนวนรูปที่จับคู่ได้ เพื่อช่วยตรวจสอบเครื่องที่ Shopee แสดง UI ต่างกัน' },
+    ],
+  },
+  {
     version: '0.2.52',
     date: '2026-07-04',
     highlight: 'Shopee Import ดูสาเหตุรูปสินค้าไม่ขึ้นได้ชัดขึ้น',

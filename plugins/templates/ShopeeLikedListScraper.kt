@@ -238,7 +238,8 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeeLikedProductCandidate
 
   logStep(
     "สแกนหน้าถูกใจพบ ${products.size} รายการ " +
-      "(ราคา=${priceNodes.size}, text=${productTextNodes.size}, ซ้ำ=$duplicateCount, noName=$noNameCount)"
+      "(ราคา=${priceNodes.size}, text=${productTextNodes.size}, รูป=${visibleImageNodes.size}, " +
+      "matchรูป=${products.values.count { it.product.imageUrl != null }}, ซ้ำ=$duplicateCount, noName=$noNameCount)"
   )
   return products.values.toList() to (recommendationTop != null)
 }

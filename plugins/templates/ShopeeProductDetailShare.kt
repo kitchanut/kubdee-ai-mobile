@@ -169,7 +169,7 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
 
 internal fun KubdeeAccessibilityService.tapShopeePartnerOfferShare(candidate: ShopeePartnerOfferCandidate): Boolean {
     val bounds = candidate.shareBounds
-    logStep("กดแชร์การ์ดที่ ${bounds.centerX()},${bounds.centerY()}")
+    logStep("กดแชร์การ์ดที่ ${bounds.centerX()},${bounds.centerY()} (${candidate.shareSource})")
     return tapBlockingWithoutStopButton(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
   }
 
