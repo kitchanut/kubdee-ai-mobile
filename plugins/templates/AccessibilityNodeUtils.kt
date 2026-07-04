@@ -291,6 +291,9 @@ internal fun KubdeeAccessibilityService.findNode(
 
 internal fun KubdeeAccessibilityService.clickNode(node: AccessibilityNodeInfo): Boolean {
   val clickable = findClickableNode(node)
+  if (clickable != null) {
+    showAutomationTapIndicatorForNodeClick(clickable)
+  }
   if (clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
     return true
   }

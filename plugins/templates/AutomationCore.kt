@@ -236,7 +236,7 @@ internal fun KubdeeAccessibilityService.tapBlocking(
   showTapIndicator: Boolean = shouldShowAutomationTapIndicator()
 ): Boolean {
   if (showTapIndicator) {
-    showAutomationTapIndicator(x, y)
+    showAutomationTapIndicatorBeforeTap(x, y)
   }
   var completed = false
   val latch = CountDownLatch(1)

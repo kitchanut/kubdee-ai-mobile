@@ -331,7 +331,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     if (currentService === this) {
       currentService = null
     }
-    removeAutomationOverlay()
+    removeAutomationOverlay(removeTapIndicator = true)
     super.onDestroy()
   }
 

@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.58',
+    date: '2026-07-05',
+    highlight: 'Shopee Post เห็นตำแหน่งกดชัดขึ้นและกดป้ายกำกับ AI ตรงขึ้น',
+    changes: [
+      { type: 'fixed', text: 'แก้การเปิดป้ายกำกับ AI ใน Shopee Post ให้จับคู่สวิตช์จากข้อความกำกับ ลดปัญหากดไปโดน toggle อื่น' },
+      { type: 'improved', text: 'ปรับจุดแสดงตำแหน่งที่ระบบกด ให้เห็นครบขึ้นทั้งการกดด้วยพิกัดและการกดปุ่มที่ทำให้เปลี่ยนหน้า' },
+    ],
+  },
+  {
     version: '0.2.57',
     date: '2026-07-04',
     highlight: 'Shopee Post เปิดป้ายกำกับ AI ได้เสถียรขึ้น',

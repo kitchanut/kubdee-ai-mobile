@@ -1879,16 +1879,22 @@ internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
     return false
   }
 
-  val target = shopeePostingVisualToggleForSlot(toggles, slot)
+  val labelBounds = findShopeePostingToggleLabelBounds(slot)
+  val target = shopeePostingVisualToggleForSlot(toggles, slot, labelBounds)
   if (target == null) {
-    logShopeePostStep("หา toggle $logName จากภาพไม่ครบ: พบ ${toggles.size} อัน")
+    logShopeePostStep(
+      "หา toggle $logName จากภาพไม่ครบ: พบ ${toggles.size} อัน" +
+        (labelBounds?.let { " label=${it.centerY()}" } ?: "")
+    )
     return false
   }
 
   val expected = if (desiredOn) ShopeeVisualToggleState.On else ShopeeVisualToggleState.Off
   logShopeePostStep(
     "ตรวจ toggle $logName จากภาพ: ${target.state.name.lowercase(Locale.ROOT)} " +
-      "ที่ ${target.bounds.centerX()},${target.bounds.centerY()} (พบ ${toggles.size} อัน)"
+      "ที่ ${target.bounds.centerX()},${target.bounds.centerY()} (พบ ${toggles.size} อัน" +
+      (labelBounds?.let { ", labelY=${it.centerY()}" } ?: "") +
+      ")"
   )
   if (target.state == expected) {
     logShopeePostStep("$logName อยู่สถานะที่ต้องการแล้ว")
@@ -1925,15 +1931,73 @@ internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
 
 internal fun shopeePostingVisualToggleForSlot(
   toggles: List<ShopeeVisualToggleTarget>,
-  slot: ShopeePostingToggleSlot
+  slot: ShopeePostingToggleSlot,
+  labelBounds: Rect? = null
 ): ShopeeVisualToggleTarget? {
   if (toggles.isEmpty()) return null
+  if (labelBounds != null) {
+    val maxDistance = maxOf(72, labelBounds.height() / 2 + 56)
+    toggles
+      .minByOrNull { kotlin.math.abs(it.bounds.centerY() - labelBounds.centerY()) }
+      ?.takeIf { kotlin.math.abs(it.bounds.centerY() - labelBounds.centerY()) <= maxDistance }
+      ?.let { return it }
+  }
   val slotIndex = when (slot) {
     ShopeePostingToggleSlot.ReusePermission -> 0
     ShopeePostingToggleSlot.SaveToPhone -> 1
-    ShopeePostingToggleSlot.AiGeneratedLabel -> if (toggles.size >= 3) 2 else toggles.lastIndex
+    ShopeePostingToggleSlot.AiGeneratedLabel -> if (toggles.size >= 3) 2 else return null
   }
   return toggles.getOrNull(slotIndex)
+}
+
+internal fun KubdeeAccessibilityService.findShopeePostingToggleLabelBounds(slot: ShopeePostingToggleSlot): Rect? {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val minToggleY = shopeePostingToggleLabelMinY(textNodes, screen)
+    val labels = textNodes
+      .filter { node ->
+        node.node.isVisibleToUser &&
+          node.bounds.centerY() >= minToggleY &&
+          node.bounds.centerY() <= screen.bottom - dp(170) &&
+          isShopeePostingToggleLabelText(slot, cleanNodeText(node.text).lowercase(Locale.ROOT))
+      }
+      .sortedBy { it.bounds.top }
+    if (labels.isEmpty()) continue
+
+    val combined = Rect(labels.first().bounds)
+    labels.drop(1).forEach { node ->
+      if (node.bounds.top <= combined.bottom + dp(32)) {
+        combined.union(node.bounds)
+      }
+    }
+    return combined
+  }
+  return null
+}
+
+internal fun isShopeePostingToggleLabelText(slot: ShopeePostingToggleSlot, textKey: String): Boolean {
+  return when (slot) {
+    ShopeePostingToggleSlot.ReusePermission ->
+      "นำเนื้อหาไปใช้ซ้ำ" in textKey ||
+        "เผยแพร่ต่อ" in textKey ||
+        ("duet" in textKey && "ตัดต่อ" in textKey) ||
+        ("duet" in textKey && "sticker" in textKey) ||
+        ("reuse" in textKey && "content" in textKey)
+    ShopeePostingToggleSlot.SaveToPhone ->
+      "บันทึกลงในโทรศัพท์" in textKey ||
+        "save to phone" in textKey ||
+        "save to device" in textKey
+    ShopeePostingToggleSlot.AiGeneratedLabel ->
+      "ครีเอเตอร์เพิ่มป้ายกำกับ ai" in textKey ||
+        "ป้ายกำกับ ai" in textKey ||
+        "เนื้อหาที่สร้างโดย ai" in textKey ||
+        "เนื้อหาที่สร้างขึ้น" in textKey ||
+        "สร้างโดย ai" in textKey ||
+        "ai generated" in textKey ||
+        "ai-generated" in textKey
+  }
 }
 
 internal fun KubdeeAccessibilityService.verifyShopeePostingToggleAfterTap(
@@ -1966,12 +2030,15 @@ internal fun KubdeeAccessibilityService.verifyShopeePostingToggleState(
   while (System.currentTimeMillis() <= deadline) {
     val toggles = detectShopeePostingVisualToggles()
     lastCount = toggles.size
-    val target = shopeePostingVisualToggleForSlot(toggles, slot)
+    val labelBounds = findShopeePostingToggleLabelBounds(slot)
+    val target = shopeePostingVisualToggleForSlot(toggles, slot, labelBounds)
     if (target != null) {
       lastState = target.state
       logShopeePostStep(
         "ยืนยัน toggle $logName: ${target.state.name.lowercase(Locale.ROOT)} " +
-          "ที่ ${target.bounds.centerX()},${target.bounds.centerY()} (พบ ${toggles.size} อัน)"
+          "ที่ ${target.bounds.centerX()},${target.bounds.centerY()} (พบ ${toggles.size} อัน" +
+          (labelBounds?.let { ", labelY=${it.centerY()}" } ?: "") +
+          ")"
       )
       if (target.state == expected) return true
     }

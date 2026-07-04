@@ -176,7 +176,7 @@ internal fun KubdeeAccessibilityService.hideAutomationOverlay(delayMs: Long) {
   }, delayMs)
 }
 
-internal fun KubdeeAccessibilityService.removeAutomationOverlay() {
+internal fun KubdeeAccessibilityService.removeAutomationOverlay(removeTapIndicator: Boolean = false) {
   mainHandler.post {
     overlayView?.let { view ->
       try {
@@ -190,7 +190,9 @@ internal fun KubdeeAccessibilityService.removeAutomationOverlay() {
     overlaySubtitleView = null
     overlayChipRow = null
     overlayLogContainer = null
-    removeAutomationTapIndicator()
+    if (removeTapIndicator) {
+      removeAutomationTapIndicator()
+    }
     overlayStopButton?.let { view ->
       try {
         automationWindowManager.removeView(view)
@@ -506,6 +508,27 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
 internal fun KubdeeAccessibilityService.shouldShowAutomationTapIndicator(): Boolean =
   automationLogKindForThread.get() == ShopeeAutomationLogKind.POST
 
+internal fun KubdeeAccessibilityService.showAutomationTapIndicatorBeforeTap(
+  x: Float,
+  y: Float,
+  visibleMs: Long = 850L,
+  settleMs: Long = 55L
+) {
+  if (!shouldShowAutomationTapIndicator()) return
+  val shown = showAutomationTapIndicatorBlocking(x, y, visibleMs)
+  if (shown && settleMs > 0L && Looper.myLooper() != Looper.getMainLooper()) {
+    runCatching { Thread.sleep(settleMs) }
+  }
+}
+
+internal fun KubdeeAccessibilityService.showAutomationTapIndicatorForNodeClick(node: AccessibilityNodeInfo) {
+  if (!shouldShowAutomationTapIndicator()) return
+  val bounds = Rect()
+  node.getBoundsInScreen(bounds)
+  if (bounds.width() <= 0 || bounds.height() <= 0) return
+  showAutomationTapIndicatorBeforeTap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+}
+
 internal fun KubdeeAccessibilityService.showAutomationTapIndicator(
   x: Float,
   y: Float,
@@ -513,45 +536,75 @@ internal fun KubdeeAccessibilityService.showAutomationTapIndicator(
 ) {
   if (automationOverlayUnavailable) return
 
-  val show: () -> Unit = {
-    removeAutomationTapIndicator()
-
-    val size = dp(52)
-    val marker = AutomationTapIndicatorView(this).apply {
-      importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-    }
-    val params = WindowManager.LayoutParams(
-      size,
-      size,
-      WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-      PixelFormat.TRANSLUCENT
-    ).apply {
-      gravity = Gravity.TOP or Gravity.START
-      this.x = (x - size / 2f).toInt()
-      this.y = (y - size / 2f).toInt()
-    }
-
-    try {
-      automationWindowManager.addView(marker, params)
-      automationTapIndicatorView = marker
-      mainHandler.postDelayed({
-        if (automationTapIndicatorView === marker) {
-          removeAutomationTapIndicator()
-        }
-      }, visibleMs)
-    } catch (error: Exception) {
-      Log.w(TAG, "Unable to show automation tap indicator", error)
-    }
-  }
+  val show: () -> Unit = { showAutomationTapIndicatorOnMain(x, y, visibleMs) }
 
   if (Looper.myLooper() == Looper.getMainLooper()) {
     show()
   } else {
     mainHandler.post(show)
+  }
+}
+
+internal fun KubdeeAccessibilityService.showAutomationTapIndicatorBlocking(
+  x: Float,
+  y: Float,
+  visibleMs: Long = 850L
+): Boolean {
+  if (automationOverlayUnavailable) return false
+  if (Looper.myLooper() == Looper.getMainLooper()) {
+    return showAutomationTapIndicatorOnMain(x, y, visibleMs)
+  }
+
+  var shown = false
+  val latch = CountDownLatch(1)
+  mainHandler.post {
+    try {
+      shown = showAutomationTapIndicatorOnMain(x, y, visibleMs)
+    } finally {
+      latch.countDown()
+    }
+  }
+  return latch.await(250L, TimeUnit.MILLISECONDS) && shown
+}
+
+private fun KubdeeAccessibilityService.showAutomationTapIndicatorOnMain(
+  x: Float,
+  y: Float,
+  visibleMs: Long
+): Boolean {
+  removeAutomationTapIndicator()
+
+  val size = dp(52)
+  val marker = AutomationTapIndicatorView(this).apply {
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+  }
+  val params = WindowManager.LayoutParams(
+    size,
+    size,
+    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+      WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+      WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+      WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+    PixelFormat.TRANSLUCENT
+  ).apply {
+    gravity = Gravity.TOP or Gravity.START
+    this.x = (x - size / 2f).toInt()
+    this.y = (y - size / 2f).toInt()
+  }
+
+  return try {
+    automationWindowManager.addView(marker, params)
+    automationTapIndicatorView = marker
+    mainHandler.postDelayed({
+      if (automationTapIndicatorView === marker) {
+        removeAutomationTapIndicator()
+      }
+    }, visibleMs)
+    true
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to show automation tap indicator", error)
+    false
   }
 }
 
