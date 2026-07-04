@@ -579,6 +579,63 @@ internal fun KubdeeAccessibilityService.scrollShopeeAffiliateOffersList(): Boole
     return scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
   }
 
+internal fun KubdeeAccessibilityService.ensureShopeeBuyerLikedView(): Boolean {
+    if (isShopeeBuyerLikedViewVisible()) {
+      logStep("ใช้มุมมองผู้ซื้อสำหรับรายการถูกใจ")
+      return true
+    }
+    if (!isShopeePartnerLikedViewVisible()) {
+      logStep("ใช้หน้าถูกใจปัจจุบันเป็นมุมมองผู้ซื้อ")
+      return true
+    }
+    return switchToShopeeBuyerLikedView()
+  }
+
+internal fun KubdeeAccessibilityService.switchToShopeeBuyerLikedView(): Boolean {
+    if (isShopeeBuyerLikedViewVisible()) {
+      logStep("อยู่ในมุมมองผู้ซื้อแล้ว")
+      return true
+    }
+
+    repeat(3) { attempt ->
+      checkStopRequested()
+      dismissShopeeBlockingPopups()
+      logStep("สลับเป็นมุมมองผู้ซื้อ (${attempt + 1}/3)")
+
+      if (!runShopeeLikedViewTapWithHiddenOverlay { clickShopeeLikedViewSwitcher() }) {
+        logStep("ยังไม่พบปุ่มสลับมุมมองถูกใจ")
+        sleepStep(700L)
+        return@repeat
+      }
+
+      sleepStep(650L)
+      if (isShopeeBuyerLikedViewVisible()) {
+        logStep("เข้าใช้มุมมองผู้ซื้อแล้ว")
+        return true
+      }
+
+      if (!runShopeeLikedViewTapWithHiddenOverlay { clickShopeeBuyerViewOption() }) {
+        logStep("ยังไม่พบตัวเลือก มุมมองผู้ซื้อ")
+        performBack()
+        sleepStep(650L)
+        return@repeat
+      }
+
+      val start = System.currentTimeMillis()
+      while (System.currentTimeMillis() - start < 7_000L) {
+        checkStopRequested()
+        if (isShopeeBuyerLikedViewVisible()) {
+          logStep("เข้าใช้มุมมองผู้ซื้อแล้ว")
+          return true
+        }
+        sleepStep(450L)
+      }
+    }
+
+    logStep("สลับมุมมองผู้ซื้อไม่สำเร็จ")
+    return false
+  }
+
 internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolean {
     if (isShopeePartnerLikedViewVisible()) {
       logStep("อยู่ในมุมมองพาร์ทเนอร์แล้ว")
@@ -590,7 +647,7 @@ internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolea
       dismissShopeeBlockingPopups()
       logStep("สลับเป็นมุมมองพาร์ทเนอร์ (${attempt + 1}/3)")
 
-      if (!clickShopeeLikedViewSwitcher()) {
+      if (!runShopeeLikedViewTapWithHiddenOverlay { clickShopeeLikedViewSwitcher() }) {
         logStep("ยังไม่พบปุ่มสลับมุมมองถูกใจ")
         sleepStep(700L)
         return@repeat
@@ -602,7 +659,7 @@ internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolea
         return true
       }
 
-      if (!clickShopeePartnerViewOption()) {
+      if (!runShopeeLikedViewTapWithHiddenOverlay { clickShopeePartnerViewOption() }) {
         logStep("ยังไม่พบตัวเลือก มุมมองพาร์ทเนอร์")
         performBack()
         sleepStep(650L)
@@ -623,6 +680,19 @@ internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolea
     logStep("สลับมุมมองพาร์ทเนอร์ไม่สำเร็จ")
     return false
   }
+
+internal fun KubdeeAccessibilityService.runShopeeLikedViewTapWithHiddenOverlay(action: () -> Boolean): Boolean {
+    val restoreSuppressed = automationFloatingUiSuppressed
+    setAutomationFloatingUiSuppressedBlocking(true)
+    sleepStep(180L)
+    return try {
+      action()
+    } finally {
+      setAutomationFloatingUiSuppressedBlocking(restoreSuppressed)
+      sleepStep(120L)
+    }
+  }
+
 internal fun KubdeeAccessibilityService.clickShopeeLikedViewSwitcher(): Boolean {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
@@ -653,6 +723,30 @@ internal fun KubdeeAccessibilityService.clickShopeeLikedViewSwitcher(): Boolean 
     logStep("กดตัวสลับมุมมองด้วยพิกัด fallback")
     return tapBlocking(fallbackX, fallbackY, timeoutMs = 1800L, durationMs = 90L)
   }
+
+internal fun KubdeeAccessibilityService.clickShopeeBuyerViewOption(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val topLimit = screen.top + (screen.height() * 0.10f).toInt()
+    val candidate = textNodes
+      .filter { node ->
+        node.node.isVisibleToUser &&
+          node.bounds.top > topLimit &&
+          (
+            node.text.contains("มุมมองผู้ซื้อ", ignoreCase = true) ||
+              node.text.contains("Buyer View", ignoreCase = true)
+          )
+      }
+      .minByOrNull { it.bounds.top }
+      ?: return false
+
+    val tapBounds = menuTapBounds(candidate.node, candidate.bounds, screen)
+    logStep("กดตัวเลือก มุมมองผู้ซื้อ")
+    return tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
+  }
+
 internal fun KubdeeAccessibilityService.clickShopeePartnerViewOption(): Boolean {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
@@ -675,6 +769,26 @@ internal fun KubdeeAccessibilityService.clickShopeePartnerViewOption(): Boolean 
     logStep("กดตัวเลือก มุมมองพาร์ทเนอร์")
     return tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
   }
+
+internal fun KubdeeAccessibilityService.isShopeeBuyerLikedViewVisible(): Boolean {
+    if (!isShopeeLikedListVisible()) return false
+    val root = rootInActiveWindow ?: return false
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val topLimit = screen.top + (screen.height() * 0.22f).toInt()
+    val hasBuyerTitle = textNodes.any { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.top <= topLimit &&
+        (
+          node.text.contains("มุมมองผู้ซื้อ", ignoreCase = true) ||
+            node.text.contains("Buyer View", ignoreCase = true)
+        )
+    }
+    if (hasBuyerTitle) return true
+    return !isShopeePartnerLikedViewVisible()
+  }
+
 internal fun KubdeeAccessibilityService.isShopeePartnerLikedViewVisible(): Boolean {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)

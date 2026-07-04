@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 
 import { toast } from 'sonner-native';
 
@@ -26,6 +27,7 @@ import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalPr
 import { useLibrary } from '@/library/LibraryContext';
 import { storePendingTab } from '@/navigation/pendingNavigation';
 import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from '@/library/LibraryContext';
+import { isDisplayableProductImageUri } from '@/library/productImageCache';
 import type { AffiliateProduct } from '@/library/types';
 import {
   getAccessibilityStatus,
@@ -34,6 +36,7 @@ import {
 } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 
+import { LabeledTextInput } from './media-panel/controls';
 import {
   CardBackdrop,
   DarkActionButton,
@@ -79,6 +82,70 @@ function formatUserDebugLabel(user: { id?: string | null; email?: string | null 
 function getAndroidApiLevel(): number {
   const version = Platform.Version;
   return typeof version === 'number' ? version : Number.parseInt(String(version), 10) || 0;
+}
+
+type ProductEditForm = {
+  name: string;
+  externalProductId: string;
+  productUrl: string;
+  price: string;
+  stock: string;
+  description: string;
+  caption: string;
+  hashtags: string;
+  cta: string;
+};
+
+type ProductEditImageOverride = {
+  uri: string;
+  mimeType: string | null;
+  size: number | null;
+};
+
+const EMPTY_PRODUCT_EDIT_FORM: ProductEditForm = {
+  caption: '',
+  cta: '',
+  description: '',
+  externalProductId: '',
+  hashtags: '',
+  name: '',
+  price: '',
+  productUrl: '',
+  stock: '',
+};
+
+function cleanFormText(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function createProductEditForm(product: AffiliateProduct): ProductEditForm {
+  return {
+    caption: product.caption ?? '',
+    cta: product.cta ?? '',
+    description: product.description ?? '',
+    externalProductId: product.externalProductId ?? '',
+    hashtags: product.hashtags ?? '',
+    name: product.name ?? '',
+    price: product.price ?? '',
+    productUrl: product.productUrl ?? '',
+    stock: typeof product.stock === 'number' && Number.isFinite(product.stock) ? String(product.stock) : '',
+  };
+}
+
+function parseProductEditStock(value: string): number | null {
+  const cleaned = value.replace(/[^\d]/g, '');
+  if (!cleaned) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(cleaned, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getProductEditImageUri(product: AffiliateProduct): string | null {
+  return Array.from(new Set([product.imagePath, product.imageUrl]))
+    .find((uri): uri is string => isDisplayableProductImageUri(uri)) ?? null;
 }
 
 async function ensureShopeeOfferImagePermission(
@@ -150,6 +217,7 @@ export default function ProductPanel({
     refreshProducts,
     syncProducts,
     importShopeeProducts,
+    updateProduct,
     deleteProducts,
   } = useLibrary();
 
@@ -174,6 +242,15 @@ export default function ProductPanel({
   const [shopeeOfferCategory, setShopeeOfferCategory] = useState<ShopeeOfferCategory>('แนะนำ');
   const [shopeeImportAmount, setShopeeImportAmount] = useState<ShopeeImportAmount>(50);
   const [customShopeeImportAmount, setCustomShopeeImportAmount] = useState('50');
+  const [editingProduct, setEditingProduct] = useState<AffiliateProduct | null>(null);
+  const [editForm, setEditForm] = useState<ProductEditForm>(EMPTY_PRODUCT_EDIT_FORM);
+  const [editImageOverride, setEditImageOverride] = useState<ProductEditImageOverride | null>(null);
+  const [isProductEditSaving, setIsProductEditSaving] = useState(false);
+
+  const editingProductImageUri = useMemo(
+    () => editImageOverride?.uri ?? (editingProduct ? getProductEditImageUri(editingProduct) : null),
+    [editImageOverride, editingProduct]
+  );
 
   const appendShopeeLog = useCallback((message: string, ts = Date.now()): void => {
     pushAutomationActivityLog('shopee-import', message, ts);
@@ -248,6 +325,133 @@ export default function ProductPanel({
     },
     [deleteProducts, showDeleteResult]
   );
+
+  const setEditField = useCallback((field: keyof ProductEditForm, value: string): void => {
+    setEditForm((current) => ({ ...current, [field]: value }));
+  }, []);
+
+  const openEditProduct = useCallback((product: AffiliateProduct): void => {
+    setEditingProduct(product);
+    setEditForm(createProductEditForm(product));
+    setEditImageOverride(null);
+  }, []);
+
+  const closeEditProduct = useCallback((): void => {
+    if (isProductEditSaving) {
+      return;
+    }
+
+    setEditingProduct(null);
+    setEditForm({ ...EMPTY_PRODUCT_EDIT_FORM });
+    setEditImageOverride(null);
+  }, [isProductEditSaving]);
+
+  const pickEditProductImage = useCallback(async (): Promise<void> => {
+    if (isProductEditSaving) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      toast.warning('กรุณาอนุญาตให้เข้าถึงคลังรูปภาพก่อน');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: false,
+      mediaTypes: ['images'],
+      quality: 1,
+    });
+
+    if (result.canceled) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.uri) {
+      toast.error('อ่านรูปภาพไม่สำเร็จ');
+      return;
+    }
+
+    setEditImageOverride({
+      mimeType: asset.mimeType ?? null,
+      size: typeof asset.fileSize === 'number' && Number.isFinite(asset.fileSize) ? asset.fileSize : null,
+      uri: asset.uri,
+    });
+  }, [isProductEditSaving]);
+
+  const saveEditProduct = useCallback(async (): Promise<void> => {
+    if (!editingProduct || isProductEditSaving) {
+      return;
+    }
+
+    const name = editForm.name.trim();
+    if (!name) {
+      toast.warning('กรุณากรอกชื่อสินค้า');
+      return;
+    }
+
+    setIsProductEditSaving(true);
+    try {
+      const result = await updateProduct({
+        caption: cleanFormText(editForm.caption),
+        cta: cleanFormText(editForm.cta),
+        description: cleanFormText(editForm.description),
+        externalProductId: cleanFormText(editForm.externalProductId),
+        hashtags: cleanFormText(editForm.hashtags),
+        localId: editingProduct.localId,
+        name,
+        price: cleanFormText(editForm.price),
+        productUrl: cleanFormText(editForm.productUrl),
+        profileLocalId: editingProduct.profileLocalId ?? selectedProfileId,
+        stock: parseProductEditStock(editForm.stock),
+        ...(editImageOverride ? {
+          imageHash: null,
+          imageMimeType: editImageOverride.mimeType,
+          imagePath: editImageOverride.uri,
+          imageR2Key: null,
+          imageSize: editImageOverride.size,
+          imageUploadedAt: null,
+          imageUrl: null,
+        } : {}),
+      });
+
+      if (!result) {
+        toast.warning('กำลังบันทึกสินค้าอยู่');
+        return;
+      }
+
+      if (!result.success) {
+        toast.error(result.error || 'บันทึกสินค้าไม่สำเร็จ');
+        return;
+      }
+
+      setEditingProduct(null);
+      setEditForm({ ...EMPTY_PRODUCT_EDIT_FORM });
+      setEditImageOverride(null);
+      setSelectedIds((current) => {
+        if (!current.has(getProductKey(editingProduct))) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(getProductKey(editingProduct));
+        return next;
+      });
+      toast.success(result.queued ? 'บันทึกแล้ว รอซิงก์ cloud' : 'บันทึกแล้ว');
+    } finally {
+      setIsProductEditSaving(false);
+    }
+  }, [editForm, editImageOverride, editingProduct, isProductEditSaving, selectedProfileId, updateProduct]);
+
+  const handleEditSelected = useCallback((): void => {
+    const selectedProducts = products.filter((product) => selectedIds.has(getProductKey(product)));
+    if (selectedProducts.length !== 1) {
+      toast.warning('เลือกสินค้า 1 รายการเพื่อแก้ไข');
+      return;
+    }
+
+    openEditProduct(selectedProducts[0]);
+  }, [openEditProduct, products, selectedIds]);
 
   // Drop selections that no longer exist after a re-sync.
   useEffect(() => {
@@ -552,11 +756,12 @@ export default function ProductPanel({
           selected={selectedIds.has(key)}
           theme={theme}
           onPress={() => toggleSelect(key)}
+          onEdit={() => openEditProduct(item)}
           onDelete={() => confirmDelete([item.localId])}
         />
       );
     },
-    [confirmDelete, selectedIds, theme, toggleSelect]
+    [confirmDelete, openEditProduct, selectedIds, theme, toggleSelect]
   );
 
   const productItemSeparator = useCallback(() => <View className="h-2" />, []);
@@ -740,6 +945,191 @@ export default function ProductPanel({
       <Modal
         animationType="fade"
         transparent
+        visible={!!editingProduct}
+        onRequestClose={closeEditProduct}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <Pressable
+            accessibilityLabel="ปิดฟอร์มแก้ไขสินค้า"
+            accessibilityRole="button"
+            disabled={isProductEditSaving}
+            className="flex-1"
+            onPress={closeEditProduct}
+          />
+          <View
+            className="max-h-[88%] rounded-t-[20px] border border-kd-border bg-kd-panel"
+            style={{ paddingBottom: Math.max(insets.bottom + 12, 20) }}
+          >
+            <View className="flex-row items-center justify-between gap-3 px-4 pt-4">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-emerald-soft">
+                  <Pencil size={15} color={theme.emerald} strokeWidth={2.3} />
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text className="text-kd-title font-semibold text-kd-text">แก้ไขสินค้า</Text>
+                  <Text numberOfLines={1} className="mt-0.5 text-kd-caption text-kd-text-subtle">
+                    {editingProduct?.profileName || 'คลังสินค้า'}
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                disabled={isProductEditSaving}
+                onPress={closeEditProduct}
+                className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted disabled:opacity-50"
+              >
+                <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerClassName="gap-3 px-4 py-3"
+            >
+              <Pressable
+                accessibilityRole="button"
+                disabled={isProductEditSaving}
+                onPress={() => void pickEditProductImage()}
+                className="flex-row items-center gap-3 rounded-kd-lg border border-kd-border bg-kd-card-muted p-3 disabled:opacity-60"
+              >
+                <View className="h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-kd-lg bg-kd-panel">
+                  {editingProductImageUri ? (
+                    <Image source={{ uri: editingProductImageUri }} className="h-full w-full" resizeMode="cover" />
+                  ) : (
+                    <ImageIcon size={21} color={theme.textSubtle} strokeWidth={1.7} />
+                  )}
+                </View>
+                <View className="min-w-0 flex-1">
+                  <Text numberOfLines={2} className="text-kd-body font-semibold leading-5 text-kd-text">
+                    {editForm.name || editingProduct?.name || 'สินค้า'}
+                  </Text>
+                  <Text numberOfLines={1} className="mt-0.5 text-kd-caption text-kd-text-subtle">
+                    {editForm.externalProductId ? `#${editForm.externalProductId}` : 'ไม่มี ID สินค้า'}
+                  </Text>
+                </View>
+                <View className="h-8 shrink-0 flex-row items-center justify-center gap-1 rounded-full bg-kd-panel px-2">
+                  <Upload size={12} color={theme.textSubtle} strokeWidth={2.2} />
+                  <Text className="text-kd-caption font-medium text-kd-text-subtle">รูป</Text>
+                </View>
+              </Pressable>
+
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <LabeledTextInput
+                    label="ID สินค้า"
+                    value={editForm.externalProductId}
+                    onChangeText={(value) => setEditField('externalProductId', value)}
+                    placeholder="SKU-001"
+                    theme={theme}
+                  />
+                </View>
+                <View className="flex-1">
+                  <LabeledTextInput
+                    label="ราคา"
+                    value={editForm.price}
+                    onChangeText={(value) => setEditField('price', value)}
+                    placeholder="0.00"
+                    theme={theme}
+                  />
+                </View>
+              </View>
+
+              <LabeledTextInput
+                label="ลิงก์สินค้า"
+                value={editForm.productUrl}
+                onChangeText={(value) => setEditField('productUrl', value)}
+                placeholder="https://..."
+                theme={theme}
+              />
+
+              <LabeledTextInput
+                label="ชื่อสินค้า"
+                value={editForm.name}
+                onChangeText={(value) => setEditField('name', value)}
+                placeholder="ชื่อสินค้า"
+                multiline
+                theme={theme}
+              />
+
+              <LabeledTextInput
+                label="Caption"
+                value={editForm.caption}
+                onChangeText={(value) => setEditField('caption', value)}
+                placeholder="คำบรรยายสินค้า"
+                multiline
+                theme={theme}
+              />
+
+              <LabeledTextInput
+                label="#แฮชแท็ก"
+                value={editForm.hashtags}
+                onChangeText={(value) => setEditField('hashtags', value)}
+                placeholder="#สินค้าขายดี"
+                theme={theme}
+              />
+
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <LabeledTextInput
+                    label="CTA"
+                    value={editForm.cta}
+                    onChangeText={(value) => setEditField('cta', value)}
+                    placeholder="สั่งซื้อเลย"
+                    theme={theme}
+                  />
+                </View>
+                <View className="flex-1">
+                  <LabeledTextInput
+                    label="สต็อก"
+                    value={editForm.stock}
+                    onChangeText={(value) => setEditField('stock', value.replace(/[^\d]/g, ''))}
+                    placeholder="0"
+                    theme={theme}
+                  />
+                </View>
+              </View>
+
+              <LabeledTextInput
+                label="รายละเอียด"
+                value={editForm.description}
+                onChangeText={(value) => setEditField('description', value)}
+                placeholder="รายละเอียดสินค้า"
+                multiline
+                theme={theme}
+              />
+            </ScrollView>
+
+            <View className="flex-row gap-2 px-4 pt-1">
+              <Pressable
+                accessibilityRole="button"
+                disabled={isProductEditSaving}
+                onPress={closeEditProduct}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card disabled:opacity-50"
+              >
+                <Text className="text-kd-body font-medium text-kd-text-subtle">ยกเลิก</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={isProductEditSaving}
+                onPress={() => void saveEditProduct()}
+                className="h-11 flex-1 items-center justify-center rounded-kd-lg bg-kd-text disabled:opacity-60"
+              >
+                {isProductEditSaving ? (
+                  <ActivityIndicator color={theme.panel} size="small" />
+                ) : (
+                  <Text className="text-kd-body font-semibold text-kd-panel">บันทึก</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
         visible={shopeeImportModalOpen}
         onRequestClose={() => setShopeeImportModalOpen(false)}
       >
@@ -870,6 +1260,7 @@ export default function ProductPanel({
           onAuto={handleSendSelectedToAutoPilot}
           onClear={() => setSelectedIds(new Set())}
           onDelete={handleDeleteSelected}
+          onEdit={handleEditSelected}
         />
       ) : null}
     </View>

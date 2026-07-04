@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { ChevronDown, Star } from 'lucide-react-native';
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
 import { AUTO_PILOT_DELAY_OPTIONS, AUTO_PILOT_INFINITE_ROUNDS, AUTO_PILOT_ROUND_OPTIONS } from '@/autopilot/defaults';
 import Text from '@/components/ui/KubdeeText';
 import { Switch } from '@/components/ui/switch';
@@ -47,15 +48,16 @@ export function ExtensionBasicSettingsBlock({
         className="flex-row items-center justify-between rounded-md px-0.5 py-0.5"
       >
         <View className="flex-row items-center gap-2">
-          <Star size={14} color={theme.text} strokeWidth={2} />
+          <ExtensionBasicSettingsIcon color={theme.text} />
           <Text className="text-[13px] font-semibold text-kd-text">ตั้งค่าพื้นฐาน</Text>
         </View>
-        <ChevronDown
-          size={14}
-          color={theme.textSubtle}
-          strokeWidth={2.2}
-          style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}
-        />
+        <View className="h-5 w-5 items-center justify-center">
+          {open ? (
+            <ChevronUp size={14} color={theme.textSubtle} strokeWidth={2.2} />
+          ) : (
+            <ChevronDown size={14} color={theme.textSubtle} strokeWidth={2.2} />
+          )}
+        </View>
       </Pressable>
 
       {open ? (
@@ -151,6 +153,21 @@ export function ExtensionBasicSettingsBlock({
         </>
       ) : null}
     </View>
+  );
+}
+
+function ExtensionBasicSettingsIcon({ color }: { color: string }): React.JSX.Element {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24">
+      <Path
+        d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+        fill="none"
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+    </Svg>
   );
 }
 

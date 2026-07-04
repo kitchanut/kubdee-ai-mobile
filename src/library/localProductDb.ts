@@ -591,6 +591,52 @@ export async function upsertLocalProductsForSync(products: SyncAffiliateProductI
   return localProducts;
 }
 
+export async function updateLocalProductForSync(
+  product: AffiliateProduct,
+  payload: SyncAffiliateProductInput
+): Promise<AffiliateProduct> {
+  const timestamp = nowMs();
+  const updatedAt = payload.localUpdatedAt ?? timestamp;
+  const updatedProduct: AffiliateProduct = {
+    ...product,
+    localId: payload.localId,
+    profileLocalId: normalizeText(payload.profileLocalId),
+    name: payload.name,
+    description: payload.description ?? null,
+    externalProductId: payload.externalProductId ?? null,
+    productUrl: payload.productUrl ?? null,
+    price: payload.price ?? null,
+    stock: typeof payload.stock === 'number' && Number.isFinite(payload.stock) ? payload.stock : null,
+    caption: payload.caption ?? null,
+    hashtags: payload.hashtags ?? null,
+    cta: payload.cta ?? null,
+    imagePath: payload.imagePath ?? null,
+    imageR2Key: payload.imageR2Key ?? null,
+    imageUrl: payload.imageUrl ?? null,
+    imageHash: payload.imageHash ?? null,
+    imageMimeType: payload.imageMimeType ?? null,
+    imageSize: payload.imageSize ?? null,
+    imageUploadedAt: payload.imageUploadedAt ?? null,
+    platform: normalizePlatform(payload.platform),
+    status: payload.status ?? null,
+    scrapedAt: payload.scrapedAt ?? null,
+    localCreatedAt: payload.localCreatedAt ?? product.localCreatedAt,
+    originApp: payload.originApp ?? product.originApp,
+    createdByApp: payload.createdByApp ?? product.createdByApp,
+    updatedByApp: payload.updatedByApp ?? product.updatedByApp,
+    updatedAt,
+  };
+
+  await runDbTask(async (db) => {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      await tombstoneDuplicateProductIdentityRows(txn, updatedProduct, timestamp);
+      await upsertProductRow(txn, updatedProduct, 'pending_upsert', payload);
+    });
+  });
+
+  return updatedProduct;
+}
+
 export async function markProductsDeletedForSync(localIds: string[]): Promise<void> {
   if (localIds.length === 0) return;
 

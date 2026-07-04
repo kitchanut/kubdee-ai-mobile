@@ -81,12 +81,14 @@ export function ProductCard({
   selected,
   theme,
   onPress,
+  onEdit,
   onDelete,
 }: {
   product: AffiliateProduct;
   selected: boolean;
   theme: KubdeeTheme;
   onPress: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
   const platformLabel = getPlatformLabel(product.platform);
@@ -162,6 +164,10 @@ export function ProductCard({
               <Pressable
                 accessibilityLabel="แก้ไข"
                 accessibilityRole="button"
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onEdit();
+                }}
                 className="h-[22px] w-[22px] items-center justify-center rounded-kd-md bg-white/60 dark:bg-kd-card-muted/60"
               >
                 <Pencil size={11} color={theme.textSubtle} strokeWidth={2} />
@@ -169,7 +175,10 @@ export function ProductCard({
               <Pressable
                 accessibilityLabel="ลบ"
                 accessibilityRole="button"
-                onPress={onDelete}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onDelete();
+                }}
                 className="h-[22px] w-[22px] items-center justify-center rounded-kd-md bg-white/60 dark:bg-kd-card-muted/60"
               >
                 <Trash2 size={11} color={theme.textSubtle} strokeWidth={2} />

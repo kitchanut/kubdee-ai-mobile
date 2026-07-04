@@ -12,6 +12,7 @@ import {
   markProductsDeletedForSync,
   markSyncJobsFailed,
   markUpsertJobsSynced,
+  updateLocalProductForSync,
   upsertLocalProductsForSync,
   upsertLocalProductsFromCloud,
 } from '@/library/localProductDb';
@@ -31,6 +32,36 @@ export interface ProductDeleteResult {
   /** Rows the server actually tombstoned — may be < requested (already deleted / unknown localId). */
   deleted: number;
   requested: number;
+  error: string | null;
+}
+
+export interface ProductUpdateInput {
+  localId: string;
+  profileLocalId?: string | null;
+  name?: string | null;
+  description?: string | null;
+  externalProductId?: string | null;
+  productUrl?: string | null;
+  price?: string | null;
+  stock?: number | null;
+  caption?: string | null;
+  hashtags?: string | null;
+  cta?: string | null;
+  imagePath?: string | null;
+  imageR2Key?: string | null;
+  imageUrl?: string | null;
+  imageHash?: string | null;
+  imageMimeType?: string | null;
+  imageSize?: number | null;
+  imageUploadedAt?: number | null;
+  platform?: string | null;
+  status?: string | null;
+}
+
+export interface ProductUpdateResult {
+  success: boolean;
+  product: AffiliateProduct | null;
+  queued: boolean;
   error: string | null;
 }
 
@@ -95,6 +126,8 @@ interface LibraryContextType {
     products: ShopeeImportProductInput[],
     options?: ProductImportOptions
   ) => Promise<ProductImportResult | null>;
+  /** Update one product locally and enqueue an upsert to Cloud. */
+  updateProduct: (updates: ProductUpdateInput) => Promise<ProductUpdateResult | null>;
   /** Resolves with the delete outcome, or null when skipped (no token / empty / already deleting). */
   deleteProducts: (localIds: string[]) => Promise<ProductDeleteResult | null>;
 }
@@ -127,6 +160,17 @@ function normalizePrice(value: string | null | undefined): string | null {
 
 function normalizePlatform(value: string | null | undefined): string {
   return value?.trim().toLowerCase() || '';
+}
+
+function inferPlatformFromProductUrl(productUrl: string | null | undefined, fallback: string | null | undefined): string | null {
+  const url = cleanText(productUrl)?.toLowerCase() ?? '';
+  if (url.includes('shopee.')) {
+    return 'shopee';
+  }
+  if (url.includes('tiktok.')) {
+    return 'tiktok';
+  }
+  return normalizePlatform(fallback) || null;
 }
 
 function utf8Bytes(value: string): number[] {
@@ -457,6 +501,80 @@ function mergeProductsByLocalId(products: AffiliateProduct[]): AffiliateProduct[
   return Array.from(byLocalId.values());
 }
 
+function createProductUpdatePayload(
+  product: AffiliateProduct,
+  updates: ProductUpdateInput,
+  deviceId: string
+): SyncAffiliateProductInput | null {
+  const now = Date.now();
+  const profileLocalId = cleanText(updates.profileLocalId) || cleanText(product.profileLocalId);
+  const name = cleanText(updates.name) || cleanText(product.name);
+
+  if (!product.localId || !profileLocalId || !name) {
+    return null;
+  }
+
+  const productUrl = updates.productUrl === undefined
+    ? cleanText(product.productUrl)
+    : cleanText(updates.productUrl);
+  const platform = inferPlatformFromProductUrl(
+    productUrl,
+    updates.platform === undefined ? product.platform : updates.platform
+  );
+  const price = updates.price === undefined
+    ? normalizePrice(product.price)
+    : normalizePrice(updates.price);
+  const stock = updates.stock === undefined
+    ? (typeof product.stock === 'number' && Number.isFinite(product.stock) ? product.stock : null)
+    : (typeof updates.stock === 'number' && Number.isFinite(updates.stock) ? updates.stock : null);
+  const imagePath = updates.imagePath === undefined ? cleanText(product.imagePath) : cleanText(updates.imagePath);
+  const imageR2Key = updates.imageR2Key === undefined ? cleanText(product.imageR2Key) : cleanText(updates.imageR2Key);
+  const imageUrl = updates.imageUrl === undefined ? cleanText(product.imageUrl) : cleanText(updates.imageUrl);
+  const imageHash = updates.imageHash === undefined ? cleanText(product.imageHash) : cleanText(updates.imageHash);
+  const imageMimeType = updates.imageMimeType === undefined
+    ? cleanText(product.imageMimeType)
+    : cleanText(updates.imageMimeType);
+  const imageSize = updates.imageSize === undefined
+    ? (typeof product.imageSize === 'number' && Number.isFinite(product.imageSize) ? product.imageSize : null)
+    : (typeof updates.imageSize === 'number' && Number.isFinite(updates.imageSize) ? updates.imageSize : null);
+  const imageUploadedAt = updates.imageUploadedAt === undefined
+    ? toNumber(product.imageUploadedAt)
+    : (typeof updates.imageUploadedAt === 'number' && Number.isFinite(updates.imageUploadedAt) ? updates.imageUploadedAt : null);
+
+  return {
+    localId: product.localId,
+    profileLocalId,
+    name,
+    description: updates.description === undefined ? cleanText(product.description) : cleanText(updates.description),
+    externalProductId: updates.externalProductId === undefined
+      ? cleanText(product.externalProductId)
+      : cleanText(updates.externalProductId),
+    productUrl,
+    price,
+    stock,
+    caption: updates.caption === undefined ? cleanText(product.caption) : cleanText(updates.caption),
+    hashtags: updates.hashtags === undefined ? cleanText(product.hashtags) : cleanText(updates.hashtags),
+    cta: updates.cta === undefined ? cleanText(product.cta) : cleanText(updates.cta),
+    imagePath,
+    imageR2Key,
+    imageUrl,
+    imageHash,
+    imageMimeType,
+    imageSize,
+    imageUploadedAt,
+    platform,
+    status: updates.status === undefined ? cleanText(product.status) : cleanText(updates.status),
+    scrapedAt: toNumber(product.scrapedAt),
+    localCreatedAt: toNumber(product.localCreatedAt) ?? toNumber(product.createdAt) ?? now,
+    localUpdatedAt: now,
+    originApp: cleanText(product.originApp) || 'mobile',
+    originDeviceId: deviceId,
+    createdByApp: cleanText(product.createdByApp) || cleanText(product.originApp) || 'mobile',
+    sourceDeviceId: deviceId,
+    updatedByApp: 'mobile',
+  };
+}
+
 function dedupeQueuePayloads(products: SyncAffiliateProductInput[]): SyncAffiliateProductInput[] {
   const byLocalId = new Map<string, SyncAffiliateProductInput>();
   for (const product of products) {
@@ -597,6 +715,7 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
   const [syncError, setSyncError] = useState<string | null>(null);
   const isSyncingRef = useRef(false);
   const isDeletingRef = useRef(false);
+  const isUpdatingRef = useRef(false);
 
   const refreshLocalProducts = useCallback(async (): Promise<AffiliateProduct[]> => {
     const localProducts = await getLocalProducts();
@@ -798,6 +917,117 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     [products, recheckPlan, refreshLocalProducts, token]
   );
 
+  const updateProduct = useCallback(
+    async (updates: ProductUpdateInput): Promise<ProductUpdateResult | null> => {
+      const localId = cleanText(updates.localId);
+      if (!localId || isUpdatingRef.current) {
+        return null;
+      }
+
+      isUpdatingRef.current = true;
+      let startedQueueSync = false;
+      let savedProduct: AffiliateProduct | null = null;
+
+      try {
+        const localProducts = await getLocalProducts();
+        const existingProduct =
+          localProducts.find((product) => product.localId === localId) ??
+          products.find((product) => product.localId === localId) ??
+          null;
+
+        if (!existingProduct) {
+          return {
+            error: 'ไม่พบสินค้าที่จะแก้ไข',
+            product: null,
+            queued: false,
+            success: false,
+          };
+        }
+
+        const deviceId = await getOrCreateSyncDeviceId();
+        const payload = createProductUpdatePayload(existingProduct, updates, deviceId);
+        if (!payload) {
+          return {
+            error: 'กรุณาเลือกโปรไฟล์และกรอกชื่อสินค้า',
+            product: null,
+            queued: false,
+            success: false,
+          };
+        }
+
+        savedProduct = await updateLocalProductForSync(existingProduct, payload);
+        await refreshLocalProducts();
+
+        if (!token || isSyncingRef.current) {
+          setSyncError(token ? 'บันทึกในเครื่องแล้ว รอซิงก์ cloud' : 'บันทึกในเครื่องแล้ว รอเข้าสู่ระบบเพื่อซิงก์ cloud');
+          return {
+            error: null,
+            product: savedProduct,
+            queued: true,
+            success: true,
+          };
+        }
+
+        isSyncingRef.current = true;
+        startedQueueSync = true;
+        setIsSyncing(true);
+        let queueResult = await flushPendingProductSyncQueue(token);
+        if (!queueResult.success && queueResult.status === 401) {
+          await recheckPlan();
+          const refreshedTokens = await getStoredAuthTokens();
+          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+            queueResult = await flushPendingProductSyncQueue(refreshedTokens.accessToken);
+          }
+        }
+
+        if (!queueResult.success) {
+          setSyncError(queueResult.error || 'บันทึกในเครื่องแล้ว แต่ซิงก์ cloud ยังไม่สำเร็จ');
+          return {
+            error: null,
+            product: savedProduct,
+            queued: true,
+            success: true,
+          };
+        }
+
+        setSyncError(null);
+        setLastSyncedAt(Date.now());
+        const refreshedProducts = await refreshLocalProducts();
+        savedProduct = refreshedProducts.find((product) => product.localId === localId) ?? savedProduct;
+        return {
+          error: null,
+          product: savedProduct,
+          queued: false,
+          success: true,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setSyncError(message);
+        if (savedProduct) {
+          return {
+            error: null,
+            product: savedProduct,
+            queued: true,
+            success: true,
+          };
+        }
+        return {
+          error: message,
+          product: null,
+          queued: false,
+          success: false,
+        };
+      } finally {
+        if (startedQueueSync) {
+          isSyncingRef.current = false;
+          setIsSyncing(false);
+        }
+        isUpdatingRef.current = false;
+      }
+    },
+    [products, recheckPlan, refreshLocalProducts, token]
+  );
+
   const deleteProducts = useCallback(
     async (localIds: string[]): Promise<ProductDeleteResult | null> => {
       if (localIds.length === 0 || isDeletingRef.current) {
@@ -915,8 +1145,9 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       lastSyncedAt,
       syncError,
       syncProducts,
+      updateProduct,
     }),
-    [deleteProducts, importShopeeProducts, isSyncing, lastSyncedAt, products, refreshLocalProducts, syncError, syncProducts]
+    [deleteProducts, importShopeeProducts, isSyncing, lastSyncedAt, products, refreshLocalProducts, syncError, syncProducts, updateProduct]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;

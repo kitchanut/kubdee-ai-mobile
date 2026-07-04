@@ -44,6 +44,16 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.50',
+    date: '2026-07-04',
+    highlight: 'คลังสินค้าแก้ไขสินค้าได้จากมือถือ',
+    changes: [
+      { type: 'feature', text: 'เพิ่มฟอร์มแก้ไขสินค้าในหน้าคลังสินค้า แก้รูป ชื่อสินค้า ลิงก์ ราคา สต็อก Caption Hashtag และ CTA ได้จากมือถือ' },
+      { type: 'fixed', text: 'ปรับการดึงสินค้า Shopee จากรายการถูกใจให้ใช้มุมมองผู้ซื้อ และซ่อน log panel ชั่วคราวตอนสลับมุมมองเพื่อลดปัญหากดปุ่มไม่ได้' },
+      { type: 'improved', text: 'ปรับไอคอนตั้งค่าพื้นฐานในเมนูออโต้ และแสดงไอคอนย่อ/ขยายให้เห็นครบทั้งตอนเปิดและพับ section' },
+    ],
+  },
+  {
     version: '0.2.49',
     date: '2026-07-04',
     highlight: 'Shopee Import ดึงข้อเสนอ Affiliate ได้แม่นขึ้น',
