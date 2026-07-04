@@ -44,6 +44,15 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.55',
+    date: '2026-07-04',
+    highlight: 'Shopee Post กดเพิ่มสินค้าได้ตรงขึ้น',
+    changes: [
+      { type: 'fixed', text: 'ปรับการแนบสินค้า Shopee Post ให้กดตรงข้อความ แตะเพื่อเพิ่มสินค้า ก่อนเสมอ ลดปัญหาบางเครื่องกดไม่โดน' },
+      { type: 'improved', text: 'เพิ่มการตรวจว่าเมนูเพิ่มสินค้าเปิดจริง และค่อยใช้ตำแหน่งสำรองเมื่อกดจุดหลักแล้วเมนูยังไม่ขึ้น' },
+    ],
+  },
+  {
     version: '0.2.54',
     date: '2026-07-04',
     highlight: 'Shopee Offers ลองกดแชร์ซ้ำอัตโนมัติ',

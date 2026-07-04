@@ -318,13 +318,7 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
 
   try {
     logShopeePostStep("แนบสินค้า Shopee")
-    if (
-      !clickByAnyText(
-        listOf("แตะเพื่อเพิ่มสินค้า", "เพิ่มสินค้า", "Tap to add product"),
-        exact = false,
-        allowedPackageName = TARGET_PACKAGE_SHOPEE
-      )
-    ) {
+    if (!tapShopeeAddProductEntry()) {
       logShopeePostStep("ไม่พบปุ่มเพิ่มสินค้า ข้ามการแนบสินค้า")
       return
     }
@@ -406,6 +400,164 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
     performBack()
     sleepStep(800L)
   }
+}
+
+internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
+  if (tapShopeeAddProductPrimaryText()) {
+    sleepStep(1100L)
+    if (isShopeeAddProductMenuOpen() || !isShopeeAddProductPrimaryTextVisible()) {
+      logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
+      return true
+    }
+    logShopeePostStep("กดตรง 'แตะเพื่อเพิ่มสินค้า' แล้วเมนูยังไม่เปิด -> ใช้ fallback แถวเพิ่มสินค้า")
+  }
+
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val candidate = findShopeeAddProductTextNode(textNodes, screen) ?: continue
+    val rowBounds = estimateShopeeAddProductRowBounds(candidate, textNodes, screen)
+    val tapPoints = listOf(
+      rowBounds.centerX() to rowBounds.centerY(),
+      (rowBounds.right - maxOf(dp(40), screen.width() / 18)) to rowBounds.centerY(),
+      maxOf(candidate.bounds.centerX(), rowBounds.left + rowBounds.width() / 4) to rowBounds.centerY()
+    ).distinct()
+
+    for ((x, y) in tapPoints) {
+      val safeX = x.coerceIn(screen.left + dp(12), screen.right - dp(12))
+      val safeY = y.coerceIn(screen.top + dp(12), screen.bottom - dp(12))
+      logShopeePostStep("กดเพิ่มสินค้าที่ $safeX,$safeY (fallback แถวเพิ่มสินค้า)")
+      if (tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)) {
+        sleepStep(1100L)
+        if (isShopeeAddProductMenuOpen()) {
+          logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
+          return true
+        }
+        logShopeePostStep("กด fallback แล้วเมนูยังไม่เปิด")
+      }
+    }
+  }
+
+  logShopeePostStep("ไม่พบทางเข้าเมนูเพิ่มสินค้า")
+  return false
+}
+
+internal fun KubdeeAccessibilityService.tapShopeeAddProductPrimaryText(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val target = findShopeeAddProductPrimaryTextNode(textNodes, screen) ?: continue
+    val safeX = target.bounds.centerX().coerceIn(screen.left + dp(12), screen.right - dp(12))
+    val safeY = target.bounds.centerY().coerceIn(screen.top + dp(12), screen.bottom - dp(12))
+    logShopeePostStep("กดตรง 'แตะเพื่อเพิ่มสินค้า' ที่ $safeX,$safeY")
+    if (tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.isShopeeAddProductPrimaryTextVisible(): Boolean {
+  for (root in shopeeWindowRoots()) {
+    val screen = screenBounds(root)
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    if (findShopeeAddProductPrimaryTextNode(textNodes, screen) != null) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.findShopeeAddProductPrimaryTextNode(
+  textNodes: List<TextNode>,
+  screen: Rect
+): TextNode? =
+  textNodes
+    .filter { node ->
+      val text = cleanNodeText(node.text)
+      val lower = text.lowercase(Locale.ROOT)
+      (
+        text.contains("แตะเพื่อเพิ่มสินค้า", ignoreCase = true) ||
+          lower.contains("tap to add product")
+        ) &&
+        node.bounds.top >= screen.top + (screen.height() * 0.18f).toInt() &&
+        node.bounds.bottom <= screen.bottom - (screen.height() * 0.16f).toInt()
+    }
+    .sortedWith(compareByDescending<TextNode> { it.bounds.left }.thenBy { it.bounds.top })
+    .firstOrNull()
+
+internal fun KubdeeAccessibilityService.isShopeeAddProductMenuOpen(): Boolean {
+  val markers = listOf(
+    "กรอกลิงก์สินค้า",
+    "ลิงก์สินค้า",
+    "ลิงค์สินค้า",
+    "Product link",
+    "กดถูกใจ",
+    "สินค้าที่ถูกใจ",
+    "Liked",
+    "ค้นหา",
+    "Search"
+  )
+  for (root in shopeeWindowRoots()) {
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    if (
+      textNodes.any { node ->
+        val text = cleanNodeText(node.text)
+        markers.any { marker -> text.contains(marker, ignoreCase = true) }
+      }
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.findShopeeAddProductTextNode(
+  textNodes: List<TextNode>,
+  screen: Rect
+): TextNode? =
+  textNodes
+    .filter { node ->
+      val text = cleanNodeText(node.text)
+      val lower = text.lowercase(Locale.ROOT)
+      (
+        text.contains("แตะเพื่อเพิ่มสินค้า", ignoreCase = true) ||
+          text.equals("เพิ่มสินค้า", ignoreCase = true) ||
+          lower.contains("tap to add product") ||
+          lower.contains("add product")
+        ) &&
+        node.bounds.top >= screen.top + (screen.height() * 0.18f).toInt() &&
+        node.bounds.bottom <= screen.bottom - (screen.height() * 0.16f).toInt()
+    }
+    .sortedWith(
+      compareByDescending<TextNode> {
+        if (it.text.contains("แตะเพื่อเพิ่มสินค้า", ignoreCase = true) ||
+          it.text.lowercase(Locale.ROOT).contains("tap to add product")
+        ) 1 else 0
+      }.thenBy { it.bounds.top }.thenByDescending { it.bounds.left }
+    )
+    .firstOrNull()
+
+internal fun KubdeeAccessibilityService.estimateShopeeAddProductRowBounds(
+  anchor: TextNode,
+  textNodes: List<TextNode>,
+  screen: Rect
+): Rect {
+  val rowTop = (anchor.bounds.top - maxOf(dp(24), screen.height() / 48)).coerceAtLeast(screen.top)
+  val rowBottom = (anchor.bounds.bottom + maxOf(dp(24), screen.height() / 42)).coerceAtMost(screen.bottom)
+  val sameRow = textNodes.filter { node ->
+    node.bounds.centerY() in rowTop..rowBottom &&
+      node.bounds.left >= screen.left &&
+      node.bounds.right <= screen.right
+  }
+  val left = sameRow.minOfOrNull { it.bounds.left } ?: anchor.bounds.left
+  val right = sameRow.maxOfOrNull { it.bounds.right } ?: anchor.bounds.right
+  return Rect(
+    maxOf(screen.left + dp(12), left - dp(24)),
+    rowTop,
+    minOf(screen.right - dp(12), maxOf(right + dp(48), screen.right - dp(24))),
+    rowBottom
+  )
 }
 
 internal fun KubdeeAccessibilityService.normalizeShopeeProductUrl(value: String): String {
