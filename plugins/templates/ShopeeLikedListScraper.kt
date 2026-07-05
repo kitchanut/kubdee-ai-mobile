@@ -170,7 +170,47 @@ internal fun KubdeeAccessibilityService.scrollShopeeLikedList(): Boolean {
   return scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)
 }
 
+// หาขอบล่างของแถบตัวกรองรายการถูกใจ (ทั้งหมด/สถานะ/ส่วนลด/หมวดหมู่) จากจอปัจจุบัน
+// คืน null เมื่อไม่เห็นแถบ — ใช้เช็คซ้ำก่อนแตะการ์ด กันพิกัดเก่าเลื่อนไปทับแถบ
+internal fun KubdeeAccessibilityService.findShopeeLikedFilterBarBottom(): Int? {
+  val root = rootInActiveWindow ?: return null
+  val screen = screenBounds(root)
+  val textNodes = mutableListOf<TextNode>()
+  collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  val filterLabels = listOf("ทั้งหมด", "สถานะ", "ส่วนลด", "หมวดหมู่")
+  val limit = screen.top + (screen.height() * 0.35f).toInt()
+  return textNodes
+    .filter { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.top <= limit &&
+        filterLabels.any { label -> cleanNodeText(node.text).equals(label, ignoreCase = true) }
+    }
+    .maxOfOrNull { it.bounds.bottom }
+}
+
+// แผงตัวกรองหมวดหมู่ (เปิดจากแตะ หมวดหมู่ บนแถบกรองพลาด) จะบังรายการทั้งจอ
+// สังเกตจากปุ่ม เลือกใหม่ + ตกลง — กด back ปิดแบบไม่ apply ตัวกรอง
+internal fun KubdeeAccessibilityService.dismissShopeeLikedCategoryFilterPanelIfOpen(): Boolean {
+  val root = rootInActiveWindow ?: return false
+  val textNodes = mutableListOf<TextNode>()
+  collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  val hasReset = textNodes.any { node ->
+    node.node.isVisibleToUser && cleanNodeText(node.text).equals("เลือกใหม่", ignoreCase = true)
+  }
+  val hasConfirm = textNodes.any { node ->
+    node.node.isVisibleToUser && cleanNodeText(node.text).equals("ตกลง", ignoreCase = true)
+  }
+  if (!hasReset || !hasConfirm) return false
+
+  logStep("พบแผงตัวกรองหมวดหมู่เปิดค้าง กด back ปิดโดยไม่ใช้ตัวกรอง")
+  performBack()
+  sleepStep(900L)
+  return true
+}
+
 internal fun KubdeeAccessibilityService.scrapeVisibleShopeeLikedProductCandidates(): Pair<List<ShopeeLikedProductCandidate>, Boolean> {
+  // ถ้ารอบก่อนเผลอแตะโดน หมวดหมู่ แผงตัวกรองจะเปิดบังรายการ — ปิดก่อนสแกน
+  dismissShopeeLikedCategoryFilterPanelIfOpen()
   val root = rootInActiveWindow ?: return emptyList<ShopeeLikedProductCandidate>() to false
   val screen = screenBounds(root)
   val textNodes = mutableListOf<TextNode>()

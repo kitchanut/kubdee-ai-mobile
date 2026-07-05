@@ -228,6 +228,14 @@ internal fun KubdeeAccessibilityService.openShopeeProductDetail(candidate: Shope
   if (!isShopeeLikedProductTapBoundsSafe(candidate.tapBounds, screen, candidate.safeTop)) {
     return false
   }
+  // safeTop ของ candidate คำนวณตอนสแกน — กลับจากหน้า detail แล้วลิสต์อาจขยับ
+  // เช็คแถบตัวกรอง (ทั้งหมด/สถานะ/ส่วนลด/หมวดหมู่) จากจอปัจจุบันซ้ำก่อนแตะจริง
+  // กันแตะโดน หมวดหมู่ แล้วแผงตัวกรองเด้งเปิดค้างบังรายการ
+  val liveFilterBarBottom = findShopeeLikedFilterBarBottom()
+  if (liveFilterBarBottom != null && tapY <= liveFilterBarBottom + (screen.height() * 0.015f)) {
+    logStep("ข้ามจุดแตะที่เลื่อนไปทับแถบตัวกรอง (${tapX.toInt()},${tapY.toInt()})")
+    return false
+  }
   logStep("กดสินค้าในรายการ (${tapX.toInt()},${tapY.toInt()})")
   return tapBlocking(tapX, tapY)
 }
