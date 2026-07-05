@@ -252,7 +252,7 @@ export function VideoProductSettingsForm({
             />
           ) : null}
           {multiScene && selectedVideoMethod === 'multi' ? (
-            <View className="gap-1 rounded-kd-lg bg-kd-panel-muted px-2 py-1.5 dark:bg-kd-card-muted">
+            <View className="gap-1 py-0.5">
               <MultiSceneToggleRow
                 disabled={isVoiceoverMode}
                 label={isVoiceoverMode ? 'AI คิดบท (จำเป็นสำหรับเสียงพากย์)' : 'AI คิดบท (เรียก AI เขียนบท)'}
