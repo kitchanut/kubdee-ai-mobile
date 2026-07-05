@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, PermissionsAndroid, Platform, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import type { ListRenderItem } from 'react-native';
 import {
@@ -32,8 +32,10 @@ import { isDisplayableProductImageUri } from '@/library/productImageCache';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
 import type { AffiliateProduct } from '@/library/types';
 import {
+  clearPendingShopeeConvertResults,
   convertShopeeLinks as runNativeShopeeLinkConversion,
   getAccessibilityStatus,
+  getPendingShopeeConvertResults,
   importShopeeProducts as runNativeShopeeImport,
   openAccessibilitySettings,
 } from '@/native/AccessibilityBridge';
@@ -687,6 +689,70 @@ export default function ProductPanel({
     syncShopeeImportQueue,
   ]);
 
+  // เก็บผลแปลงลิงก์ที่ native เขียนค้างบน disk เข้าคลัง แล้วเคลียร์ไฟล์
+  // ใช้ทั้งตอนแปลงจบปกติ และตอนเปิดแอปใหม่หลังแอปหลักโดนฆ่าระหว่าง automation รัน
+  const applyPendingShopeeConvertResults = useCallback(async (): Promise<number> => {
+    const pending = await getPendingShopeeConvertResults();
+    if (pending.length === 0) {
+      return 0;
+    }
+
+    let applied = 0;
+    for (const row of pending) {
+      const shortUrl = row.shortUrl.trim();
+      if (!isShopeeShortLink(shortUrl)) {
+        continue;
+      }
+
+      const product = allProducts.find((item) => item.localId === row.localId);
+      if (!product) {
+        continue;
+      }
+      if (product.productUrl?.trim() === shortUrl) {
+        continue;
+      }
+
+      const updateResult = await updateProduct({
+        localId: product.localId,
+        name: product.name,
+        productUrl: shortUrl,
+        profileLocalId: product.profileLocalId ?? selectedProfileId,
+      });
+      if (updateResult?.success) {
+        applied += 1;
+        pushAutomationActivityLog('shopee-convert', `อัปเดตลิงก์สินค้าแล้ว: ${product.name.slice(0, 34)}`);
+      } else {
+        pushAutomationActivityLog('shopee-convert', `บันทึกลิงก์ใหม่ไม่สำเร็จ: ${product.name.slice(0, 34)}`);
+      }
+    }
+
+    await clearPendingShopeeConvertResults();
+    if (applied > 0) {
+      await refreshProducts();
+    }
+    return applied;
+  }, [allProducts, refreshProducts, selectedProfileId, updateProduct]);
+
+  // ตอนเปิดหน้าคลังครั้งแรก เช็คผลแปลงที่ค้างจากรอบก่อน (กรณีแอปโดนฆ่ากลางคัน)
+  const pendingConvertCheckedRef = useRef(false);
+  useEffect(() => {
+    if (pendingConvertCheckedRef.current || allProducts.length === 0) {
+      return;
+    }
+    pendingConvertCheckedRef.current = true;
+
+    void (async () => {
+      try {
+        const applied = await applyPendingShopeeConvertResults();
+        if (applied > 0) {
+          toast.success(`เก็บผลแปลงลิงก์ที่ค้างไว้ ${applied} รายการ`);
+        }
+      } catch {
+        // ไฟล์ผลค้างอ่านไม่ได้ ไม่ต้องรบกวนผู้ใช้ — รอบแปลงถัดไปจะเก็บใหม่เอง
+      }
+    })();
+  }, [allProducts.length, applyPendingShopeeConvertResults]);
+
   const runShopeeLinkConversion = useCallback(async (): Promise<void> => {
     if (isConvertingShopeeLinks || !selectedProfileId) {
       return;
@@ -729,37 +795,9 @@ export default function ProductPanel({
 
       await storePendingTab('library');
       const result = await runNativeShopeeLinkConversion(candidates);
-      const rows = result.results ?? [];
 
-      let updatedCount = 0;
-      for (const row of rows) {
-        const shortUrl = row.shortUrl?.trim();
-        if (!shortUrl || !isShopeeShortLink(shortUrl)) {
-          continue;
-        }
-
-        const product = shopeeLinkConvertCandidates.find((item) => item.localId === row.localId);
-        if (!product) {
-          continue;
-        }
-
-        // ส่งเฉพาะฟิลด์ที่จำเป็น — createProductUpdatePayload เติมค่าที่เหลือจากสินค้าเดิม
-        // (name ส่งจาก product เดิมกันข้อมูลหาย, ฟิลด์ที่ไม่ส่ง = คงค่าเดิม)
-        const updateResult = await updateProduct({
-          localId: product.localId,
-          name: product.name,
-          productUrl: shortUrl,
-          profileLocalId: product.profileLocalId ?? selectedProfileId,
-        });
-        if (updateResult?.success) {
-          updatedCount += 1;
-          appendConvertLog(`อัปเดตลิงก์สินค้าแล้ว: ${product.name.slice(0, 34)}`);
-        } else {
-          appendConvertLog(`บันทึกลิงก์ใหม่ไม่สำเร็จ: ${product.name.slice(0, 34)}`);
-        }
-      }
-
-      await refreshProducts();
+      // ผลจริงอ่านจากไฟล์ผลค้างที่ native เขียนทีละลิงก์ (ทางเดียวกับตอนแอปโดนฆ่า)
+      const updatedCount = await applyPendingShopeeConvertResults();
 
       if (result.stopped) {
         const message = `หยุดแปลงลิงก์แล้ว อัปเดต ${updatedCount}/${candidates.length} รายการ`;
@@ -787,11 +825,10 @@ export default function ProductPanel({
       setAutomationActivityRunning('shopee-convert', false);
     }
   }, [
+    applyPendingShopeeConvertResults,
     isConvertingShopeeLinks,
-    refreshProducts,
     selectedProfileId,
     shopeeLinkConvertCandidates,
-    updateProduct,
   ]);
 
   const confirmShopeeLinkConversion = useCallback((): void => {

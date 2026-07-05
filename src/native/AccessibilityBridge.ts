@@ -87,6 +87,15 @@ export interface NativeShopeeConvertResult {
   }>;
 }
 
+// ผลแปลงลิงก์ที่ :automation เขียนค้างบน disk ทีละลิงก์ระหว่างรัน
+// อ่านได้แม้แอปหลักโดนฆ่าก่อน automation จบ
+export interface NativeShopeePendingConvertResult {
+  localId: string;
+  url: string;
+  shortUrl: string;
+  ts: number;
+}
+
 export interface NativeGoogleFlowDownloadedAsset {
   uri: string;
   fileName: string;
@@ -136,6 +145,8 @@ type NativeAccessibilityModule = {
   clearPendingShopeeImportProducts?: () => Promise<boolean>;
   postShopeeVideos?: (payloadJson: string) => Promise<string>;
   convertShopeeLinks?: (payloadJson: string) => Promise<string>;
+  getPendingShopeeConvertResults?: () => Promise<string>;
+  clearPendingShopeeConvertResults?: () => Promise<boolean>;
   stopShopeeAutomation?: () => Promise<boolean>;
   waitForGoogleFlowDownload?: (
     step: 'image' | 'video',
@@ -339,6 +350,40 @@ export async function convertShopeeLinks(
   }
 
   return { success: false, error: 'แปลงลิงก์ Shopee ใช้ได้เฉพาะ Android native build' };
+}
+
+export async function getPendingShopeeConvertResults(): Promise<NativeShopeePendingConvertResult[]> {
+  if (Platform.OS !== 'android' || !nativeModule?.getPendingShopeeConvertResults) {
+    return [];
+  }
+
+  try {
+    const raw = await nativeModule.getPendingShopeeConvertResults();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((row): row is NativeShopeePendingConvertResult => {
+      if (!row || typeof row !== 'object') {
+        return false;
+      }
+
+      const item = row as Partial<NativeShopeePendingConvertResult>;
+      return typeof item.localId === 'string' && item.localId.trim().length > 0
+        && typeof item.shortUrl === 'string' && item.shortUrl.trim().length > 0;
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function clearPendingShopeeConvertResults(): Promise<boolean> {
+  if (Platform.OS === 'android' && nativeModule?.clearPendingShopeeConvertResults) {
+    return nativeModule.clearPendingShopeeConvertResults();
+  }
+
+  return false;
 }
 
 export async function stopShopeeAutomation(): Promise<boolean> {

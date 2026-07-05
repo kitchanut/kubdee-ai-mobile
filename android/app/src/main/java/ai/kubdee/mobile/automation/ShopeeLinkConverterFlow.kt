@@ -8,8 +8,9 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
-// จำนวนลิงก์สูงสุดต่อรอบตามที่หน้า แปลงลิงก์ ของ Shopee รองรับ ("สูงสุด 5 ลิงก์")
-private const val SHOPEE_CONVERT_BATCH_SIZE = 5
+// แปลงทีละ 1 ลิงก์เท่านั้น — ผลลัพธ์หลายแถวอ่านได้ไม่ครบ/เรียงคลาดเคลื่อนแล้วเสี่ยง
+// จับคู่ short link ผิดสินค้า (ลิงก์ค่าคอมสลับตัวคืออันตรายกว่าช้า)
+private const val SHOPEE_CONVERT_BATCH_SIZE = 1
 
 // ผลลัพธ์ short link ต้องเป็นโดเมน s.shopee.* เท่านั้น (เช่น https://s.shopee.co.th/XXXX)
 private val SHOPEE_SHORT_LINK_REGEX = Regex("""^https?://s\.shopee\.""", RegexOption.IGNORE_CASE)
@@ -92,10 +93,10 @@ internal fun KubdeeAccessibilityService.convertShopeeLinks(payloadJson: String):
       checkStopRequested()
 
       if (batchIndex > 0 && !returnToShopeeLinkConverterInput()) {
-        throw IllegalStateException("กลับหน้ากรอกลิงก์ไม่สำเร็จ (ชุดที่ ${batchIndex + 1})")
+        throw IllegalStateException("กลับหน้ากรอกลิงก์ไม่สำเร็จ (ลิงก์ที่ ${batchIndex + 1})")
       }
 
-      logStep("── ชุดที่ ${batchIndex + 1}/${batches.size} (${batch.size} ลิงก์) ──")
+      logStep("── ลิงก์ที่ ${batchIndex + 1}/${batches.size} ──")
       val shortLinks = try {
         convertShopeeLinkBatch(batch)
       } catch (error: ShopeeAutomationStoppedException) {
@@ -114,6 +115,9 @@ internal fun KubdeeAccessibilityService.convertShopeeLinks(payloadJson: String):
         val shortUrl = shortLinks.getOrNull(linkIndex)
         if (shortUrl != null) {
           convertedCount += 1
+          // เก็บผลลง disk ทันทีทีละลิงก์ — ถ้าแอปหลักโดน Android ฆ่าระหว่างรัน
+          // ฝั่ง JS มาเก็บผลค้างตอนเปิดแอปใหม่ได้ ไม่เสียผลที่แปลงแล้ว
+          KubdeeShopeeConvertResults.appendResult(this, link.localId, link.url, shortUrl)
           results.put(JSONObject().apply {
             put("localId", link.localId)
             put("url", link.url)
@@ -438,17 +442,32 @@ internal fun KubdeeAccessibilityService.waitForShopeeLinkConverterResults(
   return if (isShopeeLinkConverterResultScreen()) collectShopeeConvertedShortLinks() else emptyList()
 }
 
-// กลับจากหน้า result ไปหน้ากรอกลิงก์เพื่อทำชุดถัดไป
-// ข้อความเดิมในช่องไม่ต้องเคลียร์ — ACTION_SET_TEXT ของชุดถัดไปแทนที่ทั้งหมดอยู่แล้ว
+// กลับจากหน้า result ไปหน้ากรอกลิงก์เพื่อแปลงลิงก์ถัดไป
+// back จากหน้าผลลัพธ์มักหลุดออกจากตัวแปลงไปหน้าเมนู บัญชีผู้ใช้ เลย
+// จึงต้องกดเมนู แปลงลิงก์ เข้าใหม่ ไม่ใช่กด back รอหน้ากรอกอย่างเดียว
 internal fun KubdeeAccessibilityService.returnToShopeeLinkConverterInput(): Boolean {
-  repeat(4) { attemptIndex ->
+  repeat(5) { attemptIndex ->
     checkStopRequested()
     if (isShopeeLinkConverterInputScreen()) {
       return true
     }
-    logStep("กลับหน้ากรอกลิงก์ (ครั้ง ${attemptIndex + 1}/4)")
-    performBack()
-    sleepStep(1400L)
+
+    if (isShopeeLinkConverterResultScreen()) {
+      // ยังอยู่หน้าผลลัพธ์ — ห้ามหาเมนูจากหน้านี้ เพราะหัวข้อหน้าก็มีคำว่า "แปลงลิงก์"
+      logStep("ออกจากหน้าผลลัพธ์ (ครั้ง ${attemptIndex + 1}/5)")
+      performBack()
+      sleepStep(1500L)
+    } else if (scrollUntilTapText(SHOPEE_LINK_CONVERTER_TEXTS, maxAttempts = 3)) {
+      logStep("เปิดเมนู แปลงลิงก์ อีกรอบ")
+      sleepStep(2500L)
+      if (waitForShopeeLinkConverterInputScreen(maxAttempts = 5, delayMs = 700L)) {
+        return true
+      }
+    } else {
+      logStep("ยังไม่พบเมนู แปลงลิงก์ ลองย้อนกลับ (ครั้ง ${attemptIndex + 1}/5)")
+      performBack()
+      sleepStep(1400L)
+    }
   }
   return isShopeeLinkConverterInputScreen()
 }

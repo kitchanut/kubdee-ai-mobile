@@ -624,6 +624,22 @@ class KubdeeAccessibilityModule(
     return null
   }
 
+  // ผลแปลงลิงก์ที่ :automation เขียนค้างไว้บน disk — ฝั่ง JS เรียกเก็บเข้าคลัง
+  // ได้ทั้งตอนงานจบปกติ และตอนเปิดแอปใหม่หลังแอปหลักโดนฆ่าระหว่างรัน
+  @ReactMethod
+  fun getPendingShopeeConvertResults(promise: Promise) {
+    try {
+      promise.resolve(KubdeeShopeeConvertResults.readResults(reactContext).toString())
+    } catch (error: Exception) {
+      promise.reject("SHOPEE_CONVERT_PENDING", error.message ?: "อ่านผลแปลงลิงก์ค้างไม่สำเร็จ", error)
+    }
+  }
+
+  @ReactMethod
+  fun clearPendingShopeeConvertResults(promise: Promise) {
+    promise.resolve(KubdeeShopeeConvertResults.clear(reactContext))
+  }
+
   @ReactMethod
   fun stopShopeeAutomation(promise: Promise) {
     val service = KubdeeAccessibilityService.getInstance()

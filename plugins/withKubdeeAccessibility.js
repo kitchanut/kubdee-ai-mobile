@@ -186,6 +186,7 @@ function withKubdeeAccessibility(config, props = {}) {
         'KubdeeGoogleFlowAssets.kt',
         'KubdeeAutomationIpc.kt',
         'KubdeeShopeeImportQueue.kt',
+        'KubdeeShopeeConvertResults.kt',
         'KubdeeClipboardBridgeActivity.kt',
         'ShopeeAutomationModels.kt',
         'ShopeePostingFlow.kt',
