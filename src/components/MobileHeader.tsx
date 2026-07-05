@@ -6,6 +6,7 @@ import {
   Monitor,
   Moon,
   RefreshCw,
+  Settings,
   Square,
   Sun,
   UserCircle,
@@ -48,6 +49,7 @@ interface MobileHeaderProps {
   onChangelogPress: () => void;
   onProfilePress: () => void;
   onSelectedProfileChange: (profileId: string) => void;
+  onSettingsPress: () => void;
   onThemeModeChange: (mode: ThemeMode) => void;
 }
 
@@ -66,6 +68,7 @@ export default function MobileHeader({
   onChangelogPress,
   onProfilePress,
   onSelectedProfileChange,
+  onSettingsPress,
   onThemeModeChange,
 }: MobileHeaderProps): React.JSX.Element {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -147,6 +150,11 @@ export default function MobileHeader({
   const handleOpenProfile = (): void => {
     closeProfileMenu();
     onProfilePress();
+  };
+
+  const handleOpenSettings = (): void => {
+    closeProfileMenu();
+    onSettingsPress();
   };
 
   const handleLogout = (): void => {
@@ -449,6 +457,7 @@ export default function MobileHeader({
               onPress={handleCheckUpdate}
             />
             <PopoverMenuButton icon={Globe2} label="ไปเว็บไซต์" theme={theme} onPress={handleOpenWebsite} />
+            <PopoverMenuButton icon={Settings} label="การตั้งค่า" theme={theme} onPress={handleOpenSettings} />
             <PopoverMenuButton danger icon={LogOut} label="ออกจากระบบ" theme={theme} onPress={handleLogout} />
           </Pressable>
         </Pressable>

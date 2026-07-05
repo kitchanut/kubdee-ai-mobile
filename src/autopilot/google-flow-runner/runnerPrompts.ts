@@ -1,6 +1,7 @@
 import type { AutoPilotStepType, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import { BACKEND_URL } from '@/auth/constants';
 import { getStoredAuthTokens } from '@/auth/storage';
+import { getAiBrainSettings, pickAiBrainModel } from '@/autopilot/aiBrainSettingsStore';
 import type { FlowResultPoll, PreparedMultiScenePromptResult } from './runnerBasics';
 import { AUTO_MULTI_SCENE_TRIM_END_SECONDS, VOICEOVER_END_BUFFER_SECONDS, stepLabel } from './runnerPlanning';
 
@@ -715,6 +716,7 @@ export async function prepareAutoMultiScenePrompts({
     throw new Error(`รูปฉากไม่ครบสำหรับให้ AI วิเคราะห์ (${images.length}/${sceneCount})`);
   }
 
+  const aiBrain = await getAiBrainSettings();
   const response = await fetch(`${BACKEND_URL}/api/v1/ai/generate`, {
     method: 'POST',
     headers: {
@@ -722,8 +724,8 @@ export async function prepareAutoMultiScenePrompts({
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      provider: 'gemini',
-      model: 'gemini-2.5-flash',
+      provider: aiBrain.aiProvider,
+      model: pickAiBrainModel(aiBrain),
       prompt: buildSceneDialoguePrompt(product, sceneCount, voiceover, videoDuration, sendImagesToAi),
       images,
     }),
@@ -794,6 +796,7 @@ Rewrite requirements:
 - Keep the final prompt concise enough for one Google Flow video generation.`.trim();
 
   try {
+    const aiBrain = await getAiBrainSettings();
     const response = await fetch(`${BACKEND_URL}/api/v1/ai/generate`, {
       method: 'POST',
       headers: {
@@ -801,8 +804,8 @@ Rewrite requirements:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        provider: 'gemini',
-        model: 'gemini-2.5-flash',
+        provider: aiBrain.aiProvider,
+        model: pickAiBrainModel(aiBrain),
         prompt,
       }),
     });

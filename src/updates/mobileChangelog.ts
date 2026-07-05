@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.63',
+    date: '2026-07-05',
+    highlight: 'ตั้งค่าสมอง AI เลือก Provider และ Model ได้เองแล้ว',
+    changes: [
+      {
+        type: 'feature',
+        text: 'เพิ่มเมนู การตั้งค่า ในเมนูบัญชี (กดรูปโปรไฟล์มุมขวาบน) เปิดหน้าตั้งค่าแบบเดียวกับ extension',
+      },
+      {
+        type: 'feature',
+        text: 'แท็บ สมอง เลือก AI Provider (Gemini/OpenAI) และ Model ที่ใช้คิด caption, hashtags, CTA และบทพูดหลายฉากได้เอง ใช้เครดิต KUBDEE เหมือนเดิม',
+      },
+    ],
+  },
+  {
     version: '0.2.60',
     date: '2026-07-05',
     highlight: 'Shopee เข้าหน้า ฉัน ได้ผ่านง่ายขึ้นบนบางเครื่อง',

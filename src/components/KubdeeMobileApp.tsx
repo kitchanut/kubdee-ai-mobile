@@ -13,6 +13,7 @@ import GoogleFlowWebViewRunnerHost from '@/autopilot/GoogleFlowWebViewRunnerHost
 import { useAuth } from '@/auth/AuthContext';
 import MobileChangelogModal from '@/components/MobileChangelogModal';
 import MobileHeader from '@/components/MobileHeader';
+import MobileSettingsModal from '@/components/MobileSettingsModal';
 import TopIconTabs from '@/components/TopIconTabs';
 import Text from '@/components/ui/KubdeeText';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
@@ -109,6 +110,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const [isCheckingMobileUpdate, setIsCheckingMobileUpdate] = useState(false);
   const [changelogVisible, setChangelogVisible] = useState(false);
   const [hasCheckedChangelog, setHasCheckedChangelog] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const [updateDownloadState, setUpdateDownloadState] = useState<UpdateDownloadState>({
     visible: false,
     progress: null,
@@ -381,6 +383,14 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const closeMobileChangelog = useCallback((): void => {
     setChangelogVisible(false);
     void AsyncStorage.setItem(SEEN_CHANGELOG_STORAGE_KEY, CURRENT_CHANGELOG_VERSION);
+  }, []);
+
+  const openMobileSettings = useCallback((): void => {
+    setSettingsVisible(true);
+  }, []);
+
+  const closeMobileSettings = useCallback((): void => {
+    setSettingsVisible(false);
   }, []);
 
   useEffect(() => {
@@ -686,6 +696,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
                 }}
                 onProfilePress={() => setActiveTab('profile')}
                 onSelectedProfileChange={setSelectedProfileId}
+                onSettingsPress={openMobileSettings}
                 onThemeModeChange={updateThemeMode}
               />
               <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />
@@ -702,6 +713,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
         visible={changelogVisible}
         onClose={closeMobileChangelog}
       />
+      <MobileSettingsModal theme={theme} visible={settingsVisible} onClose={closeMobileSettings} />
       <Modal animationType="fade" transparent visible={updateDownloadState.visible}>
         <View
           className="flex-1 items-center justify-center px-6"

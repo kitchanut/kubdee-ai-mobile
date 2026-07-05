@@ -1,6 +1,7 @@
 import { refreshAuthToken } from '@/auth/api';
 import { APP_TYPE, BACKEND_URL } from '@/auth/constants';
 import { getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
+import { getAiBrainSettings, pickAiBrainModel } from '@/autopilot/aiBrainSettingsStore';
 import {
   SHOPEE_POST_CHARACTER_LIMIT,
   SHOPEE_POST_SAFE_CHARACTER_LIMIT,
@@ -252,9 +253,10 @@ export async function generateAutoPilotProductContent({
   }
 
   try {
+    const aiBrain = await getAiBrainSettings();
     const result = await postAiGenerate({
-      provider: 'gemini',
-      model: 'gemini-2.5-flash',
+      provider: aiBrain.aiProvider,
+      model: pickAiBrainModel(aiBrain),
       prompt: buildAutoPilotCaptionPrompt({ product, settings }),
     });
 
@@ -279,8 +281,8 @@ export async function generateAutoPilotProductContent({
 
     for (let attempt = 1; !validation.isValid && attempt <= 2; attempt += 1) {
       const rewrite = await postAiGenerate({
-        provider: 'gemini',
-        model: 'gemini-2.5-flash',
+        provider: aiBrain.aiProvider,
+        model: pickAiBrainModel(aiBrain),
         prompt: buildAutoPilotCaptionRewritePrompt({ content, product, settings, validation }),
       });
 
