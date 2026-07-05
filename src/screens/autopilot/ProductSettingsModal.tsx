@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react-native';
 
+import { KubdeeToaster } from '@/components/KubdeeToaster';
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -231,6 +232,7 @@ export function ProductSettingsModal({
           </View>
         </View>
       </KeyboardAvoidingView>
+      <KubdeeToaster isDark={theme.isDark} />
     </Modal>
   );
 }

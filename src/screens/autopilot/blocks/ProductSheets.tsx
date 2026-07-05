@@ -4,6 +4,7 @@ import { ChevronRight, Check, FolderOpen, Image as ImageIcon, Package, Save, Sea
 import { getAutoPilotProductId } from '@/autopilot/productAdapter';
 import type { AutoPilotProductPreset } from '@/autopilot/productPresetStore';
 import type { AutoPilotSettingsPreset } from '@/autopilot/settingsPresetStore';
+import { KubdeeToaster } from '@/components/KubdeeToaster';
 import Text from '@/components/ui/KubdeeText';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -220,6 +221,7 @@ export function ProductSelectSheet({
           </View>
         </View>
       </View>
+      <KubdeeToaster isDark={theme.isDark} />
     </Modal>
   );
 }
@@ -474,6 +476,7 @@ export function ProductPresetSheet({
           </ScrollView>
         </View>
       </View>
+      <KubdeeToaster isDark={theme.isDark} />
     </Modal>
   );
 }
@@ -658,6 +661,7 @@ export function SettingsPresetSheet({
           </ScrollView>
         </View>
       </View>
+      <KubdeeToaster isDark={theme.isDark} />
     </Modal>
   );
 }
