@@ -130,7 +130,7 @@ export function ProductSelectSheet({
                   onChangeText={setQuery}
                   placeholder="ค้นหาสินค้า..."
                   placeholderTextColor={theme.textSubtle}
-                  className="h-9 flex-1 rounded-none border-0 bg-transparent p-0 text-kd-caption text-kd-text shadow-none"
+                  className="h-9 flex-1 rounded-none border-0 bg-transparent p-0 text-kd-caption text-kd-text shadow-none dark:bg-transparent"
                   style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
                 />
                 {query.length > 0 ? (
@@ -412,7 +412,7 @@ export function ProductPresetSheet({
                       onChangeText={onNameChange}
                       placeholder="เช่น ชุดรีวิวสินค้า 9:16"
                       placeholderTextColor={theme.textSubtle}
-                      className="min-h-10 rounded-kd-md border border-kd-border bg-kd-input px-2 text-kd-caption text-kd-text"
+                      className="min-h-10 rounded-kd-md border border-kd-border bg-kd-input px-2 text-kd-caption text-kd-text dark:bg-kd-input"
                       style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
                     />
                   </View>
@@ -588,7 +588,7 @@ export function SettingsPresetSheet({
                       onChangeText={onNameChange}
                       placeholder="เช่น รีวิวสั้น 9:16 โทนพรีเมียม"
                       placeholderTextColor={theme.textSubtle}
-                      className="min-h-10 rounded-kd-md border border-kd-border bg-kd-input px-2 text-kd-caption text-kd-text"
+                      className="min-h-10 rounded-kd-md border border-kd-border bg-kd-input px-2 text-kd-caption text-kd-text dark:bg-kd-input"
                       style={{ fontFamily: kubdeeFontFamilies.thai.regular }}
                     />
                   </View>

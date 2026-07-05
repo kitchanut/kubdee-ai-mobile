@@ -196,7 +196,7 @@ function ProductRow({
               onChangeText={(value) => onUpdate('productId', value)}
               placeholder="รหัสสินค้า"
               placeholderTextColor={theme.textSubtle}
-              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
+              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none dark:bg-transparent"
               style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
             />
           ) : (
@@ -238,7 +238,7 @@ function ProductRow({
               onChangeText={(value) => onUpdate('productUrl', value)}
               placeholder="ลิงก์สินค้า"
               placeholderTextColor={theme.textSubtle}
-              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
+              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none dark:bg-transparent"
               style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
             />
           ) : (
@@ -259,7 +259,7 @@ function ProductRow({
             placeholder="ชื่อสินค้า"
             placeholderTextColor={theme.textSubtle}
             numberOfLines={2}
-            className="h-[42px] min-h-[42px] rounded-none border-0 bg-transparent px-0 py-0 text-kd-text shadow-none"
+            className="h-[42px] min-h-[42px] rounded-none border-0 bg-transparent px-0 py-0 text-kd-text shadow-none dark:bg-transparent"
             style={{ fontFamily: kubdeeFontFamilies.thai.medium, fontSize: 11, lineHeight: 14, paddingVertical: 0 }}
           />
         ) : (
@@ -278,7 +278,7 @@ function ProductRow({
             onChangeText={(value) => onUpdate('hashtags', value)}
             placeholder="#แฮชแท็ก"
             placeholderTextColor={theme.textSubtle}
-            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
+            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none dark:bg-transparent"
             style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
           />
         ) : (
@@ -297,7 +297,7 @@ function ProductRow({
             onChangeText={(value) => onUpdate('cta', value)}
             placeholder="CTA (Call to Action)"
             placeholderTextColor={theme.textSubtle}
-            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
+            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none dark:bg-transparent"
             style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
           />
         ) : (
