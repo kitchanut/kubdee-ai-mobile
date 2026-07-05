@@ -184,16 +184,15 @@ export function OptionGroup({
   // grid = individually bordered chips that tint with the accent when selected.
   // NOTE: ใช้ Pressable + token rounded-kd-* ตรง ๆ (ไม่ใช้ ToggleGroup) เพราะ
   // ToggleGroupItem มี base `rounded-none` ที่ twMerge ไม่รู้จัก custom token เลย override ไม่ได้ → ขอบเหลี่ยม
-  // flexBasis เผื่อ gap แบบ % จะเหลือเศษที่ว่างกองท้ายแถว — ถ้าไม่ wrap (options พอดีแถวเดียว)
-  // ให้ item ยืดเต็มแถวเพื่อให้ขอบซ้าย/ขวาสมมาตร; กรณี wrap คงพฤติกรรมเดิมกันแถวท้ายกว้างผิดปกติ
-  const sizeStyle = columns
-    ? {
-        flexBasis: `${100 / columns - 1.5}%` as DimensionValue,
-        ...(options.length <= columns ? { flexGrow: 1 } : null),
-      }
-    : isGrid
-      ? undefined
-      : { flexGrow: 1, flexBasis: 0 as DimensionValue };
+  // segmented ที่ options พอดีแถวเดียว: ใช้ flex-1 แบ่งเท่ากันตรง ๆ (ขอบสมมาตร)
+  // ห้ามใช้ flex-wrap + flexBasis % กับเคสนี้ — Yoga คำนวณพลาดตอนมี section ถูกแทรกด้านบน
+  // ทำให้ track หดและ pill ไปทับ section ถัดไป (เคส จำนวนฉาก 1→หลายฉาก ในแท็บวิดีโอ)
+  const singleRowSegmented = !isGrid && (!columns || options.length <= columns);
+  const sizeStyle = singleRowSegmented
+    ? { flexGrow: 1, flexBasis: 0 as DimensionValue }
+    : columns
+      ? { flexBasis: `${100 / columns - 1.5}%` as DimensionValue }
+      : undefined;
 
   const itemStyle = (active: boolean) => {
     if (isGrid) {
@@ -225,7 +224,9 @@ export function OptionGroup({
         className={
           isGrid
             ? 'flex-row flex-wrap gap-1.5'
-            : 'flex-row flex-wrap gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted'
+            : singleRowSegmented
+              ? 'flex-row gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted'
+              : 'flex-row flex-wrap gap-0.5 rounded-kd-lg bg-kd-panel-muted p-0.5 dark:bg-kd-card-muted'
         }
       >
         {options.map((option) => {
