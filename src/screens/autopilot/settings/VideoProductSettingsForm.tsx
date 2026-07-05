@@ -194,45 +194,52 @@ export function VideoProductSettingsForm({
               />
             </View>
           </View>
-          <OptionGroup
-            columns={5}
-            compact
-            label="จำนวนฉาก"
-            options={SCENE_OPTIONS}
-            theme={theme}
-            accent={accent}
-            value={settings.sceneCount}
-            onChange={(value) => {
-              const nextSceneCount = parseInt(String(value), 10);
-              onChange('sceneCount', String(value));
-              if (nextSceneCount > 1) {
-                onChange('outputCount', '1');
-                onChange('videoMethod', 'multi');
-                if (!settings.multiSceneAngleMode) onChange('multiSceneAngleMode', 'same_angle');
-              } else {
-                onChange('videoMethod', 'extend');
-              }
-            }}
-          />
-          <OptionGroup
-            columns={2}
-            label="วิธีสร้างวิดีโอ"
-            options={VIDEO_METHOD_SELECT_OPTIONS}
-            theme={theme}
-            accent={accent}
-            value={selectedVideoMethod}
-            disabledValues={!multiScene ? ['multi', 'extend'] : undefined}
-            onChange={(value) => {
-              const nextMethod = String(value);
-              onChange('videoMethod', nextMethod);
-              if (nextMethod === 'multi' && !settings.multiSceneAngleMode) {
-                onChange('multiSceneAngleMode', 'same_angle');
-              }
-              if (nextMethod === 'extend' && multiScene) {
-                onChange('sceneCount', '1');
-              }
-            }}
-          />
+          <View className="flex-row gap-3">
+            <View className="min-w-0 flex-1">
+              <OptionGroup
+                columns={5}
+                compact
+                label="จำนวนฉาก"
+                options={SCENE_OPTIONS}
+                theme={theme}
+                accent={accent}
+                value={settings.sceneCount}
+                onChange={(value) => {
+                  const nextSceneCount = parseInt(String(value), 10);
+                  onChange('sceneCount', String(value));
+                  if (nextSceneCount > 1) {
+                    onChange('outputCount', '1');
+                    onChange('videoMethod', 'multi');
+                    if (!settings.multiSceneAngleMode) onChange('multiSceneAngleMode', 'same_angle');
+                  } else {
+                    onChange('videoMethod', 'extend');
+                  }
+                }}
+              />
+            </View>
+            <View className="min-w-0 flex-1">
+              <OptionGroup
+                columns={2}
+                compact
+                label="วิธีสร้างวิดีโอ"
+                options={VIDEO_METHOD_SELECT_OPTIONS}
+                theme={theme}
+                accent={accent}
+                value={selectedVideoMethod}
+                disabledValues={!multiScene ? ['multi', 'extend'] : undefined}
+                onChange={(value) => {
+                  const nextMethod = String(value);
+                  onChange('videoMethod', nextMethod);
+                  if (nextMethod === 'multi' && !settings.multiSceneAngleMode) {
+                    onChange('multiSceneAngleMode', 'same_angle');
+                  }
+                  if (nextMethod === 'extend' && multiScene) {
+                    onChange('sceneCount', '1');
+                  }
+                }}
+              />
+            </View>
+          </View>
           {multiScene && selectedVideoMethod === 'multi' ? (
             <OptionGroup
               columns={4}
