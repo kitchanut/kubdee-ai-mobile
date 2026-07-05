@@ -21,6 +21,7 @@ import {
   LogOut,
   Plus,
   RotateCcw,
+  Settings,
   Trash2,
   User,
   UserCircle,
@@ -40,6 +41,7 @@ interface ProfileScreenProps {
   theme: KubdeeTheme;
   selectedProfileId?: string;
   onSelectProfile?: (profileId: string) => void;
+  onOpenSettings?: () => void;
 }
 
 const GROUP_NONE = '__none__';
@@ -238,6 +240,7 @@ export default function ProfileScreen({
   theme,
   selectedProfileId = '',
   onSelectProfile,
+  onOpenSettings,
 }: ProfileScreenProps): React.JSX.Element {
   const {
     confirmDeletedProfileLocally,
@@ -582,6 +585,17 @@ export default function ProfileScreen({
             <UserCircle size={14} color={theme.text} strokeWidth={2.4} />
             <Text className="shrink text-kd-caption font-semibold text-kd-text-muted">บัญชี</Text>
           </View>
+          {onOpenSettings ? (
+            <TouchableOpacity
+              accessibilityLabel="เปิดการตั้งค่า"
+              accessibilityRole="button"
+              activeOpacity={0.78}
+              onPress={onOpenSettings}
+              className="h-7 w-7 shrink-0 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel"
+            >
+              <Settings size={14} color={theme.textMuted} strokeWidth={2.2} />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View className="gap-2 rounded-kd-xl border border-kd-border bg-kd-panel p-2">

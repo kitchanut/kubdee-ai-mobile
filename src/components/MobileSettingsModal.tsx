@@ -1,6 +1,6 @@
 import { BrainCircuit, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 
 import {
   DEFAULT_AI_BRAIN_SETTINGS,
@@ -20,7 +20,8 @@ interface MobileSettingsModalProps {
 
 // โมดัล "ตั้งค่า" — mirror จาก kubdee-ai-extension SettingsModal
 // extension มี tab สมอง/Prompt/เครื่องมือ — mobile มีเฉพาะ tab "สมอง" ก่อน (โครง tab bar เดียวกัน)
-// แก้ค่าเป็น draft ในเครื่อง แล้วบันทึกจริงเมื่อกด "บันทึก" (X/backdrop = ปิดโดยไม่บันทึก)
+// แก้ค่าเป็น draft ในเครื่อง แล้วบันทึกจริงเมื่อกด "บันทึก" (ยกเลิก/X = ปิดโดยไม่บันทึก)
+// backdrop ปิดได้เฉพาะตอนยังไม่แก้อะไร — กันเผลอแตะพื้นหลังแล้ว draft หาย
 export default function MobileSettingsModal({
   visible,
   theme,
@@ -28,6 +29,10 @@ export default function MobileSettingsModal({
 }: MobileSettingsModalProps): React.JSX.Element {
   const { height } = useWindowDimensions();
   const [draft, setDraft] = useState<AiBrainSettings>(DEFAULT_AI_BRAIN_SETTINGS);
+  const [original, setOriginal] = useState<AiBrainSettings | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // โหลดค่าที่บันทึกไว้ใหม่ทุกครั้งที่เปิดโมดัล — ทิ้ง draft เดิมที่ไม่ได้บันทึก
   useEffect(() => {
@@ -36,15 +41,24 @@ export default function MobileSettingsModal({
     }
 
     let active = true;
+    setIsLoading(true);
+    setSaveError(null);
     getAiBrainSettings()
       .then((stored) => {
         if (active) {
           setDraft(stored);
+          setOriginal(stored);
         }
       })
       .catch(() => {
         if (active) {
           setDraft(DEFAULT_AI_BRAIN_SETTINGS);
+          setOriginal(DEFAULT_AI_BRAIN_SETTINGS);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoading(false);
         }
       });
 
@@ -53,15 +67,35 @@ export default function MobileSettingsModal({
     };
   }, [visible]);
 
-  const handleSave = (): void => {
-    void saveAiBrainSettings(draft);
-    onClose();
+  const isDirty = original !== null && JSON.stringify(draft) !== JSON.stringify(original);
+
+  const handleBackdropPress = (): void => {
+    if (!isDirty && !isSaving) {
+      onClose();
+    }
+  };
+
+  const handleSave = async (): Promise<void> => {
+    if (isSaving || isLoading) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await saveAiBrainSettings(draft);
+      onClose();
+    } catch {
+      setSaveError('บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View className="flex-1 items-center justify-center bg-black/60 px-4">
-        <Pressable className="absolute inset-0" onPress={onClose} />
+        <Pressable className="absolute inset-0" onPress={handleBackdropPress} />
         <View
           className="w-full max-w-[512px] overflow-hidden rounded-[12px] border border-kd-border bg-kd-panel"
           style={{
@@ -80,6 +114,7 @@ export default function MobileSettingsModal({
               <Pressable
                 accessibilityLabel="ปิดการตั้งค่า"
                 accessibilityRole="button"
+                hitSlop={8}
                 onPress={onClose}
                 className="mr-[-6px] h-8 w-8 items-center justify-center rounded-kd-lg active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
               >
@@ -105,20 +140,49 @@ export default function MobileSettingsModal({
             showsVerticalScrollIndicator={false}
             style={{ maxHeight: Math.max(240, Math.floor(height * 0.6)) }}
           >
-            <View className="gap-2.5 p-4">
-              <AiBrainSettingsForm theme={theme} settings={draft} onChange={setDraft} />
-            </View>
+            {isLoading ? (
+              // กัน default แวบก่อนค่าจริงโหลดเสร็จ — คง layout สูงใกล้เคียงฟอร์มจริง
+              <View className="h-[220px] items-center justify-center">
+                <ActivityIndicator color={theme.textMuted} size="small" />
+              </View>
+            ) : (
+              <View className="gap-2.5 p-4">
+                <AiBrainSettingsForm theme={theme} settings={draft} onChange={setDraft} />
+              </View>
+            )}
           </ScrollView>
 
-          {/* footer — บันทึก draft แล้วปิด */}
-          <View className="flex-row justify-end border-t border-kd-border p-3">
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleSave}
-              className="h-[34px] flex-row items-center justify-center rounded-kd-lg bg-gray-900 px-4 active:opacity-85 dark:bg-white"
-            >
-              <Text className="text-kd-body font-semibold text-white dark:text-gray-900">บันทึก</Text>
-            </Pressable>
+          {/* footer — ยกเลิก/บันทึก 2 ปุ่มตาม pattern ของแอป (create-profile modal) */}
+          <View className="gap-2 border-t border-kd-border p-3">
+            {saveError ? (
+              <Text className="text-kd-micro font-medium text-kd-red">{saveError}</Text>
+            ) : null}
+            <View className="flex-row gap-2">
+              <Pressable
+                accessibilityRole="button"
+                disabled={isSaving}
+                onPress={onClose}
+                className="h-[34px] flex-1 flex-row items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
+              >
+                <Text className="text-kd-body font-semibold text-kd-text-muted">ยกเลิก</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: isSaving || isLoading }}
+                disabled={isSaving || isLoading}
+                onPress={() => {
+                  void handleSave();
+                }}
+                className={`h-[34px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-gray-900 active:opacity-85 dark:bg-white ${
+                  isSaving || isLoading ? 'opacity-60' : ''
+                }`}
+              >
+                {isSaving ? (
+                  <ActivityIndicator color={theme.isDark ? '#0f172a' : '#ffffff'} size="small" />
+                ) : null}
+                <Text className="text-kd-body font-semibold text-white dark:text-gray-900">บันทึก</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </View>

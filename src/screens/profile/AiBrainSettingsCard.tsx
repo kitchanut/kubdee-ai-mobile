@@ -1,4 +1,4 @@
-import { Gem } from 'lucide-react-native';
+import { Check, Gem } from 'lucide-react-native';
 import { TouchableOpacity, View } from 'react-native';
 
 import {
@@ -19,6 +19,9 @@ interface AiBrainSettingsFormProps {
   onChange: (next: AiBrainSettings) => void;
 }
 
+// model default ของแต่ละ provider — ตัวที่ประหยัดเครดิตสุด แนะนำสำหรับผู้ใช้ทั่วไป
+const RECOMMENDED_MODELS = new Set<string>(['gemini-2.5-flash', 'gpt-4o-mini']);
+
 // ฟอร์มตั้งค่า "สมอง AI" (controlled) — mirror จาก kubdee-ai-extension SettingsModal (tab "สมอง")
 // parent (MobileSettingsModal) เป็นเจ้าของ draft state และการบันทึกผ่านปุ่ม "บันทึก"
 export default function AiBrainSettingsForm({
@@ -26,6 +29,8 @@ export default function AiBrainSettingsForm({
   settings,
   onChange,
 }: AiBrainSettingsFormProps): React.JSX.Element {
+  const selectedIconColor = theme.isDark ? '#0f172a' : '#ffffff';
+
   const handleSelectProvider = (provider: AiProvider): void => {
     onChange({ ...settings, aiProvider: provider });
   };
@@ -57,16 +62,17 @@ export default function AiBrainSettingsForm({
                 activeOpacity={0.78}
                 key={option.value}
                 onPress={() => handleSelectProvider(option.value)}
-                className={`h-[30px] flex-1 flex-row items-center justify-center gap-[5px] rounded-kd-lg border px-2.5 ${
+                className={`h-[38px] flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg border px-2.5 ${
                   selected
-                    ? 'border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted'
+                    ? 'border-gray-900 bg-gray-900 dark:border-white dark:bg-white'
                     : 'border-kd-border bg-kd-card-muted dark:bg-kd-panel-muted'
                 }`}
               >
+                {selected ? <Check size={12} color={selectedIconColor} strokeWidth={3} /> : null}
                 <Text
                   numberOfLines={1}
                   className={`shrink text-kd-micro font-semibold ${
-                    selected ? 'text-kd-text' : 'text-kd-text-subtle'
+                    selected ? 'text-white dark:text-gray-900' : 'text-kd-text-subtle'
                   }`}
                 >
                   {option.label}
@@ -80,9 +86,13 @@ export default function AiBrainSettingsForm({
       {/* Model — แต่ละ provider จำ model ของตัวเอง (geminiModel/openaiModel) */}
       <View className="gap-[5px]">
         <Text className="text-kd-micro font-bold text-kd-text-subtle">Model</Text>
+        <Text className="text-kd-micro font-medium leading-[15px] text-kd-text-subtle">
+          Flash / mini = เร็ว ประหยัดเครดิต · Pro = ฉลาดขึ้น ใช้เครดิตมากกว่า
+        </Text>
         <View className="flex-row flex-wrap gap-1.5">
           {modelOptions.map((option) => {
             const selected = option.value === selectedModel;
+            const recommended = RECOMMENDED_MODELS.has(option.value);
 
             return (
               <TouchableOpacity
@@ -91,20 +101,40 @@ export default function AiBrainSettingsForm({
                 activeOpacity={0.78}
                 key={option.value}
                 onPress={() => handleSelectModel(option.value)}
-                className={`h-[30px] max-w-full flex-row items-center gap-[5px] rounded-kd-lg border px-2.5 ${
+                className={`h-[38px] max-w-full flex-row items-center gap-1.5 rounded-kd-lg border px-2.5 ${
                   selected
-                    ? 'border-kd-border-strong bg-kd-panel-muted dark:bg-kd-card-muted'
+                    ? 'border-gray-900 bg-gray-900 dark:border-white dark:bg-white'
                     : 'border-kd-border bg-kd-card-muted dark:bg-kd-panel-muted'
                 }`}
               >
+                {selected ? <Check size={12} color={selectedIconColor} strokeWidth={3} /> : null}
                 <Text
                   numberOfLines={1}
                   className={`shrink text-kd-micro font-semibold ${
-                    selected ? 'text-kd-text' : 'text-kd-text-subtle'
+                    selected ? 'text-white dark:text-gray-900' : 'text-kd-text-subtle'
                   }`}
                 >
                   {option.label}
                 </Text>
+                {recommended ? (
+                  <View
+                    className={`rounded-full px-1.5 py-px ${
+                      selected
+                        ? 'bg-white/25 dark:bg-gray-900/15'
+                        : 'bg-violet-100 dark:bg-violet-900/40'
+                    }`}
+                  >
+                    <Text
+                      className={`text-[9px] font-semibold ${
+                        selected
+                          ? 'text-white dark:text-gray-900'
+                          : 'text-violet-700 dark:text-violet-300'
+                      }`}
+                    >
+                      แนะนำ
+                    </Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
             );
           })}

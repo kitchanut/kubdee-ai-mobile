@@ -629,6 +629,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
           <ProfileScreen
             selectedProfileId={selectedProfileId}
             theme={theme}
+            onOpenSettings={openMobileSettings}
             onSelectProfile={setSelectedProfileId}
           />
         );
