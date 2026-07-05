@@ -72,8 +72,13 @@ export function ProductSettingsModal({
         className="flex-1 justify-end bg-black/60"
       >
         <View
-          className="overflow-hidden rounded-t-kd-2xl border border-kd-border bg-kd-panel"
-          style={{ maxHeight: '94%', minHeight: '78%' }}
+          className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
+          style={{
+            maxHeight: '92%',
+            minHeight: '78%',
+            // ยก sheet ลอยจากขอบล่างจอ (แบบเดียวกับ ProductSelectSheet) — กันมุมโค้งโดนตัด
+            marginBottom: Math.max(bottomInset + 8, 16),
+          }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center gap-2 pb-2">
@@ -146,7 +151,7 @@ export function ProductSettingsModal({
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               contentContainerClassName="gap-4 px-3 py-3"
-              contentContainerStyle={{ paddingBottom: 92 + Math.max(bottomInset, 12) }}
+              contentContainerStyle={{ paddingBottom: 72 }}
             >
               {activeTab === 'image' && showImageTab ? (
                 <ImageProductSettingsForm
@@ -168,10 +173,7 @@ export function ProductSettingsModal({
             </ScrollView>
           </SettingsAccentContext.Provider>
 
-          <View
-            className="absolute bottom-0 left-0 right-0 flex-row items-center gap-2 border-t border-kd-border bg-kd-panel px-3 pt-2"
-            style={{ paddingBottom: Math.max(bottomInset, 12) }}
-          >
+          <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-2 border-t border-kd-border bg-kd-panel px-3 py-2">
             <Button
               accessibilityLabel="รีเซ็ตตั้งค่าสินค้า"
               accessibilityRole="button"

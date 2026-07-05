@@ -329,8 +329,8 @@ export function ProductPresetSheet({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <View className="flex-1 justify-end bg-black/60">
         <View
-          className="overflow-hidden rounded-t-kd-2xl border border-kd-border bg-kd-panel"
-          style={{ maxHeight: '72%' }}
+          className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
+          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 8, 16) }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center justify-between pb-2">
@@ -390,7 +390,7 @@ export function ProductPresetSheet({
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerClassName="gap-3 px-3 py-3"
-            contentContainerStyle={{ paddingBottom: Math.max(bottomInset, 20) }}
+            contentContainerStyle={{ paddingBottom: 20 }}
           >
             {message ? (
               <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
@@ -503,8 +503,8 @@ export function SettingsPresetSheet({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <View className="flex-1 justify-end bg-black/60">
         <View
-          className="overflow-hidden rounded-t-kd-2xl border border-kd-border bg-kd-panel"
-          style={{ maxHeight: '72%' }}
+          className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
+          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 8, 16) }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center justify-between pb-2">
@@ -566,7 +566,7 @@ export function SettingsPresetSheet({
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerClassName="gap-3 px-3 py-3"
-            contentContainerStyle={{ paddingBottom: Math.max(bottomInset, 20) }}
+            contentContainerStyle={{ paddingBottom: 20 }}
           >
             {message ? (
               <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
