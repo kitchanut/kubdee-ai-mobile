@@ -11,6 +11,7 @@ object KubdeeAutomationIpc {
 
   const val ACTION_START_SHOPEE_IMPORT = "ai.kubdee.mobile.automation.START_SHOPEE_IMPORT"
   const val ACTION_START_SHOPEE_POST = "ai.kubdee.mobile.automation.START_SHOPEE_POST"
+  const val ACTION_START_SHOPEE_CONVERT = "ai.kubdee.mobile.automation.START_SHOPEE_CONVERT"
   const val ACTION_STOP_SHOPEE = "ai.kubdee.mobile.automation.STOP_SHOPEE"
 
   const val ACTION_EVENT_SHOPEE_IMPORT_LOG = "ai.kubdee.mobile.automation.EVENT_SHOPEE_IMPORT_LOG"
@@ -18,6 +19,8 @@ object KubdeeAutomationIpc {
   const val ACTION_EVENT_SHOPEE_IMPORT_FINISHED = "ai.kubdee.mobile.automation.EVENT_SHOPEE_IMPORT_FINISHED"
   const val ACTION_EVENT_SHOPEE_POST_LOG = "ai.kubdee.mobile.automation.EVENT_SHOPEE_POST_LOG"
   const val ACTION_EVENT_SHOPEE_POST_FINISHED = "ai.kubdee.mobile.automation.EVENT_SHOPEE_POST_FINISHED"
+  const val ACTION_EVENT_SHOPEE_CONVERT_LOG = "ai.kubdee.mobile.automation.EVENT_SHOPEE_CONVERT_LOG"
+  const val ACTION_EVENT_SHOPEE_CONVERT_FINISHED = "ai.kubdee.mobile.automation.EVENT_SHOPEE_CONVERT_FINISHED"
 
   const val EXTRA_PAYLOAD_JSON = "payloadJson"
   const val EXTRA_RUN_ID = "runId"
@@ -95,6 +98,30 @@ object KubdeeAutomationIpc {
     stopped: Boolean = false
   ) {
     sendEvent(context, ACTION_EVENT_SHOPEE_POST_FINISHED) {
+      putExtra(EXTRA_RUN_ID, runId)
+      putExtra(EXTRA_RESULT_JSON, result.toString())
+      putExtra(EXTRA_STOPPED, stopped)
+      if (!error.isNullOrBlank()) {
+        putExtra(EXTRA_ERROR, error)
+      }
+    }
+  }
+
+  fun sendShopeeConvertLog(context: Context, message: String, ts: Long = System.currentTimeMillis()) {
+    sendEvent(context, ACTION_EVENT_SHOPEE_CONVERT_LOG) {
+      putExtra(EXTRA_MESSAGE, message)
+      putExtra(EXTRA_TS, ts)
+    }
+  }
+
+  fun sendShopeeConvertFinished(
+    context: Context,
+    runId: String,
+    result: JSONObject,
+    error: String? = null,
+    stopped: Boolean = false
+  ) {
+    sendEvent(context, ACTION_EVENT_SHOPEE_CONVERT_FINISHED) {
       putExtra(EXTRA_RUN_ID, runId)
       putExtra(EXTRA_RESULT_JSON, result.toString())
       putExtra(EXTRA_STOPPED, stopped)

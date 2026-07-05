@@ -58,6 +58,7 @@ class KubdeeAccessibilityModule(
 ) : ReactContextBaseJavaModule(reactContext) {
   private val pendingShopeeImportPromises = ConcurrentHashMap<String, Promise>()
   private val pendingShopeePostPromises = ConcurrentHashMap<String, Promise>()
+  private val pendingShopeeConvertPromises = ConcurrentHashMap<String, Promise>()
   internal val moduleHandler = Handler(Looper.getMainLooper())
   private val automationEventReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -86,6 +87,10 @@ class KubdeeAccessibilityModule(
       promise.reject("MODULE_INVALIDATED", "Kubdee Accessibility module ถูกปิดก่อนงานจบ")
     }
     pendingShopeePostPromises.clear()
+    pendingShopeeConvertPromises.forEach { (_, promise) ->
+      promise.reject("MODULE_INVALIDATED", "Kubdee Accessibility module ถูกปิดก่อนงานจบ")
+    }
+    pendingShopeeConvertPromises.clear()
     if (eventContext === reactContext) {
       eventContext = null
     }
@@ -99,6 +104,8 @@ class KubdeeAccessibilityModule(
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_IMPORT_FINISHED)
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_LOG)
       addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_POST_FINISHED)
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_CONVERT_LOG)
+      addAction(KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_CONVERT_FINISHED)
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       reactContext.registerReceiver(automationEventReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -138,6 +145,18 @@ class KubdeeAccessibilityModule(
         handleShopeePostFinished(intent)
       }
 
+      KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_CONVERT_LOG -> {
+        val message = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_MESSAGE) ?: return
+        emitEvent("KubdeeShopeeConvertLog", Arguments.createMap().apply {
+          putString("message", message)
+          putDouble("ts", intent.getLongExtra(KubdeeAutomationIpc.EXTRA_TS, System.currentTimeMillis()).toDouble())
+        })
+      }
+
+      KubdeeAutomationIpc.ACTION_EVENT_SHOPEE_CONVERT_FINISHED -> {
+        handleShopeeConvertFinished(intent)
+      }
+
     }
   }
 
@@ -168,6 +187,26 @@ class KubdeeAccessibilityModule(
         JSONObject()
           .put("success", false)
           .put("error", "Shopee post result missing")
+          .toString()
+      }
+    )
+  }
+
+  private fun handleShopeeConvertFinished(intent: Intent) {
+    val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
+    val promise = pendingShopeeConvertPromises.remove(runId) ?: return
+    val resultJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RESULT_JSON).orEmpty()
+    val error = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_ERROR)
+    if (!error.isNullOrBlank() && resultJson.isBlank()) {
+      promise.reject("SHOPEE_CONVERT_FAILED", error)
+      return
+    }
+
+    promise.resolve(
+      resultJson.ifBlank {
+        JSONObject()
+          .put("success", false)
+          .put("error", "Shopee convert result missing")
           .toString()
       }
     )
@@ -523,6 +562,65 @@ class KubdeeAccessibilityModule(
       return "$label เปิดไฟล์วิดีโอไม่ได้ ไฟล์อาจถูกลบหรือย้ายที่ กรุณาลบออกแล้วเพิ่มใหม่"
     }
     FileInputStream(file).use { }
+    return null
+  }
+
+  @ReactMethod
+  fun convertShopeeLinks(payloadJson: String, promise: Promise) {
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
+      return
+    }
+
+    val preflightError = validateShopeeConvertPayload(payloadJson)
+    if (preflightError != null) {
+      promise.reject("SHOPEE_CONVERT_INVALID", preflightError)
+      return
+    }
+
+    if (!openPackageBlocking(TARGET_PACKAGE_SHOPEE)) {
+      promise.reject("APP_NOT_FOUND", "Package not found: $TARGET_PACKAGE_SHOPEE")
+      return
+    }
+
+    val runId = "shopee-convert-${System.currentTimeMillis()}-${UUID.randomUUID()}"
+    pendingShopeeConvertPromises[runId] = promise
+    moduleHandler.postDelayed({
+      pendingShopeeConvertPromises.remove(runId)?.reject(
+        "SHOPEE_CONVERT_TIMEOUT",
+        "Shopee convert ใช้เวลานานเกินไป"
+      )
+    }, 20 * 60 * 1000L)
+
+    sendAutomationCommand(KubdeeAutomationIpc.ACTION_START_SHOPEE_CONVERT) {
+      putExtra(KubdeeAutomationIpc.EXTRA_RUN_ID, runId)
+      putExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON, payloadJson)
+    }
+  }
+
+  private fun validateShopeeConvertPayload(payloadJson: String): String? {
+    val links = try {
+      JSONObject(payloadJson).optJSONArray("links")
+    } catch (_: Exception) {
+      return "ข้อมูลลิงก์สำหรับแปลงไม่ถูกต้อง"
+    } ?: return "ไม่มีลิงก์สำหรับแปลงเป็น short link"
+
+    if (links.length() <= 0) {
+      return "ไม่มีลิงก์สำหรับแปลงเป็น short link"
+    }
+
+    for (index in 0 until links.length()) {
+      val item = links.optJSONObject(index)
+        ?: return "ลิงก์รายการที่ ${index + 1} ไม่ถูกต้อง"
+      if (item.optString("localId", "").trim().isBlank()) {
+        return "ลิงก์รายการที่ ${index + 1} ไม่มีรหัสสินค้า"
+      }
+      if (item.optString("url", "").trim().isBlank()) {
+        return "ลิงก์รายการที่ ${index + 1} ไม่มี URL"
+      }
+    }
+
     return null
   }
 
@@ -934,6 +1032,14 @@ class KubdeeAccessibilityModule(
         putDouble("ts", System.currentTimeMillis().toDouble())
       }
       emitEvent("KubdeeShopeePostLog", payload)
+    }
+
+    fun emitShopeeConvertLog(message: String) {
+      val payload = Arguments.createMap().apply {
+        putString("message", message)
+        putDouble("ts", System.currentTimeMillis().toDouble())
+      }
+      emitEvent("KubdeeShopeeConvertLog", payload)
     }
 
   }

@@ -64,6 +64,29 @@ export interface NativeShopeePostingResult {
   }>;
 }
 
+export interface NativeShopeeConvertLog {
+  message: string;
+  ts: number;
+}
+
+export interface NativeShopeeConvertLinkInput {
+  localId: string;
+  url: string;
+}
+
+export interface NativeShopeeConvertResult {
+  success: boolean;
+  stopped?: boolean;
+  error?: string | null;
+  convertedCount?: number;
+  results?: Array<{
+    localId: string;
+    url: string;
+    shortUrl?: string | null;
+    error?: string | null;
+  }>;
+}
+
 export interface NativeGoogleFlowDownloadedAsset {
   uri: string;
   fileName: string;
@@ -112,6 +135,7 @@ type NativeAccessibilityModule = {
   getPendingShopeeImportProducts?: () => Promise<NativeShopeeImportProduct[]>;
   clearPendingShopeeImportProducts?: () => Promise<boolean>;
   postShopeeVideos?: (payloadJson: string) => Promise<string>;
+  convertShopeeLinks?: (payloadJson: string) => Promise<string>;
   stopShopeeAutomation?: () => Promise<boolean>;
   waitForGoogleFlowDownload?: (
     step: 'image' | 'video',
@@ -300,6 +324,23 @@ export async function postShopeeVideos(videos: NativeShopeePostingVideoInput[]):
   return { success: false, error: 'Shopee posting ใช้ได้เฉพาะ Android native build' };
 }
 
+export async function convertShopeeLinks(
+  links: NativeShopeeConvertLinkInput[]
+): Promise<NativeShopeeConvertResult> {
+  if (Platform.OS === 'android' && nativeModule?.convertShopeeLinks) {
+    const payloadJson = await nativeModule.convertShopeeLinks(JSON.stringify({
+      links,
+    }));
+    try {
+      return JSON.parse(payloadJson) as NativeShopeeConvertResult;
+    } catch {
+      return { success: false, error: 'อ่านผลลัพธ์การแปลงลิงก์ Shopee จาก native ไม่สำเร็จ' };
+    }
+  }
+
+  return { success: false, error: 'แปลงลิงก์ Shopee ใช้ได้เฉพาะ Android native build' };
+}
+
 export async function stopShopeeAutomation(): Promise<boolean> {
   if (Platform.OS === 'android' && nativeModule?.stopShopeeAutomation) {
     return nativeModule.stopShopeeAutomation();
@@ -485,6 +526,30 @@ export function subscribeShopeePostLogs(
     }
 
     const entry = payload as Partial<NativeShopeePostLog>;
+    if (typeof entry.message !== 'string') {
+      return;
+    }
+
+    listener({
+      message: entry.message,
+      ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+    });
+  });
+}
+
+export function subscribeShopeeConvertLogs(
+  listener: (entry: NativeShopeeConvertLog) => void
+): EmitterSubscription | null {
+  if (!nativeEventEmitter) {
+    return null;
+  }
+
+  return nativeEventEmitter.addListener('KubdeeShopeeConvertLog', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    const entry = payload as Partial<NativeShopeeConvertLog>;
     if (typeof entry.message !== 'string') {
       return;
     }

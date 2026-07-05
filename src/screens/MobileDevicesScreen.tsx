@@ -1,5 +1,6 @@
 import {
   CheckCircle2,
+  Link2,
   MonitorSmartphone,
   RefreshCw,
   Send,
@@ -47,16 +48,24 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
   const [bridgeMessage, setBridgeMessage] = useState('ยังไม่ได้เช็คสถานะมือถือ');
   const [isStoppingImport, setIsStoppingImport] = useState(false);
   const [isStoppingPost, setIsStoppingPost] = useState(false);
+  const [isStoppingConvert, setIsStoppingConvert] = useState(false);
   const activitySnapshot = useAutomationActivitySnapshot();
   const importRun = activitySnapshot.runs['shopee-import'];
   const postRun = activitySnapshot.runs['shopee-post'];
+  const convertRun = activitySnapshot.runs['shopee-convert'];
   const accessibilityEnabled = accessibilityStatus?.enabled ?? false;
   const accessibilityRunning = accessibilityStatus?.running ?? false;
   const hasActivityLogs =
-    importRun.logs.length > 0 || postRun.logs.length > 0 || importRun.running || postRun.running;
+    importRun.logs.length > 0 ||
+    postRun.logs.length > 0 ||
+    convertRun.logs.length > 0 ||
+    importRun.running ||
+    postRun.running ||
+    convertRun.running;
 
   const importStats = useMemo(() => buildRunStats(importRun, theme), [importRun, theme]);
   const postStats = useMemo(() => buildRunStats(postRun, theme), [postRun, theme]);
+  const convertStats = useMemo(() => buildRunStats(convertRun, theme), [convertRun, theme]);
 
   const refreshStatus = useCallback(async (): Promise<void> => {
     try {
@@ -98,9 +107,15 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
   }, [refreshStatus]);
 
   const stopRun = useCallback(
-    async (kind: 'shopee-import' | 'shopee-post'): Promise<void> => {
-      const setLocalStopping = kind === 'shopee-import' ? setIsStoppingImport : setIsStoppingPost;
-      const label = kind === 'shopee-import' ? 'Shopee import' : 'Shopee post';
+    async (kind: 'shopee-import' | 'shopee-post' | 'shopee-convert'): Promise<void> => {
+      const setLocalStopping =
+        kind === 'shopee-import'
+          ? setIsStoppingImport
+          : kind === 'shopee-post'
+            ? setIsStoppingPost
+            : setIsStoppingConvert;
+      const label =
+        kind === 'shopee-import' ? 'Shopee import' : kind === 'shopee-post' ? 'Shopee post' : 'Shopee แปลงลิงก์';
       setLocalStopping(true);
       setAutomationActivityStopping(kind, true);
       pushAutomationActivityLog(kind, `กำลังส่งคำสั่งหยุด ${label}...`);
@@ -122,6 +137,7 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
 
   const importStopping = isStoppingImport || importRun.stopping;
   const postStopping = isStoppingPost || postRun.stopping;
+  const convertStopping = isStoppingConvert || convertRun.stopping;
 
   return (
     <View className="flex-1">
@@ -200,7 +216,7 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
             title="Activity ล่าสุด"
             right={
               <Text className="shrink-0 text-kd-micro font-medium text-kd-text-subtle">
-                {importRun.logs.length + postRun.logs.length} log
+                {importRun.logs.length + postRun.logs.length + convertRun.logs.length} log
               </Text>
             }
           />
@@ -263,6 +279,32 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
                 void stopRun('shopee-post');
               }}
               onClear={() => clearAutomationActivityRun('shopee-post')}
+            />
+          ) : null}
+
+          {convertRun.logs.length > 0 || convertRun.running ? (
+            <ActivityLogCard
+              accentColor={SHOPEE_ORANGE}
+              accentSoftColor={SHOPEE_ORANGE_SOFT}
+              icon={Link2}
+              theme={theme}
+              title={convertRun.title}
+              logs={convertRun.logs}
+              running={convertRun.running}
+              stopping={convertStopping}
+              startedAt={convertRun.startedAt}
+              updatedAt={convertRun.updatedAt}
+              runningText="กำลังแปลงลิงก์ Shopee"
+              idleText="รอบล่าสุดเสร็จแล้ว"
+              emptyText="ยังไม่มี log ของ Shopee แปลงลิงก์"
+              stopLabel="หยุดแปลงลิงก์ Shopee"
+              stoppingLabel="กำลังหยุด..."
+              stats={convertStats}
+              variant="shopee"
+              onStop={() => {
+                void stopRun('shopee-convert');
+              }}
+              onClear={() => clearAutomationActivityRun('shopee-convert')}
             />
           ) : null}
         </View>

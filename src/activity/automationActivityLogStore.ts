@@ -2,13 +2,18 @@ import { useEffect, useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
+  subscribeShopeeConvertLogs,
   subscribeShopeeImportLogs,
   subscribeShopeePostLogs,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeeImportLog, NativeShopeePostLog } from '@/native/AccessibilityBridge';
+import type {
+  NativeShopeeConvertLog,
+  NativeShopeeImportLog,
+  NativeShopeePostLog,
+} from '@/native/AccessibilityBridge';
 import type { AutoPilotFlowStats, AutoPilotStepType } from '@/autopilot/types';
 
-export type AutomationActivityKind = 'auto-pilot' | 'shopee-import' | 'shopee-post';
+export type AutomationActivityKind = 'auto-pilot' | 'shopee-import' | 'shopee-post' | 'shopee-convert';
 
 export interface AutomationActivityLogEntry {
   message: string;
@@ -39,6 +44,7 @@ const defaultTitles: Record<AutomationActivityKind, string> = {
   'auto-pilot': 'Auto Workflow ล่าสุด',
   'shopee-import': 'Shopee import ล่าสุด',
   'shopee-post': 'Shopee post ล่าสุด',
+  'shopee-convert': 'Shopee แปลงลิงก์ล่าสุด',
 };
 
 const listeners = new Set<() => void>();
@@ -63,6 +69,7 @@ let snapshot: AutomationActivitySnapshot = {
     'auto-pilot': createRun('auto-pilot'),
     'shopee-import': createRun('shopee-import'),
     'shopee-post': createRun('shopee-post'),
+    'shopee-convert': createRun('shopee-convert'),
   },
 };
 
@@ -185,6 +192,7 @@ function normalizeStoredSnapshot(value: unknown): AutomationActivitySnapshot | n
       'auto-pilot': normalizeStoredRun('auto-pilot', value.runs['auto-pilot']),
       'shopee-import': normalizeStoredRun('shopee-import', value.runs['shopee-import']),
       'shopee-post': normalizeStoredRun('shopee-post', value.runs['shopee-post']),
+      'shopee-convert': normalizeStoredRun('shopee-convert', value.runs['shopee-convert']),
     },
   };
 }
@@ -338,10 +346,15 @@ export function useAutomationActivityNativeBridge(): void {
       pushAutomationActivityLog('shopee-post', entry.message, entry.ts);
       void flushAutomationActivitySnapshot();
     });
+    const convertSubscription = subscribeShopeeConvertLogs((entry: NativeShopeeConvertLog) => {
+      pushAutomationActivityLog('shopee-convert', entry.message, entry.ts);
+      void flushAutomationActivitySnapshot();
+    });
 
     return () => {
       importSubscription?.remove();
       postSubscription?.remove();
+      convertSubscription?.remove();
     };
   }, []);
 }

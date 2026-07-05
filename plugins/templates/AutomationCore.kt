@@ -282,6 +282,7 @@ internal fun KubdeeAccessibilityService.logStep(message: String) {
   addAutomationLogLine(message)
   when (automationLogKindForThread.get() ?: activeShopeeAutomationLogKind ?: ShopeeAutomationLogKind.IMPORT) {
     ShopeeAutomationLogKind.POST -> KubdeeAutomationIpc.sendShopeePostLog(this, message)
+    ShopeeAutomationLogKind.CONVERT -> KubdeeAutomationIpc.sendShopeeConvertLog(this, message)
     ShopeeAutomationLogKind.IMPORT -> KubdeeAutomationIpc.sendShopeeImportLog(this, message)
   }
   showAutomationOverlay(message)

@@ -55,7 +55,8 @@ import org.json.JSONObject
 
 internal enum class ShopeeAutomationLogKind {
   IMPORT,
-  POST
+  POST,
+  CONVERT
 }
 
 class KubdeeAccessibilityService : AccessibilityService() {
@@ -97,6 +98,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
   @Volatile
   private var shopeePostThread: Thread? = null
+
+  @Volatile
+  private var shopeeConvertThread: Thread? = null
 
   companion object {
     private const val TAG = "KubdeeAccessibility"
@@ -216,6 +220,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
     private var pendingShopeePostCommand: PendingShopeePostCommand? = null
 
     @Volatile
+    private var pendingShopeeConvertCommand: PendingShopeeConvertCommand? = null
+
+    @Volatile
     private var pendingShopeeStopRequested = false
 
     fun getInstance(): KubdeeAccessibilityService? = currentService
@@ -260,9 +267,22 @@ class KubdeeAccessibilityService : AccessibilityService() {
       return false
     }
 
+    fun dispatchShopeeConvertStart(payloadJson: String, runId: String): Boolean {
+      pendingShopeeStopRequested = false
+      val service = currentService
+      if (service != null) {
+        service.startShopeeConvertAsync(payloadJson, runId)
+        return true
+      }
+
+      pendingShopeeConvertCommand = PendingShopeeConvertCommand(payloadJson, runId)
+      return false
+    }
+
     fun dispatchShopeeStop(): Boolean {
       pendingShopeeImportCommand = null
       pendingShopeePostCommand = null
+      pendingShopeeConvertCommand = null
       val service = currentService
       if (service != null) {
         service.requestStopShopeeAutomation()
@@ -285,6 +305,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
       return command
     }
 
+    private fun takePendingShopeeConvertCommand(): PendingShopeeConvertCommand? {
+      val command = pendingShopeeConvertCommand
+      pendingShopeeConvertCommand = null
+      return command
+    }
+
     private data class PendingShopeeImportCommand(
       val maxItems: Int,
       val runId: String,
@@ -294,6 +320,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
     )
 
     private data class PendingShopeePostCommand(
+      val payloadJson: String,
+      val runId: String
+    )
+
+    private data class PendingShopeeConvertCommand(
       val payloadJson: String,
       val runId: String
     )
@@ -318,6 +349,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }
     takePendingShopeePostCommand()?.let { command ->
       startShopeePostAsync(command.payloadJson, command.runId)
+    }
+    takePendingShopeeConvertCommand()?.let { command ->
+      startShopeeConvertAsync(command.payloadJson, command.runId)
     }
   }
 
@@ -527,6 +561,57 @@ class KubdeeAccessibilityService : AccessibilityService() {
     }.also { worker ->
       worker.name = "KubdeeShopeePosting"
       shopeePostThread = worker
+      worker.start()
+    }
+  }
+
+  private fun startShopeeConvertAsync(payloadJson: String, runId: String) {
+    val runningThread = shopeeConvertThread
+    if (runningThread?.isAlive == true) {
+      KubdeeAutomationIpc.sendShopeeConvertFinished(
+        this,
+        runId,
+        JSONObject().apply {
+          put("success", false)
+          put("error", "Shopee convert กำลังทำงานอยู่แล้ว")
+        },
+        error = "Shopee convert กำลังทำงานอยู่แล้ว"
+      )
+      return
+    }
+
+    val thread = Thread {
+      automationLogKindForThread.set(ShopeeAutomationLogKind.CONVERT)
+      activeShopeeAutomationLogKind = ShopeeAutomationLogKind.CONVERT
+      val result = try {
+        convertShopeeLinks(payloadJson)
+      } catch (error: Exception) {
+        Log.e(TAG, "Shopee convert runner failed", error)
+        JSONObject().apply {
+          put("success", false)
+          put("error", error.message ?: "Shopee convert failed")
+        }
+      }
+
+      logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า")
+      KubdeeAutomationIpc.sendShopeeConvertFinished(
+        this,
+        runId,
+        result,
+        error = result.optString("error").takeIf { it.isNotBlank() },
+        stopped = result.optBoolean("stopped", false)
+      )
+      mainHandler.postDelayed({ launchKubdeeLibrary() }, 250L)
+      if (shopeeConvertThread === Thread.currentThread()) {
+        shopeeConvertThread = null
+      }
+      if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.CONVERT) {
+        activeShopeeAutomationLogKind = null
+      }
+      automationLogKindForThread.remove()
+    }.also { worker ->
+      worker.name = "KubdeeShopeeLinkConvert"
+      shopeeConvertThread = worker
       worker.start()
     }
   }

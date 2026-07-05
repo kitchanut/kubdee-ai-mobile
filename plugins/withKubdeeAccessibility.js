@@ -189,6 +189,7 @@ function withKubdeeAccessibility(config, props = {}) {
         'KubdeeClipboardBridgeActivity.kt',
         'ShopeeAutomationModels.kt',
         'ShopeePostingFlow.kt',
+        'ShopeeLinkConverterFlow.kt',
         'ShopeePostingNavigationMedia.kt',
         'AutomationCore.kt',
         'ShopeeImportNavigation.kt',

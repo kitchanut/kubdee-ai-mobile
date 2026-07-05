@@ -50,6 +50,24 @@ class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
         }
       }
 
+      KubdeeAutomationIpc.ACTION_START_SHOPEE_CONVERT -> {
+        val runId = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_RUN_ID).orEmpty()
+        val payloadJson = intent.getStringExtra(KubdeeAutomationIpc.EXTRA_PAYLOAD_JSON).orEmpty()
+        if (runId.isBlank()) {
+          Log.w(TAG, "Missing Shopee convert run id")
+          return
+        }
+        if (payloadJson.isBlank()) {
+          Log.w(TAG, "Missing Shopee convert payload")
+          return
+        }
+
+        val started = KubdeeAccessibilityService.dispatchShopeeConvertStart(payloadJson, runId)
+        if (!started) {
+          Log.w(TAG, "Accessibility service is not connected yet; queued Shopee convert")
+        }
+      }
+
       KubdeeAutomationIpc.ACTION_STOP_SHOPEE -> {
         val stopped = KubdeeAccessibilityService.dispatchShopeeStop()
         if (!stopped) {

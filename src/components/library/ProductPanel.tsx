@@ -4,6 +4,7 @@ import type { ListRenderItem } from 'react-native';
 import {
   Cloud,
   Image as ImageIcon,
+  Link2,
   Pencil,
   ShoppingBag,
   Trash2,
@@ -28,8 +29,10 @@ import { useLibrary } from '@/library/LibraryContext';
 import { storePendingTab } from '@/navigation/pendingNavigation';
 import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from '@/library/LibraryContext';
 import { isDisplayableProductImageUri } from '@/library/productImageCache';
+import { isShopeeShortLink } from '@/library/shopeeLinks';
 import type { AffiliateProduct } from '@/library/types';
 import {
+  convertShopeeLinks as runNativeShopeeLinkConversion,
   getAccessibilityStatus,
   importShopeeProducts as runNativeShopeeImport,
   openAccessibilitySettings,
@@ -246,6 +249,22 @@ export default function ProductPanel({
   const [editForm, setEditForm] = useState<ProductEditForm>(EMPTY_PRODUCT_EDIT_FORM);
   const [editImageOverride, setEditImageOverride] = useState<ProductEditImageOverride | null>(null);
   const [isProductEditSaving, setIsProductEditSaving] = useState(false);
+  const [isConvertingShopeeLinks, setIsConvertingShopeeLinks] = useState(false);
+
+  // สินค้า Shopee ของโปรไฟล์ที่เลือก ที่ลิงก์ยังเป็นลิงก์เต็ม (ไม่ใช่ s.shopee short link)
+  // ช่องค้นหาสินค้าตอนโพสต์ Shopee ใช้ได้เฉพาะ short link เท่านั้น
+  const shopeeLinkConvertCandidates = useMemo(
+    () =>
+      selectedProfileId
+        ? products.filter(
+            (product) =>
+              (product.platform ?? '').toLowerCase().includes('shopee') &&
+              !!product.productUrl?.trim() &&
+              !isShopeeShortLink(product.productUrl)
+          )
+        : [],
+    [products, selectedProfileId]
+  );
 
   const editingProductImageUri = useMemo(
     () => editImageOverride?.uri ?? (editingProduct ? getProductEditImageUri(editingProduct) : null),
@@ -668,6 +687,134 @@ export default function ProductPanel({
     syncShopeeImportQueue,
   ]);
 
+  const runShopeeLinkConversion = useCallback(async (): Promise<void> => {
+    if (isConvertingShopeeLinks || !selectedProfileId) {
+      return;
+    }
+
+    const candidates = shopeeLinkConvertCandidates
+      .filter((product) => product.localId && product.productUrl?.trim())
+      .map((product) => ({ localId: product.localId, url: product.productUrl!.trim() }));
+    if (candidates.length === 0) {
+      return;
+    }
+
+    const appendConvertLog = (message: string): void => {
+      pushAutomationActivityLog('shopee-convert', message);
+    };
+
+    setIsConvertingShopeeLinks(true);
+    beginAutomationActivityRun('shopee-convert');
+    appendConvertLog(`เริ่มแปลงลิงก์ Shopee เป็น short link ${candidates.length} รายการ`);
+
+    try {
+      const status = await getAccessibilityStatus();
+      if (!status.running) {
+        appendConvertLog('หยุดแปลงลิงก์: ยังไม่ได้เปิด Accessibility Service');
+        Alert.alert(
+          'เปิด Accessibility ก่อน',
+          'Kubdee AI ต้องใช้ Accessibility เพื่อเปิดหน้า แปลงลิงก์ ใน Shopee และอ่านผลลัพธ์บนเครื่องนี้',
+          [
+            { text: 'ยกเลิก', style: 'cancel' },
+            {
+              text: 'เปิดตั้งค่า',
+              onPress: () => {
+                void openAccessibilitySettings();
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      await storePendingTab('library');
+      const result = await runNativeShopeeLinkConversion(candidates);
+      const rows = result.results ?? [];
+
+      let updatedCount = 0;
+      for (const row of rows) {
+        const shortUrl = row.shortUrl?.trim();
+        if (!shortUrl || !isShopeeShortLink(shortUrl)) {
+          continue;
+        }
+
+        const product = shopeeLinkConvertCandidates.find((item) => item.localId === row.localId);
+        if (!product) {
+          continue;
+        }
+
+        // ส่งเฉพาะฟิลด์ที่จำเป็น — createProductUpdatePayload เติมค่าที่เหลือจากสินค้าเดิม
+        // (name ส่งจาก product เดิมกันข้อมูลหาย, ฟิลด์ที่ไม่ส่ง = คงค่าเดิม)
+        const updateResult = await updateProduct({
+          localId: product.localId,
+          name: product.name,
+          productUrl: shortUrl,
+          profileLocalId: product.profileLocalId ?? selectedProfileId,
+        });
+        if (updateResult?.success) {
+          updatedCount += 1;
+          appendConvertLog(`อัปเดตลิงก์สินค้าแล้ว: ${product.name.slice(0, 34)}`);
+        } else {
+          appendConvertLog(`บันทึกลิงก์ใหม่ไม่สำเร็จ: ${product.name.slice(0, 34)}`);
+        }
+      }
+
+      await refreshProducts();
+
+      if (result.stopped) {
+        const message = `หยุดแปลงลิงก์แล้ว อัปเดต ${updatedCount}/${candidates.length} รายการ`;
+        appendConvertLog(message);
+        toast.warning(message);
+        return;
+      }
+
+      if (updatedCount > 0) {
+        const message = `แปลงลิงก์แล้ว ${updatedCount}/${candidates.length} รายการ`;
+        appendConvertLog(message);
+        toast.success(message);
+        return;
+      }
+
+      const message = result.error || 'แปลงลิงก์ Shopee ไม่สำเร็จ';
+      appendConvertLog(message);
+      toast.error(message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      appendConvertLog(message);
+      toast.error(message);
+    } finally {
+      setIsConvertingShopeeLinks(false);
+      setAutomationActivityRunning('shopee-convert', false);
+    }
+  }, [
+    isConvertingShopeeLinks,
+    refreshProducts,
+    selectedProfileId,
+    shopeeLinkConvertCandidates,
+    updateProduct,
+  ]);
+
+  const confirmShopeeLinkConversion = useCallback((): void => {
+    const count = shopeeLinkConvertCandidates.length;
+    if (isConvertingShopeeLinks || count === 0) {
+      return;
+    }
+
+    Alert.alert(
+      'แปลงลิงก์ Shopee',
+      `จะเปิดแอป Shopee เพื่อแปลงลิงก์เป็น short link ${count} รายการ ต้องใช้ Accessibility`,
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'แปลงลิงก์',
+          onPress: () => {
+            void runShopeeLinkConversion();
+          },
+        },
+      ]
+    );
+  }, [isConvertingShopeeLinks, runShopeeLinkConversion, shopeeLinkConvertCandidates.length]);
+
   const openShopeeImportModal = useCallback((): void => {
     if (!selectedProfileId) {
       toast.error('เลือกโปรไฟล์ก่อนนำเข้า Shopee');
@@ -841,6 +988,35 @@ export default function ProductPanel({
             {syncError && products.length > 0 ? (
               <View className="rounded-kd-lg border border-kd-red/35 bg-kd-red/5 px-2.5 py-2 dark:bg-kd-red/10">
                 <Text className="text-kd-caption font-semibold leading-4 text-kd-red">{syncError}</Text>
+              </View>
+            ) : null}
+
+            {shopeeLinkConvertCandidates.length > 0 ? (
+              <View className="flex-row items-center gap-2.5 rounded-kd-lg border border-kd-amber/40 bg-kd-amber-soft px-2.5 py-2">
+                <Link2 size={14} color={theme.amber} strokeWidth={2.2} />
+                <View className="min-w-0 flex-1">
+                  <Text className="text-kd-caption font-semibold leading-4 text-kd-text">
+                    ลิงก์ยังไม่ใช่ short link {shopeeLinkConvertCandidates.length} รายการ
+                  </Text>
+                  <Text className="text-kd-caption leading-4 text-kd-text-subtle">
+                    โพสต์ Shopee อาจค้นหาสินค้าไม่เจอ
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="แปลงลิงก์ Shopee เป็น short link"
+                  disabled={isConvertingShopeeLinks}
+                  onPress={confirmShopeeLinkConversion}
+                  className="h-8 shrink-0 flex-row items-center justify-center gap-1.5 rounded-kd-lg px-3 disabled:opacity-60"
+                  style={{ backgroundColor: theme.amber }}
+                >
+                  {isConvertingShopeeLinks ? (
+                    <ActivityIndicator color={theme.white} size="small" />
+                  ) : null}
+                  <Text className="text-kd-caption font-semibold text-white">
+                    {isConvertingShopeeLinks ? 'กำลังแปลง...' : 'แปลงลิงก์'}
+                  </Text>
+                </Pressable>
               </View>
             ) : null}
 

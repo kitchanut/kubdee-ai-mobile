@@ -4,6 +4,7 @@ import {
   CircleX,
   Clock3,
   Info,
+  Link2,
   Play,
   Send,
   ShoppingBag,
@@ -27,7 +28,7 @@ interface LogsScreenProps {
   theme: KubdeeTheme;
 }
 
-const ACTIVITY_ORDER: AutomationActivityKind[] = ['auto-pilot', 'shopee-import', 'shopee-post'];
+const ACTIVITY_ORDER: AutomationActivityKind[] = ['auto-pilot', 'shopee-import', 'shopee-post', 'shopee-convert'];
 
 export default function LogsScreen({ theme }: LogsScreenProps): React.JSX.Element {
   const snapshot = useAutomationActivitySnapshot();
@@ -72,7 +73,9 @@ function ActivityRunCard({
       ? Play
       : run.kind === 'shopee-post'
         ? Send
-        : ShoppingBag;
+        : run.kind === 'shopee-convert'
+          ? Link2
+          : ShoppingBag;
   const orderedLogs = useMemo(() => sortLogsByTime(run.logs), [run.logs]);
   const latestLog = orderedLogs[orderedLogs.length - 1] ?? null;
   const logs = orderedLogs.slice(-MAX_AUTOMATION_LOGS_PER_RUN);

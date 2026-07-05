@@ -53,6 +53,12 @@ internal val SHOPEE_AFFILIATE_TEXTS = listOf(
 
 internal val SHOPEE_ACCOUNT_TEXTS = listOf("บัญชีผู้ใช้", "บัญชี", "Account")
 
+internal val SHOPEE_LINK_CONVERTER_TEXTS = listOf(
+  "แปลงลิงก์",
+  "Convert link",
+  "Link converter"
+)
+
 internal val SHOPEE_VIDEO_ACCOUNT_TEXTS = listOf(
   "หน้าบัญชี Shopee Video",
   "Shopee Video",
