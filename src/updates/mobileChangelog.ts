@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.66',
+    date: '2026-07-05',
+    highlight: 'รูปและวิดีโอในคลังได้ลิงก์สินค้าใหม่อัตโนมัติ',
+    changes: [
+      {
+        type: 'feature',
+        text: 'ลิงก์และชื่อสินค้าในคลังรูปภาพ/วิดีโอ อัปเดตตามคลังสินค้าอัตโนมัติ ดึงสินค้าชุดใหม่แล้วรูป/วิดีโอเดิมได้ลิงก์ใหม่ทันที โพส Shopee ไม่เจอลิงก์หมดอายุอีก',
+      },
+    ],
+  },
+  {
     version: '0.2.65',
     date: '2026-07-05',
     highlight: 'โพส Shopee แนบสินค้าได้ครบทุกเครื่อง',
