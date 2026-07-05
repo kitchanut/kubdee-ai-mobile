@@ -309,7 +309,9 @@ export default function ShopeeScreen({
                 </View>
               ) : null}
 
-              {postQueueVideos.length > 0 ? (
+              {/* โชว์บรรทัดสถานะเฉพาะตอนมีความคืบหน้าจริง — ข้อความชวนเลือกวิดีโอซ้ำกับ empty state */}
+              {postQueueVideos.length > 0 &&
+              (isPosting || postMessage !== 'เลือกวิดีโอจากคลังเพื่อเตรียมโพสต์ Shopee') ? (
                 <Text numberOfLines={1} className="border-b border-kd-border px-3 py-1.5 text-kd-micro text-kd-text-subtle">
                   {postMessage}
                 </Text>
@@ -370,7 +372,7 @@ export default function ShopeeScreen({
 
         {/* คิวว่างซ่อนปุ่มโพส (empty state มีปุ่มไปคลังวิดีโอนำทางแล้ว) — ตอนกำลังโพสคงปุ่มหยุดไว้ */}
         {subMode === 'post' && (postQueueVideos.length > 0 || isPosting) ? (
-          <View className="absolute bottom-0 left-0 right-0 bg-kd-panel px-4 pb-3 pt-3">
+          <View className="absolute bottom-0 left-0 right-0 bg-kd-screen px-4 pb-3 pt-3">
             {isPosting ? (
               <Pressable
                 accessibilityRole="button"
@@ -549,8 +551,9 @@ function PostVideoRow({
         </Text>
         <Text
           numberOfLines={1}
-          className={`mt-0.5 text-kd-caption ${hasProductUrl ? '' : hasProductInfo ? 'text-kd-text-subtle' : hasFile ? 'text-kd-amber' : 'text-kd-amber'}`}
-          style={hasProductUrl ? { color: SHOPEE_ORANGE } : undefined}
+          className={`mt-0.5 text-kd-caption ${
+            hasProductUrl ? 'text-kd-emerald' : hasProductInfo ? 'text-kd-text-subtle' : 'text-kd-amber'
+          }`}
         >
           {hasFile ? productStatus : 'ไฟล์ไม่พร้อม'}
         </Text>
