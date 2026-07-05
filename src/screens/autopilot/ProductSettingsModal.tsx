@@ -216,7 +216,14 @@ export function ProductSettingsModal({
               }`}
             >
               <Copy size={15} color={theme.textMuted} strokeWidth={2.2} />
-              <Text className="text-kd-caption font-medium text-kd-text-muted">นำไปใช้ทั้งหมด</Text>
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                numberOfLines={1}
+                className="shrink text-kd-caption font-medium text-kd-text-muted"
+              >
+                นำไปใช้ทั้งหมด
+              </Text>
             </Button>
             <Button
               accessibilityRole="button"
