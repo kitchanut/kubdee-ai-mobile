@@ -51,7 +51,7 @@ export function CardOptionGrid({
           >
             {option.isNew ? (
               <View
-                className="absolute -right-1 -top-1 rounded px-1"
+                className="absolute -right-1 -top-1 rounded-kd-sm px-1"
                 style={{ backgroundColor: theme.emerald }}
               >
                 <Text className="text-[7px] font-bold leading-[11px] text-white">NEW</Text>
@@ -119,7 +119,7 @@ export function CategoryTabs({
               adjustsFontSizeToFit
               minimumFontScale={0.7}
               numberOfLines={1}
-              className="text-[10px] font-semibold"
+              className="text-kd-micro font-semibold"
               style={{ color: active ? accentColor : theme.textSubtle }}
             >
               {tab.label}

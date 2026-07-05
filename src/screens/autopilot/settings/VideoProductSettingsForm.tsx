@@ -33,7 +33,7 @@ import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import { VIDEO_SECTION_KEYS } from '../constants';
-import { FieldHeader, OptionGroup, SettingInput, SettingsSection } from '../primitives';
+import { FieldHeader, OptionGroup, SelectField, SettingInput, SettingsSection } from '../primitives';
 import { CardOptionGrid } from './CardOptionGrid';
 import { ManualPromptInput } from './ManualPromptInput';
 import { UserPresetGridLite } from './UserPresetGridLite';
@@ -141,32 +141,31 @@ export function VideoProductSettingsForm({
         onApplyAll={() => onApplySection(VIDEO_SECTION_KEYS.basic)}
       >
         <View className="gap-2">
-          <OptionGroup
-            label="โมเดลวิดีโอ"
-            options={VIDEO_MODEL_OPTIONS}
-            theme={theme}
-            accent={accent}
-            value={selectedVideoModel}
-            onChange={(value) => {
-              const nextModel = String(value);
-              onChange('videoModel', nextModel);
-              if (nextModel === 'omni_flash') {
-                onChange('videoDuration', 10);
-              } else if (selectedVideoDuration === 10) {
-                onChange('videoDuration', 8);
-              }
-            }}
-          />
-          <OptionGroup
-            columns={4}
-            compact
-            label="ความยาววิดีโอ"
-            options={durationOptions}
-            theme={theme}
-            accent={accent}
-            value={selectedVideoDuration}
-            onChange={(value) => onChange('videoDuration', Number(value))}
-          />
+          {/* โมเดล 5 ตัว label ยาว — ใช้ select แทน segmented แล้วจับคู่ความยาวเป็น 2 คอลัมน์ */}
+          <View className="flex-row gap-3">
+            <SelectField
+              label="โมเดลวิดีโอ"
+              options={VIDEO_MODEL_OPTIONS}
+              theme={theme}
+              value={selectedVideoModel}
+              onChange={(value) => {
+                const nextModel = String(value);
+                onChange('videoModel', nextModel);
+                if (nextModel === 'omni_flash') {
+                  onChange('videoDuration', 10);
+                } else if (selectedVideoDuration === 10) {
+                  onChange('videoDuration', 8);
+                }
+              }}
+            />
+            <SelectField
+              label="ความยาววิดีโอ"
+              options={durationOptions}
+              theme={theme}
+              value={selectedVideoDuration}
+              onChange={(value) => onChange('videoDuration', Number(value))}
+            />
+          </View>
           <View className="flex-row gap-3">
             <OptionGroup
               columns={2}
@@ -367,7 +366,7 @@ export function VideoProductSettingsForm({
                 <View className="gap-2">
                   {VOICEOVER_TTS_GROUPS.map((group) => (
                     <View key={group.label} className="gap-1.5">
-                      <Text className="text-[10px] font-semibold uppercase text-kd-text-subtle">{group.label}</Text>
+                      <Text className="text-kd-micro font-semibold uppercase text-kd-text-subtle">{group.label}</Text>
                       <CardOptionGrid
                         columns={2}
                         options={group.options}
@@ -443,7 +442,7 @@ export function VideoProductSettingsForm({
                     className="ml-2 flex-row items-center gap-0.5 rounded-kd-md border border-dashed border-kd-border px-2 py-1"
                   >
                     <Plus size={11} color={theme.textSubtle} strokeWidth={2.4} />
-                    <Text className="text-[10px] font-semibold text-kd-text-subtle">เพิ่ม</Text>
+                    <Text className="text-kd-micro font-semibold text-kd-text-subtle">เพิ่ม</Text>
                   </Pressable>
                 </View>
                 {dialogueList.map((line, index) => (

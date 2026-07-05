@@ -87,7 +87,7 @@ export function ProductSettingsModal({
                 )}
               </View>
               <View className="min-w-0 flex-1">
-                <Text numberOfLines={1} className="text-[14px] font-semibold text-kd-text">
+                <Text numberOfLines={1} className="text-kd-label font-semibold text-kd-text">
                   ตั้งค่า: {product.name || product.productId || 'สินค้า'}
                 </Text>
                 <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
@@ -214,7 +214,7 @@ export function ProductSettingsModal({
                   : 'border-kd-border bg-kd-panel-muted opacity-45 dark:bg-kd-card-muted'
               }`}
             >
-              <Copy size={14} color={theme.textMuted} strokeWidth={2.2} />
+              <Copy size={15} color={theme.textMuted} strokeWidth={2.2} />
               <Text className="text-kd-caption font-medium text-kd-text-muted">นำไปใช้ทั้งหมด</Text>
             </Button>
             <Button

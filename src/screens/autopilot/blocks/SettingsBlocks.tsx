@@ -45,7 +45,7 @@ export function ExtensionBasicSettingsBlock({
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen((value) => !value)}
-        className="flex-row items-center justify-between rounded-md px-0.5 py-0.5"
+        className="flex-row items-center justify-between rounded-kd-md px-0.5 py-0.5"
       >
         <View className="flex-row items-center gap-2">
           <ExtensionBasicSettingsIcon color={theme.text} />
