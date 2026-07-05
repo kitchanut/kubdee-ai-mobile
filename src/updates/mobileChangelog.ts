@@ -44,6 +44,14 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.60',
+    date: '2026-07-05',
+    highlight: 'Shopee เข้าหน้า ฉัน ได้ผ่านง่ายขึ้นบนบางเครื่อง',
+    changes: [
+      { type: 'fixed', text: 'ปรับการตรวจหน้า ฉัน ของ Shopee ให้ใช้เงื่อนไขเดิมแต่ลดจำนวน marker ที่ต้องพบจาก 2 ตัวเหลือ 1 ตัว ลดปัญหาอยู่ถูกหน้าแล้วแต่ระบบตรวจไม่ผ่าน' },
+    ],
+  },
+  {
     version: '0.2.59',
     date: '2026-07-05',
     highlight: 'เห็นตำแหน่งกดชัดขึ้นทั้ง Shopee และ Google Flow',
