@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.65',
+    date: '2026-07-05',
+    highlight: 'โพส Shopee แนบสินค้าได้ครบทุกเครื่อง',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'ขั้นตอนแนบสินค้าตอนโพส Shopee รองรับปุ่มทั้งแบบ แตะเพื่อเพิ่มสินค้า และ เพิ่มสินค้าและโค้ดส่วนลด ที่บางเครื่องแสดงต่างกัน',
+      },
+      {
+        type: 'changed',
+        text: 'ฟอร์มแก้ไขสินค้าในคลัง เอาช่องรายละเอียดออก ให้เกลาข้อความที่ชื่อสินค้าช่องเดียว (ข้อมูลรายละเอียดเดิมยังถูกใช้ประกอบ prompt ตามปกติ)',
+      },
+    ],
+  },
+  {
     version: '0.2.64',
     date: '2026-07-05',
     highlight: 'ปรับโฉม UX หน้าออโต้และ Shopee ทั้งชุด ใช้ง่ายสะอาดตาขึ้น',
