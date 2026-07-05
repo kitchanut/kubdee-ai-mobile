@@ -27,7 +27,7 @@ export default function SectionHeader({
     <View className="min-h-[22px] flex-row items-center justify-between">
       <View className="flex-row items-center gap-1.5">
         {Icon ? <Icon size={12} color={theme.textSubtle} strokeWidth={2.2} /> : null}
-        <Text className="text-kd-micro font-extrabold uppercase tracking-[0px] text-kd-text-subtle">
+        <Text className="text-kd-micro font-semibold text-kd-text-subtle">
           {title}
         </Text>
       </View>

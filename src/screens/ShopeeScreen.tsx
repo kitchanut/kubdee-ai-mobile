@@ -287,7 +287,7 @@ export default function ShopeeScreen({
                         onPress={onOpenVideoLibrary}
                         className="h-7 justify-center active:opacity-70"
                       >
-                        <Text className="text-kd-caption font-bold" style={{ color: SHOPEE_ORANGE }}>
+                        <Text className="text-kd-caption font-semibold" style={{ color: SHOPEE_ORANGE }}>
                           เพิ่มวิดีโอ
                         </Text>
                       </Pressable>
@@ -297,7 +297,7 @@ export default function ShopeeScreen({
                       onPress={onClearPendingVideos}
                       className="h-7 justify-center active:opacity-70"
                     >
-                      <Text className="text-kd-caption font-bold text-kd-red">ล้างทั้งหมด</Text>
+                      <Text className="text-kd-caption font-semibold text-kd-red">ล้างทั้งหมด</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -327,7 +327,7 @@ export default function ShopeeScreen({
                   >
                     <Video size={24} color={SHOPEE_ORANGE} strokeWidth={1.8} />
                   </View>
-                  <Text className="mt-2 text-kd-body font-black text-kd-text">ยังไม่มีวิดีโอในคิว</Text>
+                  <Text className="mt-2 text-kd-subtitle font-semibold text-kd-text">ยังไม่มีวิดีโอในคิว</Text>
                   <Text className="mt-1 text-center text-kd-caption leading-4 text-kd-text-subtle">
                     เลือกวิดีโอจากคลัง แล้วกดปุ่ม Shopee เพื่อส่งมาเตรียมโพสต์
                   </Text>
@@ -335,11 +335,11 @@ export default function ShopeeScreen({
                     <Pressable
                       accessibilityRole="button"
                       onPress={onOpenVideoLibrary}
-                      className="mt-3 h-9 flex-row items-center justify-center gap-1.5 rounded-kd-md px-3 active:opacity-75"
+                      className="mt-3 h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg px-3 active:opacity-75"
                       style={{ backgroundColor: SHOPEE_ORANGE }}
                     >
                       <FolderOpen size={14} color={theme.white} strokeWidth={2.2} />
-                      <Text className="text-kd-body font-black text-white">ไปคลังวิดีโอ</Text>
+                      <Text className="text-kd-body font-semibold text-white">ไปคลังวิดีโอ</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -353,11 +353,11 @@ export default function ShopeeScreen({
             </View>
           ) : (
             <View className="gap-1.5">
-              <SectionHeader icon={Settings} theme={theme} title="Shopee Settings" />
-              <SettingsRow label="Target package" value="com.shopee.th" theme={theme} />
-              <SettingsRow label="Product source" value="คลังสินค้า" theme={theme} />
-              <SettingsRow label="Click strategy" value="Accessibility action + gesture fallback" theme={theme} />
-              <SettingsRow label="Sync target" value="Kubdee Cloud product library" theme={theme} />
+              <SectionHeader icon={Settings} theme={theme} title="ตั้งค่า Shopee" />
+              <SettingsRow label="แอปเป้าหมาย" value="com.shopee.th" theme={theme} />
+              <SettingsRow label="แหล่งสินค้า" value="คลังสินค้า" theme={theme} />
+              <SettingsRow label="วิธีการกด" value="Accessibility action + gesture fallback" theme={theme} />
+              <SettingsRow label="ปลายทางซิงก์" value="Kubdee Cloud product library" theme={theme} />
             </View>
           )}
         </ScrollView>
@@ -378,7 +378,7 @@ export default function ShopeeScreen({
                 ) : (
                   <X size={14} color={theme.white} strokeWidth={2.4} />
                 )}
-                <Text className="text-[13px] font-semibold text-white">
+                <Text className="text-kd-subtitle font-semibold text-white">
                   {isStoppingPost ? 'กำลังหยุด...' : 'หยุดโพส Shopee'}
                 </Text>
               </Pressable>
@@ -393,7 +393,7 @@ export default function ShopeeScreen({
                 style={{ backgroundColor: SHOPEE_ORANGE }}
               >
                 <Send size={16} color={theme.white} strokeWidth={2.2} />
-                <Text className="text-[13px] font-semibold text-white">
+                <Text className="text-kd-subtitle font-semibold text-white">
                   {`โพส Shopee ${postQueueVideos.length} คลิป`}
                 </Text>
               </Pressable>
@@ -530,10 +530,10 @@ function PostVideoRow({
 
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-1.5">
-          <Text className="text-kd-body font-black" style={{ color: SHOPEE_ORANGE }}>
+          <Text className="text-kd-caption font-semibold" style={{ color: SHOPEE_ORANGE }}>
             #{index + 1}
           </Text>
-          <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-body font-bold text-kd-text">
+          <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-body font-semibold text-kd-text">
             {productLabel}
           </Text>
         </View>
@@ -586,7 +586,7 @@ function SubTab({
       style={{ borderBottomColor: active ? color : 'transparent' }}
     >
       <Icon size={14} color={active ? color : theme.textSubtle} strokeWidth={2.2} />
-      <Text className="text-kd-body font-extrabold" style={{ color: active ? color : theme.textSubtle }}>
+      <Text className="text-kd-body font-semibold" style={{ color: active ? color : theme.textSubtle }}>
         {label}
       </Text>
     </Pressable>
@@ -603,9 +603,9 @@ function SettingsRow({
   theme: KubdeeTheme;
 }): React.JSX.Element {
   return (
-    <View className="flex-row gap-2.5 rounded-kd-md border border-kd-border bg-kd-card p-2.5">
-      <Text className="min-w-[104px] text-kd-micro font-extrabold text-kd-text-subtle">{label}</Text>
-      <Text className="flex-1 text-kd-body font-bold text-kd-text" numberOfLines={2}>
+    <View className="flex-row items-center gap-2.5 rounded-kd-2xl border border-kd-border bg-kd-card p-2.5">
+      <Text className="min-w-[104px] text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
+      <Text className="flex-1 text-kd-caption font-medium text-kd-text" numberOfLines={2}>
         {value}
       </Text>
     </View>
