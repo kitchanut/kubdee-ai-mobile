@@ -467,7 +467,7 @@ internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
       logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
       return true
     }
-    logShopeePostStep("กดตรง 'แตะเพื่อเพิ่มสินค้า' แล้วเมนูยังไม่เปิด -> ใช้ fallback แถวเพิ่มสินค้า")
+    logShopeePostStep("กดปุ่มเพิ่มสินค้าแล้วเมนูยังไม่เปิด -> ใช้ fallback แถวเพิ่มสินค้า")
   }
 
   val fallbackTapPoints = withAutomationFloatingUiHiddenForShopeeTap {
@@ -534,7 +534,7 @@ internal fun KubdeeAccessibilityService.tapShopeeAddProductPrimaryText(): Boolea
   }
   if (tapped) {
     val (safeX, safeY) = tapPoint ?: (0 to 0)
-    logShopeePostStep("กดตรง 'แตะเพื่อเพิ่มสินค้า' ที่ $safeX,$safeY")
+    logShopeePostStep("กดตรงปุ่มเพิ่มสินค้า ที่ $safeX,$safeY")
   }
   return tapped
 }
@@ -559,7 +559,9 @@ internal fun KubdeeAccessibilityService.findShopeeAddProductPrimaryTextNode(
       val lower = text.lowercase(Locale.ROOT)
       (
         text.contains("แตะเพื่อเพิ่มสินค้า", ignoreCase = true) ||
-          lower.contains("tap to add product")
+          text.contains("เพิ่มสินค้าและโค้ดส่วนลด", ignoreCase = true) ||
+          lower.contains("tap to add product") ||
+          (lower.contains("add product") && lower.contains("voucher"))
         ) &&
         node.bounds.top >= screen.top + (screen.height() * 0.18f).toInt() &&
         node.bounds.bottom <= screen.bottom - (screen.height() * 0.16f).toInt()
@@ -604,6 +606,7 @@ internal fun KubdeeAccessibilityService.findShopeeAddProductTextNode(
       val lower = text.lowercase(Locale.ROOT)
       (
         text.contains("แตะเพื่อเพิ่มสินค้า", ignoreCase = true) ||
+          text.contains("เพิ่มสินค้าและโค้ดส่วนลด", ignoreCase = true) ||
           text.equals("เพิ่มสินค้า", ignoreCase = true) ||
           lower.contains("tap to add product") ||
           lower.contains("add product")
@@ -614,6 +617,7 @@ internal fun KubdeeAccessibilityService.findShopeeAddProductTextNode(
     .sortedWith(
       compareByDescending<TextNode> {
         if (it.text.contains("แตะเพื่อเพิ่มสินค้า", ignoreCase = true) ||
+          it.text.contains("เพิ่มสินค้าและโค้ดส่วนลด", ignoreCase = true) ||
           it.text.lowercase(Locale.ROOT).contains("tap to add product")
         ) 1 else 0
       }.thenBy { it.bounds.top }.thenByDescending { it.bounds.left }
