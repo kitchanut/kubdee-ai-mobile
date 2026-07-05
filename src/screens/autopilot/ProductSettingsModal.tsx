@@ -1,4 +1,5 @@
 import { Image, KeyboardAvoidingView, Modal, Platform, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Copy,
   FolderOpen,
@@ -64,22 +65,20 @@ export function ProductSettingsModal({
   const showVideoTab = enabledSteps.includes('video');
   const activeTab = showImageTab && tab === 'image' ? 'image' : showVideoTab ? 'video' : 'image';
   const canApplyAll = selectedProductCount > 1;
+  const insets = useSafeAreaInsets();
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1 justify-end bg-black/60"
+        className="flex-1 bg-black/60 px-3"
+        style={{
+          // การ์ดลอยเว้นขอบบน/ล่างจอ — โครงเดียวกับ ProductSelectSheet
+          paddingTop: Math.max(insets.top + 10, 40),
+          paddingBottom: Math.max(bottomInset + 8, 16),
+        }}
       >
-        <View
-          className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
-          style={{
-            maxHeight: '92%',
-            minHeight: '78%',
-            // ยก sheet ลอยจากขอบล่างจอ (แบบเดียวกับ ProductSelectSheet) — กันมุมโค้งโดนตัด
-            marginBottom: Math.max(bottomInset + 8, 16),
-          }}
-        >
+        <View className="min-h-0 flex-1 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel">
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center gap-2 pb-2">
               <View className="h-11 w-11 overflow-hidden rounded-kd-lg border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
