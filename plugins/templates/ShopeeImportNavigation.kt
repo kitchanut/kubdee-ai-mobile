@@ -53,9 +53,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal fun KubdeeAccessibilityService.goToShopeeMeTab(): Boolean {
-  repeat(5) { attempt ->
+  repeat(3) { attempt ->
     dismissShopeeBlockingPopups()
-    logStep("ไปที่เมนู ฉัน (ครั้ง ${attempt + 1}/5)")
+    logStep("ไปที่เมนู ฉัน (ครั้ง ${attempt + 1}/3)")
     val clicked = clickShopeeBottomMeTab()
 
     if (!clicked) {
@@ -67,6 +67,10 @@ internal fun KubdeeAccessibilityService.goToShopeeMeTab(): Boolean {
     val pageCheck = checkShopeeMePage()
     if (pageCheck.visible) {
       logStep("หน้า ฉัน พร้อมแล้ว (${pageCheck.summary()})")
+      return true
+    }
+    if (attempt == 2) {
+      logStep("กดเมนู ฉัน ครบ 3 ครั้งแล้วยังยืนยันไม่ได้ -> ถือว่าอยู่หน้า ฉัน แล้วไปขั้นตอนถัดไป (${pageCheck.summary()})")
       return true
     }
     logStep("ยังยืนยันหน้า ฉัน ไม่ได้ (${pageCheck.summary()})")
