@@ -525,7 +525,7 @@ function PostVideoRow({
       : 'ไม่มีข้อมูลสินค้า';
 
   return (
-    <View className="flex-row items-center gap-2.5 border-b border-kd-border bg-kd-screen px-3 py-2.5">
+    <View className="flex-row items-center gap-2.5 bg-kd-screen px-3 py-2.5">
       <View className="h-[54px] w-[72px] shrink-0 overflow-hidden rounded-kd-sm bg-kd-card-muted">
         {video.thumbnailUri ? (
           <NativeImage source={{ uri: video.thumbnailUri }} className="h-full w-full" resizeMode="cover" />
