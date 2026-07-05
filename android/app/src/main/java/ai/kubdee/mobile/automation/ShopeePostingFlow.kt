@@ -54,6 +54,18 @@ import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val TAP_EVENT_SHOPEE_POST_CAPTION = "shopee-post:caption"
+private const val TAP_EVENT_SHOPEE_POST_ADD_PRODUCT_ENTRY = "shopee-post:add-product-entry"
+private const val TAP_EVENT_SHOPEE_POST_LINK_ENTRY = "shopee-post:product-link-entry"
+private const val TAP_EVENT_SHOPEE_POST_LINK_INPUT = "shopee-post:product-link-input"
+private const val TAP_EVENT_SHOPEE_POST_LINK_IMPORT = "shopee-post:product-link-import"
+private const val TAP_EVENT_SHOPEE_POST_LINK_SELECT_ALL = "shopee-post:product-link-select-all"
+private const val TAP_EVENT_SHOPEE_POST_LINK_ADD_SELECTED = "shopee-post:product-link-add-selected"
+private const val TAP_EVENT_SHOPEE_POST_TOGGLE_REUSE = "shopee-post:toggle-reuse"
+private const val TAP_EVENT_SHOPEE_POST_TOGGLE_AI_LABEL = "shopee-post:toggle-ai-label"
+private const val TAP_EVENT_SHOPEE_POST_PUBLISH = "shopee-post:publish"
+private const val SHOPEE_POST_ADD_PRODUCT_MENU_SETTLE_MS = 2000L
+
 internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): JSONObject {
   val results = JSONArray()
   var postedCount = 0
@@ -305,7 +317,7 @@ internal fun KubdeeAccessibilityService.fillShopeePostingCaption(video: ShopeePo
   val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
     ?: throw IllegalStateException("ไม่พบช่องกรอกแคปชั่น")
 
-  clickNode(edit)
+  clickNode(edit, tapEventKey = TAP_EVENT_SHOPEE_POST_CAPTION)
   sleepStep(450L)
   if (!setNodeText(edit, fullText)) {
     throw IllegalStateException("กรอกแคปชั่นไม่สำเร็จ")
@@ -454,13 +466,14 @@ internal fun KubdeeAccessibilityService.tapShopeePostingNeutralArea(): Boolean {
     tapX,
     tapY.toFloat(),
     timeoutMs = 1800L,
-    durationMs = 80L
+    durationMs = 80L,
+    tapEventKey = "shopee-post:neutral-before-toggle"
   )
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
   if (tapShopeeAddProductPrimaryText()) {
-    sleepStep(1100L)
+    sleepStep(SHOPEE_POST_ADD_PRODUCT_MENU_SETTLE_MS)
     if (isShopeeAddProductMenuOpen() || !isShopeeAddProductPrimaryTextVisible()) {
       logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
       return true
@@ -473,11 +486,16 @@ internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
   }
   for ((safeX, safeY) in fallbackTapPoints) {
     val tapped = withAutomationFloatingUiHiddenForShopeeTap {
-      tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)
+      tapBlocking(
+        safeX.toFloat(),
+        safeY.toFloat(),
+        durationMs = 90L,
+        tapEventKey = TAP_EVENT_SHOPEE_POST_ADD_PRODUCT_ENTRY
+      )
     }
     if (tapped) {
       logShopeePostStep("กดเพิ่มสินค้าที่ $safeX,$safeY (fallback แถวเพิ่มสินค้า)")
-      sleepStep(1100L)
+      sleepStep(SHOPEE_POST_ADD_PRODUCT_MENU_SETTLE_MS)
       if (isShopeeAddProductMenuOpen()) {
         logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
         return true
@@ -499,7 +517,7 @@ internal fun KubdeeAccessibilityService.findShopeeAddProductFallbackTapPoints():
     val candidate = findShopeeAddProductTextNode(textNodes, screen) ?: continue
     val rowBounds = estimateShopeeAddProductRowBounds(candidate, textNodes, screen)
     val tapPoints = listOf(
-      rowBounds.centerX() to rowBounds.centerY(),
+      candidate.bounds.centerX() to candidate.bounds.centerY(),
       (rowBounds.right - maxOf(dp(40), screen.width() / 18)) to rowBounds.centerY(),
       maxOf(candidate.bounds.centerX(), rowBounds.left + rowBounds.width() / 4) to rowBounds.centerY()
     ).distinct()
@@ -523,7 +541,14 @@ internal fun KubdeeAccessibilityService.tapShopeeAddProductPrimaryText(): Boolea
       val target = findShopeeAddProductPrimaryTextNode(textNodes, screen) ?: continue
       val safeX = target.bounds.centerX().coerceIn(screen.left + dp(12), screen.right - dp(12))
       val safeY = target.bounds.centerY().coerceIn(screen.top + dp(12), screen.bottom - dp(12))
-      if (tapBlocking(safeX.toFloat(), safeY.toFloat(), durationMs = 90L)) {
+      if (
+        tapBlocking(
+          safeX.toFloat(),
+          safeY.toFloat(),
+          durationMs = 90L,
+          tapEventKey = TAP_EVENT_SHOPEE_POST_ADD_PRODUCT_ENTRY
+        )
+      ) {
         tapPoint = safeX to safeY
         return@withAutomationFloatingUiHiddenForShopeeTap true
       }
@@ -692,7 +717,7 @@ internal fun KubdeeAccessibilityService.fillAndAttachShopeeProductLink(productUr
 
     val bounds = Rect()
     edit.getBoundsInScreen(bounds)
-    clickNode(edit)
+    clickNode(edit, tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_INPUT)
     sleepStep(250L)
     val setOk = setNodeText(edit, productUrl)
     sleepStep(450L)
@@ -839,7 +864,7 @@ internal fun KubdeeAccessibilityService.pasteShopeeProductLinkInto(
   val clipboard = getSystemService(ClipboardManager::class.java) ?: return false
   return try {
     clipboard.setPrimaryClip(ClipData.newPlainText("kubdee-shopee-product-url", productUrl))
-    clickNode(edit)
+    clickNode(edit, tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_INPUT)
     sleepStep(180L)
     edit.performAction(AccessibilityNodeInfo.ACTION_PASTE)
   } catch (_: Exception) {
@@ -849,7 +874,8 @@ internal fun KubdeeAccessibilityService.pasteShopeeProductLinkInto(
 
 internal fun KubdeeAccessibilityService.clickShopeeProductLinkActionButton(
   texts: List<String>,
-  phase: String
+  phase: String,
+  tapEventKey: String? = null
 ): Boolean {
   for (root in shopeeWindowRoots()) {
     val screen = screenBounds(root)
@@ -873,7 +899,7 @@ internal fun KubdeeAccessibilityService.clickShopeeProductLinkActionButton(
       .firstOrNull()
       ?: continue
 
-    if (clickNode(target.node)) {
+    if (clickNode(target.node, tapEventKey = tapEventKey)) {
       logShopeePostStep("กรอกลิงก์สินค้า: กดปุ่ม$phase '${target.text}' ที่ ${target.bounds.centerX()},${target.bounds.centerY()}")
       return true
     }
@@ -882,7 +908,13 @@ internal fun KubdeeAccessibilityService.clickShopeeProductLinkActionButton(
 }
 
 internal fun KubdeeAccessibilityService.clickShopeeProductLinkImportButton(inputBounds: Rect): Boolean {
-  if (clickShopeeProductLinkActionButton(listOf("นำเข้า", "Import"), "นำเข้าลิงก์")) {
+  if (
+    clickShopeeProductLinkActionButton(
+      listOf("นำเข้า", "Import"),
+      "นำเข้าลิงก์",
+      tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_IMPORT
+    )
+  ) {
     return true
   }
 
@@ -893,7 +925,14 @@ internal fun KubdeeAccessibilityService.clickShopeeProductLinkImportButton(input
       val x = inputBounds.centerX().coerceIn(screen.left + dp(24), screen.right - dp(24))
       val y = (inputBounds.bottom + maxOf(dp(36), screen.height() / 16))
         .coerceIn(inputBounds.bottom + dp(18), screen.bottom - maxOf(dp(180), screen.height() / 4))
-      if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+      if (
+        tapBlocking(
+          x.toFloat(),
+          y.toFloat(),
+          durationMs = 90L,
+          tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_IMPORT
+        )
+      ) {
         logShopeePostStep("กรอกลิงก์สินค้า: กดปุ่มนำเข้าจากตำแหน่งใต้ช่องลิงก์ ($x,$y)")
         return@withAutomationFloatingUiHiddenForShopeeTap true
       }
@@ -904,7 +943,13 @@ internal fun KubdeeAccessibilityService.clickShopeeProductLinkImportButton(input
 }
 
 internal fun KubdeeAccessibilityService.clickShopeeProductLinkSelectAllButton(): Boolean {
-  if (clickShopeeProductLinkActionButton(listOf("เลือกทั้งหมด", "Select all"), "เลือกทั้งหมด")) {
+  if (
+    clickShopeeProductLinkActionButton(
+      listOf("เลือกทั้งหมด", "Select all"),
+      "เลือกทั้งหมด",
+      tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_SELECT_ALL
+    )
+  ) {
     return true
   }
 
@@ -922,7 +967,14 @@ internal fun KubdeeAccessibilityService.clickShopeeProductLinkSelectAllButton():
       if (listHeader != null) {
         val x = (listHeader.bounds.left + dp(18)).coerceIn(screen.left + dp(16), screen.right - dp(16))
         val y = (listHeader.bounds.bottom + dp(38)).coerceIn(listHeader.bounds.bottom + dp(16), screen.bottom - dp(120))
-        if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+        if (
+          tapBlocking(
+            x.toFloat(),
+            y.toFloat(),
+            durationMs = 90L,
+            tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_SELECT_ALL
+          )
+        ) {
           logShopeePostStep("กรอกลิงก์สินค้า: กดเลือกทั้งหมดจากตำแหน่งใต้หัวรายการ ($x,$y)")
           return@withAutomationFloatingUiHiddenForShopeeTap true
         }
@@ -943,7 +995,14 @@ internal fun KubdeeAccessibilityService.clickShopeeProductLinkAddSelectedButton(
     if (isShopeePostingEditorRoot(root, screen)) continue
     val x = (screen.right - maxOf(dp(72), screen.width() / 8)).coerceIn(screen.left + dp(24), screen.right - dp(24))
     val y = (screen.bottom - maxOf(dp(56), screen.height() / 18)).coerceIn(screen.top + dp(120), screen.bottom - dp(24))
-    if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+    if (
+      tapBlocking(
+        x.toFloat(),
+        y.toFloat(),
+        durationMs = 90L,
+        tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_ADD_SELECTED
+      )
+    ) {
       logShopeePostStep("กรอกลิงก์สินค้า: กดเพิ่มจากปุ่มมุมขวาล่าง ($x,$y)")
       return true
     }
@@ -970,7 +1029,7 @@ internal fun KubdeeAccessibilityService.clickShopeeProductLinkAddSelectedTextBut
       .firstOrNull()
       ?: continue
 
-    if (clickNode(target.node)) {
+    if (clickNode(target.node, tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_ADD_SELECTED)) {
       logShopeePostStep("กรอกลิงก์สินค้า: กดปุ่มเพิ่มสินค้าจากลิงก์ '${target.text}' ที่ ${target.bounds.centerX()},${target.bounds.centerY()}")
       return true
     }
@@ -1308,12 +1367,14 @@ internal fun shortShopeeUrlForLog(productUrl: String): String {
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntry(): Boolean {
-  val clickedByText = withAutomationFloatingUiHiddenForShopeeTap {
-    clickByAnyText(
-      listOf("กรอกลิงก์สินค้า", "ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"),
-      exact = false,
-      allowedPackageName = TARGET_PACKAGE_SHOPEE
-    )
+  val clickedByText = withAutomationTapIndicatorEvent(TAP_EVENT_SHOPEE_POST_LINK_ENTRY) {
+    withAutomationFloatingUiHiddenForShopeeTap {
+      clickByAnyText(
+        listOf("กรอกลิงก์สินค้า", "ลิงก์สินค้า", "ลิงค์สินค้า", "Product link", "Link"),
+        exact = false,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      )
+    }
   }
   if (clickedByText) {
     logShopeePostStep("เปิดกรอกลิงก์สินค้าด้วยข้อความ")
@@ -1331,7 +1392,7 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkEntry(): Boolean {
       val target = findShopeeProductLinkNode(root, screen) ?: continue
       val bounds = Rect()
       target.getBoundsInScreen(bounds)
-      if (tapNodeCenter(target)) {
+      if (tapNodeCenter(target, tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_ENTRY)) {
         iconPoint = bounds.centerX() to bounds.centerY()
         return@withAutomationFloatingUiHiddenForShopeeTap true
       }
@@ -1385,7 +1446,14 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
 
       if (linkAction != null) {
         val bounds = linkAction.first
-        if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
+        if (
+          tapBlocking(
+            bounds.centerX().toFloat(),
+            bounds.centerY().toFloat(),
+            durationMs = 80L,
+            tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_ENTRY
+          )
+        ) {
           successMessage = "เปิดกรอกลิงก์สินค้าด้วยไอคอนโซ่ที่ตรวจเจอ (${bounds.centerX()},${bounds.centerY()})"
           return@withAutomationFloatingUiHiddenForShopeeTap
         }
@@ -1395,7 +1463,14 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
       if (headerIconAction != null) {
         val (bounds, node) = headerIconAction
         val className = node.className?.toString()?.substringAfterLast('.') ?: "node"
-        if (tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = 80L)) {
+        if (
+          tapBlocking(
+            bounds.centerX().toFloat(),
+            bounds.centerY().toFloat(),
+            durationMs = 80L,
+            tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_ENTRY
+          )
+        ) {
           successMessage = "เปิดกรอกลิงก์สินค้าด้วย $className ไอคอนโซ่ (${bounds.centerX()},${bounds.centerY()})"
           return@withAutomationFloatingUiHiddenForShopeeTap
         }
@@ -1404,7 +1479,14 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
       val estimatedHeaderIconPoint = estimateShopeeProductLinkHeaderIconPoint(root, screen)
       if (estimatedHeaderIconPoint != null) {
         val (x, y) = estimatedHeaderIconPoint
-        if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 80L)) {
+        if (
+          tapBlocking(
+            x.toFloat(),
+            y.toFloat(),
+            durationMs = 80L,
+            tapEventKey = TAP_EVENT_SHOPEE_POST_LINK_ENTRY
+          )
+        ) {
           successMessage = "เปิดกรอกลิงก์สินค้าด้วยตำแหน่งไอคอนโซ่จาก header bounds ($x,$y)"
           return@withAutomationFloatingUiHiddenForShopeeTap
         }
@@ -1647,10 +1729,11 @@ internal fun KubdeeAccessibilityService.tapShopeePostButton() {
     waitForShopeePostingEditorVisible(maxAttempts = 4, delayMs = 700L)
   }
 
-  if (
-    !clickByAnyText(listOf("โพสต์", "Post"), exact = true, allowedPackageName = TARGET_PACKAGE_SHOPEE) &&
-    !tapShopeeBottomPostButtonFallback()
-  ) {
+  val published = withAutomationTapIndicatorEvent(TAP_EVENT_SHOPEE_POST_PUBLISH) {
+    clickByAnyText(listOf("โพสต์", "Post"), exact = true, allowedPackageName = TARGET_PACKAGE_SHOPEE) ||
+      tapShopeeBottomPostButtonFallback()
+  }
+  if (!published) {
     throw IllegalStateException("ไม่พบปุ่มโพสต์")
   }
   logShopeePostStep("กดโพสต์แล้ว รอ Shopee รับคำสั่ง")
@@ -1664,7 +1747,14 @@ internal fun KubdeeAccessibilityService.tapShopeeBottomPostButtonFallback(): Boo
       if (!isShopeePostingEditorRoot(root, screen)) continue
       val x = screen.centerX().coerceIn(screen.left + dp(24), screen.right - dp(24))
       val y = (screen.bottom - maxOf(dp(64), screen.height() / 18)).coerceIn(screen.top + dp(80), screen.bottom - dp(24))
-      if (tapBlocking(x.toFloat(), y.toFloat(), durationMs = 90L)) {
+      if (
+        tapBlocking(
+          x.toFloat(),
+          y.toFloat(),
+          durationMs = 90L,
+          tapEventKey = TAP_EVENT_SHOPEE_POST_PUBLISH
+        )
+      ) {
         logShopeePostStep("กดโพสต์ด้วย fallback ปุ่มล่าง ($x,$y)")
         return@withAutomationFloatingUiHiddenForShopeeTap true
       }
@@ -1741,7 +1831,7 @@ internal fun KubdeeAccessibilityService.disableShopeeContentReusePermissionBestE
       return
     }
 
-    if (!clickShopeeToggleTarget(target, desiredOn = false)) {
+    if (!clickShopeeToggleTarget(target, desiredOn = false, tapEventKey = TAP_EVENT_SHOPEE_POST_TOGGLE_REUSE)) {
       logShopeePostStep("กด toggle reuse/เผยแพร่ต่อไม่สำเร็จ ข้ามขั้นตอนนี้")
       return
     }
@@ -1834,7 +1924,7 @@ internal fun KubdeeAccessibilityService.enableShopeeAiGeneratedLabelBestEffort()
       return
     }
 
-    if (!clickShopeeToggleTarget(target, desiredOn = true)) {
+    if (!clickShopeeToggleTarget(target, desiredOn = true, tapEventKey = TAP_EVENT_SHOPEE_POST_TOGGLE_AI_LABEL)) {
       logShopeePostStep("กด toggle ป้ายกำกับ AI ไม่สำเร็จ ข้ามขั้นตอนนี้")
       return
     }
@@ -1905,6 +1995,7 @@ internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
   }
 
   val tapX = shopeePostingToggleTapX(target.bounds, desiredOn)
+  val tapEventKey = "shopee-post:toggle:${logName.lowercase(Locale.ROOT)}"
   logShopeePostStep(
     "แตะ toggle $logName จากภาพ ${shopeePostingToggleDirectionLabel(desiredOn)} " +
       "ที่ ${tapX.toInt()},${target.bounds.centerY()}"
@@ -1913,7 +2004,8 @@ internal fun KubdeeAccessibilityService.setShopeePostingVisualToggleBySlot(
       tapX,
       target.bounds.centerY().toFloat(),
       timeoutMs = 1800L,
-      durationMs = 80L
+      durationMs = 80L,
+      tapEventKey = tapEventKey
     )
   ) {
     logShopeePostStep("กด toggle $logName จากภาพไม่สำเร็จ")
@@ -2250,12 +2342,21 @@ internal fun KubdeeAccessibilityService.tapShopeePostingToggleByLabel(
 
     val tapX = shopeePostingToggleFallbackTapX(screen, desiredOn)
     val tapY = label.bounds.centerY().toFloat()
+    val tapEventKey = "shopee-post:toggle:${logName.lowercase(Locale.ROOT)}"
     logShopeePostStep(
       "แตะ toggle $logName จาก label '${label.text.take(28)}'" +
         desiredOn?.let { " ${shopeePostingToggleDirectionLabel(it)}" }.orEmpty() +
         " ที่ ${tapX.toInt()},${tapY.toInt()}"
     )
-    if (tapBlockingWithoutStopButton(tapX, tapY, timeoutMs = 1800L, durationMs = 80L)) {
+    if (
+      tapBlockingWithoutStopButton(
+        tapX,
+        tapY,
+        timeoutMs = 1800L,
+        durationMs = 80L,
+        tapEventKey = tapEventKey
+      )
+    ) {
       return true
     }
   }
@@ -2418,13 +2519,18 @@ internal fun KubdeeAccessibilityService.findNearbyShopeeToggle(
   return null
 }
 
-internal fun KubdeeAccessibilityService.clickShopeeToggleTarget(target: ShopeeToggleTarget, desiredOn: Boolean? = null): Boolean {
-  if (clickNode(target.node)) return true
+internal fun KubdeeAccessibilityService.clickShopeeToggleTarget(
+  target: ShopeeToggleTarget,
+  desiredOn: Boolean? = null,
+  tapEventKey: String? = null
+): Boolean {
+  if (clickNode(target.node, tapEventKey = tapEventKey)) return true
   return tapBlockingWithoutStopButton(
     shopeePostingToggleTapX(target.bounds, desiredOn),
     target.bounds.centerY().toFloat(),
     timeoutMs = 1800L,
-    durationMs = 80L
+    durationMs = 80L,
+    tapEventKey = tapEventKey
   )
 }
 

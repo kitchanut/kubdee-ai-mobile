@@ -1,5 +1,7 @@
 export const SHOPEE_POST_WORD_LIMIT = 150;
 export const SHOPEE_POST_SAFE_WORD_LIMIT = 140;
+export const SHOPEE_POST_CHARACTER_LIMIT = 150;
+export const SHOPEE_POST_SAFE_CHARACTER_LIMIT = 140;
 export const SHOPEE_AI_TOTAL_WORD_LIMIT = 130;
 export const SHOPEE_AI_CAPTION_WORD_LIMIT = 90;
 export const SHOPEE_AI_HASHTAG_WORD_LIMIT = 35;
@@ -97,6 +99,10 @@ function getWordTokens(text: string): WordToken[] {
 
 export function countShopeePostWords(text: string | null | undefined): number {
   return getWordTokens(cleanText(text)).length;
+}
+
+export function countShopeePostCharacters(text: string | null | undefined): number {
+  return Array.from(cleanText(text)).length;
 }
 
 function trimTextToWordLimit(value: string | null | undefined, maxWords: number): string {

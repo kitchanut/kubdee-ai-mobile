@@ -82,6 +82,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
   internal var automationTotalRounds = 0
   internal var automationStatusLabel = "RUNNING"
   internal val automationLogKindForThread = ThreadLocal<ShopeeAutomationLogKind?>()
+  internal val automationTapIndicatorEventKeyForThread = ThreadLocal<String?>()
+  internal val automationTapIndicatorSequenceLock = Any()
+  internal var automationTapIndicatorLastEventKey: String? = null
+  internal var automationTapIndicatorLastLogEventKey: String? = null
+  internal var automationTapIndicatorSequence = 0
 
   @Volatile
   internal var activeShopeeAutomationLogKind: ShopeeAutomationLogKind? = null
@@ -429,6 +434,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val thread = Thread {
       automationLogKindForThread.set(ShopeeAutomationLogKind.IMPORT)
       activeShopeeAutomationLogKind = ShopeeAutomationLogKind.IMPORT
+      resetAutomationTapIndicatorSequence()
       var importedCount = 0
       var errorMessage: String? = null
       try {
@@ -467,6 +473,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.IMPORT) {
           activeShopeeAutomationLogKind = null
         }
+        resetAutomationTapIndicatorSequence()
+        automationTapIndicatorEventKeyForThread.remove()
         automationLogKindForThread.remove()
       }
     }.also { worker ->
@@ -498,6 +506,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val thread = Thread {
       automationLogKindForThread.set(ShopeeAutomationLogKind.POST)
       activeShopeeAutomationLogKind = ShopeeAutomationLogKind.POST
+      resetAutomationTapIndicatorSequence()
       val result = try {
         postShopeeVideos(payloadJson)
       } catch (error: Exception) {
@@ -523,6 +532,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.POST) {
         activeShopeeAutomationLogKind = null
       }
+      resetAutomationTapIndicatorSequence()
+      automationTapIndicatorEventKeyForThread.remove()
       automationLogKindForThread.remove()
     }.also { worker ->
       worker.name = "KubdeeShopeePosting"

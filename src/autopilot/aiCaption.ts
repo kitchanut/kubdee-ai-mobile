@@ -2,13 +2,11 @@ import { refreshAuthToken } from '@/auth/api';
 import { APP_TYPE, BACKEND_URL } from '@/auth/constants';
 import { getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
 import {
-  SHOPEE_AI_CAPTION_WORD_LIMIT,
-  SHOPEE_AI_CTA_WORD_LIMIT,
-  SHOPEE_AI_HASHTAG_WORD_LIMIT,
-  SHOPEE_AI_TOTAL_WORD_LIMIT,
-  SHOPEE_POST_WORD_LIMIT,
+  SHOPEE_POST_CHARACTER_LIMIT,
+  SHOPEE_POST_SAFE_CHARACTER_LIMIT,
+  countShopeePostCharacters,
   getShopeeSafeHashtagCount,
-  limitShopeePostTextParts,
+  normalizeShopeeHashtags,
 } from '@/autopilot/shopeePostTextLimit';
 import type { AutoPilotProduct, AutoPilotSettings } from '@/autopilot/types';
 
@@ -28,6 +26,21 @@ export interface AutoPilotAiContentResult {
   error?: string;
   wasLimited?: boolean;
   wordCount?: number;
+  characterCount?: number;
+  wasRewritten?: boolean;
+}
+
+interface NormalizedAiContent {
+  caption: string;
+  cta: string;
+  hashtags: string;
+}
+
+interface AiContentLengthCheck {
+  captionHashtagCharacterCount: number;
+  fullCharacterCount: number;
+  isValid: boolean;
+  message: string;
 }
 
 export function getAutoPilotAiContentLabels(settings: AutoPilotSettings): string {
@@ -48,17 +61,14 @@ function buildAutoPilotCaptionPrompt({
   const jsonLines: string[] = [];
   const hashtagCount = getShopeeSafeHashtagCount(settings.aiHashtagCount);
   if (settings.aiGenerateCaption) {
-    jsonLines.push(`  "caption": "Caption ภาษาไทยสั้น กระชับ เหมาะกับ Shopee Video ไม่เกิน ${SHOPEE_AI_CAPTION_WORD_LIMIT} คำ"`);
+    jsonLines.push('  "caption": "แคปชั่นไทยสั้น กระชับ ไม่เกิน 70 ตัวอักษร"');
   }
   if (settings.aiGenerateHashtags) {
-    const hashtagExample = Array.from(
-      { length: hashtagCount },
-      (_, index) => `#แท็ก${index + 1}`
-    ).join(' ');
+    const hashtagExample = Array.from({ length: Math.min(3, hashtagCount) }, (_, index) => `#แท็ก${index + 1}`).join(' ');
     jsonLines.push(`  "hashtags": "${hashtagExample}"`);
   }
   if (settings.aiGenerateCta) {
-    jsonLines.push('  "cta": "ข้อความปุ่ม CTA"');
+    jsonLines.push('  "cta": "CTA สั้นมาก"');
   }
 
   return `คุณคือผู้เชี่ยวชาญด้านการเขียนข้อความขายสินค้าสำหรับ Shopee Video และ affiliate video.
@@ -77,16 +87,57 @@ function buildAutoPilotCaptionPrompt({
 กฎ:
 - ใช้ภาษาไทยเป็นหลัก อ่านง่าย เหมาะกับคลิปสั้น
 - หลีกเลี่ยงคำโฆษณาเกินจริง คำต้องห้าม คำเกี่ยวกับความรุนแรง การพนัน ยาเสพติด เพศ และการเงินเสี่ยง
-- Shopee จำกัดข้อความในช่องแคปชั่นรวม Caption + CTA + Hashtags ไม่เกิน ${SHOPEE_POST_WORD_LIMIT} คำ
-- เพื่อความปลอดภัย ให้เขียนรวมทุก field ไม่เกิน ${SHOPEE_AI_TOTAL_WORD_LIMIT} คำเท่านั้น
-- Caption ควรอยู่ประมาณ 70-${SHOPEE_AI_CAPTION_WORD_LIMIT} คำ ถ้าไม่แน่ใจให้สั้นลง
+- Shopee จำกัดช่องแคปชั่นรวมไม่เกิน ${SHOPEE_POST_CHARACTER_LIMIT} ตัวอักษร
+- สำคัญที่สุด: Caption + Hashtags ต้องรวมกันไม่เกิน ${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร นับรวมช่องว่าง เครื่องหมาย # อีโมจิ และวรรคตอน
+- ถ้าสร้าง CTA ด้วย ให้ Caption + CTA + Hashtags รวมกันไม่เกิน ${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษรเช่นกัน
+- Caption ควรอยู่ประมาณ 45-70 ตัวอักษร ถ้าไม่แน่ใจให้สั้นลง
 - Caption ต้องไม่ใส่ hashtag เพราะ hashtags แยกต่างหาก
-- Hashtags ต้องมี ${hashtagCount} แท็กเท่านั้น ขึ้นต้นด้วย # และรวมไม่เกิน ${SHOPEE_AI_HASHTAG_WORD_LIMIT} คำ
-- CTA ต้องสั้น ไม่เกิน ${SHOPEE_AI_CTA_WORD_LIMIT} คำ และเหมาะกับการกดซื้อในแพลตฟอร์ม
+- Hashtags ใช้ไม่เกิน ${hashtagCount} แท็ก เลือกแท็กสั้นและสำคัญที่สุดเท่านั้น ถ้าแท็กเยอะแล้วเกิน ${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษรให้ลดจำนวนแท็กเอง
+- CTA ต้องสั้นมาก และเหมาะกับการกดซื้อในแพลตฟอร์ม
+- ก่อนตอบให้ตรวจนับตัวอักษรเอง ถ้าเกิน ${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ต้องเขียนใหม่ให้สั้นลง
 
 ตอบกลับเป็น JSON รูปแบบนี้เท่านั้น:
 {
 ${jsonLines.join(',\n')}
+}`.trim();
+}
+
+function buildAutoPilotCaptionRewritePrompt({
+  content,
+  product,
+  settings,
+  validation,
+}: {
+  content: NormalizedAiContent;
+  product: AutoPilotProduct;
+  settings: AutoPilotSettings;
+  validation: AiContentLengthCheck;
+}): string {
+  return `ข้อความ Shopee ที่คุณสร้างยังยาวเกินกำหนด กรุณาคิดใหม่ให้สั้นลงและตอบเป็น JSON เท่านั้น
+
+สินค้า: ${product.name || 'สินค้า'}
+เหตุผลที่ต้องแก้: ${validation.message}
+
+ข้อความเดิม:
+${JSON.stringify({
+  caption: settings.aiGenerateCaption ? content.caption : undefined,
+  hashtags: settings.aiGenerateHashtags ? content.hashtags : undefined,
+  cta: settings.aiGenerateCta ? content.cta : undefined,
+}, null, 2)}
+
+กฎสำคัญ:
+- Caption + Hashtags รวมกันไม่เกิน ${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร
+- ถ้ามี CTA ให้ Caption + CTA + Hashtags รวมกันไม่เกิน ${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร
+- นับรวมช่องว่าง เครื่องหมาย # อีโมจิ และวรรคตอน
+- ห้ามตอบคำอธิบาย ห้าม markdown ตอบ JSON เท่านั้น
+
+ตอบกลับเป็น JSON เฉพาะ field ที่ขอ:
+{
+${[
+  settings.aiGenerateCaption ? '  "caption": "..."' : '',
+  settings.aiGenerateHashtags ? '  "hashtags": "#..."' : '',
+  settings.aiGenerateCta ? '  "cta": "..."' : '',
+].filter(Boolean).join(',\n')}
 }`.trim();
 }
 
@@ -143,6 +194,52 @@ async function postAiGenerate(body: Record<string, unknown>): Promise<{ ok: bool
   return result;
 }
 
+function cleanAiField(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+}
+
+function normalizeGeneratedContent(parsed: Record<string, unknown>, settings: AutoPilotSettings): NormalizedAiContent {
+  return {
+    caption: settings.aiGenerateCaption ? cleanAiField(parsed.caption) : '',
+    hashtags: settings.aiGenerateHashtags ? normalizeShopeeHashtags(cleanAiField(parsed.hashtags), Number.MAX_SAFE_INTEGER) : '',
+    cta: settings.aiGenerateCta ? cleanAiField(parsed.cta) : '',
+  };
+}
+
+function joinPostText(parts: Array<string | null | undefined>): string {
+  return parts.map((part) => part?.trim()).filter(Boolean).join(' ').trim();
+}
+
+function checkAiContentLength({
+  content,
+  product,
+  settings,
+}: {
+  content: NormalizedAiContent;
+  product: AutoPilotProduct;
+  settings: AutoPilotSettings;
+}): AiContentLengthCheck {
+  const caption = settings.aiGenerateCaption ? content.caption : product.caption;
+  const hashtags = settings.aiGenerateHashtags ? content.hashtags : product.hashtags;
+  const cta = settings.aiGenerateCta ? content.cta : product.cta;
+  const captionHashtagText = joinPostText([caption, hashtags]);
+  const fullText = joinPostText([caption, cta, hashtags]);
+  const captionHashtagCharacterCount = countShopeePostCharacters(captionHashtagText);
+  const fullCharacterCount = countShopeePostCharacters(fullText);
+  const overCaptionHashtags = captionHashtagCharacterCount > SHOPEE_POST_SAFE_CHARACTER_LIMIT;
+  const overFull = fullCharacterCount > SHOPEE_POST_SAFE_CHARACTER_LIMIT;
+  const message = overFull
+    ? `Caption + CTA + Hashtags ${fullCharacterCount}/${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร`
+    : `Caption + Hashtags ${captionHashtagCharacterCount}/${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร`;
+
+  return {
+    captionHashtagCharacterCount,
+    fullCharacterCount,
+    isValid: !overCaptionHashtags && !overFull,
+    message,
+  };
+}
+
 export async function generateAutoPilotProductContent({
   product,
   settings,
@@ -176,28 +273,46 @@ export async function generateAutoPilotProductContent({
       return { success: false, error: 'Parse AI response ไม่ได้' };
     }
 
-    const limitedText = limitShopeePostTextParts(
-      {
-        caption: settings.aiGenerateCaption && typeof parsed.caption === 'string' ? parsed.caption : '',
-        hashtags: settings.aiGenerateHashtags && typeof parsed.hashtags === 'string' ? parsed.hashtags : '',
-        cta: settings.aiGenerateCta && typeof parsed.cta === 'string' ? parsed.cta : '',
-      },
-      {
-        totalWordLimit: SHOPEE_AI_TOTAL_WORD_LIMIT,
-        captionWordLimit: SHOPEE_AI_CAPTION_WORD_LIMIT,
-        hashtagWordLimit: SHOPEE_AI_HASHTAG_WORD_LIMIT,
-        hashtagCountLimit: getShopeeSafeHashtagCount(settings.aiHashtagCount),
-        ctaWordLimit: SHOPEE_AI_CTA_WORD_LIMIT,
+    let content = normalizeGeneratedContent(parsed, settings);
+    let validation = checkAiContentLength({ content, product, settings });
+    let wasRewritten = false;
+
+    for (let attempt = 1; !validation.isValid && attempt <= 2; attempt += 1) {
+      const rewrite = await postAiGenerate({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        prompt: buildAutoPilotCaptionRewritePrompt({ content, product, settings, validation }),
+      });
+
+      if (!rewrite.ok) {
+        return { success: false, error: rewrite.data.message || rewrite.data.error || 'KUBDEE AI rewrite error' };
       }
-    );
+
+      const rewritten = extractJsonObject(rewrite.data.text || '');
+      if (!rewritten) {
+        return { success: false, error: 'Parse AI rewrite response ไม่ได้' };
+      }
+
+      content = normalizeGeneratedContent(rewritten, settings);
+      validation = checkAiContentLength({ content, product, settings });
+      wasRewritten = true;
+    }
+
+    if (!validation.isValid) {
+      return {
+        success: false,
+        error: `AI สร้างข้อความยาวเกิน ${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร (${validation.message})`,
+      };
+    }
 
     return {
       success: true,
-      caption: limitedText.caption,
-      hashtags: limitedText.hashtags,
-      cta: limitedText.cta,
-      wasLimited: limitedText.wasLimited,
-      wordCount: limitedText.wordCount,
+      caption: content.caption,
+      hashtags: content.hashtags,
+      cta: content.cta,
+      wasLimited: wasRewritten,
+      wasRewritten,
+      characterCount: validation.fullCharacterCount,
     };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };

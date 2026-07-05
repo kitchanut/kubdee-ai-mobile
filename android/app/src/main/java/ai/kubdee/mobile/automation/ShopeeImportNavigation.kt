@@ -95,7 +95,7 @@ internal fun KubdeeAccessibilityService.clickShopeeBottomMeTab(): Boolean {
     }
 
     val clickable = findClickableBottomTabAncestor(candidate.node, screen)
-    if (clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
+    if (clickable != null && clickNode(clickable)) {
       return true
     }
 
@@ -422,7 +422,7 @@ internal fun KubdeeAccessibilityService.tapShopeeAffiliateOfferCategory(candidat
       tapBounds.centerY().toFloat(),
       timeoutMs = 1800L,
       durationMs = 100L
-    ) || (candidate.node.isClickable && candidate.node.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+    ) || (candidate.node.isClickable && clickNode(candidate.node))
     if (tapped) {
       sleepStep(1200L)
       dismissShopeeBlockingPopups()

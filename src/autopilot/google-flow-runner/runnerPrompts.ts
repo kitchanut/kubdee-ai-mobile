@@ -8,6 +8,8 @@ export const FACE_VISIBILITY_IMAGE_INSTRUCTION =
   'ถ้าเห็นใบหน้าคนต้องเห็นชัดเจนเต็มหน้าและไม่ถูกอะไรบัง ถ้าฉากนี้ไม่ควรเห็นหน้าก็ไม่ต้อง reveal หน้าเลย ห้ามใช้มุมที่เห็นหน้าครึ่ง ๆ กลาง ๆ หรือมีวัตถุบังหน้า';
 export const SAME_ANGLE_PRESENTER_IMAGE_INSTRUCTION =
   'สำหรับวิดีโอหลายฉากแบบมุมเดียว ให้จัดตัวละครหันหน้ามองกล้องโดยตรง สีหน้าเป็นธรรมชาติ ท่าทางพร้อมพูดหรือพรีเซนต์สินค้า มือถือหรือใช้งานสินค้าในตำแหน่งที่เห็นชัด เหมาะสำหรับนำรูปเดียวไปสร้างวิดีโอหลายฉากที่บทพูดเปลี่ยนไปเรื่อย ๆ';
+export const NO_TEXT_OVERLAY_IMAGE_INSTRUCTION =
+  'ให้ถือว่าการตั้งค่าข้อความบนรูปของฉากนี้เป็น "ไม่มีตัวหนังสือในรูป": ห้ามมีข้อความหรือตัวอักษรใดๆ ในภาพ ห้ามมี subtitle, headline, slogan, label, ราคา, โปรโมชัน, ตัวเลข, hashtag, caption, URL, watermark, โลโก้ที่ AI สร้างเอง หรือข้อความบนแพ็กเกจที่ AI แต่งเพิ่มเอง ถ้า prompt หลักหรือค่าก่อนหน้าอนุญาตให้ใส่ข้อความ ให้ยึดคำสั่งไม่มีตัวหนังสือนี้เป็นหลัก';
 
 export function getAutoMultiSceneImageVariationInstruction(sceneNumber: number, totalScenes: number): string {
   const clampedTotal = Math.min(5, Math.max(2, totalScenes));
@@ -64,12 +66,15 @@ export function multiSceneImagePrompt(
   sameAngle: boolean,
   basePrompt?: string
 ): string {
+  const forceNoTextOverlay = sceneNumber >= 2;
   const sceneInstruction = [
     `สร้างภาพฉากที่ ${sceneNumber}/${totalScenes} สำหรับวิดีโอหลายฉากของสินค้า "${product.name || 'สินค้า'}"`,
     getAutoMultiSceneImageVariationInstruction(sceneNumber, totalScenes),
     sameAngle ? SAME_ANGLE_PRESENTER_IMAGE_INSTRUCTION : 'คงตัวละครเดิม ใบหน้าเดิม สินค้าเดิม แพ็กเกจเดิม และแบรนด์เดิม แต่เปลี่ยนมุมกล้อง ระยะภาพ การกระทำ หรือบริบทให้ต่างจากฉากก่อนหน้าอย่างชัดเจน',
     FACE_VISIBILITY_IMAGE_INSTRUCTION,
-    'ห้ามใส่ subtitle ข้อความบนภาพ ราคา โปรโมชัน ตัวเลขราคา hashtag caption URL หรือ watermark เองถ้าไม่ได้ตั้งค่าไว้',
+    forceNoTextOverlay
+      ? NO_TEXT_OVERLAY_IMAGE_INSTRUCTION
+      : 'ห้ามใส่ subtitle ข้อความบนภาพ ราคา โปรโมชัน ตัวเลขราคา hashtag caption URL หรือ watermark เองถ้าไม่ได้ตั้งค่าไว้',
   ]
     .filter(Boolean)
     .join(' ');

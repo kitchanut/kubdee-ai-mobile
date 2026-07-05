@@ -20,7 +20,7 @@ import {
   generateAutoPilotProductContent,
   getAutoPilotAiContentLabels,
 } from '@/autopilot/aiCaption';
-import { SHOPEE_AI_TOTAL_WORD_LIMIT } from '@/autopilot/shopeePostTextLimit';
+import { SHOPEE_POST_SAFE_CHARACTER_LIMIT } from '@/autopilot/shopeePostTextLimit';
 import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
 import {
   getAutoPilotProductId,
@@ -805,7 +805,7 @@ export function useAutoPilotController({
               appendLog('info', `AI CTA: ${updates.cta}`);
             }
             if (result.wasLimited) {
-              appendLog('info', `AI ปรับข้อความ Shopee ให้อยู่ใน ${result.wordCount ?? 0}/${SHOPEE_AI_TOTAL_WORD_LIMIT} คำ`);
+              appendLog('info', `AI rewrite ข้อความ Shopee ให้อยู่ใน ${result.characterCount ?? 0}/${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร`);
             }
             return { product, updates };
           })

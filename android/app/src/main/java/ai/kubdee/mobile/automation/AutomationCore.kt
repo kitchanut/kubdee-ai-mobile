@@ -233,10 +233,11 @@ internal fun KubdeeAccessibilityService.tapBlocking(
   y: Float,
   timeoutMs: Long = 2500,
   durationMs: Long = 80L,
-  showTapIndicator: Boolean = shouldShowAutomationTapIndicator()
+  showTapIndicator: Boolean = shouldShowAutomationTapIndicator(),
+  tapEventKey: String? = null
 ): Boolean {
   if (showTapIndicator) {
-    showAutomationTapIndicatorBeforeTap(x, y)
+    showAutomationTapIndicatorBeforeTap(x, y, eventKey = tapEventKey)
   }
   var completed = false
   val latch = CountDownLatch(1)
@@ -279,6 +280,7 @@ internal fun KubdeeAccessibilityService.swipeBlocking(
 
 internal fun KubdeeAccessibilityService.logStep(message: String) {
   Log.d(TAG, "Shopee runner: $message")
+  noteAutomationTapIndicatorLogEvent(message)
   addAutomationLogLine(message)
   when (automationLogKindForThread.get() ?: activeShopeeAutomationLogKind ?: ShopeeAutomationLogKind.IMPORT) {
     ShopeeAutomationLogKind.POST -> KubdeeAutomationIpc.sendShopeePostLog(this, message)
@@ -289,6 +291,7 @@ internal fun KubdeeAccessibilityService.logStep(message: String) {
 
 internal fun KubdeeAccessibilityService.logShopeePostStep(message: String) {
   Log.d(TAG, "Shopee post runner: $message")
+  noteAutomationTapIndicatorLogEvent(message)
   addAutomationLogLine(message)
   KubdeeAutomationIpc.sendShopeePostLog(this, message)
   showAutomationOverlay(message)

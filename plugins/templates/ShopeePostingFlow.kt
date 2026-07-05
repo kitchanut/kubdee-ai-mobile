@@ -54,6 +54,8 @@ import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val SHOPEE_POST_ADD_PRODUCT_MENU_SETTLE_MS = 2000L
+
 internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): JSONObject {
   val results = JSONArray()
   var postedCount = 0
@@ -460,7 +462,7 @@ internal fun KubdeeAccessibilityService.tapShopeePostingNeutralArea(): Boolean {
 
 internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
   if (tapShopeeAddProductPrimaryText()) {
-    sleepStep(1100L)
+    sleepStep(SHOPEE_POST_ADD_PRODUCT_MENU_SETTLE_MS)
     if (isShopeeAddProductMenuOpen() || !isShopeeAddProductPrimaryTextVisible()) {
       logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
       return true
@@ -477,7 +479,7 @@ internal fun KubdeeAccessibilityService.tapShopeeAddProductEntry(): Boolean {
     }
     if (tapped) {
       logShopeePostStep("กดเพิ่มสินค้าที่ $safeX,$safeY (fallback แถวเพิ่มสินค้า)")
-      sleepStep(1100L)
+      sleepStep(SHOPEE_POST_ADD_PRODUCT_MENU_SETTLE_MS)
       if (isShopeeAddProductMenuOpen()) {
         logShopeePostStep("เมนูเพิ่มสินค้าเปิดแล้ว")
         return true
@@ -499,7 +501,7 @@ internal fun KubdeeAccessibilityService.findShopeeAddProductFallbackTapPoints():
     val candidate = findShopeeAddProductTextNode(textNodes, screen) ?: continue
     val rowBounds = estimateShopeeAddProductRowBounds(candidate, textNodes, screen)
     val tapPoints = listOf(
-      rowBounds.centerX() to rowBounds.centerY(),
+      candidate.bounds.centerX() to candidate.bounds.centerY(),
       (rowBounds.right - maxOf(dp(40), screen.width() / 18)) to rowBounds.centerY(),
       maxOf(candidate.bounds.centerX(), rowBounds.left + rowBounds.width() / 4) to rowBounds.centerY()
     ).distinct()

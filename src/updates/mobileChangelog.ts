@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.59',
+    date: '2026-07-05',
+    highlight: 'เห็นตำแหน่งกดชัดขึ้นทั้ง Shopee และ Google Flow',
+    changes: [
+      { type: 'improved', text: 'ปรับ animation แสดงตำแหน่งกดใน Google Flow WebView ให้แสดงจากหน้าเว็บโดยตรง ลดอาการช้ากว่าจังหวะกดจริง' },
+      { type: 'improved', text: 'เพิ่มเลขลำดับบน animation การกดใน Shopee Post และ Shopee Import เพื่อช่วยดูว่ากดครั้งไหนติด' },
+      { type: 'fixed', text: 'ปรับ Shopee Post ให้รอหลังแตะเพิ่มสินค้านานขึ้น ลดการกดซ้ำเร็วเกินไปก่อนหน้าจอเปลี่ยน' },
+      { type: 'improved', text: 'ปรับให้ AI คิด caption สำหรับ Shopee ให้สั้นพอดี โดยรวม caption และ hashtag ไม่เกิน 140 ตัวอักษร' },
+    ],
+  },
+  {
     version: '0.2.58',
     date: '2026-07-05',
     highlight: 'Shopee Post เห็นตำแหน่งกดชัดขึ้นและกดป้ายกำกับ AI ตรงขึ้น',
