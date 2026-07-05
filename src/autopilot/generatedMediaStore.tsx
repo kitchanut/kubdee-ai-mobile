@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
+import { useLibrary } from '@/library/LibraryContext';
 import type { CreativeMediaAsset } from '@/library/CreativeLibraryContext';
 import { createGoogleFlowVideoThumbnail, listGoogleFlowAssets } from '@/native/AccessibilityBridge';
 
@@ -336,6 +337,64 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
     setAssets(nextAssets);
     void persistAssets(nextAssets);
   }, [mediaAssets]);
+
+  // ลิงก์/ชื่อสินค้าใน asset ถูกแช่แข็งตอน gen — พอดึงสินค้าชุดใหม่ (ลิงก์ affiliate เปลี่ยน)
+  // ให้ sync จากคลังสินค้าปัจจุบันเข้ารูป/วิดีโอที่ productCode ตรงกัน จะได้ไม่พาไปลิงก์เก่าที่ใช้ไม่ได้
+  const { products: libraryProducts } = useLibrary();
+  const isSyncingProductInfoRef = useRef(false);
+
+  useEffect(() => {
+    if (isSyncingProductInfoRef.current) {
+      return;
+    }
+
+    const infoByKey = new Map<string, { name: string | null; productUrl: string | null }>();
+    for (const product of libraryProducts) {
+      const externalId = product.externalProductId?.trim();
+      if (!externalId) {
+        continue;
+      }
+      infoByKey.set(`${product.profileLocalId ?? ''} ${externalId}`, {
+        name: product.name?.trim() || null,
+        productUrl: product.productUrl?.trim() || null,
+      });
+    }
+    if (infoByKey.size === 0) {
+      return;
+    }
+
+    const staleAssets = mediaAssets.filter((asset) => {
+      const info = infoByKey.get(`${asset.profileLocalId ?? ''} ${asset.productCode?.trim() ?? ''}`);
+      if (!info) {
+        return false;
+      }
+      const urlChanged = Boolean(info.productUrl) && info.productUrl !== asset.productUrl;
+      const nameChanged = Boolean(info.name) && info.name !== asset.productName;
+      return urlChanged || nameChanged;
+    });
+    if (staleAssets.length === 0) {
+      return;
+    }
+
+    isSyncingProductInfoRef.current = true;
+    void (async () => {
+      try {
+        for (const asset of staleAssets) {
+          const info = infoByKey.get(`${asset.profileLocalId ?? ''} ${asset.productCode?.trim() ?? ''}`);
+          if (!info) {
+            continue;
+          }
+          await addMediaAsset({
+            ...asset,
+            productName: info.name ?? asset.productName,
+            productUrl: info.productUrl ?? asset.productUrl,
+          });
+        }
+      } finally {
+        isSyncingProductInfoRef.current = false;
+      }
+    })();
+  }, [addMediaAsset, libraryProducts, mediaAssets]);
 
   const addGeneratedMediaAsset = useCallback(async (input: AddGeneratedMediaAssetInput): Promise<GeneratedMediaAsset> => {
     const asset = normalizeAsset(input);
