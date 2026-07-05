@@ -164,6 +164,15 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
         if (isShopeeImportListVisible()) break
         sleepStep(250L)
       }
+      // ปุ่มแชร์การ์ดเปิดแกลเลอรีรูปสินค้า (เช่น 1/38) ซ้อนใต้แผงแชร์มาด้วย
+      // ถ้าปิดแค่แผงแชร์ overlay จะค้าง ทำให้แตะการ์ดถัดไปพลาดทั้งหมด
+      var extraBacks = 0
+      while (!isShopeeImportListVisible() && extraBacks < 3) {
+        logStep("ยังไม่เห็นหน้ารายการหลังปิดแผงแชร์ กด back ปิด overlay ที่ค้าง")
+        performBack()
+        extraBacks += 1
+        sleepStep(900L)
+      }
     }
   }
 
@@ -188,6 +197,19 @@ internal fun KubdeeAccessibilityService.retryShopeePartnerOfferShare(candidate: 
 
 internal fun KubdeeAccessibilityService.tapShopeePartnerOfferShareTarget(target: ShopeeShareTapTarget): Boolean {
     val bounds = target.bounds
+    // จุดคาดเดา (fallback) ชิดมุมขวาล่าง = ตำแหน่งปุ่มแชทลอยของ Shopee
+    // แตะพลาดจะเด้งไปหน้า Customer Service — ข้ามเป้านี้ รอเห็นปุ่มแชร์จริงค่อยดึง
+    if (target.source.contains("fallback")) {
+      val display = displayBounds()
+      if (
+        display.width() > 0 &&
+        bounds.centerX() > display.left + (display.width() * 0.80f).toInt() &&
+        bounds.centerY() > display.top + (display.height() * 0.78f).toInt()
+      ) {
+        logStep("ข้ามจุดแชร์คาดเดาชิดมุมขวาล่าง (${target.source}) เสี่ยงชนปุ่มแชทลอย")
+        return false
+      }
+    }
     logStep("กดแชร์การ์ดที่ ${bounds.centerX()},${bounds.centerY()} (${target.source})")
     return tapBlockingWithoutStopButton(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
   }

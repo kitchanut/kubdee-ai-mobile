@@ -168,8 +168,26 @@ internal fun KubdeeAccessibilityService.convertShopeeLinks(payloadJson: String):
       put("results", results)
     }
   } finally {
+    // ถอยออกจากหน้าแปลงลิงก์ก่อนกลับแอป — ถ้าทิ้ง Shopee ค้างหน้านี้ไว้
+    // automation รอบถัดไป (ทั้ง mobile และ desktop) จะเปิดมาเจอหน้าที่ไม่มีแท็บ ฉัน
+    leaveShopeeLinkConverterSurface()
     endAutomationForeground()
     hideAutomationOverlay(2500L)
+  }
+}
+
+// กด back ออกจากหน้ากรอก/หน้าผลลัพธ์ของตัวแปลงลิงก์ จนพ้นหน้าตัวแปลง (best effort)
+internal fun KubdeeAccessibilityService.leaveShopeeLinkConverterSurface() {
+  try {
+    repeat(3) {
+      if (!isShopeeLinkConverterInputScreen() && !isShopeeLinkConverterResultScreen()) {
+        return
+      }
+      performBack()
+      Thread.sleep(900L)
+    }
+  } catch (_: Exception) {
+    // cleanup เท่านั้น — พังก็ไม่กระทบผลลัพธ์ที่แปลงเสร็จแล้ว
   }
 }
 

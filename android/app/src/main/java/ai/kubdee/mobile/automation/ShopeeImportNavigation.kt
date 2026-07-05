@@ -403,7 +403,8 @@ internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferCategoryTab(cate
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
     collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
-    val topLimit = screen.top + (screen.height() * 0.28f).toInt()
+    // แถบหมวดตอนหน้าเลื่อนลงจะติดบนสุดแบบ sticky (~0.14h) — band ต้องครอบถึง
+    val topLimit = screen.top + (screen.height() * 0.10f).toInt()
     val bottomLimit = screen.bottom - (screen.height() * 0.16f).toInt()
     return textNodes
       .filter { node ->
@@ -473,7 +474,8 @@ internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferCategoryRowY(
   ): Int? {
     val textNodes = mutableListOf<TextNode>()
     collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
-    val topLimit = screen.top + (screen.height() * 0.28f).toInt()
+    // ครอบแถบหมวดแบบ sticky ด้านบนด้วย (เหมือน findShopeeAffiliateOfferCategoryTab)
+    val topLimit = screen.top + (screen.height() * 0.10f).toInt()
     val bottomLimit = screen.bottom - (screen.height() * 0.16f).toInt()
     return textNodes
       .filter { node ->
