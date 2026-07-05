@@ -17,6 +17,7 @@ import {
   upsertLocalProductsFromCloud,
 } from '@/library/localProductDb';
 import { cacheProductImages } from '@/library/productImageCache';
+import { pickPreferredShopeeUrl } from '@/library/shopeeLinks';
 import type { AffiliateProduct } from '@/library/types';
 
 export interface ProductSyncResult {
@@ -406,6 +407,8 @@ function preserveExistingProductFields(
     caption: existing.caption,
     hashtags: existing.hashtags,
     cta: existing.cta,
+    // short link ชนะเสมอ — ลิงก์เต็มที่ดึงมาใหม่ห้ามทับ short link เดิม (ช่องค้นหาตอนโพส Shopee ใช้ได้แค่ short)
+    productUrl: pickPreferredShopeeUrl(payload.productUrl, existing.productUrl),
     imagePath: payload.imagePath ?? existing.imagePath,
     imageR2Key: existing.imageR2Key ?? payload.imageR2Key,
     imageUrl: payload.imageUrl ?? existing.imageUrl,

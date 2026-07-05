@@ -25,6 +25,7 @@ import {
 } from '@/native/AccessibilityBridge';
 import type { NativeShopeePostLog, NativeShopeePostingResult, NativeShopeePostingVideoInput } from '@/native/AccessibilityBridge';
 import { SHOPEE_POST_SAFE_WORD_LIMIT, limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
+import { isShopeeShortLink } from '@/library/shopeeLinks';
 import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 
@@ -109,7 +110,8 @@ export default function ShopeeScreen({
       return;
     }
 
-    const videosWithoutProductUrl = postQueueVideos.filter((video) => !video.productUrl);
+    // ช่องค้นหาสินค้าของ Shopee หาเจอเฉพาะ short link — ลิงก์เต็มถือว่าใช้ค้นหาไม่ได้
+    const videosWithoutProductUrl = postQueueVideos.filter((video) => !isShopeeShortLink(video.productUrl));
     const productNameFallbackCount = videosWithoutProductUrl.filter((video) => !!getPostPayloadProductName(video)).length;
     const missingProductInfoCount = videosWithoutProductUrl.length - productNameFallbackCount;
 
@@ -176,7 +178,7 @@ export default function ShopeeScreen({
           fileUri: video.fileUri || '',
           productName,
           productId: productCode,
-          productUrl: video.productUrl || null,
+          productUrl: isShopeeShortLink(video.productUrl) ? video.productUrl : null,
           caption: limitedText.caption || null,
           hashtags: limitedText.hashtags || null,
           cta: limitedText.cta || null,
@@ -513,16 +515,19 @@ function PostVideoRow({
 }): React.JSX.Element {
   const hasFile = isLocalPostableVideo(video);
   const hasProductUrl = Boolean(video.productUrl);
+  const hasPostableLink = isShopeeShortLink(video.productUrl);
   const productName = getPostPayloadProductName(video);
   const productCode = getPostPayloadProductCode(video);
   const productLabel = productName || getPostVideoFallbackLabel(video, index);
   const hasProductInfo = hasProductUrl || Boolean(productName || productCode);
   const productMeta = productCode ? `#${productCode}` : productName ? 'มีชื่อสินค้า แต่ยังไม่มีรหัส' : 'ยังไม่ได้ผูกสินค้า';
-  const productStatus = hasProductUrl
+  const productStatus = hasPostableLink
     ? 'มีลิงก์สินค้า'
-    : hasProductInfo
-      ? 'ไม่มีลิงก์สินค้า จะค้นหาด้วยชื่อสินค้า'
-      : 'ไม่มีข้อมูลสินค้า';
+    : hasProductUrl
+      ? 'ลิงก์แบบเต็มใช้ค้นหาไม่ได้ จะค้นหาด้วยชื่อสินค้า'
+      : hasProductInfo
+        ? 'ไม่มีลิงก์สินค้า จะค้นหาด้วยชื่อสินค้า'
+        : 'ไม่มีข้อมูลสินค้า';
 
   return (
     <View className="flex-row items-center gap-2.5 bg-kd-screen px-3 py-2.5">
@@ -552,7 +557,13 @@ function PostVideoRow({
         <Text
           numberOfLines={1}
           className={`mt-0.5 text-kd-caption ${
-            hasProductUrl ? 'text-kd-emerald' : hasProductInfo ? 'text-kd-text-subtle' : 'text-kd-amber'
+            hasPostableLink
+              ? 'text-kd-emerald'
+              : hasProductUrl
+                ? 'text-kd-amber'
+                : hasProductInfo
+                  ? 'text-kd-text-subtle'
+                  : 'text-kd-amber'
           }`}
         >
           {hasFile ? productStatus : 'ไฟล์ไม่พร้อม'}
