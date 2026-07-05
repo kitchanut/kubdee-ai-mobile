@@ -184,8 +184,13 @@ export function OptionGroup({
   // grid = individually bordered chips that tint with the accent when selected.
   // NOTE: ใช้ Pressable + token rounded-kd-* ตรง ๆ (ไม่ใช้ ToggleGroup) เพราะ
   // ToggleGroupItem มี base `rounded-none` ที่ twMerge ไม่รู้จัก custom token เลย override ไม่ได้ → ขอบเหลี่ยม
+  // flexBasis เผื่อ gap แบบ % จะเหลือเศษที่ว่างกองท้ายแถว — ถ้าไม่ wrap (options พอดีแถวเดียว)
+  // ให้ item ยืดเต็มแถวเพื่อให้ขอบซ้าย/ขวาสมมาตร; กรณี wrap คงพฤติกรรมเดิมกันแถวท้ายกว้างผิดปกติ
   const sizeStyle = columns
-    ? { flexBasis: `${100 / columns - 1.5}%` as DimensionValue }
+    ? {
+        flexBasis: `${100 / columns - 1.5}%` as DimensionValue,
+        ...(options.length <= columns ? { flexGrow: 1 } : null),
+      }
     : isGrid
       ? undefined
       : { flexGrow: 1, flexBasis: 0 as DimensionValue };
