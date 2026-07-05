@@ -73,7 +73,17 @@ export async function saveAutoPilotProductPreset(input: {
     createdAt: Date.now(),
   };
 
-  const presets = await readAllProductPresets();
+  // ชื่อซ้ำในโปรไฟล์เดียวกัน = บันทึกทับตัวเดิม (upsert)
+  const presets = (await readAllProductPresets()).filter(
+    (existing) =>
+      existing.profileLocalId !== preset.profileLocalId ||
+      existing.name.trim().toLowerCase() !== preset.name.toLowerCase()
+  );
   await writeAllProductPresets([preset, ...presets].slice(0, 50));
   return preset;
+}
+
+export async function deleteAutoPilotProductPreset(presetId: string): Promise<void> {
+  const presets = await readAllProductPresets();
+  await writeAllProductPresets(presets.filter((preset) => preset.id !== presetId));
 }

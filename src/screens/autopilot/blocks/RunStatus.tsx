@@ -171,7 +171,7 @@ export function ActivityLogSheet({
       <View className="flex-1 justify-end bg-black/60">
         <View
           className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
-          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 8, 16) }}
+          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 12, 20) }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center justify-between pb-2">

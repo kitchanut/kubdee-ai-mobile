@@ -75,7 +75,7 @@ export function ProductSettingsModal({
         style={{
           // การ์ดลอยเว้นขอบบน/ล่างจอ — โครงเดียวกับ ProductSelectSheet
           paddingTop: Math.max(insets.top + 10, 40),
-          paddingBottom: Math.max(bottomInset + 8, 16),
+          paddingBottom: Math.max(bottomInset + 12, 20),
         }}
       >
         <View className="min-h-0 flex-1 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel">

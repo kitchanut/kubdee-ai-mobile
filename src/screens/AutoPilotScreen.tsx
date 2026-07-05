@@ -11,11 +11,13 @@ import {
   type AutomationActivityRun,
 } from '@/activity/automationActivityLogStore';
 import {
+  deleteAutoPilotProductPreset,
   getAutoPilotProductPresets,
   saveAutoPilotProductPreset,
   type AutoPilotProductPreset,
 } from '@/autopilot/productPresetStore';
 import {
+  deleteAutoPilotSettingsPreset,
   getAutoPilotSettingsPresets,
   saveAutoPilotSettingsPreset,
   type AutoPilotSettingsPreset,
@@ -192,6 +194,7 @@ export default function AutoPilotScreen({
   const openProductPresetSheet = (): void => {
     setProductPresetMode(controller.selectedProducts.length > 0 ? 'save' : 'load');
     setProductPresetMessage(null);
+    setProductPresetName('');
     setProductPresetSheetOpen(true);
   };
 
@@ -230,6 +233,15 @@ export default function AutoPilotScreen({
     setProductPresetSheetOpen(false);
   };
 
+  const removeProductPreset = useCallback(
+    async (preset: AutoPilotProductPreset): Promise<void> => {
+      await deleteAutoPilotProductPreset(preset.id);
+      setProductPresetMessage(`ลบ "${preset.name}" แล้ว`);
+      await refreshProductPresets();
+    },
+    [refreshProductPresets]
+  );
+
   const refreshSettingsPresets = useCallback(async (): Promise<void> => {
     const presets = await getAutoPilotSettingsPresets();
     setSettingsPresets(presets);
@@ -246,6 +258,7 @@ export default function AutoPilotScreen({
   const openSettingsPresetSheet = (mode: 'save' | 'load'): void => {
     setSettingsPresetMode(mode);
     setSettingsPresetMessage(null);
+    setSettingsPresetName('');
     setSettingsPresetSheetOpen(true);
   };
 
@@ -278,6 +291,15 @@ export default function AutoPilotScreen({
     setSettingsPresetMessage('โหลด preset ตั้งค่าแล้ว');
     setSettingsPresetSheetOpen(false);
   };
+
+  const removeSettingsPreset = useCallback(
+    async (preset: AutoPilotSettingsPreset): Promise<void> => {
+      await deleteAutoPilotSettingsPreset(preset.id);
+      setSettingsPresetMessage(`ลบ "${preset.name}" แล้ว`);
+      await refreshSettingsPresets();
+    },
+    [refreshSettingsPresets]
+  );
 
   return (
     <View className="flex-1 bg-kd-panel">
@@ -383,6 +405,9 @@ export default function AutoPilotScreen({
           product={editingProduct}
           theme={theme}
           onClose={() => setSettingsPresetSheetOpen(false)}
+          onDelete={(preset) => {
+            void removeSettingsPreset(preset);
+          }}
           onLoad={loadSettingsPreset}
           onModeChange={setSettingsPresetMode}
           onNameChange={setSettingsPresetName}
@@ -403,6 +428,9 @@ export default function AutoPilotScreen({
           message={productPresetMessage}
           theme={theme}
           onClose={() => setProductPresetSheetOpen(false)}
+          onDelete={(preset) => {
+            void removeProductPreset(preset);
+          }}
           onLoad={loadSelectedProductPreset}
           onModeChange={setProductPresetMode}
           onNameChange={setProductPresetName}

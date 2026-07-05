@@ -67,7 +67,15 @@ export async function saveAutoPilotSettingsPreset(input: {
     createdAt: Date.now(),
   };
 
-  const presets = await readAllSettingsPresets();
+  // ชื่อซ้ำ = บันทึกทับตัวเดิม (upsert) — กันรายการชื่อเดียวกันซ้อนกันจนแยกไม่ออก
+  const presets = (await readAllSettingsPresets()).filter(
+    (existing) => existing.name.trim().toLowerCase() !== preset.name.toLowerCase()
+  );
   await writeAllSettingsPresets([preset, ...presets].slice(0, 50));
   return preset;
+}
+
+export async function deleteAutoPilotSettingsPreset(presetId: string): Promise<void> {
+  const presets = await readAllSettingsPresets();
+  await writeAllSettingsPresets(presets.filter((preset) => preset.id !== presetId));
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, View } from 'react-native';
-import { ChevronRight, Check, FolderOpen, Image as ImageIcon, Package, Save, Search, X } from 'lucide-react-native';
+import { Alert, Image, Modal, Pressable, ScrollView, View } from 'react-native';
+import { ChevronRight, Check, FolderOpen, Image as ImageIcon, Package, Save, Search, Trash2, X } from 'lucide-react-native';
 import { getAutoPilotProductId } from '@/autopilot/productAdapter';
 import type { AutoPilotProductPreset } from '@/autopilot/productPresetStore';
 import type { AutoPilotSettingsPreset } from '@/autopilot/settingsPresetStore';
@@ -95,7 +95,7 @@ export function ProductSelectSheet({
         className="flex-1 bg-black/60 px-3"
         style={{
           paddingTop: Math.max(topInset + 10, 40),
-          paddingBottom: Math.max(bottomInset + 8, 16),
+          paddingBottom: Math.max(bottomInset + 12, 20),
         }}
       >
         <View className="min-h-0 flex-1 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel">
@@ -306,6 +306,7 @@ export function ProductPresetSheet({
   selectedCount,
   theme,
   onClose,
+  onDelete,
   onLoad,
   onModeChange,
   onNameChange,
@@ -320,6 +321,7 @@ export function ProductPresetSheet({
   selectedCount: number;
   theme: KubdeeTheme;
   onClose: () => void;
+  onDelete: (preset: AutoPilotProductPreset) => void;
   onLoad: (preset: AutoPilotProductPreset) => void;
   onModeChange: (mode: 'save' | 'load') => void;
   onNameChange: (value: string) => void;
@@ -330,7 +332,7 @@ export function ProductPresetSheet({
       <View className="flex-1 justify-end bg-black/60">
         <View
           className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
-          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 8, 16) }}
+          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 12, 20) }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center justify-between pb-2">
@@ -390,7 +392,7 @@ export function ProductPresetSheet({
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerClassName="gap-3 px-3 py-3"
-            contentContainerStyle={{ paddingBottom: 20 }}
+            contentContainerStyle={{ paddingBottom: 16 }}
           >
             {message ? (
               <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
@@ -441,24 +443,38 @@ export function ProductPresetSheet({
                   </View>
                 ) : (
                   presets.map((preset) => (
-                    <Button
-                      accessibilityRole="button"
-                      variant="ghost"
-                      key={preset.id}
-                      onPress={() => onLoad(preset)}
-                      className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
-                    >
-                      <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
-                        <Text className="text-kd-caption font-medium text-kd-text">{preset.productIds.length}</Text>
-                      </View>
-                      <View className="min-w-0 flex-1">
-                        <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">{preset.name}</Text>
-                        <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-                          {preset.productIds.length} สินค้า · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
-                        </Text>
-                      </View>
-                      <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
-                    </Button>
+                    <View key={preset.id} className="flex-row items-center gap-1.5">
+                      <Button
+                        accessibilityRole="button"
+                        variant="ghost"
+                        onPress={() => onLoad(preset)}
+                        className="min-w-0 flex-1 flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
+                      >
+                        <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
+                          <Text className="text-kd-caption font-medium text-kd-text">{preset.productIds.length}</Text>
+                        </View>
+                        <View className="min-w-0 flex-1">
+                          <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">{preset.name}</Text>
+                          <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                            {preset.productIds.length} สินค้า · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
+                          </Text>
+                        </View>
+                        <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
+                      </Button>
+                      <Pressable
+                        accessibilityLabel={`ลบ preset ${preset.name}`}
+                        accessibilityRole="button"
+                        onPress={() =>
+                          Alert.alert('ลบ preset', `ลบ "${preset.name}" ?`, [
+                            { text: 'ยกเลิก', style: 'cancel' },
+                            { text: 'ลบ', style: 'destructive', onPress: () => onDelete(preset) },
+                          ])
+                        }
+                        className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-md border border-kd-border bg-kd-card active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
+                      >
+                        <Trash2 size={14} color={theme.red} strokeWidth={2.1} />
+                      </Pressable>
+                    </View>
                   ))
                 )}
               </View>
@@ -480,6 +496,7 @@ export function SettingsPresetSheet({
   saveDisabled,
   theme,
   onClose,
+  onDelete,
   onLoad,
   onModeChange,
   onNameChange,
@@ -494,6 +511,7 @@ export function SettingsPresetSheet({
   saveDisabled: boolean;
   theme: KubdeeTheme;
   onClose: () => void;
+  onDelete: (preset: AutoPilotSettingsPreset) => void;
   onLoad: (preset: AutoPilotSettingsPreset) => void;
   onModeChange: (mode: 'save' | 'load') => void;
   onNameChange: (value: string) => void;
@@ -504,7 +522,7 @@ export function SettingsPresetSheet({
       <View className="flex-1 justify-end bg-black/60">
         <View
           className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
-          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 8, 16) }}
+          style={{ maxHeight: '72%', marginBottom: Math.max(bottomInset + 12, 20) }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center justify-between pb-2">
@@ -566,7 +584,7 @@ export function SettingsPresetSheet({
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerClassName="gap-3 px-3 py-3"
-            contentContainerStyle={{ paddingBottom: 20 }}
+            contentContainerStyle={{ paddingBottom: 16 }}
           >
             {message ? (
               <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
@@ -617,24 +635,38 @@ export function SettingsPresetSheet({
                   </View>
                 ) : (
                   presets.map((preset) => (
-                    <Button
-                      accessibilityRole="button"
-                      variant="ghost"
-                      key={preset.id}
-                      onPress={() => onLoad(preset)}
-                      className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
-                    >
-                      <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
-                        <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
-                      </View>
-                      <View className="min-w-0 flex-1">
-                        <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">{preset.name}</Text>
-                        <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-                          รูปภาพ+วิดีโอ · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
-                        </Text>
-                      </View>
-                      <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
-                    </Button>
+                    <View key={preset.id} className="flex-row items-center gap-1.5">
+                      <Button
+                        accessibilityRole="button"
+                        variant="ghost"
+                        onPress={() => onLoad(preset)}
+                        className="min-w-0 flex-1 flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
+                      >
+                        <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
+                          <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
+                        </View>
+                        <View className="min-w-0 flex-1">
+                          <Text numberOfLines={1} className="text-kd-caption font-medium text-kd-text">{preset.name}</Text>
+                          <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                            รูปภาพ+วิดีโอ · {new Date(preset.createdAt).toLocaleDateString('th-TH')}
+                          </Text>
+                        </View>
+                        <ChevronRight size={15} color={theme.textSubtle} strokeWidth={2.2} />
+                      </Button>
+                      <Pressable
+                        accessibilityLabel={`ลบ preset ${preset.name}`}
+                        accessibilityRole="button"
+                        onPress={() =>
+                          Alert.alert('ลบ preset', `ลบ "${preset.name}" ?`, [
+                            { text: 'ยกเลิก', style: 'cancel' },
+                            { text: 'ลบ', style: 'destructive', onPress: () => onDelete(preset) },
+                          ])
+                        }
+                        className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-md border border-kd-border bg-kd-card active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
+                      >
+                        <Trash2 size={14} color={theme.red} strokeWidth={2.1} />
+                      </Pressable>
+                    </View>
                   ))
                 )}
               </View>
