@@ -1091,14 +1091,8 @@ export default function ProductPanel({
                 </View>
               </View>
 
-              <LabeledTextInput
-                label="รายละเอียด"
-                value={editForm.description}
-                onChangeText={(value) => setEditField('description', value)}
-                placeholder="รายละเอียดสินค้า"
-                multiline
-                theme={theme}
-              />
+              {/* ตั้งใจไม่มีช่องแก้ description (นโยบายเดียวกับ desktop: แก้ที่ชื่อสินค้าช่องเดียว)
+                  ค่า description เดิมยังถูกส่งกลับใน payload ตอนเซฟ ไม่โดนล้าง */}
             </ScrollView>
 
             <View className="flex-row gap-2 px-4 pt-1">
