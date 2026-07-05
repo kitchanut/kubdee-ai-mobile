@@ -218,7 +218,9 @@ export function OptionGroup({
   };
 
   return (
-    <View className="min-w-0 flex-1 gap-1.5">
+    // ห้ามใส่ flex-1 ที่ root — ตอนอยู่แนวตั้ง flexBasis:0 ทำให้ความสูงยุบและ pill ทับ section ถัดไป
+    // (เคสแทรก section หลายฉาก) — caller ที่วางในแถวต้อง wrap ด้วย View min-w-0 flex-1 เอง
+    <View className="min-w-0 gap-1.5">
       {label ? <Text className="text-kd-micro font-semibold text-kd-text-subtle">{label}</Text> : null}
       <View
         className={

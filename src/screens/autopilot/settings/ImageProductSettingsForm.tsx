@@ -129,24 +129,28 @@ export function ImageProductSettingsForm({
             onChange={(value) => onChange('imageModel', String(value))}
           />
           <View className="flex-row gap-3">
-            <OptionGroup
-              columns={2}
-              label="สัดส่วนภาพ"
-              options={ASPECT_RATIO_OPTIONS}
-              theme={theme}
-              accent={accent}
-              value={settings.aspectRatio}
-              onChange={(value) => onChange('aspectRatio', String(value))}
-            />
-            <OptionGroup
-              columns={4}
-              label="จำนวน"
-              options={COUNT_OPTIONS}
-              theme={theme}
-              accent={accent}
-              value={settings.outputCount}
-              onChange={(value) => onChange('outputCount', String(value))}
-            />
+            <View className="min-w-0 flex-1">
+              <OptionGroup
+                columns={2}
+                label="สัดส่วนภาพ"
+                options={ASPECT_RATIO_OPTIONS}
+                theme={theme}
+                accent={accent}
+                value={settings.aspectRatio}
+                onChange={(value) => onChange('aspectRatio', String(value))}
+              />
+            </View>
+            <View className="min-w-0 flex-1">
+              <OptionGroup
+                columns={4}
+                label="จำนวน"
+                options={COUNT_OPTIONS}
+                theme={theme}
+                accent={accent}
+                value={settings.outputCount}
+                onChange={(value) => onChange('outputCount', String(value))}
+              />
+            </View>
           </View>
         </View>
       </SettingsSection>

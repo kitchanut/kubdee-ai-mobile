@@ -167,28 +167,32 @@ export function VideoProductSettingsForm({
             />
           </View>
           <View className="flex-row gap-3">
-            <OptionGroup
-              columns={2}
-              label="สัดส่วนภาพ"
-              options={ASPECT_RATIO_OPTIONS}
-              theme={theme}
-              accent={accent}
-              value={settings.aspectRatio}
-              onChange={(value) => onChange('aspectRatio', String(value))}
-            />
-            <OptionGroup
-              columns={4}
-              label={multiScene ? 'จำนวน (หลายฉาก=1)' : 'จำนวนวิดีโอ'}
-              options={COUNT_OPTIONS}
-              theme={theme}
-              accent={accent}
-              value={outputCountValue}
-              disabledValues={multiSceneDisabledOutputCounts}
-              onChange={(value) => {
-                if (multiScene) return;
-                onChange('outputCount', String(value));
-              }}
-            />
+            <View className="min-w-0 flex-1">
+              <OptionGroup
+                columns={2}
+                label="สัดส่วนภาพ"
+                options={ASPECT_RATIO_OPTIONS}
+                theme={theme}
+                accent={accent}
+                value={settings.aspectRatio}
+                onChange={(value) => onChange('aspectRatio', String(value))}
+              />
+            </View>
+            <View className="min-w-0 flex-1">
+              <OptionGroup
+                columns={4}
+                label={multiScene ? 'จำนวน (หลายฉาก=1)' : 'จำนวนวิดีโอ'}
+                options={COUNT_OPTIONS}
+                theme={theme}
+                accent={accent}
+                value={outputCountValue}
+                disabledValues={multiSceneDisabledOutputCounts}
+                onChange={(value) => {
+                  if (multiScene) return;
+                  onChange('outputCount', String(value));
+                }}
+              />
+            </View>
           </View>
           <OptionGroup
             columns={5}
@@ -427,15 +431,17 @@ export function VideoProductSettingsForm({
             {settings.dialogueMode === 'custom' ? (
               <View className="gap-1.5">
                 <View className="flex-row items-center justify-between">
-                  <OptionGroup
-                    options={DIALOGUE_ORDER_OPTIONS}
-                    theme={theme}
-                    accent={accent}
-                    value={settings.dialogueListOrder}
-                    onChange={(value) =>
-                      onChange('dialogueListOrder', value as AutoPilotVideoSettings['dialogueListOrder'])
-                    }
-                  />
+                  <View className="min-w-0 flex-1">
+                    <OptionGroup
+                      options={DIALOGUE_ORDER_OPTIONS}
+                      theme={theme}
+                      accent={accent}
+                      value={settings.dialogueListOrder}
+                      onChange={(value) =>
+                        onChange('dialogueListOrder', value as AutoPilotVideoSettings['dialogueListOrder'])
+                      }
+                    />
+                  </View>
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => updateDialogueList([...dialogueList, ''])}
