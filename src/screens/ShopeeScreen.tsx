@@ -271,7 +271,13 @@ export default function ShopeeScreen({
       <View className="flex-1">
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerClassName={subMode === 'post' ? 'pb-[104px]' : 'gap-1.5 p-2 pb-[18px]'}
+          contentContainerClassName={
+            subMode === 'post'
+              ? postQueueVideos.length > 0 || isPosting
+                ? 'pb-[104px]'
+                : 'pb-[18px]'
+              : 'gap-1.5 p-2 pb-[18px]'
+          }
         >
           {subMode === 'post' ? (
             <View className="min-h-full bg-kd-screen">
@@ -362,7 +368,8 @@ export default function ShopeeScreen({
           )}
         </ScrollView>
 
-        {subMode === 'post' ? (
+        {/* คิวว่างซ่อนปุ่มโพส (empty state มีปุ่มไปคลังวิดีโอนำทางแล้ว) — ตอนกำลังโพสคงปุ่มหยุดไว้ */}
+        {subMode === 'post' && (postQueueVideos.length > 0 || isPosting) ? (
           <View className="absolute bottom-0 left-0 right-0 bg-kd-panel px-4 pb-3 pt-3">
             {isPosting ? (
               <Pressable
