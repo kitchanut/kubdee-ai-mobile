@@ -22,6 +22,8 @@ import {
   saveAutoPilotSettingsPreset,
   type AutoPilotSettingsPreset,
 } from '@/autopilot/settingsPresetStore';
+import { toast } from 'sonner-native';
+
 import { useAutoPilotController } from '@/autopilot/useAutoPilotController';
 import type { AutoPilotProductSelectionRequest } from '@/autopilot/selectionRequest';
 import type { AutoPilotLogLevel, AutoPilotProductSettings, AutoPilotRunState } from '@/autopilot/types';
@@ -66,12 +68,10 @@ export default function AutoPilotScreen({
   const [productPresetSheetOpen, setProductPresetSheetOpen] = useState(false);
   const [productPresetMode, setProductPresetMode] = useState<'save' | 'load'>('load');
   const [productPresetName, setProductPresetName] = useState('');
-  const [productPresetMessage, setProductPresetMessage] = useState<string | null>(null);
   const [productPresets, setProductPresets] = useState<AutoPilotProductPreset[]>([]);
   const [settingsPresetSheetOpen, setSettingsPresetSheetOpen] = useState(false);
   const [settingsPresetMode, setSettingsPresetMode] = useState<'save' | 'load'>('load');
   const [settingsPresetName, setSettingsPresetName] = useState('');
-  const [settingsPresetMessage, setSettingsPresetMessage] = useState<string | null>(null);
   const [settingsPresets, setSettingsPresets] = useState<AutoPilotSettingsPreset[]>([]);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [dismissedRunStatusKey, setDismissedRunStatusKey] = useState<string | null>(null);
@@ -193,7 +193,6 @@ export default function AutoPilotScreen({
 
   const openProductPresetSheet = (): void => {
     setProductPresetMode(controller.selectedProducts.length > 0 ? 'save' : 'load');
-    setProductPresetMessage(null);
     setProductPresetName('');
     setProductPresetSheetOpen(true);
   };
@@ -223,20 +222,20 @@ export default function AutoPilotScreen({
     });
     setProductPresetName('');
     setProductPresetMode('load');
-    setProductPresetMessage('บันทึก preset แล้ว');
+    toast.success('บันทึก preset แล้ว');
     await refreshProductPresets();
   }, [controller.selectedProducts, productPresetName, refreshProductPresets, selectedProfileId]);
 
   const loadSelectedProductPreset = (preset: AutoPilotProductPreset): void => {
     controller.loadProductPreset(preset.productIds, preset.settingsByProductId);
-    setProductPresetMessage('โหลด preset แล้ว');
+    toast.success('โหลด preset แล้ว');
     setProductPresetSheetOpen(false);
   };
 
   const removeProductPreset = useCallback(
     async (preset: AutoPilotProductPreset): Promise<void> => {
       await deleteAutoPilotProductPreset(preset.id);
-      setProductPresetMessage(`ลบ "${preset.name}" แล้ว`);
+      toast.success(`ลบ "${preset.name}" แล้ว`);
       await refreshProductPresets();
     },
     [refreshProductPresets]
@@ -257,7 +256,6 @@ export default function AutoPilotScreen({
 
   const openSettingsPresetSheet = (mode: 'save' | 'load'): void => {
     setSettingsPresetMode(mode);
-    setSettingsPresetMessage(null);
     setSettingsPresetName('');
     setSettingsPresetSheetOpen(true);
   };
@@ -275,7 +273,7 @@ export default function AutoPilotScreen({
     });
     setSettingsPresetName('');
     setSettingsPresetMode('load');
-    setSettingsPresetMessage('บันทึก preset ตั้งค่าแล้ว');
+    toast.success('บันทึก preset ตั้งค่าแล้ว');
     await refreshSettingsPresets();
   }, [editingProduct, refreshSettingsPresets, settingsPresetName]);
 
@@ -288,14 +286,14 @@ export default function AutoPilotScreen({
       image: preset.imageSettings,
       video: preset.videoSettings,
     });
-    setSettingsPresetMessage('โหลด preset ตั้งค่าแล้ว');
+    toast.success('โหลด preset ตั้งค่าแล้ว');
     setSettingsPresetSheetOpen(false);
   };
 
   const removeSettingsPreset = useCallback(
     async (preset: AutoPilotSettingsPreset): Promise<void> => {
       await deleteAutoPilotSettingsPreset(preset.id);
-      setSettingsPresetMessage(`ลบ "${preset.name}" แล้ว`);
+      toast.success(`ลบ "${preset.name}" แล้ว`);
       await refreshSettingsPresets();
     },
     [refreshSettingsPresets]
@@ -401,7 +399,6 @@ export default function AutoPilotScreen({
           name={settingsPresetName}
           presets={settingsPresets}
           saveDisabled={settingsPresetName.trim().length === 0}
-          message={settingsPresetMessage}
           product={editingProduct}
           theme={theme}
           onClose={() => setSettingsPresetSheetOpen(false)}
@@ -425,7 +422,6 @@ export default function AutoPilotScreen({
           presets={productPresets}
           saveDisabled={!selectedProfileId || productPresetName.trim().length === 0 || controller.selectedProducts.length === 0}
           selectedCount={controller.selectedProducts.length}
-          message={productPresetMessage}
           theme={theme}
           onClose={() => setProductPresetSheetOpen(false)}
           onDelete={(preset) => {

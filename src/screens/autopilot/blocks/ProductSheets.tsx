@@ -298,7 +298,6 @@ function CatalogSelectRow({
 
 export function ProductPresetSheet({
   bottomInset,
-  message,
   mode,
   name,
   presets,
@@ -313,7 +312,6 @@ export function ProductPresetSheet({
   onSave,
 }: {
   bottomInset: number;
-  message: string | null;
   mode: 'save' | 'load';
   name: string;
   presets: AutoPilotProductPreset[];
@@ -394,12 +392,6 @@ export function ProductPresetSheet({
             contentContainerClassName="gap-3 px-3 py-3"
             contentContainerStyle={{ paddingBottom: 16 }}
           >
-            {message ? (
-              <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
-                <Text className="text-kd-caption font-semibold text-kd-text">{message}</Text>
-              </View>
-            ) : null}
-
             {mode === 'save' ? (
               <View className="gap-3">
                 <View className="rounded-kd-lg border border-kd-border bg-kd-card px-3 py-3">
@@ -443,7 +435,7 @@ export function ProductPresetSheet({
                   </View>
                 ) : (
                   presets.map((preset) => (
-                    <View key={preset.id} className="flex-row items-center gap-1.5">
+                    <View key={preset.id} className="flex-row items-stretch gap-1.5">
                       <Button
                         accessibilityRole="button"
                         variant="ghost"
@@ -470,7 +462,7 @@ export function ProductPresetSheet({
                             { text: 'ลบ', style: 'destructive', onPress: () => onDelete(preset) },
                           ])
                         }
-                        className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-md border border-kd-border bg-kd-card active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
+                        className="w-9 shrink-0 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
                       >
                         <Trash2 size={14} color={theme.red} strokeWidth={2.1} />
                       </Pressable>
@@ -488,7 +480,6 @@ export function ProductPresetSheet({
 
 export function SettingsPresetSheet({
   bottomInset,
-  message,
   mode,
   name,
   presets,
@@ -503,7 +494,6 @@ export function SettingsPresetSheet({
   onSave,
 }: {
   bottomInset: number;
-  message: string | null;
   mode: 'save' | 'load';
   name: string;
   presets: AutoPilotSettingsPreset[];
@@ -586,12 +576,6 @@ export function SettingsPresetSheet({
             contentContainerClassName="gap-3 px-3 py-3"
             contentContainerStyle={{ paddingBottom: 16 }}
           >
-            {message ? (
-              <View className="rounded-kd-md border border-kd-emerald/40 bg-kd-emerald-soft px-2.5 py-2 dark:bg-kd-card-muted">
-                <Text className="text-kd-caption font-semibold text-kd-text">{message}</Text>
-              </View>
-            ) : null}
-
             {mode === 'save' ? (
               <View className="gap-3">
                 <View className="rounded-kd-lg border border-kd-border bg-kd-card px-3 py-3">
@@ -635,14 +619,14 @@ export function SettingsPresetSheet({
                   </View>
                 ) : (
                   presets.map((preset) => (
-                    <View key={preset.id} className="flex-row items-center gap-1.5">
+                    <View key={preset.id} className="flex-row items-stretch gap-1.5">
                       <Button
                         accessibilityRole="button"
                         variant="ghost"
                         onPress={() => onLoad(preset)}
                         className="min-w-0 flex-1 flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-card px-2 py-2"
                       >
-                        <View className="h-10 w-10 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
+                        <View className="h-10 w-10 items-center justify-center">
                           <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
                         </View>
                         <View className="min-w-0 flex-1">
@@ -662,7 +646,7 @@ export function SettingsPresetSheet({
                             { text: 'ลบ', style: 'destructive', onPress: () => onDelete(preset) },
                           ])
                         }
-                        className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-md border border-kd-border bg-kd-card active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
+                        className="w-9 shrink-0 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card active:bg-kd-panel-muted dark:active:bg-kd-card-muted"
                       >
                         <Trash2 size={14} color={theme.red} strokeWidth={2.1} />
                       </Pressable>

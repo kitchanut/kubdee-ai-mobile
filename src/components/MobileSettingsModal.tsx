@@ -1,6 +1,7 @@
 import { BrainCircuit, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { toast } from 'sonner-native';
 
 import {
   DEFAULT_AI_BRAIN_SETTINGS,
@@ -84,6 +85,7 @@ export default function MobileSettingsModal({
     setSaveError(null);
     try {
       await saveAiBrainSettings(draft);
+      toast.success('บันทึกการตั้งค่าแล้ว');
       onClose();
     } catch {
       setSaveError('บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง');
