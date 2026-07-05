@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { isDisplayableProductImageUri } from '@/library/productImageCache';
 import { kubdeeFontFamilies } from '@/theme/fonts';
@@ -93,10 +92,13 @@ export function ProductSelectSheet({
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <View
-        className="flex-1 bg-black/60 px-2 pb-2"
-        style={{ paddingTop: Math.max(topInset + 10, 40) }}
+        className="flex-1 bg-black/60 px-3"
+        style={{
+          paddingTop: Math.max(topInset + 10, 40),
+          paddingBottom: Math.max(bottomInset + 8, 16),
+        }}
       >
-        <View className="min-h-0 flex-1 overflow-hidden rounded-[18px] border border-kd-border bg-kd-panel">
+        <View className="min-h-0 flex-1 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel">
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
             <View className="flex-row items-center justify-between pb-2">
               <View className="min-w-0 flex-1 flex-row items-center gap-2">
@@ -104,7 +106,7 @@ export function ProductSelectSheet({
                   <Package size={15} color={theme.emerald} strokeWidth={2.1} />
                 </View>
                 <View className="min-w-0 flex-1">
-                  <Text className="text-[14px] font-semibold text-kd-text">เลือกจากคลังสินค้า</Text>
+                  <Text className="text-kd-label font-semibold text-kd-text">เลือกจากคลังสินค้า</Text>
                   <Text className="text-kd-micro text-kd-text-subtle">{products.length} รายการในโปรไฟล์นี้</Text>
                 </View>
               </View>
@@ -140,14 +142,12 @@ export function ProductSelectSheet({
             </View>
           </View>
 
-          <Separator className="bg-kd-border" />
-
           {filteredProducts.length > 0 ? (
             <Pressable
               accessibilityRole="checkbox"
               accessibilityState={{ checked: allFilteredSelected }}
               onPress={toggleAllFiltered}
-              className="min-h-10 flex-row items-center justify-between border-b border-kd-border px-3"
+              className="min-h-10 flex-row items-center justify-between px-3"
             >
               <View className="flex-row items-center gap-2">
                 <View pointerEvents="none">
@@ -156,7 +156,7 @@ export function ProductSelectSheet({
                     onCheckedChange={toggleAllFiltered}
                     checkedClassName="border-kd-emerald"
                     indicatorClassName="bg-kd-emerald"
-                    className="h-5 w-5 rounded-[6px] border-2 border-kd-border-strong bg-kd-input"
+                    className="h-5 w-5 rounded-kd-md border border-kd-border-strong bg-kd-input"
                   />
                 </View>
                 <Text className="text-kd-micro font-semibold text-kd-text-subtle">
@@ -169,7 +169,11 @@ export function ProductSelectSheet({
             </Pressable>
           ) : null}
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 p-2 pb-24">
+          <ScrollView
+            className="min-h-0 flex-1"
+            showsVerticalScrollIndicator={false}
+            contentContainerClassName="gap-1.5 p-2 pb-3"
+          >
             {filteredProducts.length === 0 ? (
               <View className="items-center gap-2 py-12">
                 <Package size={28} color={theme.textSubtle} strokeWidth={1.7} />
@@ -190,10 +194,7 @@ export function ProductSelectSheet({
             )}
           </ScrollView>
 
-          <View
-            className="absolute bottom-0 left-0 right-0 flex-row items-center justify-end gap-2 border-t border-kd-border bg-kd-panel px-3 pt-2"
-            style={{ paddingBottom: Math.max(bottomInset, 12) }}
-          >
+          <View className="flex-row items-center justify-end gap-2 border-t border-kd-border bg-kd-panel px-3 py-2">
             <Button
               accessibilityRole="button"
               variant="ghost"
@@ -208,7 +209,7 @@ export function ProductSelectSheet({
               variant="ghost"
               onPress={() => onConfirm(Array.from(draftSelectedIds))}
               className={`h-10 flex-row items-center justify-center gap-1.5 rounded-kd-md px-4 ${
-                draftSelectedIds.size === 0 ? 'bg-kd-border' : 'bg-kd-emerald'
+                draftSelectedIds.size === 0 ? 'bg-kd-border opacity-60' : 'bg-kd-emerald'
               }`}
             >
               <Check size={14} color={theme.white} strokeWidth={2.4} />
@@ -253,8 +254,8 @@ function CatalogSelectRow({
       onPress={onPress}
       className="flex-row items-center gap-2 rounded-kd-lg border p-2"
       style={{
-        backgroundColor: selected ? alpha(theme.emerald, theme.isDark ? 0.14 : 0.08) : theme.panel,
-        borderColor: selected ? alpha(theme.emerald, 0.55) : theme.border,
+        backgroundColor: selected ? alpha(theme.emerald, theme.isDark ? 0.14 : 0.08) : theme.card,
+        borderColor: selected ? alpha(theme.emerald, 0.55) : 'transparent',
       }}
     >
       <View pointerEvents="none">
@@ -328,7 +329,7 @@ export function ProductPresetSheet({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <View className="flex-1 justify-end bg-black/60">
         <View
-          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          className="overflow-hidden rounded-t-kd-2xl border border-kd-border bg-kd-panel"
           style={{ maxHeight: '72%' }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
@@ -338,7 +339,7 @@ export function ProductPresetSheet({
                   <FolderOpen size={15} color={theme.textMuted} strokeWidth={2.1} />
                 </View>
                 <View className="min-w-0 flex-1">
-                  <Text className="text-[14px] font-semibold text-kd-text">Product Preset</Text>
+                  <Text className="text-kd-label font-semibold text-kd-text">Product Preset</Text>
                   <Text className="text-kd-micro text-kd-text-subtle">บันทึก/โหลดชุดสินค้าที่เลือกจากคลัง</Text>
                 </View>
               </View>
@@ -502,7 +503,7 @@ export function SettingsPresetSheet({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <View className="flex-1 justify-end bg-black/60">
         <View
-          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          className="overflow-hidden rounded-t-kd-2xl border border-kd-border bg-kd-panel"
           style={{ maxHeight: '72%' }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
@@ -512,7 +513,7 @@ export function SettingsPresetSheet({
                   <Save size={15} color={theme.textMuted} strokeWidth={2.1} />
                 </View>
                 <View className="min-w-0 flex-1">
-                  <Text className="text-[14px] font-semibold text-kd-text">Preset ตั้งค่า</Text>
+                  <Text className="text-kd-label font-semibold text-kd-text">Preset ตั้งค่า</Text>
                   <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
                     รูปภาพ+วิดีโอของ {product.name || product.productId || 'สินค้า'}
                   </Text>

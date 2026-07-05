@@ -70,7 +70,7 @@ export default function TopIconTabs({
             >
               <View className="h-[38px] w-[38px] items-center justify-center">
                 <View
-                  className={`h-[38px] w-[38px] items-center justify-center overflow-hidden rounded-[12px] border ${
+                  className={`h-[38px] w-[38px] items-center justify-center overflow-hidden rounded-kd-xl border ${
                     active
                       ? 'border-kd-border bg-white dark:bg-kd-card'
                       : 'border-transparent'

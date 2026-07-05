@@ -39,10 +39,10 @@ export function ProductCatalogBlock({
   onUpdateProductField: (productId: string, field: AutoPilotProductEditableField, value: string) => void;
 }): React.JSX.Element {
   return (
-    <View className="gap-3">
+    <View className="gap-2.5">
       <View className="flex-row items-center gap-1.5">
         <ImageIcon size={16} color={theme.textMuted} strokeWidth={2} />
-        <Text numberOfLines={1} className="text-[13px] font-semibold text-kd-text">
+        <Text numberOfLines={1} className="text-kd-subtitle font-semibold text-kd-text">
           ข้อมูลสินค้า ({selectedProducts.length})
         </Text>
         <View className="flex-1" />
@@ -73,7 +73,7 @@ export function ProductCatalogBlock({
           onPress={onAddManualProduct}
           className="h-8 w-8 items-center justify-center rounded-kd-md"
         >
-          <Plus size={17} color={theme.textSubtle} strokeWidth={2.1} />
+          <Plus size={16} color={theme.textSubtle} strokeWidth={2.1} />
         </Button>
         {selectedProducts.length > 0 ? (
           <Button
@@ -110,6 +110,26 @@ export function ProductCatalogBlock({
           <Text className="text-kd-caption font-medium text-kd-text-subtle">
             {profileProducts.length === 0 ? 'ยังไม่มีสินค้าในโปรไฟล์นี้' : 'เพิ่มสินค้าจากคลังหรือเพิ่มเอง'}
           </Text>
+          <View className="flex-row items-center gap-2">
+            <Pressable
+              accessibilityLabel="เลือกสินค้าจากคลัง"
+              accessibilityRole="button"
+              onPress={onOpenProductSelect}
+              className="h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-gray-900 px-3 active:opacity-80 dark:bg-white"
+            >
+              <FolderOpen size={14} color={theme.isDark ? '#111827' : theme.white} strokeWidth={2.1} />
+              <Text className="text-kd-caption font-semibold text-white dark:text-gray-900">เลือกจากคลัง</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="เพิ่มสินค้าเอง"
+              accessibilityRole="button"
+              onPress={onAddManualProduct}
+              className="h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-kd-border bg-kd-input px-3 active:opacity-70"
+            >
+              <Plus size={14} color={theme.textMuted} strokeWidth={2.1} />
+              <Text className="text-kd-caption font-semibold text-kd-text">เพิ่มเอง</Text>
+            </Pressable>
+          </View>
           {profileProducts.length === 0 ? (
             <Button
               accessibilityLabel="ซิงก์คลังสินค้า"
@@ -147,7 +167,7 @@ function ProductRow({
   const isManualProduct = product.platform === 'manual' || product.id.startsWith('manual-');
 
   return (
-    <View className="flex-row gap-2 rounded-kd-lg border border-kd-border bg-kd-card p-2">
+    <View className="flex-row gap-2 rounded-kd-2xl border border-kd-border bg-kd-card p-2.5">
       <Pressable
         accessibilityLabel="ตั้งค่ารายสินค้า"
         accessibilityRole="button"
@@ -156,7 +176,7 @@ function ProductRow({
         style={{ height: 126, width: 86 }}
       >
         <View className="absolute left-0 top-0 z-10 h-7 min-w-7 items-center justify-center rounded-br-kd-md bg-black/55 px-1">
-          <Text className="text-[11px] font-bold text-white">{index + 1}</Text>
+          <Text className="text-kd-caption font-bold text-white">{index + 1}</Text>
         </View>
         {product.preview ? (
           <Image source={{ uri: product.preview }} className="h-full w-full" resizeMode="cover" />
@@ -169,21 +189,21 @@ function ProductRow({
 
       <View className="min-w-0 flex-1 gap-0.5">
         <View className="min-w-0 flex-row items-center gap-1">
-          <Text className="text-[10px] font-medium text-kd-text-subtle">#</Text>
+          <Text className="text-kd-micro font-medium text-kd-text-subtle">#</Text>
           {isManualProduct ? (
             <Input
               value={product.productId}
               onChangeText={(value) => onUpdate('productId', value)}
               placeholder="รหัสสินค้า"
               placeholderTextColor={theme.textSubtle}
-              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
               style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
             />
           ) : (
             <Text
               numberOfLines={1}
-              className="min-w-0 flex-1 text-kd-text-subtle"
-              style={{ fontSize: 10, lineHeight: 13 }}
+              className="min-w-0 flex-1 text-kd-micro text-kd-text-subtle"
+              style={{ lineHeight: 13 }}
             >
               {product.productId || product.catalogId}
             </Text>
@@ -218,14 +238,14 @@ function ProductRow({
               onChangeText={(value) => onUpdate('productUrl', value)}
               placeholder="ลิงก์สินค้า"
               placeholderTextColor={theme.textSubtle}
-              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+              className="h-6 min-h-6 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
               style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
             />
           ) : (
             <Text
               numberOfLines={1}
-              className="min-w-0 flex-1 text-kd-text-subtle"
-              style={{ color: product.productUrl ? theme.textSubtle : alpha(theme.textSubtle, 0.55), fontSize: 10, lineHeight: 14 }}
+              className="min-w-0 flex-1 text-kd-micro text-kd-text-subtle"
+              style={{ color: product.productUrl ? theme.textSubtle : alpha(theme.textSubtle, 0.55), lineHeight: 14 }}
             >
               {product.productUrl || 'ลิงก์สินค้า'}
             </Text>
@@ -245,8 +265,8 @@ function ProductRow({
         ) : (
           <Text
             numberOfLines={2}
-            className="min-h-[32px] text-kd-text"
-            style={{ fontFamily: kubdeeFontFamilies.thai.medium, fontSize: 11, lineHeight: 14 }}
+            className="min-h-[32px] text-kd-caption text-kd-text"
+            style={{ fontFamily: kubdeeFontFamilies.thai.medium, lineHeight: 14 }}
           >
             {product.name || 'ชื่อสินค้า'}
           </Text>
@@ -258,16 +278,16 @@ function ProductRow({
             onChangeText={(value) => onUpdate('hashtags', value)}
             placeholder="#แฮชแท็ก"
             placeholderTextColor={theme.textSubtle}
-            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
             style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
           />
         ) : (
           <Text
             numberOfLines={1}
-            className="text-kd-text-subtle"
-            style={{ color: product.hashtags ? theme.textSubtle : alpha(theme.textSubtle, 0.55), fontSize: 10, lineHeight: 14 }}
+            className="text-kd-micro text-kd-text-subtle"
+            style={{ color: product.hashtags ? theme.textSubtle : alpha(theme.textSubtle, 0.55), lineHeight: 14 }}
           >
-            {product.hashtags || '#แฮชแท็ก'}
+            {product.hashtags || 'แฮชแท็ก: AI คิดให้ตอนสร้าง'}
           </Text>
         )}
 
@@ -277,16 +297,16 @@ function ProductRow({
             onChangeText={(value) => onUpdate('cta', value)}
             placeholder="CTA (Call to Action)"
             placeholderTextColor={theme.textSubtle}
-            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-[10px] text-kd-text-subtle shadow-none"
+            className="h-6 min-h-6 rounded-none border-0 bg-transparent px-0 py-0 text-kd-micro text-kd-text-subtle shadow-none"
             style={{ fontFamily: kubdeeFontFamilies.thai.regular, fontSize: 10, lineHeight: 13, paddingVertical: 0 }}
           />
         ) : (
           <Text
             numberOfLines={1}
-            className="text-kd-text-subtle"
-            style={{ color: product.cta ? theme.textSubtle : alpha(theme.textSubtle, 0.55), fontSize: 10, lineHeight: 14 }}
+            className="text-kd-micro text-kd-text-subtle"
+            style={{ color: product.cta ? theme.textSubtle : alpha(theme.textSubtle, 0.55), lineHeight: 14 }}
           >
-            {product.cta || 'CTA (Call to Action)'}
+            {product.cta || 'CTA: AI คิดให้ตอนสร้าง'}
           </Text>
         )}
       </View>

@@ -154,7 +154,8 @@ export default function AutoPilotScreen({
     controller.enabledSteps.length > 0;
   // ยังไม่ได้เลือกสินค้าจากคลัง → ซ่อนปุ่มเริ่มสร้าง (แต่ตอนกำลังรันยังต้องเห็นปุ่มหยุด)
   const showStartBar = controller.selectedProducts.length > 0 || isRunning || isPreparingRun;
-  const startButtonBottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 8;
+  // SafeAreaView (edges bottom) ใน KubdeeMobileApp กันขอบล่างให้แล้ว — ห้ามบวก insets.bottom ซ้ำ
+  const startButtonBottomPadding = Platform.OS === 'ios' ? 10 : 8;
   // bottom bar = pt-3 (12) + start button (44) + bottom padding, plus breathing room
   const startButtonScrollPadding = showStartBar
     ? 12 + 44 + startButtonBottomPadding + 16
@@ -480,7 +481,7 @@ export default function AutoPilotScreen({
             ) : (
               <Sparkles size={16} color={canStart ? (theme.isDark ? '#000000' : theme.white) : theme.textSubtle} strokeWidth={2.2} />
             )}
-            <Text className={`text-[13px] font-semibold ${isRunning ? 'text-white' : canStart ? (theme.isDark ? 'text-black' : 'text-white') : 'text-kd-text-subtle'}`}>
+            <Text className={`text-kd-subtitle font-semibold ${isRunning ? 'text-white' : canStart ? (theme.isDark ? 'text-black' : 'text-white') : 'text-kd-text-subtle'}`}>
               {isRunning ? 'หยุด Auto Pilot' : isPreparingRun ? 'กำลังเตรียมงาน' : 'เริ่มสร้าง'}
             </Text>
           </Button>

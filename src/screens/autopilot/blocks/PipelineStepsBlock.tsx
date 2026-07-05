@@ -18,7 +18,7 @@ export function PipelineStepsBlock({
   onToggle: (value: AutoPilotStepType) => void;
 }): React.JSX.Element {
   return (
-    <View className="gap-1.5">
+    <View className="gap-2.5">
       <ExtensionSectionTitle icon={Sparkles} title="ขั้นตอนการทำงาน" theme={theme} />
       <View className="flex-row items-center pt-1">
         {AUTO_PILOT_STEPS.map((step) => (

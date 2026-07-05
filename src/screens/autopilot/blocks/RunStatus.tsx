@@ -170,7 +170,7 @@ export function ActivityLogSheet({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible>
       <View className="flex-1 justify-end bg-black/60">
         <View
-          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          className="overflow-hidden rounded-t-kd-2xl border border-kd-border bg-kd-panel"
           style={{ maxHeight: '72%' }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">
@@ -180,7 +180,7 @@ export function ActivityLogSheet({
                   <Info size={15} color={theme.textMuted} strokeWidth={2.1} />
                 </View>
                 <View className="min-w-0 flex-1">
-                  <Text className="text-[14px] font-semibold text-kd-text">รายละเอียดการทำงาน</Text>
+                  <Text className="text-kd-label font-semibold text-kd-text">รายละเอียดการทำงาน</Text>
                   <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
                     {getRunStatusLabel(runState.status)}
                     {firstLog ? ` · เริ่ม ${formatTime(firstLog.timestamp)}` : ''}
@@ -251,7 +251,7 @@ export function ActivityLogSheet({
                   <View key={log.id} className="flex-row gap-2 rounded-kd-md bg-kd-card px-2.5 py-2">
                     <View className="w-[68px]">
                       <Text className="text-kd-micro font-medium text-kd-text-subtle">{formatTime(log.timestamp)}</Text>
-                      <Text className="mt-0.5 text-kd-tiny text-kd-text-subtle">
+                      <Text className="mt-0.5 text-kd-micro text-kd-text-subtle">
                         +{formatDuration(deltaMs)} · {formatDuration(sinceStartMs)}
                       </Text>
                     </View>
@@ -317,7 +317,7 @@ function LogStageMeta({
         borderColor: alpha(theme.blue, theme.isDark ? 0.32 : 0.18),
       }}
     >
-      <Text className="text-kd-tiny font-semibold" style={{ color: theme.blue }} numberOfLines={1}>
+      <Text className="text-kd-micro font-semibold" style={{ color: theme.blue }} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -356,8 +356,8 @@ function LogFlowStat({
 }): React.JSX.Element {
   return (
     <View className="flex-row items-center gap-1 rounded-kd-sm bg-kd-panel-muted px-1.5 py-0.5 dark:bg-kd-card-muted">
-      <Text className="text-kd-tiny text-kd-text-subtle">{label}</Text>
-      <Text className="text-kd-tiny font-semibold" style={{ color: warning ? theme.red : theme.textMuted }}>
+      <Text className="text-kd-micro text-kd-text-subtle">{label}</Text>
+      <Text className="text-kd-micro font-semibold" style={{ color: warning ? theme.red : theme.textMuted }}>
         {value}
       </Text>
     </View>

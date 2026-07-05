@@ -72,7 +72,7 @@ export function ProductSettingsModal({
         className="flex-1 justify-end bg-black/60"
       >
         <View
-          className="overflow-hidden rounded-t-[18px] border border-kd-border bg-kd-panel"
+          className="overflow-hidden rounded-t-kd-2xl border border-kd-border bg-kd-panel"
           style={{ maxHeight: '94%', minHeight: '78%' }}
         >
           <View className="border-b border-kd-border bg-kd-card px-3 pt-3">

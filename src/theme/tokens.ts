@@ -95,6 +95,7 @@ export const radii = {
   md: 6,
   lg: 8,
   xl: 10,
+  xxl: 14,
 };
 
 export const spacing = {
@@ -111,6 +112,7 @@ export const typography = {
   micro: 10,
   caption: 11,
   body: 12,
+  subtitle: 13,
   label: 14,
   title: 18,
 };

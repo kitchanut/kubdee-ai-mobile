@@ -27,13 +27,13 @@ export function SectionCard({
   title: string;
 }): React.JSX.Element {
   return (
-    <View className="gap-3 rounded-[14px] border border-kd-border bg-kd-card px-3 py-3">
+    <View className="gap-2.5 rounded-kd-2xl border border-kd-border bg-kd-card p-2.5">
       <View className="flex-row items-center justify-between gap-2">
         <View className="min-w-0 flex-1 flex-row items-center gap-2">
           <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
-            <Icon size={15} color={theme.textMuted} strokeWidth={2} />
+            <Icon size={16} color={theme.textMuted} strokeWidth={2} />
           </View>
-          <Text numberOfLines={1} className="text-[13px] font-semibold text-kd-text">
+          <Text numberOfLines={1} className="text-kd-subtitle font-semibold text-kd-text">
             {title}
           </Text>
         </View>
@@ -88,7 +88,7 @@ export function SelectField({
   return (
     <View className="min-w-0 flex-1 gap-1">
       <Text className="text-kd-micro font-normal text-kd-text-subtle">{label}</Text>
-      <View className="w-full overflow-hidden rounded-kd-lg border border-kd-border bg-kd-input" style={{ height: 36 }}>
+      <View className="h-9 w-full overflow-hidden rounded-kd-lg border border-kd-border bg-kd-input">
         {/* Custom text with correct font */}
         <View
           pointerEvents="none"
@@ -366,7 +366,7 @@ export function ExtensionSectionTitle({
   return (
     <View className="flex-row items-center gap-2">
       <Icon size={16} color={theme.textMuted} strokeWidth={2} />
-      <Text className="text-[13px] font-semibold text-kd-text">{title}</Text>
+      <Text className="text-kd-subtitle font-semibold text-kd-text">{title}</Text>
     </View>
   );
 }

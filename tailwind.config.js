@@ -75,6 +75,7 @@ module.exports = {
         'kd-md': '6px',
         'kd-lg': '8px',
         'kd-xl': '10px',
+        'kd-2xl': '14px',
       },
       // Mirrors typography in src/theme/tokens.ts
       fontSize: {
@@ -82,6 +83,7 @@ module.exports = {
         'kd-micro': '10px',
         'kd-caption': '11px',
         'kd-body': '12px',
+        'kd-subtitle': '13px',
         'kd-label': '14px',
         'kd-title': '18px',
       },

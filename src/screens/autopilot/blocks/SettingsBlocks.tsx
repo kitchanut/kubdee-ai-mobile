@@ -40,7 +40,7 @@ export function ExtensionBasicSettingsBlock({
   const [open, setOpen] = useState(true);
 
   return (
-    <View className="gap-2">
+    <View className="gap-2.5">
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -49,7 +49,7 @@ export function ExtensionBasicSettingsBlock({
       >
         <View className="flex-row items-center gap-2">
           <ExtensionBasicSettingsIcon color={theme.text} />
-          <Text className="text-[13px] font-semibold text-kd-text">ตั้งค่าพื้นฐาน</Text>
+          <Text className="text-kd-subtitle font-semibold text-kd-text">ตั้งค่าพื้นฐาน</Text>
         </View>
         <View className="h-5 w-5 items-center justify-center">
           {open ? (
@@ -158,7 +158,7 @@ export function ExtensionBasicSettingsBlock({
 
 function ExtensionBasicSettingsIcon({ color }: { color: string }): React.JSX.Element {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24">
+    <Svg width={16} height={16} viewBox="0 0 24 24">
       <Path
         d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
         fill="none"
