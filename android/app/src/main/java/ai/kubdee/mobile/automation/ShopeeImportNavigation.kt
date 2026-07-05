@@ -237,7 +237,8 @@ internal fun KubdeeAccessibilityService.checkShopeeMePage(): ShopeeMePageCheck {
     .distinctBy { it.lowercase(Locale.ROOT) }
 
   val visible = (hasProfileHeader && (hasPurchaseSection || hasLikedMenu)) ||
-    ((hasBottomMeTab || hasProfileHeader) && meSurfaceHits.isNotEmpty())
+    ((hasBottomMeTab || hasProfileHeader) && meSurfaceHits.isNotEmpty()) ||
+    meSurfaceHits.size >= 2
   val reason = when {
     visible -> "ok"
     !hasBottomMeTab && !hasProfileHeader -> "ไม่เจอ tab ฉัน หรือ header profile"
