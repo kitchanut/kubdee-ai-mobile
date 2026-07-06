@@ -13,9 +13,11 @@
 
 | วันที่ | เวอร์ชัน | Finding ที่แก้ | สรุป |
 |--------|----------|----------------|------|
-| 2026-07-07 | **v0.3.0** | **H-1 (keystore) ✅ แก้แล้ว** | ย้ายจาก debug keystore สาธารณะ → production key ส่วนตัว ผ่าน APK signing lineage (key rotation); ผู้ใช้เดิมอัปเดตทับได้ไร้รอยต่อ ข้อมูล local ไม่หาย; เฉพาะ production key เซ็นอัปเดตต่อได้ (Android 13+); ทดสอบ end-to-end บนเครื่องจริง; เพิ่ม `scripts/sign-release.mjs` + อัปเดต `docs/MOBILE_RELEASE.md`; keystore อยู่ `signing/` (gitignored) — ดู memory `mobile-signing-key-rotation` |
+| 2026-07-07 | **v0.3.0** | **H-1 (keystore) ✅** | ย้ายจาก debug keystore สาธารณะ → production key ส่วนตัว ผ่าน APK signing lineage (key rotation); ผู้ใช้เดิมอัปเดตทับได้ไร้รอยต่อ ข้อมูล local ไม่หาย; เฉพาะ production key เซ็นอัปเดตต่อได้ (Android 13+); ทดสอบ end-to-end บนเครื่องจริง; `scripts/sign-release.mjs` + `docs/MOBILE_RELEASE.md`; keystore อยู่ `signing/` (gitignored) — ดู memory `mobile-signing-key-rotation` |
+| 2026-07-07 | — | **Phase 0 guardrail ✅** (H-3, H-4, M-1, M-2 บางส่วน) | `scripts/check-native-drift.mjs` กัน templates↔android drift (H-3); `scripts/check-release.mjs` + version single-source (app.config.ts อ่าน package.json, ลบ dead version/versionCode ใน app.json) (H-4); ESLint (eslint-config-expo v57) + Prettier + auto-fix ลบ dead import 32 ไฟล์, backlog react-hooks เป็น warning (M-2 บางส่วน); `.github/workflows/ci.yml` = typecheck+lint+drift+release ทุก push/PR (M-1 ฝั่ง CI; release.yml ยังไม่ทำ); `docs/DEVELOPMENT.md` + AGENTS.md rules; `npm run verify` |
 
-> **ค้างอยู่ (ยังไม่แก้):** H-2 ถึง H-18 และ MED/LOW ทั้งหมด — ดูรายละเอียดในหัวข้อ 3 และ Roadmap หัวข้อ 4
+> **ค้างอยู่ (ยังไม่แก้):** H-2, H-5 ถึง H-18 และ MED/LOW ส่วนใหญ่ — ดูรายละเอียดในหัวข้อ 3 และ Roadmap หัวข้อ 4
+> **หมายเหตุ:** react-hooks warnings (refs-in-render/setState-in-effect) = หนี้เดิม H-18/M-20/M-22 lint ตั้งเป็น warning ไว้ จะ ratchet กลับเป็น error เมื่อ refactor Phase 2-4
 
 ---
 
