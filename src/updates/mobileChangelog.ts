@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.0',
+    date: '2026-07-07',
+    highlight: 'อัปเดตด้านความปลอดภัย แนะนำให้อัปเดตทุกเครื่อง',
+    changes: [
+      {
+        type: 'changed',
+        text: 'ยกระดับความปลอดภัยของแอปให้แข็งแรงขึ้น อัปเดตทับได้ตามปกติโดยข้อมูลและการตั้งค่าในเครื่องอยู่ครบ',
+      },
+    ],
+  },
+  {
     version: '0.2.70',
     date: '2026-07-06',
     highlight: 'ดึงสินค้าถูกใจครบขึ้น ไม่ข้ามสินค้าที่ชื่อมีคำอย่าง รับประกัน/ผ่อน/ส่งฟรี',

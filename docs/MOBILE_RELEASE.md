@@ -54,23 +54,41 @@
    cd ..
    ```
 
-5. เตรียม release asset
+5. เตรียม release asset — **ต้องเซ็น rotation ทุกครั้ง (ตั้งแต่ v0.3.0)**
+
+   Gradle เซ็นด้วย debug key อย่างเดียว (เซ็น signing lineage เองไม่ได้) จึงต้อง re-sign
+   ด้วย `scripts/sign-release.mjs` เสมอ ก่อนแจกจ่าย:
 
    ```bash
    VERSION=x.y.z
    mkdir -p artifacts
-   cp android/app/build/outputs/apk/release/app-release.apk "artifacts/kubdee-ai-mobile-v${VERSION}.apk"
+   # อ่านรหัสจาก signing/CREDENTIALS.txt (หรือ GitHub Secret ตอนรันใน CI)
+   export RELEASE_KEYSTORE_PASS='<store password>'
+   node scripts/sign-release.mjs \
+     android/app/build/outputs/apk/release/app-release.apk \
+     "artifacts/kubdee-ai-mobile-v${VERSION}.apk"
    shasum -a 256 "artifacts/kubdee-ai-mobile-v${VERSION}.apk"
    ```
+
+   สคริปต์จะเซ็น 2 ชั้น (debug key = v1/v2 backward-compat, production key = v3 + lineage)
+   แล้ว verify ให้อัตโนมัติ ถ้า verify ไม่ผ่านจะ exit ทันที
+
+   > ⚠️ **ห้ามแจก APK ที่ออกจาก gradle ตรงๆ** (เซ็น debug ล้วน) — เครื่องที่อัปเดตขึ้น v0.3.0+
+   > ไปแล้วจะติดตั้งทับไม่ได้ (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`)
+   >
+   > ⚠️ **ห้ามทำ `signing/kubdee-release.jks` + รหัสหาย** — หายแล้วอัปเดตแอปไม่ได้ตลอดกาล
+   > ผู้ใช้ทุกคนต้องถอนลงใหม่ สำรองไฟล์นี้ + รหัสไว้ที่ปลอดภัย (password manager / secret store)
 
 6. Commit และ push
 
    ```bash
    git status --short
-   git add package.json package-lock.json app.config.ts app.json src/updates/mobileChangelog.ts docs/MOBILE_RELEASE.md
+   git add package.json package-lock.json app.config.ts app.json src/updates/mobileChangelog.ts docs/MOBILE_RELEASE.md scripts/sign-release.mjs
    git commit -m "chore: release mobile v${VERSION}"
    git push origin master
    ```
+
+   > 🔐 `signing/` ถูก gitignore ไว้ (keystore + lineage + credential ไม่เข้า git) — สำรองแยกเอง
 
 7. สร้าง GitHub Release
 
