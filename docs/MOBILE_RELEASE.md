@@ -92,10 +92,20 @@
    - ไปเมนู `เช็คอัปเดต`
    - ต้องเห็นเวอร์ชันล่าสุด และดาวน์โหลด APK ได้
 
+## รูปแบบ Release Notes (บังคับ)
+
+- บรรทัดแรกต้องเป็น metadata `versionCode: NNN` (ค่าเดียวกับ `android/app/build.gradle`) — เว็บใช้ตัดสินว่ามีอัปเดตใหม่
+- เนื้อหาต้องจัดกลุ่มด้วยหัวข้อ section (`###`) แบบเดียวกับ extension เพราะ `/api/user/releases` ใน `kubdee-ai-web` parse หัวข้อเป็นชนิดการเปลี่ยนแปลง
+- ใช้ข้อความเดียวกับที่ใส่ใน `src/updates/mobileChangelog.ts` (type ตรงกัน: fixed → Bug Fixes, added/feature → Features, improved → Improvements, changed → Changes, removed → Removed)
+- เว็บเก็บ change สูงสุด 5 รายการแรก — เรียงเรื่องสำคัญที่สุดไว้บนสุด
+
+หัวข้อที่ parser ฝั่งเว็บรู้จัก: `### Features`, `### Improvements`, `### Bug Fixes`, `### Changes`, `### Removed` (หรือคำไทย เพิ่ม / ปรับปรุง / แก้ไข / เปลี่ยนแปลง / ลบ)
+
 ## Release Notes Example
 
 ```markdown
-- ปรับหน้าตา Changelog ให้ใกล้เคียง Desktop มากขึ้น
-- จัดรายการอัปเดตเป็น timeline พร้อมกลุ่มประเภท
-- ปรับ modal เวอร์ชันให้ดูและใช้งานสอดคล้องกันมากขึ้น
+versionCode: 121
+
+### Bug Fixes
+- บางเครื่องปุ่มโพสต์วิดีโอมุมขวาล่างในหน้าบัญชี Shopee Video แสดงเป็นไอคอน + ล้วนจนระบบหาไม่เจอและหยุดโพสต์ ตอนนี้เพิ่มการค้นหาสำรอง ทั้งจับไอคอน + โดยตรงและหาปุ่มกดได้ที่ใกล้มุมขวาล่างที่สุดแทน
 ```
