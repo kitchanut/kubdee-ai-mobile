@@ -1,11 +1,16 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+// package.json is the single source of truth for the version string.
+// Bump with `npm version <patch|minor|major>`; scripts/check-release.mjs guards it.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pkg = require('./package.json') as { version: string };
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'Kubdee AI',
   slug: 'kubdee-ai-mobile',
   scheme: 'kubdeeai',
-  version: '0.3.0',
+  version: pkg.version,
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/icon.png',

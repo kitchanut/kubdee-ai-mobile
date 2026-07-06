@@ -68,6 +68,10 @@
   "devDependencies": {
     "@types/react": "~19.2.2",
     "babel-preset-expo": "^56.0.14",
+    "eslint": "^9.39.4",
+    "eslint-config-expo": "^57.0.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "prettier": "^3.9.4",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3"
   },
@@ -79,7 +83,14 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "prebuild:android": "expo prebuild --platform android",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
+    "check:native-drift": "node scripts/check-native-drift.mjs",
+    "check:release": "node scripts/check-release.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run check:native-drift && npm run check:release"
   },
   "private": true
 }
