@@ -405,7 +405,7 @@ export const VOICE_OPTIONS: AutoPilotOption[] = [
   { value: '__custom__', label: 'กำหนดเอง', isCustom: true },
 ];
 
-export const VOICEOVER_TTS_GROUPS: Array<{ label: string; options: AutoPilotOption[] }> = [
+export const VOICEOVER_TTS_GROUPS: { label: string; options: AutoPilotOption[] }[] = [
   {
     label: 'หญิง',
     options: [

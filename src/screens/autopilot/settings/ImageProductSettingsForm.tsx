@@ -43,7 +43,7 @@ export function ImageProductSettingsForm({
   profileLocalId: string;
   settings: AutoPilotImageSettings;
   theme: KubdeeTheme;
-  onApplySection: (keys: Array<keyof AutoPilotImageSettings>) => void;
+  onApplySection: (keys: (keyof AutoPilotImageSettings)[]) => void;
   onChange: <K extends keyof AutoPilotImageSettings>(key: K, value: AutoPilotImageSettings[K]) => void;
 }): React.JSX.Element {
   const accent = theme.amber;

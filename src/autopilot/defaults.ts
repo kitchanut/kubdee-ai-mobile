@@ -92,12 +92,12 @@ export const DEFAULT_AUTO_PILOT_VIDEO_SETTINGS: AutoPilotVideoSettings = {
   systemPrompt: '',
 };
 
-export const AUTO_PILOT_STEPS: Array<{ id: AutoPilotStepType; label: string }> = [
+export const AUTO_PILOT_STEPS: { id: AutoPilotStepType; label: string }[] = [
   { id: 'image', label: 'สร้างรูป' },
   { id: 'video', label: 'สร้างวิดีโอ' },
 ];
 
-export const AUTO_PILOT_DELAY_OPTIONS: Array<{ value: AutoPilotDelayPreset; label: string }> = [
+export const AUTO_PILOT_DELAY_OPTIONS: { value: AutoPilotDelayPreset; label: string }[] = [
   { value: 'slowest', label: 'ช้ามาก (3-5 นาที)' },
   { value: 'slow', label: 'ช้า (30-60 วิ)' },
   { value: 'normal', label: 'ปกติ (5-10 วิ)' },

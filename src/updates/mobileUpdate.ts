@@ -24,7 +24,7 @@ export interface MobileRelease {
   version: string;
   date?: string | null;
   highlight?: string | null;
-  changes?: string | Array<{ type?: string; text?: string }>;
+  changes?: string | { type?: string; text?: string }[];
   apkSize?: number | null;
   apkSha256?: string | null;
   apkFileName?: string | null;
@@ -132,7 +132,7 @@ function parseChanges(changes: MobileRelease['changes']): string[] {
   }
 
   try {
-    const parsed = JSON.parse(changes) as Array<{ text?: string }>;
+    const parsed = JSON.parse(changes) as { text?: string }[];
     if (Array.isArray(parsed)) {
       return withoutMetadata(parsed.map((change) => change.text?.trim()).filter(Boolean) as string[]);
     }

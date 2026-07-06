@@ -1,30 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image as NativeImage, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as IntentLauncher from 'expo-intent-launcher';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import {
-  Check,
-  ChevronDown,
-  ChevronRight,
   ChevronsDown,
   ChevronsUp,
   Download,
   Grid2X2,
-  Heart,
   Image as ImageIcon,
-  Link2,
   Package,
-  Pencil,
-  Play,
   RefreshCw,
-  Search,
-  ShoppingBag,
-  Trash2,
   Upload,
   Video,
-  X,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
@@ -35,20 +21,17 @@ import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { getLocalProducts } from '@/library/localProductDb';
 import type { AffiliateProduct } from '@/library/types';
-import { createGoogleFlowVideoThumbnail, deleteGoogleFlowAssets } from '@/native/AccessibilityBridge';
+import { createGoogleFlowVideoThumbnail } from '@/native/AccessibilityBridge';
 import {
   acceptCloudTransfer,
   downloadCloudTransferVideo,
-  getCloudTransferText,
   listCloudTransferInbox,
   MAX_CLOUD_TRANSFER_VIDEO_BYTES,
   uploadCloudTransferVideos,
   type CloudTransferItem,
   type CloudTransferProgress,
-  type CloudTransferVideoUploadItem,
 } from '@/services/cloudTransferService';
 import type { KubdeeTheme } from '@/theme/tokens';
-import { alpha } from '@/theme/tokens';
 
 import {
   CardBackdrop,
@@ -56,7 +39,6 @@ import {
   EmptyState,
   HeaderIconButton,
   LibraryPanelHeader,
-  RowIconButton,
   SearchBox,
   SelectCircle,
   SelectionBar,
@@ -67,11 +49,7 @@ import {
 } from './shared';
 import {
   ImageTile,
-  LabeledTextInput,
-  LocalVideoPlayer,
   MediaGroupCard,
-  ProductPickerRow,
-  UploadDraftInput,
   VideoRow,
   MediaPanelModals,
   accentClasses,
@@ -82,8 +60,6 @@ import {
   deleteLocalFiles,
   findProductForAsset,
   formatAssetSize,
-  formatCloudExpiry,
-  formatCloudTransferPhase,
   getCloudTransferDisplayName,
   getCloudTransferProgress,
   getItemCode,
@@ -91,16 +67,14 @@ import {
   getProductCode,
   getProductImageUri,
   getProductKey,
-  getCloudTransferTitle,
   isGenericProductLabel,
   isPlaceholderProductCode,
   openGeneratedFile,
   panelCopy,
   resolveCloudTransferProductFields,
-  stripFileExtension,
   toGeneratedGroups,
 } from './media-panel';
-import type { MediaGroupRecord, MediaKind, MediaMode, MediaSubItem, UploadDraft } from './media-panel';
+import type { MediaKind, MediaMode, MediaSubItem, UploadDraft } from './media-panel';
 
 export type { MediaKind } from './media-panel';
 
@@ -131,7 +105,7 @@ export default function MediaPanel({
   const accentClass = accentClasses[kind];
   const HeaderIcon = kind === 'images' ? ImageIcon : Video;
 
-  const modeTabs: Array<{ key: MediaMode; icon: IconComponent; label: string }> = [
+  const modeTabs: { key: MediaMode; icon: IconComponent; label: string }[] = [
     { key: 'product', icon: Package, label: copy.productTab },
     { key: 'general', icon: HeaderIcon, label: copy.generalTab },
   ];

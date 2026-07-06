@@ -53,8 +53,8 @@ export function ProductSettingsModal({
   tab: ProductSettingsTab;
   theme: KubdeeTheme;
   onApplyAll: () => void;
-  onApplyImageSection: (keys: Array<keyof AutoPilotImageSettings>) => void;
-  onApplyVideoSection: (keys: Array<keyof AutoPilotVideoSettings>) => void;
+  onApplyImageSection: (keys: (keyof AutoPilotImageSettings)[]) => void;
+  onApplyVideoSection: (keys: (keyof AutoPilotVideoSettings)[]) => void;
   onClose: () => void;
   onImageChange: <K extends keyof AutoPilotImageSettings>(key: K, value: AutoPilotImageSettings[K]) => void;
   onOpenSettingsPreset: (mode: 'save' | 'load') => void;

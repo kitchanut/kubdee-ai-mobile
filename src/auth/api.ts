@@ -62,12 +62,12 @@ interface SyncPullResponse {
 interface SyncPushResponse {
   success?: boolean;
   serverTime?: number;
-  rejected?: Array<{
+  rejected?: {
     index?: number;
     id?: string;
     entity?: string;
     reason?: string;
-  }>;
+  }[];
   error?: string;
 }
 

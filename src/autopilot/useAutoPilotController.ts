@@ -45,8 +45,6 @@ import {
   createManualSourceProduct,
   createRunId,
   formatAutomationActivityMessage,
-  getAutoMultiSceneImageCount,
-  getAutoVideoResultCount,
   getPlannedAutoTotals,
   initialRunState,
   incrementBounded,
@@ -54,7 +52,6 @@ import {
   normalizeEnabledSteps,
   normalizeRuntimeSettings,
   orderEnabledSteps,
-  outputCountForStep,
 } from '@/autopilot/useAutoPilotControllerUtils';
 import type { AutoPilotProductEditableField } from '@/autopilot/useAutoPilotControllerUtils';
 
@@ -622,7 +619,7 @@ export function useAutoPilotController({
   );
 
   const applyProductImageSectionToAll = useCallback(
-    (sourceProductId: string, keys: Array<keyof AutoPilotImageSettings>): void => {
+    (sourceProductId: string, keys: (keyof AutoPilotImageSettings)[]): void => {
       const sourceProduct = products.find((product) => product.id === sourceProductId);
       if (!sourceProduct) {
         return;
@@ -651,7 +648,7 @@ export function useAutoPilotController({
   );
 
   const applyProductVideoSectionToAll = useCallback(
-    (sourceProductId: string, keys: Array<keyof AutoPilotVideoSettings>): void => {
+    (sourceProductId: string, keys: (keyof AutoPilotVideoSettings)[]): void => {
       const sourceProduct = products.find((product) => product.id === sourceProductId);
       if (!sourceProduct) {
         return;

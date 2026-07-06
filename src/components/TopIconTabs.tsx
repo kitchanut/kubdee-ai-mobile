@@ -20,12 +20,12 @@ type TabIconProps = {
   cutoutColor?: string;
 };
 
-const tabs: Array<{
+const tabs: {
   id: TabId;
   label: string;
   icon: ComponentType<TabIconProps>;
   brandIcon?: boolean;
-}> = [
+}[] = [
   { id: 'pipeline', label: 'Auto Pipeline', icon: Star },
   { id: 'image-create', label: 'สร้างภาพ', icon: ImagePlus },
   { id: 'library', label: 'คลัง', icon: FolderOpen },

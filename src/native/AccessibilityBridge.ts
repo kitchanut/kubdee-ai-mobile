@@ -57,11 +57,11 @@ export interface NativeShopeePostingResult {
   postedCount?: number;
   successCount?: number;
   stopped?: boolean;
-  results?: Array<{
+  results?: {
     videoIndex: number;
     success: boolean;
     error?: string;
-  }>;
+  }[];
 }
 
 export interface NativeShopeeConvertLog {
@@ -79,12 +79,12 @@ export interface NativeShopeeConvertResult {
   stopped?: boolean;
   error?: string | null;
   convertedCount?: number;
-  results?: Array<{
+  results?: {
     localId: string;
     url: string;
     shortUrl?: string | null;
     error?: string | null;
-  }>;
+  }[];
 }
 
 // ผลแปลงลิงก์ที่ :automation เขียนค้างบน disk ทีละลิงก์ระหว่างรัน
@@ -114,12 +114,12 @@ export interface NativeGoogleFlowVideoProbe {
   success: boolean;
   error?: string;
   totalEffectiveDuration?: number;
-  videos?: Array<{
+  videos?: {
     uri: string;
     duration: number;
     effectiveDuration: number;
     hasAudio?: boolean;
-  }>;
+  }[];
 }
 
 type NativeAccessibilityModule = {

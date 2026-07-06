@@ -1,5 +1,5 @@
 import { Image as NativeImage, Pressable, View } from 'react-native';
-import { ChevronDown, ChevronRight, Download, Heart, Image as ImageIcon, Pencil, Play, Trash2, Video } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Download, Heart, Image as ImageIcon, Pencil, Play, Trash2 } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import { alpha, type KubdeeTheme } from '@/theme/tokens';

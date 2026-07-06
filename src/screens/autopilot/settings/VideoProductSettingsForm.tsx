@@ -58,7 +58,7 @@ export function VideoProductSettingsForm({
 }: {
   settings: AutoPilotVideoSettings;
   theme: KubdeeTheme;
-  onApplySection: (keys: Array<keyof AutoPilotVideoSettings>) => void;
+  onApplySection: (keys: (keyof AutoPilotVideoSettings)[]) => void;
   onChange: <K extends keyof AutoPilotVideoSettings>(key: K, value: AutoPilotVideoSettings[K]) => void;
 }): React.JSX.Element {
   const accent = theme.red;

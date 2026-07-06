@@ -36,7 +36,6 @@ import {
   OverlayStatChip,
   VOICEOVER_END_BUFFER_SECONDS,
   autoMultiSceneMode,
-  buildDesktopLikeVideoPrompts,
   buildFlowFailedError,
   buildGoogleFlowSelfScriptVideoPrompts,
   clampAutoSceneCount,

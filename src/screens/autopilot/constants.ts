@@ -44,7 +44,7 @@ export const IMAGE_SECTION_KEYS = {
     'backgroundCustom',
   ],
   additional: ['systemPrompt'],
-} satisfies Record<string, Array<keyof AutoPilotImageSettings>>;
+} satisfies Record<string, (keyof AutoPilotImageSettings)[]>;
 
 // วิดีโอ — แยกหมวดละเอียดให้ตรงปุ่ม "นำไปใช้ทั้งหมด" รายแถวแบบ extension
 export const VIDEO_SECTION_KEYS = {
@@ -70,7 +70,7 @@ export const VIDEO_SECTION_KEYS = {
   camera: ['cameraMotion', 'cameraMotionCustom'],
   additional: ['systemPrompt'],
   forbidden: ['forbiddenWords'],
-} satisfies Record<string, Array<keyof AutoPilotVideoSettings>>;
+} satisfies Record<string, (keyof AutoPilotVideoSettings)[]>;
 
 // ยังไม่ใช้ฟีเจอร์ "ส่งรูปให้ AI วิเคราะห์" — ซ่อนแถวไว้ก่อน (สลับเป็น true เพื่อเปิดใช้)
 export const SHOW_SEND_IMAGE_TO_AI = false;

@@ -39,13 +39,13 @@ export interface FlowDownloadPayload {
 }
 
 export interface FlowImageDownloadPayload {
-  images?: Array<{
+  images?: {
     url?: string;
     dataUrl?: string;
     fileName?: string;
     mimeType?: string;
     sizeBytes?: number | null;
-  }>;
+  }[];
   found?: number;
   errors?: string[];
 }
@@ -72,7 +72,7 @@ export function formatRoundProgress(currentRound: number, totalRounds: number): 
 
 export interface PreparedMultiScenePromptResult {
   prompts: string[];
-  scenes: Array<{ sceneNumber: number; dialogue: string }>;
+  scenes: { sceneNumber: number; dialogue: string }[];
   voiceStyleInstruction: string;
   voiceoverScript: string;
   voiceGender?: 'female' | 'male' | 'neutral';

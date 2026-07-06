@@ -339,13 +339,13 @@ function MobileSectionHeader({
 
 function buildRunStats(
   run: {
-    logs: Array<{ ts: number }>;
+    logs: { ts: number }[];
     running: boolean;
     startedAt: number | null;
     updatedAt: number | null;
   },
   theme: KubdeeTheme
-): Array<{ label: string; value: string; color: string; backgroundColor: string }> {
+): { label: string; value: string; color: string; backgroundColor: string }[] {
   return [
     {
       label: 'สถานะ',

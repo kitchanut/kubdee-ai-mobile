@@ -1,13 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { BlurView } from 'expo-blur';
-import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import {
   BriefcaseBusiness,
-  ChevronDown,
-  ImagePlus,
   Image as ImageIcon,
   List,
   Plus,
@@ -15,7 +11,6 @@ import {
   Sparkles,
   User,
   Users,
-  X,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -69,7 +64,6 @@ import {
   copyPickedReferenceImageToLibrary,
   createDraft,
   getCharacterReferenceLayoutLabel,
-  getPickedImageExtension,
   modeLabel,
   toOptions,
 } from './image-workspace-library-style/support';

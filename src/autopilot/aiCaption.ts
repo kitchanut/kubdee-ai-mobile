@@ -207,7 +207,7 @@ function normalizeGeneratedContent(parsed: Record<string, unknown>, settings: Au
   };
 }
 
-function joinPostText(parts: Array<string | null | undefined>): string {
+function joinPostText(parts: (string | null | undefined)[]): string {
   return parts.map((part) => part?.trim()).filter(Boolean).join(' ').trim();
 }
 

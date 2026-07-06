@@ -83,7 +83,7 @@ export function CategoryTabs({
   theme,
   accent,
 }: {
-  tabs: Array<{ key: string; label: string }>;
+  tabs: { key: string; label: string }[];
   value: string;
   onChange: (key: string) => void;
   theme: KubdeeTheme;

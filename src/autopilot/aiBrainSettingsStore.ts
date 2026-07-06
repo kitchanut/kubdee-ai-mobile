@@ -22,12 +22,12 @@ export interface AiBrainSettings {
   openaiModel: OpenAIModel;
 }
 
-export const AI_PROVIDER_OPTIONS: Array<{ value: AiProvider; label: string }> = [
+export const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string }[] = [
   { value: 'gemini', label: 'Gemini (Google)' },
   { value: 'openai', label: 'OpenAI (GPT)' },
 ];
 
-export const GEMINI_MODEL_OPTIONS: Array<{ value: GeminiModel; label: string }> = [
+export const GEMINI_MODEL_OPTIONS: { value: GeminiModel; label: string }[] = [
   { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
   { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -36,7 +36,7 @@ export const GEMINI_MODEL_OPTIONS: Array<{ value: GeminiModel; label: string }> 
   { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
 ];
 
-export const OPENAI_MODEL_OPTIONS: Array<{ value: OpenAIModel; label: string }> = [
+export const OPENAI_MODEL_OPTIONS: { value: OpenAIModel; label: string }[] = [
   { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
   { value: 'gpt-4o', label: 'GPT-4o' },
   { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
@@ -52,7 +52,7 @@ export const DEFAULT_AI_BRAIN_SETTINGS: AiBrainSettings = {
   openaiModel: 'gpt-4o-mini',
 };
 
-function isValue<T extends string>(options: Array<{ value: T; label: string }>, value: unknown): value is T {
+function isValue<T extends string>(options: { value: T; label: string }[], value: unknown): value is T {
   return typeof value === 'string' && options.some((option) => option.value === value);
 }
 

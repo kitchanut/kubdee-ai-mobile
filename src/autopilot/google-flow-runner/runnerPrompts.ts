@@ -196,12 +196,12 @@ export function parseAiJsonText(text: string): unknown {
   throw new Error('Parse AI response ไม่ได้');
 }
 
-export function parseSceneDialoguesFromText(text: string, sceneCount: number): Array<{ sceneNumber: number; dialogue: string }> {
+export function parseSceneDialoguesFromText(text: string, sceneCount: number): { sceneNumber: number; dialogue: string }[] {
   const lines = String(text || '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const scenes: Array<{ sceneNumber: number; dialogue: string }> = [];
+  const scenes: { sceneNumber: number; dialogue: string }[] = [];
 
   for (const line of lines) {
     const match = line.match(/^(?:[-*]\s*)?(?:ฉาก|scene)\s*(\d+)\s*[:：.)-]\s*(.+)$/i);
@@ -486,7 +486,7 @@ voiceGender:
 }
 
 export function parsePreparedScenes(text: string, sceneCount: number): Pick<PreparedMultiScenePromptResult, 'scenes' | 'voiceStyleInstruction' | 'voiceoverScript' | 'voiceGender'> {
-  const buildFallbackPreparedScenes = (fallbackScenes: Array<{ sceneNumber: number; dialogue: string }>) => {
+  const buildFallbackPreparedScenes = (fallbackScenes: { sceneNumber: number; dialogue: string }[]) => {
     const sceneByNumber = new Map(fallbackScenes.map((scene) => [scene.sceneNumber, scene]));
     return {
       scenes: Array.from({ length: sceneCount }, (_, index) => {
@@ -502,11 +502,11 @@ export function parsePreparedScenes(text: string, sceneCount: number): Pick<Prep
     };
   };
   let parsed: {
-    scenes?: Array<{ sceneNumber?: number; dialogue?: string; script?: string; text?: string }>;
+    scenes?: { sceneNumber?: number; dialogue?: string; script?: string; text?: string }[];
     voiceStyleInstruction?: string;
     voiceoverScript?: string;
     voiceGender?: string;
-  } | Array<{ sceneNumber?: number; dialogue?: string; script?: string; text?: string }>;
+  } | { sceneNumber?: number; dialogue?: string; script?: string; text?: string }[];
 
   try {
     parsed = parseAiJsonText(text) as typeof parsed;
@@ -570,7 +570,7 @@ export function buildDesktopLikeVideoPrompts({
   voiceover,
 }: {
   product: GoogleFlowRunnerProduct;
-  scenes: Array<{ sceneNumber: number; dialogue: string }>;
+  scenes: { sceneNumber: number; dialogue: string }[];
   voiceStyleInstruction: string;
   voiceover: boolean;
 }): string[] {

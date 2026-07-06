@@ -78,7 +78,7 @@ export function SelectField({
   onChange,
 }: {
   label: string;
-  options: Array<{ label: string; value: OptionValue }>;
+  options: { label: string; value: OptionValue }[];
   theme: KubdeeTheme;
   value: OptionValue;
   onChange: (value: OptionValue) => void;
@@ -156,7 +156,7 @@ export function OptionGroup({
   columns?: number;
   disabledValues?: OptionValue[];
   label?: string;
-  options: Array<{ label: string; value: OptionValue; disabled?: boolean }>;
+  options: { label: string; value: OptionValue; disabled?: boolean }[];
   theme: KubdeeTheme;
   value: OptionValue | OptionValue[];
   variant?: 'segmented' | 'grid';

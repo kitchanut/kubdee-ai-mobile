@@ -1,7 +1,7 @@
 import { Image, Pressable, TextInput, View } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { BriefcaseBusiness, ChevronDown, Image as ImageIcon, ImagePlus, Smile, User, Users, X } from 'lucide-react-native';
+import { ChevronDown, Image as ImageIcon, ImagePlus, User, X } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import type { CharacterReferenceLayout, CreativeImageKind } from '@/creative/creativeImageRunner';
@@ -30,7 +30,7 @@ export type CharacterPresetItem = {
   prompt: string;
 };
 
-export const MODE_TABS: Array<{ key: CreativeImageKind; label: string }> = [
+export const MODE_TABS: { key: CreativeImageKind; label: string }[] = [
   { key: 'characters', label: 'สร้างตัวละคร' },
   { key: 'scenes', label: 'สร้างฉาก' },
 ];
@@ -41,11 +41,11 @@ export const ASPECT_OPTIONS = [
 ] as const;
 
 export const COUNT_OPTIONS = ['1', '2', '3', '4'] as const;
-export const CHARACTER_REFERENCE_LAYOUT_OPTIONS: Array<{
+export const CHARACTER_REFERENCE_LAYOUT_OPTIONS: {
   value: CharacterReferenceLayout;
   label: string;
   description: string;
-}> = [
+}[] = [
   {
     value: 'single',
     label: 'ภาพเดียว',

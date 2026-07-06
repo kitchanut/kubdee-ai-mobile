@@ -30,7 +30,7 @@ import type { KubdeeTheme } from '@/theme/tokens';
 
 type ImageMode = 'product' | CreativeImageKind;
 
-const modeOptions: Array<{ id: ImageMode; label: string; icon: typeof Package }> = [
+const modeOptions: { id: ImageMode; label: string; icon: typeof Package }[] = [
   { id: 'product', label: 'สินค้า', icon: Package },
   { id: 'characters', label: 'ตัวละคร', icon: User },
   { id: 'scenes', label: 'ฉาก', icon: Presentation },

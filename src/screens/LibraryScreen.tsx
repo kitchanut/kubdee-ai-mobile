@@ -37,11 +37,11 @@ interface LibraryScreenProps {
  * product สินค้า / image รูปภาพ / video วิดีโอ / character ตัวละคร / scene ฉาก
  * Monochrome: active = strong text + 2px underline, inactive = muted gray.
  */
-const libraryTabs: Array<{
+const libraryTabs: {
   id: LibraryTabId;
   label: string;
   icon: ComponentType<IconProps>;
-}> = [
+}[] = [
   { id: 'products', label: 'สินค้า', icon: ShoppingBag },
   { id: 'images', label: 'รูปภาพ', icon: ImageIcon },
   { id: 'videos', label: 'วิดีโอ', icon: Video },

@@ -7,7 +7,6 @@ import {
   Link2,
   Pencil,
   ShoppingBag,
-  Trash2,
   Upload,
   X,
 } from 'lucide-react-native';
@@ -27,7 +26,7 @@ import Text from '@/components/ui/KubdeeText';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
 import { storePendingTab } from '@/navigation/pendingNavigation';
-import type { ProductDeleteResult, ProductImportResult, ProductSyncResult } from '@/library/LibraryContext';
+import type { ProductDeleteResult, ProductSyncResult } from '@/library/LibraryContext';
 import { isDisplayableProductImageUri } from '@/library/productImageCache';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
 import type { AffiliateProduct } from '@/library/types';
@@ -43,7 +42,6 @@ import type { KubdeeTheme } from '@/theme/tokens';
 
 import { LabeledTextInput } from './media-panel/controls';
 import {
-  CardBackdrop,
   DarkActionButton,
   EmptyHint,
   HeaderIconButton,
@@ -54,7 +52,6 @@ import {
   SortPill,
   darkButtonContentColor,
   getAccentTone,
-  libraryCardStops,
 } from './shared';
 import {
   ProductCard,

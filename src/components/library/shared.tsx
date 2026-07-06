@@ -321,7 +321,7 @@ export function PanelSubTabs<TKey extends string>({
 }: {
   theme: KubdeeTheme;
   accent: string;
-  tabs: Array<{ key: TKey; label: string }>;
+  tabs: { key: TKey; label: string }[];
   active: TKey;
   onChange: (next: TKey) => void;
 }): React.JSX.Element {

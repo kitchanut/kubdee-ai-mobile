@@ -1,6 +1,5 @@
 import type * as ImagePicker from 'expo-image-picker';
 
-import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 
 export type MediaKind = 'images' | 'videos';
 

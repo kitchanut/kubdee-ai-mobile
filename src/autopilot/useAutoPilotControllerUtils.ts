@@ -6,7 +6,6 @@ import {
 } from '@/autopilot/defaults';
 import { getAutoPilotStageLabel } from '@/autopilot/stageLabels';
 import type {
-  AutoPilotFlowStats,
   AutoPilotProduct,
   AutoPilotRunState,
   AutoPilotSettings,
