@@ -581,12 +581,13 @@ internal fun KubdeeAccessibilityService.tapBlockingWithoutStopButton(
   x: Float,
   y: Float,
   timeoutMs: Long = 2500L,
-  durationMs: Long = 80L
+  durationMs: Long = 80L,
+  tapEventKey: String? = null
 ): Boolean {
   setAutomationStopButtonVisibleBlocking(false)
   sleepStep(120L)
   return try {
-    tapBlocking(x, y, timeoutMs = timeoutMs, durationMs = durationMs)
+    tapBlocking(x, y, timeoutMs = timeoutMs, durationMs = durationMs, tapEventKey = tapEventKey)
   } finally {
     sleepStep(260L)
     setAutomationStopButtonVisibleBlocking(true)

@@ -275,6 +275,10 @@ internal fun KubdeeAccessibilityService.isProductNameCandidate(text: String): Bo
   if (blockedExact.any { compact == it.lowercase(Locale.ROOT).replace(Regex("""\s+"""), "") }) {
     return false
   }
+  // label/badge ของ Shopee สั้นเสมอ (ยาวสุด ~17 ตัวอักษรแบบตัดช่องว่าง เช่น ขายแล้ว30พัน+ชิ้น)
+  // ชื่อสินค้าจริงยาวกว่านั้น — ข้าม blocklist แบบ contains กันชื่อที่มีคำอย่าง
+  // "รับประกัน 1 ปี" / "ผ่อน 0%" / "ส่งฟรี" โดนกรองทิ้งทั้งการ์ดจนสินค้าหายจากการ import
+  if (compact.length >= 25) return true
   val blocked = listOf(
     "หน้าแรก", "mall", "live", "video", "สำหรับคุณ", "การแจ้งเตือน", "ฉัน",
     "สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "liked", "ค้นหา", "แก้ไข", "edit",

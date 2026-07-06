@@ -713,12 +713,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
             val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
             val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
             if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
-              logStep("ข้ามสินค้าข้อเสนอที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
+              logStep("ข้ามสินค้าข้อเสนอที่เห็นซ้ำ: ${candidate.product.name}")
               continue
             }
 
             shareAttemptCount += 1
-            logStep("กดแชร์สินค้าข้อเสนอ $shareAttemptCount: ${candidate.product.name.take(34)}")
+            logStep("กดแชร์สินค้าข้อเสนอ $shareAttemptCount: ${candidate.product.name}")
             val product = enrichShopeeProductFromPartnerShare(candidate)?.copy(status = SHOPEE_IMPORT_SOURCE_OFFERS)
               ?: candidate.product.copy(status = SHOPEE_IMPORT_SOURCE_OFFERS)
             val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
@@ -726,7 +726,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
               seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
               added += 1
               updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
-              logStep("บันทึกสินค้าข้อเสนอแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
+              logStep("บันทึกสินค้าข้อเสนอแล้ว รวม ${importedKeys.size}: ${product.name}")
               KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
               if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
             }
@@ -771,12 +771,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
           val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
           val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
           if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
-            logStep("ข้ามสินค้าที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
+            logStep("ข้ามสินค้าที่เห็นซ้ำ: ${candidate.product.name}")
             continue
           }
 
           detailAttemptCount += 1
-          logStep("เปิด detail สินค้า $detailAttemptCount: ${candidate.product.name.take(34)}")
+          logStep("เปิด detail สินค้า $detailAttemptCount: ${candidate.product.name}")
           val product = enrichShopeeProductFromDetail(
             candidate,
             copyProductUrl = COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT
@@ -786,7 +786,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
             seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
             added += 1
             updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
-            logStep("บันทึกสินค้าแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
+            logStep("บันทึกสินค้าแล้ว รวม ${importedKeys.size}: ${product.name}")
             KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
             if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
           }

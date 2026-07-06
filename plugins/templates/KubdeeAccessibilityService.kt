@@ -83,6 +83,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
   internal var automationTotalRounds = 0
   internal var automationStatusLabel = "RUNNING"
   internal val automationLogKindForThread = ThreadLocal<ShopeeAutomationLogKind?>()
+  internal val automationTapIndicatorEventKeyForThread = ThreadLocal<String?>()
+  internal val automationTapIndicatorSequenceLock = Any()
+  internal var automationTapIndicatorLastEventKey: String? = null
+  internal var automationTapIndicatorLastLogEventKey: String? = null
+  internal var automationTapIndicatorSequence = 0
 
   @Volatile
   internal var activeShopeeAutomationLogKind: ShopeeAutomationLogKind? = null
@@ -463,6 +468,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val thread = Thread {
       automationLogKindForThread.set(ShopeeAutomationLogKind.IMPORT)
       activeShopeeAutomationLogKind = ShopeeAutomationLogKind.IMPORT
+      resetAutomationTapIndicatorSequence()
       var importedCount = 0
       var errorMessage: String? = null
       try {
@@ -501,6 +507,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.IMPORT) {
           activeShopeeAutomationLogKind = null
         }
+        resetAutomationTapIndicatorSequence()
+        automationTapIndicatorEventKeyForThread.remove()
         automationLogKindForThread.remove()
       }
     }.also { worker ->
@@ -532,6 +540,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val thread = Thread {
       automationLogKindForThread.set(ShopeeAutomationLogKind.POST)
       activeShopeeAutomationLogKind = ShopeeAutomationLogKind.POST
+      resetAutomationTapIndicatorSequence()
       val result = try {
         postShopeeVideos(payloadJson)
       } catch (error: Exception) {
@@ -557,6 +566,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.POST) {
         activeShopeeAutomationLogKind = null
       }
+      resetAutomationTapIndicatorSequence()
+      automationTapIndicatorEventKeyForThread.remove()
       automationLogKindForThread.remove()
     }.also { worker ->
       worker.name = "KubdeeShopeePosting"
@@ -583,6 +594,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     val thread = Thread {
       automationLogKindForThread.set(ShopeeAutomationLogKind.CONVERT)
       activeShopeeAutomationLogKind = ShopeeAutomationLogKind.CONVERT
+      resetAutomationTapIndicatorSequence()
       val result = try {
         convertShopeeLinks(payloadJson)
       } catch (error: Exception) {
@@ -608,6 +620,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       if (activeShopeeAutomationLogKind == ShopeeAutomationLogKind.CONVERT) {
         activeShopeeAutomationLogKind = null
       }
+      resetAutomationTapIndicatorSequence()
+      automationTapIndicatorEventKeyForThread.remove()
       automationLogKindForThread.remove()
     }.also { worker ->
       worker.name = "KubdeeShopeeLinkConvert"
@@ -699,12 +713,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
             val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
             val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
             if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
-              logStep("ข้ามสินค้าข้อเสนอที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
+              logStep("ข้ามสินค้าข้อเสนอที่เห็นซ้ำ: ${candidate.product.name}")
               continue
             }
 
             shareAttemptCount += 1
-            logStep("กดแชร์สินค้าข้อเสนอ $shareAttemptCount: ${candidate.product.name.take(34)}")
+            logStep("กดแชร์สินค้าข้อเสนอ $shareAttemptCount: ${candidate.product.name}")
             val product = enrichShopeeProductFromPartnerShare(candidate)?.copy(status = SHOPEE_IMPORT_SOURCE_OFFERS)
               ?: candidate.product.copy(status = SHOPEE_IMPORT_SOURCE_OFFERS)
             val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
@@ -712,7 +726,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
               seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
               added += 1
               updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
-              logStep("บันทึกสินค้าข้อเสนอแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
+              logStep("บันทึกสินค้าข้อเสนอแล้ว รวม ${importedKeys.size}: ${product.name}")
               KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
               if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
             }
@@ -757,12 +771,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
           val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
           val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
           if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
-            logStep("ข้ามสินค้าที่เห็นซ้ำ: ${candidate.product.name.take(34)}")
+            logStep("ข้ามสินค้าที่เห็นซ้ำ: ${candidate.product.name}")
             continue
           }
 
           detailAttemptCount += 1
-          logStep("เปิด detail สินค้า $detailAttemptCount: ${candidate.product.name.take(34)}")
+          logStep("เปิด detail สินค้า $detailAttemptCount: ${candidate.product.name}")
           val product = enrichShopeeProductFromDetail(
             candidate,
             copyProductUrl = COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT
@@ -772,7 +786,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
             seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
             added += 1
             updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
-            logStep("บันทึกสินค้าแล้ว รวม ${importedKeys.size}: ${product.name.take(34)}")
+            logStep("บันทึกสินค้าแล้ว รวม ${importedKeys.size}: ${product.name}")
             KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
             if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
           }

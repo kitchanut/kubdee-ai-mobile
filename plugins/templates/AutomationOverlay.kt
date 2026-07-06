@@ -448,8 +448,6 @@ internal fun KubdeeAccessibilityService.automationLogText(line: String): TextVie
     textSize = 9.5f
     typeface = Typeface.DEFAULT
     includeFontPadding = false
-    maxLines = 1
-    ellipsize = TextUtils.TruncateAt.END
     setPadding(0, dp(1), 0, dp(1))
   }
 
@@ -506,37 +504,47 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
 }
 
 internal fun KubdeeAccessibilityService.shouldShowAutomationTapIndicator(): Boolean =
-  automationLogKindForThread.get() == ShopeeAutomationLogKind.POST
+  when (automationLogKindForThread.get() ?: activeShopeeAutomationLogKind) {
+    ShopeeAutomationLogKind.IMPORT,
+    ShopeeAutomationLogKind.POST -> true
+    else -> false
+  }
 
 internal fun KubdeeAccessibilityService.showAutomationTapIndicatorBeforeTap(
   x: Float,
   y: Float,
   visibleMs: Long = 850L,
-  settleMs: Long = 55L
+  settleMs: Long = 55L,
+  eventKey: String? = null
 ) {
   if (!shouldShowAutomationTapIndicator()) return
-  val shown = showAutomationTapIndicatorBlocking(x, y, visibleMs)
+  val shown = showAutomationTapIndicatorBlocking(x, y, visibleMs, eventKey)
   if (shown && settleMs > 0L && Looper.myLooper() != Looper.getMainLooper()) {
     runCatching { Thread.sleep(settleMs) }
   }
 }
 
-internal fun KubdeeAccessibilityService.showAutomationTapIndicatorForNodeClick(node: AccessibilityNodeInfo) {
+internal fun KubdeeAccessibilityService.showAutomationTapIndicatorForNodeClick(
+  node: AccessibilityNodeInfo,
+  eventKey: String? = null
+) {
   if (!shouldShowAutomationTapIndicator()) return
   val bounds = Rect()
   node.getBoundsInScreen(bounds)
   if (bounds.width() <= 0 || bounds.height() <= 0) return
-  showAutomationTapIndicatorBeforeTap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+  showAutomationTapIndicatorBeforeTap(bounds.centerX().toFloat(), bounds.centerY().toFloat(), eventKey = eventKey)
 }
 
 internal fun KubdeeAccessibilityService.showAutomationTapIndicator(
   x: Float,
   y: Float,
-  visibleMs: Long = 700L
+  visibleMs: Long = 700L,
+  eventKey: String? = null
 ) {
   if (automationOverlayUnavailable) return
+  val sequence = nextAutomationTapIndicatorSequence(eventKey, x, y)
 
-  val show: () -> Unit = { showAutomationTapIndicatorOnMain(x, y, visibleMs) }
+  val show: () -> Unit = { showAutomationTapIndicatorOnMain(x, y, visibleMs, sequence) }
 
   if (Looper.myLooper() == Looper.getMainLooper()) {
     show()
@@ -548,18 +556,20 @@ internal fun KubdeeAccessibilityService.showAutomationTapIndicator(
 internal fun KubdeeAccessibilityService.showAutomationTapIndicatorBlocking(
   x: Float,
   y: Float,
-  visibleMs: Long = 850L
+  visibleMs: Long = 850L,
+  eventKey: String? = null
 ): Boolean {
   if (automationOverlayUnavailable) return false
+  val sequence = nextAutomationTapIndicatorSequence(eventKey, x, y)
   if (Looper.myLooper() == Looper.getMainLooper()) {
-    return showAutomationTapIndicatorOnMain(x, y, visibleMs)
+    return showAutomationTapIndicatorOnMain(x, y, visibleMs, sequence)
   }
 
   var shown = false
   val latch = CountDownLatch(1)
   mainHandler.post {
     try {
-      shown = showAutomationTapIndicatorOnMain(x, y, visibleMs)
+      shown = showAutomationTapIndicatorOnMain(x, y, visibleMs, sequence)
     } finally {
       latch.countDown()
     }
@@ -570,12 +580,13 @@ internal fun KubdeeAccessibilityService.showAutomationTapIndicatorBlocking(
 private fun KubdeeAccessibilityService.showAutomationTapIndicatorOnMain(
   x: Float,
   y: Float,
-  visibleMs: Long
+  visibleMs: Long,
+  sequence: Int
 ): Boolean {
   removeAutomationTapIndicator()
 
-  val size = dp(52)
-  val marker = AutomationTapIndicatorView(this).apply {
+  val size = dp(58)
+  val marker = AutomationTapIndicatorView(this, sequence).apply {
     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
   }
   val params = WindowManager.LayoutParams(
@@ -608,6 +619,60 @@ private fun KubdeeAccessibilityService.showAutomationTapIndicatorOnMain(
   }
 }
 
+internal inline fun <T> KubdeeAccessibilityService.withAutomationTapIndicatorEvent(eventKey: String, action: () -> T): T {
+  val previous = automationTapIndicatorEventKeyForThread.get()
+  automationTapIndicatorEventKeyForThread.set(eventKey)
+  return try {
+    action()
+  } finally {
+    if (previous == null) automationTapIndicatorEventKeyForThread.remove()
+    else automationTapIndicatorEventKeyForThread.set(previous)
+  }
+}
+
+internal fun KubdeeAccessibilityService.noteAutomationTapIndicatorLogEvent(message: String) {
+  automationTapIndicatorLastLogEventKey = normalizeAutomationTapIndicatorEventKey(message)
+}
+
+internal fun KubdeeAccessibilityService.resetAutomationTapIndicatorSequence() {
+  synchronized(automationTapIndicatorSequenceLock) {
+    automationTapIndicatorLastEventKey = null
+    automationTapIndicatorLastLogEventKey = null
+    automationTapIndicatorSequence = 0
+  }
+}
+
+private fun KubdeeAccessibilityService.nextAutomationTapIndicatorSequence(
+  eventKey: String?,
+  x: Float,
+  y: Float
+): Int {
+  val rawKey = eventKey
+    ?: automationTapIndicatorEventKeyForThread.get()
+    ?: automationTapIndicatorLastLogEventKey
+    ?: "tap:${(x / 24f).toInt()}:${(y / 24f).toInt()}"
+  val normalizedKey = normalizeAutomationTapIndicatorEventKey(rawKey)
+  synchronized(automationTapIndicatorSequenceLock) {
+    automationTapIndicatorSequence = if (automationTapIndicatorLastEventKey == normalizedKey) {
+      automationTapIndicatorSequence + 1
+    } else {
+      automationTapIndicatorLastEventKey = normalizedKey
+      1
+    }
+    return automationTapIndicatorSequence
+  }
+}
+
+private fun normalizeAutomationTapIndicatorEventKey(raw: String): String =
+  raw
+    .trim()
+    .lowercase(Locale.ROOT)
+    .replace(Regex("""\b\d{2,5}\s*,\s*\d{2,5}\b"""), "#,#")
+    .replace(Regex("""\(\s*\d+\s*/\s*\d+\s*\)"""), "(#/#)")
+    .replace(Regex("""ครั้ง\s+\d+\s*/\s*\d+"""), "ครั้ง #/#")
+    .replace(Regex("""\s+"""), " ")
+    .ifBlank { "tap" }
+
 internal fun KubdeeAccessibilityService.removeAutomationTapIndicator() {
   val remove: () -> Unit = {
     automationTapIndicatorView?.let { view ->
@@ -627,7 +692,10 @@ internal fun KubdeeAccessibilityService.removeAutomationTapIndicator() {
   }
 }
 
-private class AutomationTapIndicatorView(context: android.content.Context) : View(context) {
+private class AutomationTapIndicatorView(
+  context: android.content.Context,
+  private val sequence: Int
+) : View(context) {
   private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     style = Paint.Style.FILL
     color = Color.argb(55, 239, 68, 68)
@@ -641,6 +709,13 @@ private class AutomationTapIndicatorView(context: android.content.Context) : Vie
     style = Paint.Style.FILL
     color = Color.WHITE
   }
+  private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.FILL
+    color = Color.rgb(220, 38, 38)
+    textAlign = Paint.Align.CENTER
+    textSize = 20f * context.resources.displayMetrics.density * context.resources.configuration.fontScale
+    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+  }
 
   override fun onDraw(canvas: Canvas) {
     super.onDraw(canvas)
@@ -649,7 +724,12 @@ private class AutomationTapIndicatorView(context: android.content.Context) : Vie
     val radius = (minOf(width, height) / 2f) - 5f
     canvas.drawCircle(centerX, centerY, radius, fillPaint)
     canvas.drawCircle(centerX, centerY, radius, ringPaint)
-    canvas.drawCircle(centerX, centerY, 5f, centerPaint)
+    canvas.drawCircle(centerX, centerY, radius * 0.48f, centerPaint)
+
+    val text = if (sequence > 99) "99+" else sequence.toString()
+    val metrics = textPaint.fontMetrics
+    val baseline = centerY - (metrics.ascent + metrics.descent) / 2f
+    canvas.drawText(text, centerX, baseline, textPaint)
   }
 }
 

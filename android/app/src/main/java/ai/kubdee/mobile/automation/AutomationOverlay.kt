@@ -448,8 +448,6 @@ internal fun KubdeeAccessibilityService.automationLogText(line: String): TextVie
     textSize = 9.5f
     typeface = Typeface.DEFAULT
     includeFontPadding = false
-    maxLines = 1
-    ellipsize = TextUtils.TruncateAt.END
     setPadding(0, dp(1), 0, dp(1))
   }
 

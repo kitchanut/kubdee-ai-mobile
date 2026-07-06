@@ -58,7 +58,7 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromDetail(
   ): ShopeeLikedProduct? {
   val product = candidate.product
   if (!openShopeeProductDetail(candidate)) {
-    logStep("เปิด detail ไม่สำเร็จ ข้าม: ${product.name.take(34)}")
+    logStep("เปิด detail ไม่สำเร็จ ข้าม: ${product.name}")
     return null
   }
 
@@ -67,7 +67,7 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromDetail(
     when (detailState) {
       ShopeeDetailScreenState.READY -> Unit
       ShopeeDetailScreenState.NO_PRODUCT -> {
-        logStep("Shopee แจ้งว่าไม่มีสินค้านี้ ข้าม: ${product.name.take(34)}")
+        logStep("Shopee แจ้งว่าไม่มีสินค้านี้ ข้าม: ${product.name}")
         dismissShopeeNoProductDialog()
         return null
       }
@@ -76,7 +76,7 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromDetail(
         return null
       }
       ShopeeDetailScreenState.LOADING -> {
-        logStep("detail โหลดไม่สำเร็จ ข้าม: ${product.name.take(34)}")
+        logStep("detail โหลดไม่สำเร็จ ข้าม: ${product.name}")
         return null
       }
     }
@@ -122,13 +122,13 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromDetail(
 internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(candidate: ShopeePartnerOfferCandidate): ShopeeLikedProduct? {
     val product = candidate.product
     if (!tapShopeePartnerOfferShare(candidate)) {
-      logStep("กดแชร์จากการ์ดไม่สำเร็จ ข้าม: ${product.name.take(34)}")
+      logStep("กดแชร์จากการ์ดไม่สำเร็จ ข้าม: ${product.name}")
       return null
     }
 
     try {
       if (!waitForShopeeShareSheetVisible(3_800L) && !retryShopeePartnerOfferShare(candidate)) {
-        logStep("ไม่พบแผงแชร์หลังแตะการ์ดทุกวิธี ข้าม: ${product.name.take(34)}")
+        logStep("ไม่พบแผงแชร์หลังแตะการ์ดทุกวิธี ข้าม: ${product.name}")
         return null
       }
 

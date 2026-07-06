@@ -289,23 +289,35 @@ internal fun KubdeeAccessibilityService.findNode(
   return null
 }
 
-internal fun KubdeeAccessibilityService.clickNode(node: AccessibilityNodeInfo): Boolean {
+internal fun KubdeeAccessibilityService.clickNode(
+  node: AccessibilityNodeInfo,
+  tapEventKey: String? = null
+): Boolean {
   val clickable = findClickableNode(node)
   if (clickable != null) {
-    showAutomationTapIndicatorForNodeClick(clickable)
+    showAutomationTapIndicatorForNodeClick(clickable, tapEventKey)
   }
   if (clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
     return true
   }
 
-  return tapNodeCenter(node)
+  return tapNodeCenter(node, tapEventKey = tapEventKey)
 }
 
-internal fun KubdeeAccessibilityService.tapNodeCenter(node: AccessibilityNodeInfo, durationMs: Long = 80L): Boolean {
+internal fun KubdeeAccessibilityService.tapNodeCenter(
+  node: AccessibilityNodeInfo,
+  durationMs: Long = 80L,
+  tapEventKey: String? = null
+): Boolean {
   val bounds = Rect()
   node.getBoundsInScreen(bounds)
   if (bounds.width() <= 0 || bounds.height() <= 0) return false
-  return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), durationMs = durationMs)
+  return tapBlocking(
+    bounds.centerX().toFloat(),
+    bounds.centerY().toFloat(),
+    durationMs = durationMs,
+    tapEventKey = tapEventKey
+  )
 }
 
 internal fun KubdeeAccessibilityService.scrollFirstScrollableForward(allowedPackageName: String? = null): Boolean {

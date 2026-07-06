@@ -264,6 +264,19 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeeLikedProductCandidate
     )
     if (candidate == null) {
       noNameCount += 1
+      // โชว์ข้อความที่อยู่ใกล้ราคาที่สุดแต่ถูกกรองทิ้ง จะได้รู้ว่าการ์ดไหนหายเพราะอะไร
+      val columnWidth = shopeeLikedColumnWidth(screen)
+      val nearestText = visibleTextNodes
+        .filter { node ->
+          !PRICE_REGEX.containsMatchIn(node.text) &&
+            node.bounds.bottom <= priceNode.bounds.top + 20 &&
+            isSameShopeeLikedProductColumn(node.bounds, priceNode.bounds, columnWidth)
+        }
+        .minByOrNull { priceNode.bounds.top - it.bounds.bottom }
+      logStep(
+        "หาชื่อคู่ราคา ${priceNode.text} ไม่เจอ " +
+          "ข้อความใกล้สุดเหนือราคา: ${nearestText?.let { cleanNodeText(it.text) } ?: "(ไม่มี)"}"
+      )
       continue
     }
 
