@@ -2450,6 +2450,69 @@ internal fun KubdeeAccessibilityService.tapShopeeVideoComposerButton(): Boolean 
     }
     .sortedByDescending { it.bounds.top }
     .firstOrNull()
-    ?: return false
-  return tapBlocking(candidate.bounds.centerX().toFloat(), candidate.bounds.centerY().toFloat())
+  if (candidate != null) {
+    return tapBlocking(candidate.bounds.centerX().toFloat(), candidate.bounds.centerY().toFloat())
+  }
+  return tapShopeeComposerPlusFallback(root, textNodes, screen)
+}
+
+// บางเครื่องปุ่มโพสต์มุมขวาล่างเป็นไอคอน "+" ล้วน ไม่มีข้อความ/contentDescription ให้จับ
+internal fun KubdeeAccessibilityService.tapShopeeComposerPlusFallback(
+  root: AccessibilityNodeInfo,
+  textNodes: List<TextNode>,
+  screen: Rect
+): Boolean {
+  val regionLeft = screen.left + (screen.width() * 0.6f).toInt()
+  val regionTop = screen.top + (screen.height() * 0.6f).toInt()
+
+  val plusNode = textNodes
+    .filter { node ->
+      (node.text == "+" || node.text == "＋") &&
+        node.bounds.left >= regionLeft &&
+        node.bounds.top >= regionTop
+    }
+    .maxByOrNull { it.bounds.top }
+  if (plusNode != null) {
+    logShopeePostStep("ไม่พบข้อความ โพสต์วิดีโอ ใช้ปุ่ม + มุมขวาล่างแทน")
+    if (clickNode(plusNode.node)) return true
+    return tapBlocking(plusNode.bounds.centerX().toFloat(), plusNode.bounds.centerY().toFloat())
+  }
+
+  val fabBounds = mutableListOf<Rect>()
+  collectShopeeComposerFabCandidates(root, screen, regionLeft, regionTop, fabBounds)
+  val fab = fabBounds.minByOrNull { bounds ->
+    val dx = (screen.right - bounds.centerX()).toLong()
+    val dy = (screen.bottom - bounds.centerY()).toLong()
+    dx * dx + dy * dy
+  } ?: return false
+  logShopeePostStep("ไม่พบข้อความ โพสต์วิดีโอ ใช้ปุ่มกดได้มุมขวาล่างแทน")
+  return tapBlocking(fab.centerX().toFloat(), fab.centerY().toFloat())
+}
+
+internal fun KubdeeAccessibilityService.collectShopeeComposerFabCandidates(
+  node: AccessibilityNodeInfo?,
+  screen: Rect,
+  regionLeft: Int,
+  regionTop: Int,
+  output: MutableList<Rect>
+) {
+  if (node == null) return
+  if (node.isVisibleToUser && node.isClickable && isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) {
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val minSize = dp(36)
+    val maxSize = dp(120)
+    if (
+      bounds.left >= regionLeft &&
+      bounds.top >= regionTop &&
+      bounds.bottom <= screen.bottom - dp(8) &&
+      bounds.width() in minSize..maxSize &&
+      bounds.height() in minSize..maxSize
+    ) {
+      output.add(Rect(bounds))
+    }
+  }
+  for (index in 0 until node.childCount) {
+    collectShopeeComposerFabCandidates(node.getChild(index), screen, regionLeft, regionTop, output)
+  }
 }
