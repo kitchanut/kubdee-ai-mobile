@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.2.69',
+    date: '2026-07-06',
+    highlight: 'โพสต์วิดีโอ Shopee ได้แม้ปุ่มโพสต์แสดงเป็นไอคอน + อย่างเดียว',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'บางเครื่องปุ่มโพสต์วิดีโอมุมขวาล่างในหน้าบัญชี Shopee Video แสดงเป็นไอคอน + ล้วนจนระบบหาไม่เจอและหยุดโพสต์ ตอนนี้เพิ่มการค้นหาสำรอง ทั้งจับไอคอน + โดยตรงและหาปุ่มกดได้ที่ใกล้มุมขวาล่างที่สุดแทน',
+      },
+    ],
+  },
+  {
     version: '0.2.68',
     date: '2026-07-06',
     highlight: 'ดึงสินค้า Shopee เสถียรขึ้น เลิกแตะโดนแถบหมวดหมู่',
