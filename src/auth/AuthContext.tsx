@@ -15,6 +15,7 @@ import {
 } from '@/auth/api';
 import { HEARTBEAT_INTERVAL_MS, LOGIN_URL, PLAN_RECHECK_INTERVAL_MS } from '@/auth/constants';
 import { getRequiredPlanError } from '@/auth/plan';
+import { OFFLINE_ERROR_MESSAGE } from '@/lib/apiError';
 import {
   clearDeletedProfileConfirmation,
   clearStoredAuthTokens,
@@ -279,7 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     try {
       const verified = await verifyTokens({ accessToken: token, refreshToken });
       if (!verified) {
-        setVerificationError('Online verification required. Please check your internet connection.');
+        setVerificationError(OFFLINE_ERROR_MESSAGE);
       }
     } finally {
       setIsCheckingPlan(false);
@@ -311,7 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     try {
       const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
       if (!verifiedTokens) {
-        setVerificationError('Online verification required. Please check your internet connection.');
+        setVerificationError(OFFLINE_ERROR_MESSAGE);
         return;
       }
 
@@ -339,7 +340,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       try {
         const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
         if (!verifiedTokens) {
-          setCreateProfileError('Online verification required. Please check your internet connection.');
+          setCreateProfileError(OFFLINE_ERROR_MESSAGE);
           return false;
         }
 
@@ -375,7 +376,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       try {
         const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
         if (!verifiedTokens) {
-          setProfileDataError('Online verification required. Please check your internet connection.');
+          setProfileDataError(OFFLINE_ERROR_MESSAGE);
           return false;
         }
 
@@ -407,7 +408,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       try {
         const verifiedTokens = await verifyTokens({ accessToken: token, refreshToken });
         if (!verifiedTokens) {
-          setProfileDataError('Online verification required. Please check your internet connection.');
+          setProfileDataError(OFFLINE_ERROR_MESSAGE);
           return false;
         }
 

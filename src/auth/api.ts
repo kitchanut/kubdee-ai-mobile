@@ -1,4 +1,5 @@
 import { APP_TYPE, BACKEND_URL, CLIENT_APP, OAUTH_SCHEME } from '@/auth/constants';
+import { toApiError } from '@/lib/apiError';
 import type {
   AuthApiResult,
   AuthUser,
@@ -299,12 +300,13 @@ export async function fetchUserProfile(token: string): Promise<AuthApiResult<Aut
       data: (await response.json()) as AuthUser,
       error: null,
     };
-  } catch {
+  } catch (err) {
+    const apiError = toApiError(err);
     return {
       ok: false,
-      status: 0,
+      status: apiError.status,
       data: null,
-      error: 'Online verification required. Please check your internet connection.',
+      error: apiError.userMessage,
     };
   }
 }
@@ -336,12 +338,13 @@ export async function fetchSyncedProfiles(token: string): Promise<AuthApiResult<
       data: mapSyncPullResponse(data),
       error: null,
     };
-  } catch {
+  } catch (err) {
+    const apiError = toApiError(err);
     return {
       ok: false,
-      status: 0,
+      status: apiError.status,
       data: null,
-      error: 'Online verification required. Please check your internet connection.',
+      error: apiError.userMessage,
     };
   }
 }
@@ -464,12 +467,13 @@ async function pushSyncedProfileChanges({
       data,
       error: null,
     };
-  } catch {
+  } catch (err) {
+    const apiError = toApiError(err);
     return {
       ok: false,
-      status: 0,
+      status: apiError.status,
       data: null,
-      error: 'Online verification required. Please check your internet connection.',
+      error: apiError.userMessage,
     };
   }
 }
@@ -567,12 +571,13 @@ export async function refreshAuthToken(refreshToken: string): Promise<AuthApiRes
       data: (await response.json()) as RefreshResponse,
       error: null,
     };
-  } catch {
+  } catch (err) {
+    const apiError = toApiError(err);
     return {
       ok: false,
-      status: 0,
+      status: apiError.status,
       data: null,
-      error: 'Online verification required. Please check your internet connection.',
+      error: apiError.userMessage,
     };
   }
 }

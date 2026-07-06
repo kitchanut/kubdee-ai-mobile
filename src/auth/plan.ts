@@ -1,5 +1,6 @@
 import { REQUIRED_PLAN } from '@/auth/constants';
 import type { AuthUser } from '@/auth/types';
+import { OFFLINE_ERROR_MESSAGE } from '@/lib/apiError';
 
 export function normalizeExpiryDate(expiryDate: AuthUser['expiryDate']): Date | null {
   if (!expiryDate) {
@@ -57,7 +58,7 @@ export function toThaiPlanError(error: string | null): string {
     return 'แพลนของคุณหมดอายุแล้ว กรุณาต่ออายุเพื่อใช้งานต่อ';
   }
 
-  if (error === 'Online verification required. Please check your internet connection.') {
+  if (error === OFFLINE_ERROR_MESSAGE) {
     return 'ต้องเชื่อมต่ออินเทอร์เน็ตเพื่อตรวจสอบสิทธิ์';
   }
 

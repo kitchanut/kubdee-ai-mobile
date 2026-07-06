@@ -1,5 +1,7 @@
 import { readError } from '@/auth/api';
 import { APP_TYPE, BACKEND_URL, CLIENT_APP } from '@/auth/constants';
+import { OFFLINE_ERROR_MESSAGE, toApiError } from '@/lib/apiError';
+import { reportError } from '@/lib/telemetry';
 import type { AuthApiResult } from '@/auth/types';
 import { File } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -359,12 +361,13 @@ export async function fetchAffiliateProducts(
       data: Array.isArray(data.products) ? data.products : [],
       error: null,
     };
-  } catch {
+  } catch (err) {
+    const apiError = toApiError(err);
     return {
       ok: false,
-      status: 0,
+      status: apiError.status,
       data: null,
-      error: 'Online verification required. Please check your internet connection.',
+      error: apiError.userMessage,
     };
   }
 }
@@ -422,12 +425,13 @@ export async function deleteAffiliateProducts(
       data: { deleted, requested },
       error: null,
     };
-  } catch {
+  } catch (err) {
+    const apiError = toApiError(err);
     return {
       ok: false,
-      status: 0,
+      status: apiError.status,
       data: null,
-      error: 'Online verification required. Please check your internet connection.',
+      error: apiError.userMessage,
     };
   }
 }
@@ -487,11 +491,12 @@ export async function syncAffiliateProducts(
       error: null,
     };
   } catch (error) {
+    reportError('api.uploadAffiliateProducts failed', { error });
     return {
       ok: false,
       status: error instanceof ApiRequestError ? error.status : 0,
       data: null,
-      error: error instanceof Error ? error.message : 'Online verification required. Please check your internet connection.',
+      error: error instanceof Error ? error.message : OFFLINE_ERROR_MESSAGE,
     };
   }
 }
