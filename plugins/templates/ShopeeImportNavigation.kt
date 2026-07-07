@@ -657,11 +657,21 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
       throw IllegalStateException("สลับเป็นมุมมองพาร์ทเนอร์ไม่สำเร็จ")
     }
 
-    // Give the partner liked grid a moment to populate before scraping.
+    // The partner liked list shows a loading spinner for a few seconds after the view switches;
+    // wait — with visible progress so it doesn't look stuck — until the first cards render.
     val readyStart = System.currentTimeMillis()
-    while (System.currentTimeMillis() - readyStart < 15_000L) {
+    var lastReadyLog = 0L
+    while (System.currentTimeMillis() - readyStart < 20_000L) {
       checkStopRequested()
-      if (scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED, logResult = false).isNotEmpty()) break
+      if (scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED, logResult = false).isNotEmpty()) {
+        logStep("มุมมองพาร์ทเนอร์โหลดสินค้าแล้ว เริ่มดึง")
+        break
+      }
+      val now = System.currentTimeMillis()
+      if (now - lastReadyLog > 1500L) {
+        logStep("กำลังรอมุมมองพาร์ทเนอร์โหลดสินค้า ${((now - readyStart) / 1000.0).formatOneDecimal()} วิ")
+        lastReadyLog = now
+      }
       sleepStep(500L)
     }
 
