@@ -50,9 +50,16 @@
 
    ```bash
    cd android
-   ./gradlew assembleRelease
+   # SENTRY_DISABLE_AUTO_UPLOAD=true ข้ามการอัปโหลด sourcemap ของ Sentry
+   # (ยังไม่ได้ตั้ง org/project/auth-token — ถ้าไม่ตั้ง build จะ fail ที่ SentryUpload).
+   # error ยังถูกจับปกติ แค่ stack trace ไม่ map เป็น source code
+   SENTRY_DISABLE_AUTO_UPLOAD=true ./gradlew assembleRelease
    cd ..
    ```
+
+   > 💡 อยากได้ stack trace แบบ map เป็นบรรทัดโค้ดจริง: สร้าง Sentry auth token +
+   > ตั้ง `organization`/`project` ใน `@sentry/react-native` plugin (app.config.ts)
+   > แล้วเอา env var ออก
 
 5. เตรียม release asset — **ต้องเซ็น rotation ทุกครั้ง (ตั้งแต่ v0.3.0)**
 

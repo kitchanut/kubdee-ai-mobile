@@ -1,6 +1,6 @@
 {
   "name": "kubdee-ai-mobile",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -31,6 +31,7 @@
     "@rn-primitives/toggle": "^1.4.0",
     "@rn-primitives/toggle-group": "^1.4.0",
     "@rn-primitives/tooltip": "^1.4.0",
+    "@sentry/react-native": "~7.11.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "expo": "~56.0.9",

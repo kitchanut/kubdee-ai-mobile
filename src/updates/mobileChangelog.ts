@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.1',
+    date: '2026-07-07',
+    highlight: 'เพิ่มระบบตรวจจับข้อผิดพลาดเพื่อให้แก้ปัญหาได้เร็วขึ้น',
+    changes: [
+      {
+        type: 'added',
+        text: 'เพิ่มระบบรายงานข้อผิดพลาดอัตโนมัติ ช่วยให้ทีมพัฒนาเห็นและแก้ปัญหาที่เกิดในแอปได้เร็วขึ้น ไม่กระทบการใช้งานและข้อมูลในเครื่อง',
+      },
+    ],
+  },
+  {
     version: '0.3.0',
     date: '2026-07-07',
     highlight: 'อัปเดตด้านความปลอดภัย แนะนำให้อัปเดตทุกเครื่อง',
