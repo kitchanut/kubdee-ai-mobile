@@ -682,8 +682,22 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
     for (round in 1..maxRounds) {
       checkStopRequested()
       val visibleProducts = scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED)
+
+      // Stop at the "คุณอาจจะชอบสิ่งนี้" recommendation section — those are suggestions, not the
+      // user's liked items. Only scrape cards above that header, then end the run.
+      val recommendationTop = rootInActiveWindow?.let { node ->
+        val textNodes = mutableListOf<TextNode>()
+        collectTextNodes(node, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+        findShopeeRecommendationStartY(textNodes)
+      }
+      val likedCandidates = if (recommendationTop != null) {
+        visibleProducts.filter { it.shareBounds.top < recommendationTop }
+      } else {
+        visibleProducts
+      }
+
       var added = 0
-      for (candidate in visibleProducts) {
+      for (candidate in likedCandidates) {
         checkStopRequested()
         val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
         val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
@@ -709,6 +723,11 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
 
       logStep("หน้าถูกใจ (พาร์ทเนอร์) รอบ $round พบใหม่ $added รวม ${importedKeys.size}")
       if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+
+      if (recommendationTop != null) {
+        logStep("เจอหัวข้อ คุณอาจจะชอบสิ่งนี้ จบรายการถูกใจ (พาร์ทเนอร์)")
+        break
+      }
 
       noNewRounds = if (added == 0) noNewRounds + 1 else 0
       if (noNewRounds >= 3) break
