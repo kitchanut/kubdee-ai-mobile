@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.9',
+    date: '2026-07-08',
+    highlight: 'ส่งข้อมูลวินิจฉัยอัตโนมัติเมื่อดึงสินค้าไม่สำเร็จ',
+    changes: [
+      {
+        type: 'improved',
+        text: 'เมื่อดึงสินค้าจาก Shopee แล้วอ่านรายการไม่พบ แอปจะเก็บข้อมูลหน้าจอส่งให้ทีมอัตโนมัติ เพื่อให้แก้ปัญหาเฉพาะรุ่นเครื่อง/เวอร์ชัน Shopee ได้เร็วขึ้น',
+      },
+    ],
+  },
+  {
     version: '0.3.8',
     date: '2026-07-07',
     highlight: 'เลือกมุมมองตอนดึงสินค้า "ถูกใจ" ได้ (เพิ่มมุมมองพาร์ทเนอร์)',

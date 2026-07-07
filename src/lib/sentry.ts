@@ -45,5 +45,26 @@ export function initTelemetry(): void {
   setTelemetryReporter(sentryReporter);
 }
 
+/**
+ * Send a Shopee scrape-failure diagnostic — the on-screen accessibility tree — to Sentry as an
+ * ATTACHMENT (not `extra`, which Sentry truncates), so we can inspect the full tree of a user's
+ * device/Shopee version remotely. No-op if the dump is empty or Sentry isn't initialised.
+ */
+export function captureShopeeDiagnostic(
+  message: string,
+  dump: string,
+  context?: Record<string, unknown>
+): void {
+  if (!dump) return;
+  try {
+    Sentry.withScope((scope) => {
+      scope.addAttachment({ filename: 'shopee-tree.txt', data: dump });
+      Sentry.captureMessage(message, { level: 'warning', extra: context });
+    });
+  } catch {
+    // best-effort — diagnostics must never throw
+  }
+}
+
 /** Wrap the root component so React render errors are captured. */
 export const wrapWithSentry = Sentry.wrap;

@@ -469,3 +469,58 @@ internal fun KubdeeAccessibilityService.dismissShopeePromoPopupByIcon(): Boolean
   logStep("ปิด popup โปรโมชั่น (ไอคอน X มุมขวาบน) ที่ ${target.centerX()},${target.centerY()}")
   return tapBlocking(target.centerX().toFloat(), target.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
 }
+
+// Serialize the visible Shopee accessibility tree (resource-id / class / text / content-desc /
+// bounds / clickable) — the exact structure the scraper reads. Used to diagnose device- or
+// Shopee-version-specific scrape failures remotely (which resource-ids exist, where the share/
+// download buttons are, etc.).
+internal fun KubdeeAccessibilityService.dumpShopeeAccessibilityTree(maxNodes: Int = 500): String {
+  val root = rootInActiveWindow ?: return "(no active window)\n"
+  val screen = screenBounds(root)
+  val sb = StringBuilder()
+  sb.append("screen=${screen.width()}x${screen.height()}\n")
+  var count = 0
+  fun visit(node: AccessibilityNodeInfo?, depth: Int) {
+    if (node == null || count >= maxNodes) return
+    if (node.packageName?.toString() == TARGET_PACKAGE_SHOPEE && node.isVisibleToUser) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val rid = node.viewIdResourceName?.substringAfterLast('/').orEmpty()
+      val cls = node.className?.toString()?.substringAfterLast('.').orEmpty()
+      val txt = node.text?.toString()?.replace(Regex("""\s+"""), " ")?.take(40).orEmpty()
+      val desc = node.contentDescription?.toString()?.replace(Regex("""\s+"""), " ")?.take(40).orEmpty()
+      if (rid.isNotEmpty() || txt.isNotEmpty() || desc.isNotEmpty() || node.isClickable) {
+        sb.append("  ".repeat(depth.coerceIn(0, 8)))
+        sb.append(cls)
+        if (rid.isNotEmpty()) sb.append(" #$rid")
+        if (node.isClickable) sb.append(" [clk]")
+        if (txt.isNotEmpty()) sb.append(" t=\"$txt\"")
+        if (desc.isNotEmpty()) sb.append(" d=\"$desc\"")
+        sb.append(" @${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}\n")
+        count += 1
+      }
+    }
+    for (index in 0 until node.childCount) visit(node.getChild(index), depth + 1)
+  }
+  visit(root, 0)
+  if (count >= maxNodes) sb.append("... (truncated at $maxNodes nodes)\n")
+  return sb.toString()
+}
+
+// Write a scrape-failure diagnostic (device/version context + tree) to the app files dir. The JS
+// side reads it after the import and forwards it to Sentry, so we can diagnose remotely without
+// physical access. filesDir is shared between the :automation and main processes (same app/UID).
+internal fun KubdeeAccessibilityService.writeShopeeScrapeDiagnostic(mode: String) {
+  try {
+    val header = buildString {
+      append("mode=$mode\n")
+      append("shopee=${shopeeAppVersionLabel(TARGET_PACKAGE_SHOPEE)}\n")
+      append("device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})\n")
+      append("---\n")
+    }
+    java.io.File(filesDir, "shopee-diagnostic-latest.txt").writeText(header + dumpShopeeAccessibilityTree())
+    logStep("บันทึกข้อมูลวินิจฉัยหน้าจอ (จะส่งให้ทีมอัตโนมัติเมื่อจบงาน)")
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to write scrape diagnostic", error)
+  }
+}

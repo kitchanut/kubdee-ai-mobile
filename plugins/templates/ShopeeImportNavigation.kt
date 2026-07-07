@@ -664,10 +664,12 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
     // wait — with visible progress so it doesn't look stuck — until the first cards render.
     val readyStart = System.currentTimeMillis()
     var lastReadyLog = 0L
+    var likedListReady = false
     while (System.currentTimeMillis() - readyStart < 20_000L) {
       checkStopRequested()
       if (scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED, logResult = false).isNotEmpty()) {
         logStep("มุมมองพาร์ทเนอร์โหลดสินค้าแล้ว เริ่มดึง")
+        likedListReady = true
         break
       }
       val now = System.currentTimeMillis()
@@ -676,6 +678,11 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
         lastReadyLog = now
       }
       sleepStep(500L)
+    }
+    if (!likedListReady) {
+      // Cards never became scrapeable (a device/Shopee-version layout we don't match, e.g. the share
+      // button resource id differs) — capture the on-screen tree so we can diagnose it remotely.
+      writeShopeeScrapeDiagnostic("partner_liked")
     }
 
     var noNewRounds = 0

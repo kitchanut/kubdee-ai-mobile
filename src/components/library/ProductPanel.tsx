@@ -40,6 +40,7 @@ import {
   openAccessibilitySettings,
 } from '@/native/AccessibilityBridge';
 import type { NativeShopeeAppVersion, NativeShopeeImportSource } from '@/native/AccessibilityBridge';
+import { flushShopeeScrapeDiagnostic } from '@/lib/shopeeDiagnostic';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import { LabeledTextInput } from './media-panel/controls';
@@ -706,6 +707,9 @@ export default function ProductPanel({
       shopeeProductSaver.stopSession();
       setIsShopeeImporting(false);
       setAutomationActivityRunning('shopee-import', false);
+      // Forward any scrape-failure diagnostic the native side left behind (no-op on success).
+      // The dump header already carries device + Shopee version, so context stays minimal.
+      void flushShopeeScrapeDiagnostic({ source: nativeSource, appVersion: '0.3.9' });
     }
   }, [
     appendShopeeLog,
