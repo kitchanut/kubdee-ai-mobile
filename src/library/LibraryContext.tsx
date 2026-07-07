@@ -1107,9 +1107,11 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     setLastSyncedAt(null);
   }, [token]);
 
-  // When the app returns to foreground (e.g. after tapping "report problem" then "back" from the
-  // Shopee overlay), forward any diagnostic the native side wrote to Sentry.
+  // Forward any automatic diagnostic the native side wrote to Sentry. Check once on mount too —
+  // if Android killed the app process during the import, the return trip is a cold start and
+  // AppState never transitions to 'active'.
   useEffect(() => {
+    void flushShopeeScrapeDiagnostic({ trigger: 'startup' });
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void flushShopeeScrapeDiagnostic({ trigger: 'foreground' });

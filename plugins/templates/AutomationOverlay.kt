@@ -163,15 +163,22 @@ internal fun KubdeeAccessibilityService.showAutomationOverlay(message: String) {
     val overlay = ensureAutomationOverlay() ?: return@post
     updateAutomationOverlayContent()
     overlay.visibility = View.VISIBLE
-    ensureAutomationStopButton()?.let { button ->
-      button.text = "Stop"
-      button.visibility = View.VISIBLE
+    // While stopped, keep the report / back controls; only a running overlay shows the Stop button.
+    if (!stopRequested) {
+      // Clear any report / back controls left over from a prior stopped run before showing Stop.
+      removeAutomationStoppedControls()
+      ensureAutomationStopButton()?.let { button ->
+        button.text = "Stop"
+        button.visibility = View.VISIBLE
+      }
     }
   }
 }
 
 internal fun KubdeeAccessibilityService.hideAutomationOverlay(delayMs: Long) {
   mainHandler.postDelayed({
+    // After a user Stop we stay on screen with the report / back controls — don't tear the overlay down.
+    if (stopRequested) return@postDelayed
     removeAutomationOverlay()
   }, delayMs)
 }
@@ -583,12 +590,16 @@ internal fun KubdeeAccessibilityService.removeAutomationStoppedControls() {
 }
 
 internal fun KubdeeAccessibilityService.reportAutomationProblem() {
-  writeShopeeReportDiagnostic()
-  overlayReportButton?.apply {
-    text = "ส่งแล้ว"
-    isEnabled = false
+  val reportButton = overlayReportButton ?: return
+  if (!reportButton.isEnabled) return // already capturing
+  reportButton.text = "กำลังเก็บ..."
+  reportButton.isEnabled = false
+  overlayBackButton?.isEnabled = false
+  // Capture the frozen screen (log + tree + screenshot) BEFORE leaving it, then jump back into
+  // the app where the report modal asks the user to describe the problem and sends everything.
+  writeShopeeReportDiagnostic {
+    mainHandler.post { exitAutomationAfterStop() }
   }
-  android.widget.Toast.makeText(this, "ส่งข้อมูลปัญหาแล้ว — จะถึงทีมเมื่อกลับเข้าแอป", android.widget.Toast.LENGTH_LONG).show()
 }
 
 internal fun KubdeeAccessibilityService.exitAutomationAfterStop() {

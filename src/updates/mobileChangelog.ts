@@ -44,6 +44,32 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.12',
+    date: '2026-07-08',
+    highlight: 'รายงานปัญหาแบบพิมพ์อธิบายได้ + ส่งถึงทีมแน่นอน',
+    changes: [
+      {
+        type: 'improved',
+        text: 'กด "รายงานปัญหา" หลัง Stop แล้วระบบเก็บ log + ภาพหน้าจอ พากลับเข้าแอปให้พิมพ์อธิบายปัญหาก่อนส่ง',
+      },
+      {
+        type: 'fixed',
+        text: 'แก้รายงานปัญหาส่งไม่ถึงทีมเมื่อแอปถูกปิดระหว่างดึงสินค้า (ตอนนี้ตรวจส่งตอนเปิดแอปทุกครั้ง)',
+      },
+    ],
+  },
+  {
+    version: '0.3.11',
+    date: '2026-07-08',
+    highlight: 'แก้ปุ่มรายงานปัญหาหายหลังกด Stop',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'หลังกด Stop ระหว่างดึง/โพสต์ Shopee overlay จะค้างอยู่พร้อมปุ่ม "รายงานปัญหา" และ "กลับแอป" (เดิมปุ่มหายไปเองใน 2-3 วินาที)',
+      },
+    ],
+  },
+  {
     version: '0.3.10',
     date: '2026-07-08',
     highlight: 'กด Stop แล้วหยุดค้างหน้านั้น + ปุ่มรายงานปัญหา',
