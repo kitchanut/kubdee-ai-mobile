@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import { File, FileMode, type FileHandle } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import type { SyncAffiliateProductInput } from '@/library/api';
@@ -39,6 +39,11 @@ type CacheProductImagesOptions = {
 const PRODUCT_IMAGE_DIRECTORY = 'product-images';
 const SUPPORTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const IMAGE_CACHE_DETAIL_LOG_LIMIT = 12;
+// Only the file header is needed for magic-byte detection; 16 bytes covers every signature we check.
+const IMAGE_HEADER_SNIFF_BYTES = 16;
+// Never delete a cached file written within this window — an import may still be attaching it to a
+// product, or the reference list handed to the orphan sweep may be momentarily stale.
+const ORPHAN_SWEEP_GRACE_MS = 10 * 60 * 1000;
 
 type SupportedImageType = {
   extension: 'jpg' | 'png' | 'webp' | 'gif';
@@ -182,12 +187,19 @@ function imageTypeFromBytes(bytes: Uint8Array): SupportedImageType | null {
 }
 
 async function sniffSupportedImageType(uri: string): Promise<SupportedImageType | null> {
+  let handle: FileHandle | null = null;
   try {
-    const bytes = await new File(uri).bytes();
-    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
-    return imageTypeFromBytes(data);
+    // Read only the header rather than loading the whole file into memory — large images across
+    // many products during import would otherwise cause real memory pressure / OOM.
+    handle = new File(uri).open(FileMode.ReadOnly);
+    const length = Math.min(IMAGE_HEADER_SNIFF_BYTES, handle.size ?? IMAGE_HEADER_SNIFF_BYTES);
+    if (length <= 0) return null;
+    const bytes = handle.readBytes(length);
+    return imageTypeFromBytes(bytes);
   } catch {
     return null;
+  } finally {
+    handle?.close();
   }
 }
 
@@ -514,4 +526,69 @@ export function stripLocalImagePathsForCloudSync(products: SyncAffiliateProductI
       imagePath: null,
     };
   });
+}
+
+function productImageFileName(path: string | null | undefined): string | null {
+  const clean = cleanText(path);
+  if (!clean || !clean.startsWith('file://') || !clean.includes(`/${PRODUCT_IMAGE_DIRECTORY}/`)) {
+    return null;
+  }
+  return clean.split('/').pop() || null;
+}
+
+// Delete cached product-image files that no product references anymore — images of removed
+// products (rows are soft-deleted, so their files are never touched otherwise) and stale copies
+// left behind when a product's source image URL changes. Pass the imagePaths of every ACTIVE
+// product; anything else in the directory is treated as an orphan (subject to the grace window).
+export async function sweepOrphanProductImages(
+  referencedImagePaths: Iterable<string | null | undefined>,
+  options: CacheProductImagesOptions = {}
+): Promise<{ removed: number; freedBytes: number }> {
+  const empty = { removed: 0, freedBytes: 0 };
+  if (!FileSystem.documentDirectory) return empty;
+
+  const directory = `${FileSystem.documentDirectory}${PRODUCT_IMAGE_DIRECTORY}/`;
+  try {
+    const dirInfo = await FileSystem.getInfoAsync(directory);
+    if (!dirInfo.exists || !dirInfo.isDirectory) return empty;
+  } catch {
+    return empty;
+  }
+
+  const referenced = new Set<string>();
+  for (const raw of referencedImagePaths) {
+    const name = productImageFileName(raw);
+    if (name) referenced.add(name);
+  }
+
+  let names: string[];
+  try {
+    names = await FileSystem.readDirectoryAsync(directory);
+  } catch {
+    return empty;
+  }
+
+  const now = Date.now();
+  let removed = 0;
+  let freedBytes = 0;
+  for (const name of names) {
+    if (referenced.has(name)) continue;
+    const fileUri = `${directory}${name}`;
+    try {
+      const info = await FileSystem.getInfoAsync(fileUri);
+      if (!info.exists || info.isDirectory) continue;
+      const modifiedMs = typeof info.modificationTime === 'number' ? info.modificationTime * 1000 : 0;
+      if (modifiedMs && now - modifiedMs < ORPHAN_SWEEP_GRACE_MS) continue;
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+      removed += 1;
+      freedBytes += typeof info.size === 'number' ? info.size : 0;
+    } catch {
+      // best-effort — skip files we cannot stat/delete
+    }
+  }
+
+  if (options.debugLog && removed > 0) {
+    options.debugLog(`ล้างรูปสินค้าที่ไม่ใช้แล้ว ${removed} ไฟล์ (~${Math.round(freedBytes / 1024)} KB)`);
+  }
+  return { removed, freedBytes };
 }

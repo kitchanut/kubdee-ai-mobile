@@ -16,7 +16,7 @@ import {
   upsertLocalProductsForSync,
   upsertLocalProductsFromCloud,
 } from '@/library/localProductDb';
-import { cacheProductImages } from '@/library/productImageCache';
+import { cacheProductImages, sweepOrphanProductImages } from '@/library/productImageCache';
 import { pickPreferredShopeeUrl } from '@/library/shopeeLinks';
 import type { AffiliateProduct } from '@/library/types';
 
@@ -720,6 +720,7 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
   const isSyncingRef = useRef(false);
   const isDeletingRef = useRef(false);
   const isUpdatingRef = useRef(false);
+  const hasSweptOrphansRef = useRef(false);
 
   const refreshLocalProducts = useCallback(async (): Promise<AffiliateProduct[]> => {
     const localProducts = await getLocalProducts();
@@ -1112,8 +1113,16 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     let cancelled = false;
     getLocalProducts()
       .then((localProducts) => {
-        if (!cancelled) {
-          setProducts(localProducts);
+        if (cancelled) {
+          return;
+        }
+        setProducts(localProducts);
+        // Reclaim orphaned product-image files (removed products, stale copies from changed image
+        // URLs) once per session, after the active set is known. Guarded + grace-windowed in the
+        // sweep so it never races an in-flight import.
+        if (!hasSweptOrphansRef.current && !isSyncingRef.current) {
+          hasSweptOrphansRef.current = true;
+          void sweepOrphanProductImages(localProducts.map((product) => product.imagePath));
         }
       })
       .catch(() => {
