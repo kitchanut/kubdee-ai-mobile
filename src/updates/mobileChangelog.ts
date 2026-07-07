@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.4',
+    date: '2026-07-07',
+    highlight: 'แก้บางครั้งดึงสินค้า "ถูกใจ" Shopee แล้วไม่ได้รูป (โดยเฉพาะเน็ตช้า)',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'แก้ปัญหาบางครั้งดึงสินค้าจาก "ถูกใจ" Shopee แล้วไม่มีรูป โดยรอรูปในหน้าสินค้าโหลดให้เสร็จก่อน (สูงสุด 3 วินาที) เผื่ออินเทอร์เน็ตช้า',
+      },
+      {
+        type: 'improved',
+        text: 'เพิ่มบันทึก (log) ระหว่างรอรูปโหลด เพื่อให้ตรวจสอบได้ชัดเจนขึ้นเวลาสินค้าบางรายการไม่มีรูป',
+      },
+    ],
+  },
+  {
     version: '0.3.3',
     date: '2026-07-07',
     highlight: 'แก้บางเครื่องนำเข้าข้อเสนอ Shopee แล้วไม่มีรูปสินค้าในคลัง',

@@ -82,7 +82,11 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromDetail(
     }
 
     val detailPrice = findShopeeDetailPrice() ?: product.price
-    val detailImageUrl = findShopeeDetailImageUrl()
+    // The main product image usually finishes loading (and only then exposes its URL to
+    // accessibility) a beat after the detail screen reaches READY, so a single immediate read
+    // frequently misses it on slower connections. Poll briefly BEFORE copying the URL / opening
+    // share UI (which can cover the detail image).
+    val detailImageUrl = findShopeeDetailImageUrlWithRetry()
     val productUrl = if (copyProductUrl) {
       logStep("รอหน้า detail นิ่งก่อนแชร์สินค้า")
       sleepStep(900L)
@@ -436,6 +440,31 @@ internal fun KubdeeAccessibilityService.findShopeeDetailImageUrl(): String? {
   findShopeeDetailImageResourceUrl(root)?.let { return it }
   val imageId = findDetailImageCoverId(root) ?: return null
   return "https://down-th.img.susercontent.com/file/$imageId"
+}
+
+// Poll findShopeeDetailImageUrl() until the product image has loaded its URL, giving slow
+// connections up to timeoutMs. Returns immediately when the image is already present (fast path,
+// no delay). Logs each wait tick so a missing image is visible in the scan log.
+internal fun KubdeeAccessibilityService.findShopeeDetailImageUrlWithRetry(
+  timeoutMs: Long = 3_000L,
+  intervalMs: Long = 500L
+): String? {
+  findShopeeDetailImageUrl()?.let { return it }
+
+  val start = System.currentTimeMillis()
+  logStep("รูปสินค้า: รูป detail ยังไม่โหลด รอสูงสุด ${(timeoutMs / 1000.0).formatOneDecimal()} วิ (เช็คทุก ${intervalMs}ms)")
+  while (System.currentTimeMillis() - start < timeoutMs) {
+    checkStopRequested()
+    sleepStep(intervalMs)
+    val elapsed = ((System.currentTimeMillis() - start) / 1000.0).formatOneDecimal()
+    findShopeeDetailImageUrl()?.let {
+      logStep("รูปสินค้า: โหลดรูป detail สำเร็จหลังรอ $elapsed วิ")
+      return it
+    }
+    logStep("รูปสินค้า: กำลังรอรูป detail โหลด $elapsed วิ")
+  }
+  logStep("รูปสินค้า: รอรูป detail ครบ ${(timeoutMs / 1000.0).formatOneDecimal()} วิ ยังไม่พบ -> ใช้รูปสำรอง")
+  return null
 }
 
 internal fun KubdeeAccessibilityService.findShopeeDetailImageResourceUrl(root: AccessibilityNodeInfo): String? {
