@@ -273,6 +273,29 @@ class KubdeeAccessibilityModule(
   }
 
   @ReactMethod
+  fun getShopeeAppVersion(promise: Promise) {
+    val map = Arguments.createMap()
+    map.putString("supportedVersion", SHOPEE_TESTED_VERSION)
+    try {
+      val info = reactContext.packageManager.getPackageInfo(TARGET_PACKAGE_SHOPEE, 0)
+      val code = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        info.longVersionCode
+      } else {
+        @Suppress("DEPRECATION")
+        info.versionCode.toLong()
+      }
+      map.putBoolean("installed", true)
+      map.putString("versionName", info.versionName ?: "")
+      map.putDouble("versionCode", code.toDouble())
+    } catch (error: Exception) {
+      map.putBoolean("installed", false)
+      map.putString("versionName", "")
+      map.putDouble("versionCode", 0.0)
+    }
+    promise.resolve(map)
+  }
+
+  @ReactMethod
   fun openAccessibilitySettings(promise: Promise) {
     try {
       val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)

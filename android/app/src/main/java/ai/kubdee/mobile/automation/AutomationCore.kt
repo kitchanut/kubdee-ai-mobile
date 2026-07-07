@@ -129,6 +129,18 @@ internal fun KubdeeAccessibilityService.freeMemoryBeforeImport(keepPackage: Stri
   sleepStep(400L)
 }
 
+// Read the installed Shopee app version, so the scan log records exactly which Shopee build ran
+// (its UI/layout — share buttons, download button, exposed URLs — differs across versions).
+internal fun KubdeeAccessibilityService.shopeeAppVersionLabel(packageName: String): String {
+  return try {
+    val info = packageManager.getPackageInfo(packageName, 0)
+    val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
+    "${info.versionName ?: "?"} (build $code)"
+  } catch (error: Exception) {
+    "ไม่พบ (ยังไม่ได้ติดตั้ง?)"
+  }
+}
+
 internal fun KubdeeAccessibilityService.closeShopeeBeforeFreshLaunch(packageName: String) {
   logStep("ปิด Shopee เดิมก่อนเริ่มงาน")
   performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)

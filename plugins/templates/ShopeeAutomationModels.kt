@@ -9,6 +9,9 @@ internal const val TAG = "KubdeeAccessibility"
 internal const val AUTOMATION_NOTIFICATION_CHANNEL_ID = "kubdee_automation"
 internal const val AUTOMATION_NOTIFICATION_ID = 2401
 internal const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
+// Shopee build the automation is verified against. Shown next to the device's installed version so
+// a mismatch (Shopee changed its UI) is obvious. Bump when we test/support a newer Shopee build.
+internal const val SHOPEE_TESTED_VERSION = "3.77.25"
 internal const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = true
 internal const val SHOPEE_IMPORT_SOURCE_LIKED = "liked"
 internal const val SHOPEE_IMPORT_SOURCE_OFFERS = "offers"

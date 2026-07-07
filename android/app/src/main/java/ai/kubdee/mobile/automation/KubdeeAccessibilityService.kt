@@ -657,6 +657,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (importAllLikedItems) 0 else targetImportCount
       )
       beginAutomationForeground("กำลังดึงสินค้า Shopee")
+      logStep("Shopee เวอร์ชัน ${shopeeAppVersionLabel(targetPackage)} · แอปทดสอบกับ $SHOPEE_TESTED_VERSION")
       val importTargetLabel = if (normalizedImportSource == SHOPEE_IMPORT_SOURCE_OFFERS) {
         "โปรแกรม Affiliate > ข้อเสนอ > $normalizedOfferCategory"
       } else {

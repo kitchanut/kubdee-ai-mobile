@@ -125,6 +125,7 @@ export interface NativeGoogleFlowVideoProbe {
 type NativeAccessibilityModule = {
   openAccessibilitySettings?: () => Promise<boolean> | boolean;
   getStatus?: () => Promise<AccessibilityStatus>;
+  getShopeeAppVersion?: () => Promise<NativeShopeeAppVersion>;
   launchApp?: (packageName: string) => Promise<boolean>;
   tap?: (x: number, y: number) => Promise<boolean>;
   swipe?: (startX: number, startY: number, endX: number, endY: number, durationMs: number) => Promise<boolean>;
@@ -196,6 +197,20 @@ export async function openAccessibilitySettings(): Promise<void> {
   }
 
   await Linking.openSettings();
+}
+
+export type NativeShopeeAppVersion = {
+  installed: boolean;
+  versionName: string;
+  versionCode: number;
+  supportedVersion: string;
+};
+
+export async function getShopeeAppVersion(): Promise<NativeShopeeAppVersion | null> {
+  if (Platform.OS === 'android' && nativeModule?.getShopeeAppVersion) {
+    return nativeModule.getShopeeAppVersion();
+  }
+  return null;
 }
 
 export async function getAccessibilityStatus(): Promise<AccessibilityStatus> {

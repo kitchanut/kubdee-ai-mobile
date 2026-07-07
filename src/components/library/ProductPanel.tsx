@@ -35,10 +35,11 @@ import {
   convertShopeeLinks as runNativeShopeeLinkConversion,
   getAccessibilityStatus,
   getPendingShopeeConvertResults,
+  getShopeeAppVersion,
   importShopeeProducts as runNativeShopeeImport,
   openAccessibilitySettings,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeeImportSource } from '@/native/AccessibilityBridge';
+import type { NativeShopeeAppVersion, NativeShopeeImportSource } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import { LabeledTextInput } from './media-panel/controls';
@@ -267,6 +268,7 @@ export default function ProductPanel({
   const [shopeeOfferCategory, setShopeeOfferCategory] = useState<ShopeeOfferCategory>('แนะนำ');
   const [shopeeLikedViewMode, setShopeeLikedViewMode] = useState<ShopeeLikedViewMode>('buyer');
   const [shopeeImportAmount, setShopeeImportAmount] = useState<ShopeeImportAmount>(50);
+  const [shopeeAppVersion, setShopeeAppVersion] = useState<NativeShopeeAppVersion | null>(null);
   const [customShopeeImportAmount, setCustomShopeeImportAmount] = useState('50');
   const [editingProduct, setEditingProduct] = useState<AffiliateProduct | null>(null);
   const [editForm, setEditForm] = useState<ProductEditForm>(EMPTY_PRODUCT_EDIT_FORM);
@@ -889,6 +891,7 @@ export default function ProductPanel({
     }
 
     setShopeeImportModalOpen(true);
+    void getShopeeAppVersion().then(setShopeeAppVersion).catch(() => setShopeeAppVersion(null));
   }, [isShopeeImporting, isSyncing, selectedProfileId]);
 
   const startShopeeImportFromModal = useCallback((): void => {
@@ -1394,6 +1397,24 @@ export default function ProductPanel({
                 <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
               </Pressable>
             </View>
+
+            {shopeeAppVersion ? (
+              <View className="mt-3 rounded-[10px] border border-kd-border bg-kd-card-muted px-3 py-2">
+                <Text className="text-kd-caption text-kd-text">
+                  {shopeeAppVersion.installed
+                    ? `Shopee ในเครื่อง: เวอร์ชัน ${shopeeAppVersion.versionName}`
+                    : 'ไม่พบแอป Shopee ในเครื่อง'}
+                </Text>
+                <Text className="mt-0.5 text-kd-caption text-kd-text-subtle">
+                  แอปทดสอบ/รองรับ Shopee เวอร์ชัน {shopeeAppVersion.supportedVersion}
+                </Text>
+                {shopeeAppVersion.installed && shopeeAppVersion.versionName !== shopeeAppVersion.supportedVersion ? (
+                  <Text className="mt-1 text-kd-caption" style={{ color: SHOPEE_ORANGE }}>
+                    เวอร์ชัน Shopee ต่างจากที่ทดสอบ — ถ้าดึงรูปไม่ครบ แจ้งเวอร์ชันนี้กับทีมได้เลย
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
 
             <View className="mt-4 gap-2">
               <Text className="text-kd-caption font-semibold text-kd-text-subtle">แหล่งสินค้า</Text>
