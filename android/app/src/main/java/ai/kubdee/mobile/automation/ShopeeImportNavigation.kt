@@ -643,6 +643,73 @@ internal fun KubdeeAccessibilityService.switchToShopeeBuyerLikedView(): Boolean 
     return false
   }
 
+// Import the liked list using the affiliate "partner" view. That view renders each product as an
+// OfferCard with a share button (same component as the offers page), so we reuse the offers
+// scrape + share-download pipeline instead of the buyer-view detail/URL flow.
+internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
+    targetImportCount: Int,
+    importAllLikedItems: Boolean,
+    profileLocalId: String?,
+    importedKeys: MutableSet<String>,
+    seenCandidateKeys: MutableSet<String>
+  ): Int {
+    if (!switchToShopeePartnerLikedView()) {
+      throw IllegalStateException("สลับเป็นมุมมองพาร์ทเนอร์ไม่สำเร็จ")
+    }
+
+    // Give the partner liked grid a moment to populate before scraping.
+    val readyStart = System.currentTimeMillis()
+    while (System.currentTimeMillis() - readyStart < 15_000L) {
+      checkStopRequested()
+      if (scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED, logResult = false).isNotEmpty()) break
+      sleepStep(500L)
+    }
+
+    var noNewRounds = 0
+    val maxRounds = if (importAllLikedItems) 240 else maxOf(12, targetImportCount)
+    var shareAttemptCount = 0
+
+    for (round in 1..maxRounds) {
+      checkStopRequested()
+      val visibleProducts = scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED)
+      var added = 0
+      for (candidate in visibleProducts) {
+        checkStopRequested()
+        val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
+        val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
+        if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
+          logStep("ข้ามสินค้าถูกใจที่เห็นซ้ำ: ${candidate.product.name}")
+          continue
+        }
+
+        shareAttemptCount += 1
+        logStep("กดแชร์สินค้าถูกใจ (พาร์ทเนอร์) $shareAttemptCount: ${candidate.product.name}")
+        val product = enrichShopeeProductFromPartnerShare(candidate)?.copy(status = SHOPEE_IMPORT_SOURCE_LIKED)
+          ?: candidate.product.copy(status = SHOPEE_IMPORT_SOURCE_LIKED)
+        val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
+        if (importedKeys.add(key)) {
+          seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
+          added += 1
+          updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
+          logStep("บันทึกสินค้าถูกใจแล้ว รวม ${importedKeys.size}: ${product.name}")
+          KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
+          if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+        }
+      }
+
+      logStep("หน้าถูกใจ (พาร์ทเนอร์) รอบ $round พบใหม่ $added รวม ${importedKeys.size}")
+      if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+
+      noNewRounds = if (added == 0) noNewRounds + 1 else 0
+      if (noNewRounds >= 3) break
+
+      if (!scrollShopeeAffiliateOffersList()) break
+      sleepStep(1500L)
+    }
+
+    return importedKeys.size
+  }
+
 internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolean {
     if (isShopeePartnerLikedViewVisible()) {
       logStep("อยู่ในมุมมองพาร์ทเนอร์แล้ว")

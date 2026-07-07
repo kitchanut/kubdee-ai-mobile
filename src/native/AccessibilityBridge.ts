@@ -31,7 +31,7 @@ export interface NativeShopeeImportProduct extends NativeShopeeLikedProduct {
   ts: number;
 }
 
-export type NativeShopeeImportSource = 'liked' | 'offers';
+export type NativeShopeeImportSource = 'liked' | 'offers' | 'partner_liked';
 export type NativeShopeeOfferCategory = string;
 
 export interface NativeShopeePostLog {
@@ -279,7 +279,8 @@ export async function importShopeeProducts(
   profileLocalId?: string | null,
   offerCategory?: NativeShopeeOfferCategory | null
 ): Promise<NativeShopeeLikedProduct[]> {
-  const normalizedSource: NativeShopeeImportSource = importSource === 'offers' ? 'offers' : 'liked';
+  const normalizedSource: NativeShopeeImportSource =
+    importSource === 'offers' ? 'offers' : importSource === 'partner_liked' ? 'partner_liked' : 'liked';
   const normalizedOfferCategory =
     normalizedSource === 'offers' ? offerCategory?.trim() || null : null;
   if (Platform.OS === 'android' && nativeModule?.importShopeeProducts) {

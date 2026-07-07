@@ -749,6 +749,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
         throw IllegalStateException("ไม่พบเมนู สิ่งที่ฉันถูกใจ")
       }
 
+      if (normalizedImportSource == SHOPEE_IMPORT_SOURCE_PARTNER_LIKED) {
+        return importShopeePartnerLikedProducts(
+          targetImportCount = targetImportCount,
+          importAllLikedItems = importAllLikedItems,
+          profileLocalId = profileLocalId,
+          importedKeys = importedKeys,
+          seenCandidateKeys = seenCandidateKeys
+        )
+      }
+
       if (!ensureShopeeBuyerLikedView()) {
         throw IllegalStateException("สลับเป็นมุมมองผู้ซื้อไม่สำเร็จ")
       }

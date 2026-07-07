@@ -38,6 +38,7 @@ import {
   importShopeeProducts as runNativeShopeeImport,
   openAccessibilitySettings,
 } from '@/native/AccessibilityBridge';
+import type { NativeShopeeImportSource } from '@/native/AccessibilityBridge';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import { LabeledTextInput } from './media-panel/controls';
@@ -67,7 +68,7 @@ import {
   getShopeeImportAmountLabel,
   getShopeeImportLimit,
 } from './product-panel';
-import type { ShopeeImportAmount, ShopeeImportSource, ShopeeOfferCategory, SortKey } from './product-panel';
+import type { ShopeeImportAmount, ShopeeImportSource, ShopeeLikedViewMode, ShopeeOfferCategory, SortKey } from './product-panel';
 
 function formatProfileDebugId(profileId: string): string {
   const cleanProfileId = profileId.trim();
@@ -150,18 +151,19 @@ function getProductEditImageUri(product: AffiliateProduct): string | null {
     .find((uri): uri is string => isDisplayableProductImageUri(uri)) ?? null;
 }
 
-// Photo-read permission for the "offers" import. Offer images prefer a permission-free product
-// image URL and only use this permission for the MediaStore download fallback (products that
-// expose no usable URL). When it is NOT granted we warn before EVERY offer import so the user
-// knows some images may be missing, and let them grant, continue anyway, or cancel. Returns false
-// (import aborted) when the user cancels or when we send them to Settings to grant a permission the
-// system has blocked from re-prompting; otherwise proceeds best-effort (URL-only when denied).
-// Not relevant to the "liked" import, which reads image URLs directly and needs no permission.
+// Photo-read permission for Shopee imports that grab images from the affiliate share sheet — the
+// "offers" import and the partner-view "liked" import. Both prefer a permission-free product image
+// URL and only use this permission for the MediaStore download fallback (products that expose no
+// usable URL). When it is NOT granted we warn before the import so the user knows some images may be
+// missing, and let them grant, continue anyway, or cancel. Returns false (import aborted) when the
+// user cancels or when we send them to Settings to grant a permission the system has blocked from
+// re-prompting; otherwise proceeds best-effort (URL-only when denied). The buyer-view "liked" import
+// reads image URLs directly and needs no permission.
 async function confirmShopeeOfferImagePermission(
-  source: ShopeeImportSource,
+  source: NativeShopeeImportSource,
   appendLog: (message: string, ts?: number) => void
 ): Promise<boolean> {
-  if (source !== 'offers' || Platform.OS !== 'android') {
+  if ((source !== 'offers' && source !== 'partner_liked') || Platform.OS !== 'android') {
     return true;
   }
 
@@ -177,7 +179,7 @@ async function confirmShopeeOfferImagePermission(
   const choice = await new Promise<'grant' | 'continue' | 'cancel'>((resolve) => {
     Alert.alert(
       'ยังไม่ได้ให้สิทธิ์รูปภาพ',
-      'การนำเข้า "ข้อเสนอ" Shopee ยังทำงานได้ แต่รูปสินค้าบางรายการที่ไม่มีลิงก์รูปโดยตรงอาจไม่แสดง หากต้องการรูปครบที่สุด กด "ให้สิทธิ์รูป" แล้วเลือก "อนุญาตทั้งหมด"',
+      'การนำเข้าสินค้า Shopee ยังทำงานได้ แต่รูปสินค้าบางรายการที่ไม่มีลิงก์รูปโดยตรงอาจไม่แสดง หากต้องการรูปครบที่สุด กด "ให้สิทธิ์รูป" แล้วเลือก "อนุญาตทั้งหมด"',
       [
         { text: 'ยกเลิก', style: 'cancel', onPress: () => resolve('cancel') },
         { text: 'ดึงต่อไปเลย', onPress: () => resolve('continue') },
@@ -195,7 +197,7 @@ async function confirmShopeeOfferImagePermission(
   if (choice === 'grant') {
     const result = await PermissionsAndroid.request(permission, {
       title: 'อนุญาตอ่านรูปสินค้า',
-      message: 'ใช้เพื่ออ่านรูปที่ Shopee ดาวน์โหลดจากแผงแชร์ (เฉพาะข้อเสนอที่ไม่มีลิงก์รูปโดยตรง)',
+      message: 'ใช้เพื่ออ่านรูปที่ Shopee ดาวน์โหลดจากแผงแชร์ (เฉพาะสินค้าที่ไม่มีลิงก์รูปโดยตรง)',
       buttonPositive: 'อนุญาตทั้งหมด',
       buttonNegative: 'ข้าม',
     });
@@ -263,6 +265,7 @@ export default function ProductPanel({
   const [shopeeImportModalOpen, setShopeeImportModalOpen] = useState(false);
   const [shopeeImportSource, setShopeeImportSource] = useState<ShopeeImportSource>('liked');
   const [shopeeOfferCategory, setShopeeOfferCategory] = useState<ShopeeOfferCategory>('แนะนำ');
+  const [shopeeLikedViewMode, setShopeeLikedViewMode] = useState<ShopeeLikedViewMode>('buyer');
   const [shopeeImportAmount, setShopeeImportAmount] = useState<ShopeeImportAmount>(50);
   const [customShopeeImportAmount, setCustomShopeeImportAmount] = useState('50');
   const [editingProduct, setEditingProduct] = useState<AffiliateProduct | null>(null);
@@ -601,7 +604,8 @@ export default function ProductPanel({
   const runShopeeImport = useCallback(async (
     source: ShopeeImportSource,
     maxItems: number,
-    offerCategory?: ShopeeOfferCategory | null
+    offerCategory?: ShopeeOfferCategory | null,
+    likedViewMode: ShopeeLikedViewMode = 'buyer'
   ): Promise<void> => {
     if (!selectedProfileId) {
       toast.error('เลือกโปรไฟล์ก่อนนำเข้า Shopee');
@@ -615,10 +619,14 @@ export default function ProductPanel({
     setIsShopeeImporting(true);
     beginAutomationActivityRun('shopee-import');
     shopeeProductSaver.startSession(selectedProfileId);
+    const nativeSource: NativeShopeeImportSource =
+      source === 'liked' && likedViewMode === 'partner' ? 'partner_liked' : source;
     const normalizedOfferCategory = source === 'offers' ? offerCategory || 'แนะนำ' : null;
     const sourceLabel = source === 'offers'
       ? `ข้อเสนอ Affiliate > ${normalizedOfferCategory}`
-      : 'สิ่งที่ถูกใจ';
+      : nativeSource === 'partner_liked'
+        ? 'สิ่งที่ถูกใจ (มุมมองพาร์ทเนอร์)'
+        : 'สิ่งที่ถูกใจ';
     appendShopeeLog(`เริ่มดึงสินค้า Shopee จาก${sourceLabel} (${maxItems <= 0 ? 'ทั้งหมด' : `${maxItems} รายการ`})`);
 
     try {
@@ -642,12 +650,12 @@ export default function ProductPanel({
         return;
       }
 
-      if (!await confirmShopeeOfferImagePermission(source, appendShopeeLog)) {
+      if (!await confirmShopeeOfferImagePermission(nativeSource, appendShopeeLog)) {
         return;
       }
 
       await storePendingTab('library');
-      const scrapedProducts = await runNativeShopeeImport(source, maxItems, selectedProfileId, normalizedOfferCategory);
+      const scrapedProducts = await runNativeShopeeImport(nativeSource, maxItems, selectedProfileId, normalizedOfferCategory);
       await shopeeProductSaver.waitForIdle();
       await shopeeProductSaver.savePendingProducts();
       await shopeeProductSaver.waitForIdle();
@@ -894,9 +902,10 @@ export default function ProductPanel({
     void runShopeeImport(
       shopeeImportSource,
       limit,
-      shopeeImportSource === 'offers' ? shopeeOfferCategory : null
+      shopeeImportSource === 'offers' ? shopeeOfferCategory : null,
+      shopeeLikedViewMode
     );
-  }, [customShopeeImportAmount, runShopeeImport, shopeeImportAmount, shopeeImportSource, shopeeOfferCategory]);
+  }, [customShopeeImportAmount, runShopeeImport, shopeeImportAmount, shopeeImportSource, shopeeLikedViewMode, shopeeOfferCategory]);
 
   const shopeeImportAmountOptions = useMemo(
     () => SHOPEE_IMPORT_AMOUNT_OPTIONS.filter((option) => shopeeImportSource === 'liked' || option.value !== 'all'),
@@ -1420,6 +1429,31 @@ export default function ProductPanel({
                       />
                     ))}
                   </ScrollView>
+                </View>
+              ) : null}
+
+              {shopeeImportSource === 'liked' ? (
+                <View className="mt-1.5 gap-2">
+                  <Text className="text-kd-caption font-semibold text-kd-text-subtle">มุมมองที่ดึงรูป</Text>
+                  <View className="flex-row gap-2">
+                    <ShopeeImportOptionButton
+                      active={shopeeLikedViewMode === 'buyer'}
+                      fitContent
+                      label="มุมมองผู้ซื้อ"
+                      onPress={() => setShopeeLikedViewMode('buyer')}
+                    />
+                    <ShopeeImportOptionButton
+                      active={shopeeLikedViewMode === 'partner'}
+                      fitContent
+                      label="มุมมองพาร์ทเนอร์"
+                      onPress={() => setShopeeLikedViewMode('partner')}
+                    />
+                  </View>
+                  <Text className="text-kd-caption text-kd-text-subtle">
+                    {shopeeLikedViewMode === 'partner'
+                      ? 'ดึงรูปจากแผงแชร์ (ต้องให้สิทธิ์รูป) — ได้รูปครบกว่าบนบางเครื่อง'
+                      : 'ดึงรูปจากลิงก์รูปโดยตรง (ไม่ต้องให้สิทธิ์) — บางเครื่องอาจไม่ได้รูป'}
+                  </Text>
                 </View>
               ) : null}
             </View>
