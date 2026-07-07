@@ -9,9 +9,16 @@ internal const val TAG = "KubdeeAccessibility"
 internal const val AUTOMATION_NOTIFICATION_CHANNEL_ID = "kubdee_automation"
 internal const val AUTOMATION_NOTIFICATION_ID = 2401
 internal const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
+// Shopee build the automation is verified against. Shown next to the device's installed version so
+// a mismatch (Shopee changed its UI) is obvious. Bump when we test/support a newer Shopee build.
+internal const val SHOPEE_TESTED_VERSION = "3.77.25"
 internal const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = true
 internal const val SHOPEE_IMPORT_SOURCE_LIKED = "liked"
 internal const val SHOPEE_IMPORT_SOURCE_OFFERS = "offers"
+// Liked import using the affiliate "partner" view — cards carry a share button whose share sheet
+// offers an image download (like offers), so it works on devices where the buyer view exposes no
+// image URL to accessibility.
+internal const val SHOPEE_IMPORT_SOURCE_PARTNER_LIKED = "partner_liked"
 internal const val SHOPEE_OFFER_CATEGORY_RECOMMENDED = "แนะนำ"
 
 internal val SHOPEE_OFFER_CATEGORY_TEXTS = listOf(
@@ -23,12 +30,14 @@ internal val SHOPEE_OFFER_CATEGORY_TEXTS = listOf(
   "กลุ่มผลิตภัณฑ์เพื่อสุขภาพ"
 )
 
-internal fun normalizeShopeeImportSource(value: String?): String =
-  if (value?.trim()?.equals(SHOPEE_IMPORT_SOURCE_OFFERS, ignoreCase = true) == true) {
-    SHOPEE_IMPORT_SOURCE_OFFERS
-  } else {
-    SHOPEE_IMPORT_SOURCE_LIKED
+internal fun normalizeShopeeImportSource(value: String?): String {
+  val trimmed = value?.trim()
+  return when {
+    trimmed?.equals(SHOPEE_IMPORT_SOURCE_OFFERS, ignoreCase = true) == true -> SHOPEE_IMPORT_SOURCE_OFFERS
+    trimmed?.equals(SHOPEE_IMPORT_SOURCE_PARTNER_LIKED, ignoreCase = true) == true -> SHOPEE_IMPORT_SOURCE_PARTNER_LIKED
+    else -> SHOPEE_IMPORT_SOURCE_LIKED
   }
+}
 
 internal fun normalizeShopeeOfferCategory(value: String?): String =
   value?.trim()?.takeIf { it.isNotEmpty() } ?: SHOPEE_OFFER_CATEGORY_RECOMMENDED

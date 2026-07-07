@@ -435,10 +435,70 @@ internal fun KubdeeAccessibilityService.tapShopeeShareFirstImageDownloadButton()
 
     visit(root)
     val bounds = candidates.sortedWith(compareBy<Rect> { it.top }.thenByDescending { it.left }).firstOrNull()
-      ?: return false
-    logStep("กดดาวน์โหลดรูปแรกที่ ${bounds.centerX()},${bounds.centerY()}")
-    return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
+    if (bounds != null) {
+      logStep("กดดาวน์โหลดรูปแรกที่ ${bounds.centerX()},${bounds.centerY()}")
+      return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
+    }
+
+    // Fallback: on newer Shopee builds the per-image download icon has no resource id — it's a small
+    // clickable control at the top-right of the first (main) share image. Find it by position so we
+    // download ONLY the first image. We deliberately never tap the "ดาวน์โหลดรูปภาพทั้งหมด" button
+    // (it saves every image / clutters the gallery); if the per-image icon can't be found we bail.
+    val firstImageIcon = findShopeeShareFirstImageDownloadIcon(root, screen)
+    if (firstImageIcon != null) {
+      logStep("กดดาวน์โหลดรูปแรก (ตามตำแหน่ง) ที่ ${firstImageIcon.centerX()},${firstImageIcon.centerY()}")
+      return tapBlocking(firstImageIcon.centerX().toFloat(), firstImageIcon.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
+    }
+    logStep("รูปสินค้า: หาปุ่มดาวน์โหลดรูปแรกไม่เจอ (ไม่กดดาวน์โหลดทั้งหมด)")
+    return false
   }
+
+// The per-image download icon (top-right of the first share image) has no resource id on newer
+// Shopee builds. Find the main image (large node high in the drawer), then the small clickable
+// control overlapping its top-right corner — tapping it downloads just that first image.
+internal fun KubdeeAccessibilityService.findShopeeShareFirstImageDownloadIcon(root: AccessibilityNodeInfo, screen: Rect): Rect? {
+    var mainImage: Rect? = null
+    fun findMainImage(node: AccessibilityNodeInfo?, depth: Int = 0) {
+      if (node == null || depth > 56) return
+      if (node.isVisibleToUser && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) {
+        val b = Rect()
+        node.getBoundsInScreen(b)
+        val bigEnough = b.width() >= (screen.width() * 0.35f).toInt() && b.height() >= (screen.width() * 0.35f).toInt()
+        val highUp = b.top <= screen.top + (screen.height() * 0.12f).toInt() &&
+          b.bottom <= screen.top + (screen.height() * 0.44f).toInt()
+        if (bigEnough && highUp) {
+          val current = mainImage
+          if (current == null || b.left < current.left || (b.left == current.left && b.top < current.top)) {
+            mainImage = Rect(b)
+          }
+        }
+      }
+      for (index in 0 until node.childCount) findMainImage(node.getChild(index), depth + 1)
+    }
+    findMainImage(root)
+    val image = mainImage ?: return null
+
+    val maxW = (screen.width() * 0.2f).toInt()
+    val maxH = (screen.height() * 0.09f).toInt()
+    val candidates = mutableListOf<Rect>()
+    fun findIcon(node: AccessibilityNodeInfo?, depth: Int = 0) {
+      if (node == null || depth > 56) return
+      if (node.isVisibleToUser && node.isClickable && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) {
+        val b = Rect()
+        node.getBoundsInScreen(b)
+        val small = b.width() in 24..maxW && b.height() in 20..maxH
+        val inTopRight = b.centerX() >= image.centerX() &&
+          b.centerX() <= image.right + 24 &&
+          b.centerY() >= image.top - 24 &&
+          b.centerY() <= image.top + image.height() / 2
+        if (small && inTopRight) candidates += Rect(b)
+      }
+      for (index in 0 until node.childCount) findIcon(node.getChild(index), depth + 1)
+    }
+    findIcon(root)
+    return candidates.sortedWith(compareBy<Rect> { it.top }.thenBy { it.left }).firstOrNull()
+  }
+
 
 internal fun KubdeeAccessibilityService.waitForLatestShopeeDownloadedImage(startedAtMs: Long, timeoutMs: Long): String? {
     val start = System.currentTimeMillis()

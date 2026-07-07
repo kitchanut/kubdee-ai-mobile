@@ -657,6 +657,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
         if (importAllLikedItems) 0 else targetImportCount
       )
       beginAutomationForeground("กำลังดึงสินค้า Shopee")
+      logStep("Shopee เวอร์ชัน ${shopeeAppVersionLabel(targetPackage)} · แอปทดสอบกับ $SHOPEE_TESTED_VERSION")
       val importTargetLabel = if (normalizedImportSource == SHOPEE_IMPORT_SOURCE_OFFERS) {
         "โปรแกรม Affiliate > ข้อเสนอ > $normalizedOfferCategory"
       } else {
@@ -669,6 +670,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           "เปิด Shopee > ฉัน > $importTargetLabel (${targetImportCount} รายการ)"
         }
       )
+      freeMemoryBeforeImport(targetPackage)
       closeShopeeBeforeFreshLaunch(targetPackage)
       if (!launchPackage(targetPackage, resetTask = true)) {
         throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")
@@ -747,6 +749,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
       if (!openShopeeLikedList()) {
         throw IllegalStateException("ไม่พบเมนู สิ่งที่ฉันถูกใจ")
+      }
+
+      if (normalizedImportSource == SHOPEE_IMPORT_SOURCE_PARTNER_LIKED) {
+        return importShopeePartnerLikedProducts(
+          targetImportCount = targetImportCount,
+          importAllLikedItems = importAllLikedItems,
+          profileLocalId = profileLocalId,
+          importedKeys = importedKeys,
+          seenCandidateKeys = seenCandidateKeys
+        )
       }
 
       if (!ensureShopeeBuyerLikedView()) {

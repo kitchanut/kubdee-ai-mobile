@@ -61,7 +61,7 @@ export default function AutoPilotScreen({
   onSelectionRequestHandled,
 }: AutoPilotScreenProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const { products: allProducts, isSyncing, syncProducts } = useLibrary();
+  const { products: allProducts } = useLibrary();
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [productSelectSheetOpen, setProductSelectSheetOpen] = useState(false);
   const [productSettingsTab, setProductSettingsTab] = useState<ProductSettingsTab>('image');
@@ -338,7 +338,6 @@ export default function AutoPilotScreen({
           ) : null}
 
           <ProductCatalogBlock
-            isSyncing={isSyncing}
             profileProducts={profileProducts}
             selectedProducts={controller.selectedProducts}
             theme={theme}
@@ -348,9 +347,6 @@ export default function AutoPilotScreen({
             onOpenPreset={openProductPresetSheet}
             onOpenProductSelect={() => setProductSelectSheetOpen(true)}
             onRemoveProduct={(productId) => controller.toggleProduct(productId)}
-            onSyncProducts={() => {
-              void syncProducts();
-            }}
             onUpdateProductField={controller.updateProductField}
           />
         </View>

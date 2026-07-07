@@ -270,6 +270,9 @@ internal fun KubdeeAccessibilityService.openShopeeLikedList(): Boolean {
   val maxAttempts = 12
   repeat(maxAttempts) { attempt ->
     dismissShopeeBlockingPopups()
+    // After the first attempt, also try to close an X-only promo popup (e.g. seasonal sale) that
+    // the text-based dismiss can't handle and that blocks navigation to the liked menu.
+    if (attempt >= 1) dismissShopeePromoPopupByIcon()
 
     if (isShopeeImportListVisible()) {
       return true
@@ -643,6 +646,102 @@ internal fun KubdeeAccessibilityService.switchToShopeeBuyerLikedView(): Boolean 
     return false
   }
 
+// Import the liked list using the affiliate "partner" view. That view renders each product as an
+// OfferCard with a share button (same component as the offers page), so we reuse the offers
+// scrape + share-download pipeline instead of the buyer-view detail/URL flow.
+internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
+    targetImportCount: Int,
+    importAllLikedItems: Boolean,
+    profileLocalId: String?,
+    importedKeys: MutableSet<String>,
+    seenCandidateKeys: MutableSet<String>
+  ): Int {
+    if (!switchToShopeePartnerLikedView()) {
+      throw IllegalStateException("สลับเป็นมุมมองพาร์ทเนอร์ไม่สำเร็จ")
+    }
+
+    // The partner liked list shows a loading spinner for a few seconds after the view switches;
+    // wait — with visible progress so it doesn't look stuck — until the first cards render.
+    val readyStart = System.currentTimeMillis()
+    var lastReadyLog = 0L
+    while (System.currentTimeMillis() - readyStart < 20_000L) {
+      checkStopRequested()
+      if (scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED, logResult = false).isNotEmpty()) {
+        logStep("มุมมองพาร์ทเนอร์โหลดสินค้าแล้ว เริ่มดึง")
+        break
+      }
+      val now = System.currentTimeMillis()
+      if (now - lastReadyLog > 1500L) {
+        logStep("กำลังรอมุมมองพาร์ทเนอร์โหลดสินค้า ${((now - readyStart) / 1000.0).formatOneDecimal()} วิ")
+        lastReadyLog = now
+      }
+      sleepStep(500L)
+    }
+
+    var noNewRounds = 0
+    val maxRounds = if (importAllLikedItems) 240 else maxOf(12, targetImportCount)
+    var shareAttemptCount = 0
+
+    for (round in 1..maxRounds) {
+      checkStopRequested()
+      val visibleProducts = scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED)
+
+      // Stop at the "คุณอาจจะชอบสิ่งนี้" recommendation section — those are suggestions, not the
+      // user's liked items. Only scrape cards above that header, then end the run.
+      val recommendationTop = rootInActiveWindow?.let { node ->
+        val textNodes = mutableListOf<TextNode>()
+        collectTextNodes(node, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+        findShopeeRecommendationStartY(textNodes)
+      }
+      val likedCandidates = if (recommendationTop != null) {
+        visibleProducts.filter { it.shareBounds.top < recommendationTop }
+      } else {
+        visibleProducts
+      }
+
+      var added = 0
+      for (candidate in likedCandidates) {
+        checkStopRequested()
+        val candidateKey = candidate.product.externalProductId ?: candidate.product.productUrl ?: stableProductKey(candidate.product)
+        val candidateAttemptKey = shopeeLikedCandidateAttemptKey(candidate.product)
+        if (importedKeys.contains(candidateKey) || !seenCandidateKeys.add(candidateAttemptKey)) {
+          logStep("ข้ามสินค้าถูกใจที่เห็นซ้ำ: ${candidate.product.name}")
+          continue
+        }
+
+        shareAttemptCount += 1
+        logStep("กดแชร์สินค้าถูกใจ (พาร์ทเนอร์) $shareAttemptCount: ${candidate.product.name}")
+        val product = enrichShopeeProductFromPartnerShare(candidate)?.copy(status = SHOPEE_IMPORT_SOURCE_LIKED)
+          ?: candidate.product.copy(status = SHOPEE_IMPORT_SOURCE_LIKED)
+        val key = product.externalProductId ?: product.productUrl ?: stableProductKey(product)
+        if (importedKeys.add(key)) {
+          seenCandidateKeys.add(shopeeLikedCandidateAttemptKey(product))
+          added += 1
+          updateAutomationStats(currentCount = importedKeys.size, successCount = importedKeys.size)
+          logStep("บันทึกสินค้าถูกใจแล้ว รวม ${importedKeys.size}: ${product.name}")
+          KubdeeAutomationIpc.sendShopeeImportProduct(this, product, profileLocalId = profileLocalId)
+          if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+        }
+      }
+
+      logStep("หน้าถูกใจ (พาร์ทเนอร์) รอบ $round พบใหม่ $added รวม ${importedKeys.size}")
+      if (!importAllLikedItems && importedKeys.size >= targetImportCount) break
+
+      if (recommendationTop != null) {
+        logStep("เจอหัวข้อ คุณอาจจะชอบสิ่งนี้ จบรายการถูกใจ (พาร์ทเนอร์)")
+        break
+      }
+
+      noNewRounds = if (added == 0) noNewRounds + 1 else 0
+      if (noNewRounds >= 3) break
+
+      if (!scrollShopeeAffiliateOffersList()) break
+      sleepStep(1500L)
+    }
+
+    return importedKeys.size
+  }
+
 internal fun KubdeeAccessibilityService.switchToShopeePartnerLikedView(): Boolean {
     if (isShopeePartnerLikedViewVisible()) {
       logStep("อยู่ในมุมมองพาร์ทเนอร์แล้ว")
@@ -777,8 +876,27 @@ internal fun KubdeeAccessibilityService.clickShopeePartnerViewOption(): Boolean 
     return tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
   }
 
+// The liked view switcher dropdown lists BOTH "มุมมองผู้ซื้อ" and "มุมมองพาร์ทเนอร์" while open.
+// Seeing both means the switcher is open (mid-switch) and we are settled in neither view — the
+// visibility checks below must not treat a dropdown option as the active-view title.
+internal fun KubdeeAccessibilityService.isShopeeLikedViewSwitcherOpen(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val hasBuyer = textNodes.any { node ->
+      node.node.isVisibleToUser &&
+        (node.text.contains("มุมมองผู้ซื้อ", ignoreCase = true) || node.text.contains("Buyer View", ignoreCase = true))
+    }
+    val hasPartner = textNodes.any { node ->
+      node.node.isVisibleToUser &&
+        (node.text.contains("มุมมองพาร์ทเนอร์", ignoreCase = true) || node.text.contains("Partner View", ignoreCase = true))
+    }
+    return hasBuyer && hasPartner
+  }
+
 internal fun KubdeeAccessibilityService.isShopeeBuyerLikedViewVisible(): Boolean {
     if (!isShopeeLikedListVisible()) return false
+    if (isShopeeLikedViewSwitcherOpen()) return false
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
@@ -802,6 +920,7 @@ internal fun KubdeeAccessibilityService.isShopeePartnerLikedViewVisible(): Boole
     val textNodes = mutableListOf<TextNode>()
     collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     if (textNodes.isEmpty()) return false
+    if (isShopeeLikedViewSwitcherOpen()) return false
 
     val topLimit = screen.top + (screen.height() * 0.22f).toInt()
     val hasPartnerTitle = textNodes.any { node ->

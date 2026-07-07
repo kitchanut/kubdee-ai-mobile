@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.8',
+    date: '2026-07-07',
+    highlight: 'เลือกมุมมองตอนดึงสินค้า "ถูกใจ" ได้ (เพิ่มมุมมองพาร์ทเนอร์)',
+    changes: [
+      {
+        type: 'added',
+        text: 'เพิ่มตัวเลือกมุมมองตอนดึงสินค้าจาก "ถูกใจ" — เลือก "มุมมองพาร์ทเนอร์" เพื่อดึงรูปจากแผงแชร์ ช่วยให้ได้รูปครบขึ้นบนเครื่องที่มุมมองผู้ซื้อดึงรูปไม่ได้',
+      },
+    ],
+  },
+  {
     version: '0.3.7',
     date: '2026-07-07',
     highlight: 'ปรับ UX การขอสิทธิ์รูปให้ลื่นขึ้น',

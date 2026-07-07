@@ -1,5 +1,5 @@
 import { Image, Pressable, View } from 'react-native';
-import { ChevronDown, FolderOpen, Image as ImageIcon, Link2, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react-native';
+import { ChevronDown, FolderOpen, Image as ImageIcon, Link2, Plus, Settings2, Trash2, X } from 'lucide-react-native';
 import Text from '@/components/ui/KubdeeText';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,6 @@ import type { AutoPilotProduct } from '@/autopilot/types';
 import { type AutoPilotProductEditableField } from '../constants';
 
 export function ProductCatalogBlock({
-  isSyncing,
   profileProducts,
   selectedProducts,
   theme,
@@ -22,10 +21,8 @@ export function ProductCatalogBlock({
   onOpenPreset,
   onOpenProductSelect,
   onRemoveProduct,
-  onSyncProducts,
   onUpdateProductField,
 }: {
-  isSyncing: boolean;
   profileProducts: AffiliateProduct[];
   selectedProducts: AutoPilotProduct[];
   theme: KubdeeTheme;
@@ -35,7 +32,6 @@ export function ProductCatalogBlock({
   onOpenPreset: () => void;
   onOpenProductSelect: () => void;
   onRemoveProduct: (productId: string) => void;
-  onSyncProducts: () => void;
   onUpdateProductField: (productId: string, field: AutoPilotProductEditableField, value: string) => void;
 }): React.JSX.Element {
   return (
@@ -130,19 +126,6 @@ export function ProductCatalogBlock({
               <Text className="text-kd-caption font-semibold text-kd-text">เพิ่มเอง</Text>
             </Pressable>
           </View>
-          {profileProducts.length === 0 ? (
-            <Button
-              accessibilityLabel="ซิงก์คลังสินค้า"
-              accessibilityRole="button"
-              disabled={isSyncing}
-              variant="ghost"
-              onPress={onSyncProducts}
-              className="h-8 flex-row items-center justify-center gap-1 rounded-kd-md border border-kd-border bg-kd-input px-2"
-            >
-              <RefreshCw size={13} color={theme.textSubtle} strokeWidth={2.1} />
-              <Text className="text-kd-caption font-medium text-kd-text-subtle">{isSyncing ? 'กำลังซิงก์...' : 'ซิงก์คลังสินค้า'}</Text>
-            </Button>
-          ) : null}
         </View>
       )}
     </View>

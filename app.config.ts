@@ -22,7 +22,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     ...config.android,
     package: 'ai.kubdee.mobile',
-    versionCode: 137,
+    versionCode: 138,
     predictiveBackGestureEnabled: false,
     permissions: [
       'android.permission.INTERNET',
@@ -36,6 +36,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.VIBRATE',
       'android.permission.REQUEST_INSTALL_PACKAGES',
+      // See other apps so we can free their background RAM before a heavy import on low-RAM phones.
+      'android.permission.QUERY_ALL_PACKAGES',
     ],
     adaptiveIcon: {
       backgroundColor: '#111827',
