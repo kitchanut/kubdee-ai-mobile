@@ -435,9 +435,36 @@ internal fun KubdeeAccessibilityService.tapShopeeShareFirstImageDownloadButton()
 
     visit(root)
     val bounds = candidates.sortedWith(compareBy<Rect> { it.top }.thenByDescending { it.left }).firstOrNull()
-      ?: return false
-    logStep("กดดาวน์โหลดรูปแรกที่ ${bounds.centerX()},${bounds.centerY()}")
-    return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
+    if (bounds != null) {
+      logStep("กดดาวน์โหลดรูปแรกที่ ${bounds.centerX()},${bounds.centerY()}")
+      return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
+    }
+
+    // Fallback for Shopee builds whose share sheet shows a single "ดาวน์โหลดรูปภาพทั้งหมด" button
+    // (download-all) instead of a per-image download icon with a resource id — match it by text.
+    val downloadByText = findShopeeShareDownloadImagesButtonByText(root, screen)
+    if (downloadByText != null) {
+      logStep("กดปุ่มดาวน์โหลดรูปภาพ (ปุ่มข้อความ) ที่ ${downloadByText.centerX()},${downloadByText.centerY()}")
+      return tapBlocking(downloadByText.centerX().toFloat(), downloadByText.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
+    }
+    return false
+  }
+
+// Some Shopee versions render the share-sheet image download as a single text button
+// ("ดาวน์โหลดรูปภาพทั้งหมด") with no per-image resource id. Locate it by text as a fallback.
+internal fun KubdeeAccessibilityService.findShopeeShareDownloadImagesButtonByText(root: AccessibilityNodeInfo, screen: Rect): Rect? {
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val match = textNodes.firstOrNull { node ->
+      node.node.isVisibleToUser &&
+        node.text.contains("ดาวน์โหลด", ignoreCase = true) &&
+        (
+          node.text.contains("รูป", ignoreCase = true) ||
+            node.text.contains("ภาพ", ignoreCase = true) ||
+            node.text.contains("image", ignoreCase = true)
+        )
+    } ?: return null
+    return findSmallClickableAncestorBounds(match.node, match.bounds, screen)
   }
 
 internal fun KubdeeAccessibilityService.waitForLatestShopeeDownloadedImage(startedAtMs: Long, timeoutMs: Long): String? {
