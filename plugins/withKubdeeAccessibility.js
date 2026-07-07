@@ -227,6 +227,7 @@ function withKubdeeAccessibility(config, props = {}) {
         accessibilityPackageKt(packageName)
       );
       patchMainApplication(path.join(javaRoot, 'MainApplication.kt'), packageName);
+      patchMainActivity(path.join(javaRoot, 'MainActivity.kt'));
 
       return config;
     },
@@ -272,6 +273,39 @@ function patchStylesXml(filePath) {
   }
   source = source.replace(/\s*<\/resources>\s*$/, `\n${styleBlock}\n</resources>\n`);
   writeFileIfChanged(filePath, source);
+}
+
+// Strip the (potentially huge) view-hierarchy state Android serialises when the
+// activity is stopped. A large native view — e.g. a TextInput holding a big
+// prompt/base64 string — can push the saved-state Bundle past the ~1MB Binder
+// limit and crash with TransactionTooLargeException on backgrounding (Sentry
+// KUBDEE-AI-2). React Native restores its own JS state (onCreate is called with
+// null), so dropping the Android view-hierarchy state is safe.
+function patchMainActivity(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`MainActivity.kt not found at ${filePath}`);
+  }
+  let source = fs.readFileSync(filePath, 'utf8');
+  if (source.includes('onSaveInstanceState')) {
+    return; // already patched
+  }
+  const override = [
+    '',
+    '  // Avoid TransactionTooLargeException when a large native view saves its state',
+    '  // on backgrounding. React Native restores its own JS state, so dropping the',
+    '  // Android view-hierarchy state is safe.',
+    '  override fun onSaveInstanceState(outState: Bundle) {',
+    '    super.onSaveInstanceState(outState)',
+    '    outState.remove("android:viewHierarchyState")',
+    '  }',
+    '',
+  ].join('\n');
+  // Insert right after onCreate's closing brace.
+  const anchor = '    super.onCreate(null)\n  }\n';
+  if (source.includes(anchor)) {
+    source = source.replace(anchor, `${anchor}${override}`);
+    writeFileIfChanged(filePath, source);
+  }
 }
 
 function patchMainApplication(filePath, packageName) {

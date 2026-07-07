@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.2',
+    date: '2026-07-07',
+    highlight: 'แก้แอปเด้งปิดตอนสลับออกไปแอปอื่นในบางกรณี',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'แก้ปัญหาแอปปิดตัวเอง(crash) ตอนสลับไปแอปอื่นหรือพักหน้าจอ ในกรณีที่กำลังแก้ไขข้อความ/พรอมต์ยาวๆ',
+      },
+    ],
+  },
+  {
     version: '0.3.1',
     date: '2026-07-07',
     highlight: 'เพิ่มระบบตรวจจับข้อผิดพลาดเพื่อให้แก้ปัญหาได้เร็วขึ้น',
