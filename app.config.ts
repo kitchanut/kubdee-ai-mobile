@@ -22,12 +22,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     ...config.android,
     package: 'ai.kubdee.mobile',
-    versionCode: 132,
+    versionCode: 133,
     predictiveBackGestureEnabled: false,
     permissions: [
       'android.permission.INTERNET',
       'android.permission.READ_MEDIA_IMAGES',
       'android.permission.READ_MEDIA_VIDEO',
+      // Android 14+ partial photo access: declared so the runtime dialog behaves
+      // predictably when the user picks "Select photos" instead of "Allow all".
+      'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
       'android.permission.READ_EXTERNAL_STORAGE',
       'android.permission.WRITE_EXTERNAL_STORAGE',
       'android.permission.SYSTEM_ALERT_WINDOW',

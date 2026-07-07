@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, PermissionsAndroid, Platform, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, PermissionsAndroid, Platform, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import type { ListRenderItem } from 'react-native';
 import {
   Cloud,
@@ -150,12 +150,17 @@ function getProductEditImageUri(product: AffiliateProduct): string | null {
     .find((uri): uri is string => isDisplayableProductImageUri(uri)) ?? null;
 }
 
-async function ensureShopeeOfferImagePermission(
+// Best-effort photo-read permission for the "offers" import. Offer images now prefer a
+// permission-free product-image URL and only need this permission for the MediaStore
+// download fallback (products that expose no usable URL). So we request it but NEVER block
+// the import — when it is denied or only partially granted (Android 14+ "Select photos"),
+// the native scraper degrades to URL-only images and the import still completes.
+async function requestShopeeOfferImagePermission(
   source: ShopeeImportSource,
   appendLog: (message: string, ts?: number) => void
-): Promise<boolean> {
+): Promise<void> {
   if (source !== 'offers' || Platform.OS !== 'android') {
-    return true;
+    return;
   }
 
   const apiLevel = getAndroidApiLevel();
@@ -164,39 +169,24 @@ async function ensureShopeeOfferImagePermission(
     : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
 
   if (await PermissionsAndroid.check(permission)) {
-    return true;
+    return;
   }
 
-  appendLog('ต้องขอสิทธิ์อ่านรูปภาพ เพื่อดึงรูปสินค้าจากข้อเสนอ Shopee');
   const result = await PermissionsAndroid.request(permission, {
-    title: 'อนุญาตอ่านรูปสินค้า',
-    message: 'Kubdee AI ต้องอ่านรูปที่ Shopee ดาวน์โหลดจากแผงแชร์ เพื่อบันทึกรูปสินค้าในข้อเสนอ Affiliate',
-    buttonPositive: 'อนุญาต',
-    buttonNegative: 'ยกเลิก',
+    title: 'อนุญาตอ่านรูปสินค้า (ไม่บังคับ)',
+    message: 'Kubdee AI ใช้สิทธิ์นี้เฉพาะรูปข้อเสนอที่ไม่มีลิงก์รูปโดยตรง หากไม่อนุญาต ระบบจะใช้ลิงก์รูปแทนให้อัตโนมัติ',
+    buttonPositive: 'อนุญาตทั้งหมด',
+    buttonNegative: 'ข้ามไปก่อน',
   });
 
+  // On Android 14+ "Select photos" grants only READ_MEDIA_VISUAL_USER_SELECTED, so a full
+  // READ_MEDIA_IMAGES check still returns false here — treat that as the URL-only path too.
   if (result === PermissionsAndroid.RESULTS.GRANTED && await PermissionsAndroid.check(permission)) {
-    appendLog('ได้รับสิทธิ์อ่านรูปภาพแล้ว');
-    return true;
+    appendLog('ได้รับสิทธิ์อ่านรูปภาพแล้ว รูปข้อเสนอจะครบที่สุด');
+    return;
   }
 
-  appendLog('หยุดนำเข้า: ยังไม่ได้อนุญาตอ่านรูปภาพแบบเต็ม จึงดึงรูปข้อเสนอไม่ได้');
-  Alert.alert(
-    'ต้องอนุญาตรูปภาพ',
-    apiLevel >= 33
-      ? 'โปรดอนุญาตรูปภาพทั้งหมด เพื่อให้ Kubdee AI อ่านรูปที่ Shopee ดาวน์โหลดระหว่างนำเข้าข้อเสนอได้'
-      : 'โปรดอนุญาตอ่านพื้นที่จัดเก็บ เพื่อให้ Kubdee AI อ่านรูปที่ Shopee ดาวน์โหลดระหว่างนำเข้าข้อเสนอได้',
-    [
-      { text: 'ยกเลิก', style: 'cancel' },
-      {
-        text: 'เปิดตั้งค่า',
-        onPress: () => {
-          void Linking.openSettings();
-        },
-      },
-    ]
-  );
-  return false;
+  appendLog('ไม่ได้สิทธิ์อ่านรูปแบบเต็ม: รูปข้อเสนอจะใช้ลิงก์รูปแทน (บางรายการที่ไม่มีลิงก์อาจไม่มีรูป)');
 }
 
 export default function ProductPanel({
@@ -621,9 +611,7 @@ export default function ProductPanel({
         return;
       }
 
-      if (!await ensureShopeeOfferImagePermission(source, appendShopeeLog)) {
-        return;
-      }
+      await requestShopeeOfferImagePermission(source, appendShopeeLog);
 
       await storePendingTab('library');
       const scrapedProducts = await runNativeShopeeImport(source, maxItems, selectedProfileId, normalizedOfferCategory);

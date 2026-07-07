@@ -132,9 +132,21 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
         return null
       }
 
-      val downloadStartedAt = System.currentTimeMillis()
-      val downloadedImageUri = downloadFirstShopeeShareImage(downloadStartedAt)
+      // Capture the product-image URL from the share drawer BEFORE tapping download,
+      // while the drawer is still in its initial state (a post-download toast/confirm
+      // can shift the layout and make the URL harder to find).
       val shareImageUrl = findShopeeShareDrawerImageUrl()
+      val httpImageUrl = shareImageUrl ?: product.imageUrl
+
+      // The URL path needs no storage permission and works on every device/Android version.
+      // Only fall back to Shopee's "download image" button — which lands in MediaStore and
+      // requires READ_MEDIA_IMAGES to read back — when no usable URL is available.
+      val downloadedImageUri = if (httpImageUrl == null) {
+        downloadFirstShopeeShareImage(System.currentTimeMillis())
+      } else {
+        null
+      }
+
       val productUrl = copyShopeeProductUrlFromCurrentShareSheet() ?: product.productUrl
       val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
         ?: product.externalProductId
@@ -145,16 +157,16 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromPartnerShare(cand
         logStep("ยังไม่ได้ลิงก์สินค้า ใช้ข้อมูลบนการ์ดเท่าที่มี")
       }
       when {
-        downloadedImageUri != null -> logStep("รูปสินค้า: ดาวน์โหลดจากแผงแชร์สำเร็จ")
-        shareImageUrl != null -> logStep("รูปสินค้า: ดาวน์โหลดไม่ได้ -> ใช้ URL จากแผงแชร์")
-        product.imageUrl != null -> logStep("รูปสินค้า: ใช้ URL จากการ์ดข้อเสนอ")
-        else -> logStep("รูปสินค้า: ไม่พบจากดาวน์โหลด/แผงแชร์/การ์ดข้อเสนอ")
+        shareImageUrl != null -> logStep("รูปสินค้า: ใช้ URL จากแผงแชร์ (ไม่ต้องใช้สิทธิ์รูป)")
+        product.imageUrl != null -> logStep("รูปสินค้า: ใช้ URL จากการ์ดข้อเสนอ (ไม่ต้องใช้สิทธิ์รูป)")
+        downloadedImageUri != null -> logStep("รูปสินค้า: ไม่มี URL -> ดาวน์โหลดจากแผงแชร์สำเร็จ")
+        else -> logStep("รูปสินค้า: ไม่พบจาก URL แผงแชร์/การ์ด และดาวน์โหลดไม่ได้")
       }
 
       return product.copy(
         productUrl = productUrl,
         externalProductId = externalProductId,
-        imageUrl = downloadedImageUri ?: shareImageUrl ?: product.imageUrl,
+        imageUrl = httpImageUrl ?: downloadedImageUri,
         scrapedAt = System.currentTimeMillis()
       )
     } finally {
