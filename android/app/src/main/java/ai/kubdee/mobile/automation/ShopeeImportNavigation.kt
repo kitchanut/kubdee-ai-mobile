@@ -844,8 +844,27 @@ internal fun KubdeeAccessibilityService.clickShopeePartnerViewOption(): Boolean 
     return tapBlocking(tapBounds.centerX().toFloat(), tapBounds.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
   }
 
+// The liked view switcher dropdown lists BOTH "มุมมองผู้ซื้อ" and "มุมมองพาร์ทเนอร์" while open.
+// Seeing both means the switcher is open (mid-switch) and we are settled in neither view — the
+// visibility checks below must not treat a dropdown option as the active-view title.
+internal fun KubdeeAccessibilityService.isShopeeLikedViewSwitcherOpen(): Boolean {
+    val root = rootInActiveWindow ?: return false
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val hasBuyer = textNodes.any { node ->
+      node.node.isVisibleToUser &&
+        (node.text.contains("มุมมองผู้ซื้อ", ignoreCase = true) || node.text.contains("Buyer View", ignoreCase = true))
+    }
+    val hasPartner = textNodes.any { node ->
+      node.node.isVisibleToUser &&
+        (node.text.contains("มุมมองพาร์ทเนอร์", ignoreCase = true) || node.text.contains("Partner View", ignoreCase = true))
+    }
+    return hasBuyer && hasPartner
+  }
+
 internal fun KubdeeAccessibilityService.isShopeeBuyerLikedViewVisible(): Boolean {
     if (!isShopeeLikedListVisible()) return false
+    if (isShopeeLikedViewSwitcherOpen()) return false
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
     val textNodes = mutableListOf<TextNode>()
@@ -869,6 +888,7 @@ internal fun KubdeeAccessibilityService.isShopeePartnerLikedViewVisible(): Boole
     val textNodes = mutableListOf<TextNode>()
     collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     if (textNodes.isEmpty()) return false
+    if (isShopeeLikedViewSwitcherOpen()) return false
 
     val topLimit = screen.top + (screen.height() * 0.22f).toInt()
     val hasPartnerTitle = textNodes.any { node ->
