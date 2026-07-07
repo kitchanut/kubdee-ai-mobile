@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const ORG = 'ie-advidor';
-const PROJECT = 'kubdee-ai';
+const PROJECT = 'kubdee-ai-mobile';
 const BASE = 'https://sentry.io/api/0';
 
 function token() {
