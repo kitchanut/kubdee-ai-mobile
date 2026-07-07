@@ -669,6 +669,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
           "เปิด Shopee > ฉัน > $importTargetLabel (${targetImportCount} รายการ)"
         }
       )
+      freeMemoryBeforeImport(targetPackage)
       closeShopeeBeforeFreshLaunch(targetPackage)
       if (!launchPackage(targetPackage, resetTask = true)) {
         throw IllegalStateException("เปิด Shopee ไม่สำเร็จ")

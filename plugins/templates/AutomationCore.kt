@@ -88,6 +88,47 @@ internal fun KubdeeAccessibilityService.launchKubdeeShopeePostList(): Boolean =
     }
   )
 
+// Free up RAM before a heavy Shopee session. On low-RAM phones the combined Shopee + automation +
+// image work can breach the system low-memory watermark, and the OS then kills our automation/main
+// process (import dies). We hold KILL_BACKGROUND_PROCESSES, so trim other apps' BACKGROUND processes
+// (foreground/persistent apps are unaffected; the OS restarts services as needed). Pure system apps
+// (launcher, systemui, settings) are left alone. Only runs when memory is actually tight.
+internal fun KubdeeAccessibilityService.freeMemoryBeforeImport(keepPackage: String) {
+  val activityManager = getSystemService(android.content.Context.ACTIVITY_SERVICE) as? ActivityManager ?: return
+  val before = ActivityManager.MemoryInfo()
+  activityManager.getMemoryInfo(before)
+  val lowRamDevice = activityManager.isLowRamDevice || before.totalMem < 4_500_000_000L
+  val lowFree = before.availMem < 1_200_000_000L
+  if (!lowRamDevice && !lowFree) {
+    return
+  }
+
+  logStep("RAM ว่าง ${before.availMem / (1024 * 1024)}MB — เคลียร์แอปพื้นหลังก่อนเริ่ม")
+  var killed = 0
+  try {
+    for (appInfo in packageManager.getInstalledApplications(0)) {
+      val pkg = appInfo.packageName
+      if (pkg == packageName || pkg == keepPackage) continue
+      val isSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+      val isUpdatedSystem = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+      if (isSystem && !isUpdatedSystem) continue
+      try {
+        activityManager.killBackgroundProcesses(pkg)
+        killed += 1
+      } catch (_: Exception) {
+        // ignore per-package failures
+      }
+    }
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to free memory before import", error)
+  }
+
+  val after = ActivityManager.MemoryInfo()
+  activityManager.getMemoryInfo(after)
+  logStep("เคลียร์แอปพื้นหลัง $killed แอป — RAM ว่างตอนนี้ ${after.availMem / (1024 * 1024)}MB")
+  sleepStep(400L)
+}
+
 internal fun KubdeeAccessibilityService.closeShopeeBeforeFreshLaunch(packageName: String) {
   logStep("ปิด Shopee เดิมก่อนเริ่มงาน")
   performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
