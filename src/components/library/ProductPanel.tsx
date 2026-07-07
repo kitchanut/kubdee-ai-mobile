@@ -154,7 +154,8 @@ function getProductEditImageUri(product: AffiliateProduct): string | null {
 // image URL and only use this permission for the MediaStore download fallback (products that
 // expose no usable URL). When it is NOT granted we warn before EVERY offer import so the user
 // knows some images may be missing, and let them grant, continue anyway, or cancel. Returns false
-// only when the user cancels; otherwise the import proceeds best-effort (URL-only when denied).
+// (import aborted) when the user cancels or when we send them to Settings to grant a permission the
+// system has blocked from re-prompting; otherwise proceeds best-effort (URL-only when denied).
 // Not relevant to the "liked" import, which reads image URLs directly and needs no permission.
 async function confirmShopeeOfferImagePermission(
   source: ShopeeImportSource,
@@ -202,12 +203,16 @@ async function confirmShopeeOfferImagePermission(
     // READ_MEDIA_IMAGES check still returns false here — treat that as the URL-only path too.
     if (result === PermissionsAndroid.RESULTS.GRANTED && await PermissionsAndroid.check(permission)) {
       appendLog('ได้รับสิทธิ์อ่านรูปภาพแล้ว รูปข้อเสนอจะครบที่สุด');
-    } else if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
-      appendLog('ระบบปิดการถามสิทธิ์รูป -> เปิดหน้าตั้งค่าให้ (ดึงต่อโดยใช้ลิงก์รูปแทน)');
-      void Linking.openSettings();
-    } else {
-      appendLog('ยังไม่ได้สิทธิ์อ่านรูปแบบเต็ม: ดึงต่อโดยใช้ลิงก์รูปแทน');
+      return true;
     }
+    if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+      // The system won't show the dialog anymore — send the user to Settings and stop this run so
+      // they can grant there, then re-import and get complete images from the first pass.
+      appendLog('ยกเลิกการนำเข้า: เปิดหน้าตั้งค่าให้แล้ว โปรดเปิดสิทธิ์รูปภาพแล้วกดดึงใหม่');
+      void Linking.openSettings();
+      return false;
+    }
+    appendLog('ยังไม่ได้สิทธิ์อ่านรูปแบบเต็ม: ดึงต่อโดยใช้ลิงก์รูปแทน');
     return true;
   }
 

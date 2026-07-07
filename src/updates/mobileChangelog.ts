@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.7',
+    date: '2026-07-07',
+    highlight: 'ปรับ UX การขอสิทธิ์รูปให้ลื่นขึ้น',
+    changes: [
+      {
+        type: 'improved',
+        text: 'เมื่อสิทธิ์รูปภาพถูกปิดไว้จนระบบไม่ให้ถามซ้ำ แอปจะพาไปหน้าตั้งค่าและหยุดการดึงรอบนั้นไว้ก่อน เพื่อให้เปิดสิทธิ์เสร็จแล้วกดดึงใหม่ได้รูปครบตั้งแต่รอบแรก',
+      },
+    ],
+  },
+  {
     version: '0.3.6',
     date: '2026-07-07',
     highlight: 'เตือนก่อนดึง "ข้อเสนอ" เมื่อยังไม่ได้ให้สิทธิ์รูปภาพ',
