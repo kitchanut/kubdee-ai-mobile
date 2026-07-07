@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { AppState } from 'react-native';
 
 import { useAuth } from '@/auth/AuthContext';
+import { flushShopeeScrapeDiagnostic } from '@/lib/shopeeDiagnostic';
 import { getOrCreateSyncDeviceId, getStoredAuthTokens } from '@/auth/storage';
 import { deleteAffiliateProducts, fetchAffiliateProducts, syncAffiliateProducts } from '@/library/api';
 import type { SyncAffiliateProductInput } from '@/library/api';
@@ -1104,6 +1106,17 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     setSyncError(null);
     setLastSyncedAt(null);
   }, [token]);
+
+  // When the app returns to foreground (e.g. after tapping "report problem" then "back" from the
+  // Shopee overlay), forward any diagnostic the native side wrote to Sentry.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void flushShopeeScrapeDiagnostic({ trigger: 'foreground' });
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!token || !isPlanValid) {

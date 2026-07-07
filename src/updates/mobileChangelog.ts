@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.10',
+    date: '2026-07-08',
+    highlight: 'กด Stop แล้วหยุดค้างหน้านั้น + ปุ่มรายงานปัญหา',
+    changes: [
+      {
+        type: 'improved',
+        text: 'กดหยุด (Stop) ระหว่างดึง/โพสต์ Shopee จะหยุดค้างที่หน้านั้นทันที พร้อมปุ่ม "รายงานปัญหา" (ส่ง log + ภาพหน้าจอให้ทีม) และ "กลับแอป"',
+      },
+    ],
+  },
+  {
     version: '0.3.9',
     date: '2026-07-08',
     highlight: 'ส่งข้อมูลวินิจฉัยอัตโนมัติเมื่อดึงสินค้าไม่สำเร็จ',

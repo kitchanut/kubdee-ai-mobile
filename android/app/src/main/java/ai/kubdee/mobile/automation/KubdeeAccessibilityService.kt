@@ -63,6 +63,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
   internal val mainHandler = Handler(Looper.getMainLooper())
   internal var overlayView: LinearLayout? = null
   internal var overlayStopButton: Button? = null
+  internal var overlayReportButton: Button? = null
+  internal var overlayBackButton: Button? = null
   internal var overlayTitleView: TextView? = null
   internal var overlaySubtitleView: TextView? = null
   internal var overlayChipRow: LinearLayout? = null
@@ -486,9 +488,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
         errorMessage = error.message ?: "Shopee import failed"
         Log.e(TAG, "Shopee import runner failed", error)
       } finally {
-        val shouldReturnToKubdee = errorMessage == null
+        val stoppedByUser = stopRequested
+        val shouldReturnToKubdee = errorMessage == null && !stoppedByUser
         if (shouldReturnToKubdee) {
           logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า (${importedCount} รายการ)")
+        } else if (stoppedByUser) {
+          logStep("หยุดแล้ว — กด 'รายงานปัญหา' เพื่อส่งข้อมูลให้ทีม หรือ 'กลับแอป'")
         }
         KubdeeAutomationIpc.sendShopeeImportFinished(
           this,
@@ -500,6 +505,9 @@ class KubdeeAccessibilityService : AccessibilityService() {
         )
         if (shouldReturnToKubdee) {
           mainHandler.postDelayed({ launchKubdeeLibrary() }, 250L)
+        } else if (stoppedByUser) {
+          // Stay on the current screen and offer report / back controls.
+          showAutomationStoppedControls()
         }
         if (shopeeImportThread === Thread.currentThread()) {
           shopeeImportThread = null
@@ -551,7 +559,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
         }
       }
 
-      logStep("กลับไป Kubdee AI เพื่อเปิดรายการ Shopee Post")
+      val postStoppedByUser = stopRequested
+      logStep(
+        if (postStoppedByUser) "หยุดแล้ว — กด 'รายงานปัญหา' เพื่อส่งข้อมูลให้ทีม หรือ 'กลับแอป'"
+        else "กลับไป Kubdee AI เพื่อเปิดรายการ Shopee Post"
+      )
       KubdeeAutomationIpc.sendShopeePostFinished(
         this,
         runId,
@@ -559,7 +571,11 @@ class KubdeeAccessibilityService : AccessibilityService() {
         error = result.optString("error").takeIf { it.isNotBlank() },
         stopped = result.optBoolean("stopped", false)
       )
-      mainHandler.postDelayed({ launchKubdeeShopeePostList() }, 250L)
+      if (postStoppedByUser) {
+        showAutomationStoppedControls()
+      } else {
+        mainHandler.postDelayed({ launchKubdeeShopeePostList() }, 250L)
+      }
       if (shopeePostThread === Thread.currentThread()) {
         shopeePostThread = null
       }

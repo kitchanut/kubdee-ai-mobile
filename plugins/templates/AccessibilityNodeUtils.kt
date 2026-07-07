@@ -524,3 +524,62 @@ internal fun KubdeeAccessibilityService.writeShopeeScrapeDiagnostic(mode: String
     Log.w(TAG, "Unable to write scrape diagnostic", error)
   }
 }
+
+// Manual "report problem" diagnostic (user-triggered after Stop): the full run log + current-screen
+// tree + a screenshot, so we can debug any issue on any device. Written to the shared files dir;
+// the JS side forwards them to Sentry when the app returns to the foreground.
+internal fun KubdeeAccessibilityService.writeShopeeReportDiagnostic() {
+  try {
+    val header = buildString {
+      append("type=manual-report\n")
+      append("shopee=${shopeeAppVersionLabel(TARGET_PACKAGE_SHOPEE)}\n")
+      append("device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (Android ${android.os.Build.VERSION.RELEASE})\n")
+      append("--- LOG ---\n")
+      append(fullAutomationLogText())
+      append("\n--- TREE ---\n")
+    }
+    java.io.File(filesDir, "shopee-diagnostic-latest.txt").writeText(header + dumpShopeeAccessibilityTree())
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to write report diagnostic", error)
+  }
+  takeAutomationScreenshotToFile()
+}
+
+// Capture a downscaled screenshot of the current screen to the files dir (best-effort; API 30+).
+internal fun KubdeeAccessibilityService.takeAutomationScreenshotToFile() {
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+  try {
+    takeScreenshot(
+      android.view.Display.DEFAULT_DISPLAY,
+      mainExecutor,
+      object : AccessibilityService.TakeScreenshotCallback {
+        override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+          try {
+            val buffer = result.hardwareBuffer
+            val bitmap = android.graphics.Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+            buffer.close()
+            if (bitmap != null) {
+              val scaled = if (bitmap.width > 800) {
+                val ratio = 800f / bitmap.width
+                android.graphics.Bitmap.createScaledBitmap(bitmap, 800, (bitmap.height * ratio).toInt(), true)
+              } else {
+                bitmap
+              }
+              java.io.File(filesDir, "shopee-diagnostic-screenshot.jpg").outputStream().use { out ->
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 55, out)
+              }
+            }
+          } catch (error: Exception) {
+            Log.w(TAG, "Unable to save automation screenshot", error)
+          }
+        }
+
+        override fun onFailure(errorCode: Int) {
+          Log.w(TAG, "takeScreenshot failed: $errorCode")
+        }
+      }
+    )
+  } catch (error: Exception) {
+    Log.w(TAG, "takeScreenshot error", error)
+  }
+}

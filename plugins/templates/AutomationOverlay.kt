@@ -201,6 +201,7 @@ internal fun KubdeeAccessibilityService.removeAutomationOverlay(removeTapIndicat
       }
     }
     overlayStopButton = null
+    removeAutomationStoppedControls()
   }
 }
 
@@ -501,6 +502,100 @@ internal fun KubdeeAccessibilityService.ensureAutomationStopButton(): Button? {
   }
 
   return button
+}
+
+private fun KubdeeAccessibilityService.createOverlayActionButton(
+  label: String,
+  bgColor: Int,
+  widthDp: Int,
+  xOffsetDp: Int,
+  onClick: () -> Unit
+): Button? {
+  val button = Button(this).apply {
+    text = label
+    textSize = 10f
+    typeface = Typeface.DEFAULT_BOLD
+    isAllCaps = false
+    includeFontPadding = false
+    minHeight = 0
+    minWidth = 0
+    minimumHeight = 0
+    minimumWidth = 0
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    setTextColor(Color.WHITE)
+    setPadding(dp(8), 0, dp(8), 0)
+    background = GradientDrawable().apply {
+      setColor(bgColor)
+      cornerRadius = dp(999).toFloat()
+      setStroke(dp(1), Color.argb(150, 255, 255, 255))
+    }
+    setOnClickListener { onClick() }
+  }
+  val params = WindowManager.LayoutParams(
+    dp(widthDp),
+    dp(30),
+    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+    PixelFormat.TRANSLUCENT
+  ).apply {
+    gravity = Gravity.TOP or Gravity.END
+    x = dp(xOffsetDp)
+    y = automationOverlayTopOffset() + dp(10)
+  }
+  return try {
+    automationWindowManager.addView(button, params)
+    button
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to show overlay action button", error)
+    null
+  }
+}
+
+// After Stop: replace the Stop button with "report problem" + "back to app" controls, keeping the
+// overlay on the current screen so the user can report the exact frozen state.
+internal fun KubdeeAccessibilityService.showAutomationStoppedControls() {
+  mainHandler.post {
+    if (KubdeeAccessibilityService.getInstance() !== this || automationFloatingUiSuppressed) return@post
+    updateAutomationStats(statusLabel = "STOPPED")
+    updateAutomationOverlayContent()
+    overlayStopButton?.let {
+      try { automationWindowManager.removeView(it) } catch (_: Exception) {}
+    }
+    overlayStopButton = null
+    if (overlayReportButton == null) {
+      overlayReportButton = createOverlayActionButton("รายงานปัญหา", Color.rgb(37, 99, 235), 104, 116) {
+        reportAutomationProblem()
+      }
+    }
+    if (overlayBackButton == null) {
+      overlayBackButton = createOverlayActionButton("กลับแอป", Color.rgb(71, 85, 105), 72, 18) {
+        exitAutomationAfterStop()
+      }
+    }
+  }
+}
+
+internal fun KubdeeAccessibilityService.removeAutomationStoppedControls() {
+  overlayReportButton?.let { try { automationWindowManager.removeView(it) } catch (_: Exception) {} }
+  overlayReportButton = null
+  overlayBackButton?.let { try { automationWindowManager.removeView(it) } catch (_: Exception) {} }
+  overlayBackButton = null
+}
+
+internal fun KubdeeAccessibilityService.reportAutomationProblem() {
+  writeShopeeReportDiagnostic()
+  overlayReportButton?.apply {
+    text = "ส่งแล้ว"
+    isEnabled = false
+  }
+  android.widget.Toast.makeText(this, "ส่งข้อมูลปัญหาแล้ว — จะถึงทีมเมื่อกลับเข้าแอป", android.widget.Toast.LENGTH_LONG).show()
+}
+
+internal fun KubdeeAccessibilityService.exitAutomationAfterStop() {
+  removeAutomationStoppedControls()
+  removeAutomationOverlay(removeTapIndicator = true)
+  endAutomationForeground()
+  mainHandler.postDelayed({ launchKubdeeLibrary() }, 150L)
 }
 
 internal fun KubdeeAccessibilityService.shouldShowAutomationTapIndicator(): Boolean =

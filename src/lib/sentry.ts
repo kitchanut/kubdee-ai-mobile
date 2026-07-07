@@ -53,12 +53,16 @@ export function initTelemetry(): void {
 export function captureShopeeDiagnostic(
   message: string,
   dump: string,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
+  screenshot?: Uint8Array
 ): void {
-  if (!dump) return;
+  if (!dump && !screenshot) return;
   try {
     Sentry.withScope((scope) => {
-      scope.addAttachment({ filename: 'shopee-tree.txt', data: dump });
+      if (dump) scope.addAttachment({ filename: 'shopee-tree.txt', data: dump });
+      if (screenshot) {
+        scope.addAttachment({ filename: 'shopee-screenshot.jpg', data: screenshot, contentType: 'image/jpeg' });
+      }
       Sentry.captureMessage(message, { level: 'warning', extra: context });
     });
   } catch {

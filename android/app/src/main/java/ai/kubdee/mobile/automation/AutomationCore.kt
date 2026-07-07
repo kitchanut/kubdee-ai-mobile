@@ -356,7 +356,7 @@ internal fun KubdeeAccessibilityService.sleepStep(ms: Long) {
   while (System.currentTimeMillis() < endAt) {
     checkStopRequested()
     try {
-      Thread.sleep(minOf(250L, endAt - System.currentTimeMillis()).coerceAtLeast(1L))
+      Thread.sleep(minOf(100L, endAt - System.currentTimeMillis()).coerceAtLeast(1L))
     } catch (error: InterruptedException) {
       Thread.currentThread().interrupt()
       throw error
@@ -440,11 +440,17 @@ internal fun KubdeeAccessibilityService.addAutomationLogLine(message: String) {
   val stamp = java.text.SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(java.util.Date())
   synchronized(automationLogLines) {
     automationLogLines.add("$stamp $message")
-    while (automationLogLines.size > 40) {
+    // Keep a generous history so the "report problem" diagnostic carries the whole run, not just
+    // the few lines the overlay shows.
+    while (automationLogLines.size > 200) {
       automationLogLines.removeAt(0)
     }
   }
 }
+
+// The full run log (all buffered lines) — used by the manual "report problem" diagnostic.
+internal fun KubdeeAccessibilityService.fullAutomationLogText(): String =
+  synchronized(automationLogLines) { automationLogLines.joinToString("\n") }
 
 internal fun KubdeeAccessibilityService.latestAutomationLogText(): String {
   val (lines, logCount) = synchronized(automationLogLines) {
