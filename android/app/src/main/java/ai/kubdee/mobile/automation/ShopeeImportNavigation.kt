@@ -270,6 +270,9 @@ internal fun KubdeeAccessibilityService.openShopeeLikedList(): Boolean {
   val maxAttempts = 12
   repeat(maxAttempts) { attempt ->
     dismissShopeeBlockingPopups()
+    // After the first attempt, also try to close an X-only promo popup (e.g. seasonal sale) that
+    // the text-based dismiss can't handle and that blocks navigation to the liked menu.
+    if (attempt >= 1) dismissShopeePromoPopupByIcon()
 
     if (isShopeeImportListVisible()) {
       return true

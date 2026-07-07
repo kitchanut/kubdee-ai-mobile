@@ -432,3 +432,40 @@ internal fun KubdeeAccessibilityService.dismissShopeeBlockingPopups(): Boolean =
     listOf("ปิด", "Close", "ตกลง", "OK", "ข้าม", "Skip", "ไว้ทีหลัง", "Later", "Not now"),
     exact = true
   )
+
+// Close a full-screen Shopee promo popup (e.g. seasonal 7.7 sale) whose only close control is an
+// X icon with no text/content-desc. Target a small, roughly-square, unlabeled clickable in the
+// upper-right — where promo close buttons sit — avoiding the action bar (very top) and the left.
+// More aggressive than the text-based dismiss, so callers should use it only when navigation is stuck.
+internal fun KubdeeAccessibilityService.dismissShopeePromoPopupByIcon(): Boolean {
+  val root = rootInActiveWindow ?: return false
+  val screen = screenBounds(root)
+  val minSize = (screen.width() * 0.045f).toInt()
+  val maxSize = (screen.width() * 0.14f).toInt()
+  val topLimit = screen.top + (screen.height() * 0.08f).toInt()
+  val bottomLimit = screen.top + (screen.height() * 0.34f).toInt()
+  val leftLimit = screen.left + (screen.width() * 0.72f).toInt()
+  var best: Rect? = null
+  fun visit(node: AccessibilityNodeInfo?, depth: Int = 0) {
+    if (node == null || depth > 60) return
+    if (node.isVisibleToUser && node.isClickable && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) {
+      val bounds = Rect()
+      node.getBoundsInScreen(bounds)
+      val width = bounds.width()
+      val height = bounds.height()
+      val label = (node.text?.toString().orEmpty() + " " + node.contentDescription?.toString().orEmpty()).trim()
+      val squareish = width in minSize..maxSize && height in minSize..maxSize &&
+        kotlin.math.abs(width - height) <= (maxOf(width, height) * 0.4f).toInt()
+      val inZone = bounds.centerY() in topLimit..bottomLimit && bounds.centerX() >= leftLimit
+      if (squareish && inZone && label.isEmpty()) {
+        val current = best
+        if (current == null || bounds.top < current.top) best = Rect(bounds)
+      }
+    }
+    for (index in 0 until node.childCount) visit(node.getChild(index), depth + 1)
+  }
+  visit(root)
+  val target = best ?: return false
+  logStep("ปิด popup โปรโมชั่น (ไอคอน X มุมขวาบน) ที่ ${target.centerX()},${target.centerY()}")
+  return tapBlocking(target.centerX().toFloat(), target.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
+}
