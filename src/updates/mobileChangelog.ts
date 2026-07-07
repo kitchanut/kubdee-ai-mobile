@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.6',
+    date: '2026-07-07',
+    highlight: 'เตือนก่อนดึง "ข้อเสนอ" เมื่อยังไม่ได้ให้สิทธิ์รูปภาพ',
+    changes: [
+      {
+        type: 'improved',
+        text: 'เพิ่มการแจ้งเตือนก่อนดึงสินค้าจาก "ข้อเสนอ" Shopee ทุกครั้งที่ยังไม่ได้ให้สิทธิ์รูปภาพ พร้อมปุ่มให้สิทธิ์ได้ทันที หรือเลือกดึงต่อโดยใช้ลิงก์รูปแทน',
+      },
+    ],
+  },
+  {
     version: '0.3.5',
     date: '2026-07-07',
     highlight: 'ประหยัดหน่วยความจำและพื้นที่เครื่องเวลาจัดการรูปสินค้า',
