@@ -54,6 +54,12 @@ function withKubdeeAccessibility(config, props = {}) {
         'android:permission': 'android.permission.BIND_ACCESSIBILITY_SERVICE',
         'android:exported': 'true',
         'android:label': '@string/kubdee_accessibility_service_label',
+        // Run the accessibility service in a separate process so it stays alive
+        // independently of the RN/JS process. MainApplication throws if React is
+        // booted in this process (see patchMainApplication). dataSync is required
+        // for the foreground service type on Android 14+ (see beginAutomationForeground).
+        'android:process': ':automation',
+        'android:foregroundServiceType': 'dataSync',
       },
       'intent-filter': [
         {
@@ -89,6 +95,8 @@ function withKubdeeAccessibility(config, props = {}) {
       $: {
         'android:name': receiverName,
         'android:exported': 'false',
+        // Receive automation commands in the same separate process as the service.
+        'android:process': ':automation',
       },
     };
 
