@@ -537,27 +537,6 @@ export function useAutoPilotController({
     [products, selectedProducts]
   );
 
-  const updateProductImageSetting = useCallback(
-    <K extends keyof AutoPilotImageSettings>(productId: string, key: K, value: AutoPilotImageSettings[K]): void => {
-      const product = products.find((item) => item.id === productId);
-      if (!product) {
-        return;
-      }
-
-      setProductSettingsById((current) => ({
-        ...current,
-        [product.id]: {
-          ...(current[product.id] ?? product.settings),
-          image: {
-            ...(current[product.id]?.image ?? product.settings.image),
-            [key]: value,
-          },
-        },
-      }));
-    },
-    [products]
-  );
-
   const updateProductVideoSetting = useCallback(
     <K extends keyof AutoPilotVideoSettings>(productId: string, key: K, value: AutoPilotVideoSettings[K]): void => {
       const product = products.find((item) => item.id === productId);
@@ -577,6 +556,34 @@ export function useAutoPilotController({
       }));
     },
     [products]
+  );
+
+  const updateProductImageSetting = useCallback(
+    <K extends keyof AutoPilotImageSettings>(productId: string, key: K, value: AutoPilotImageSettings[K]): void => {
+      const product = products.find((item) => item.id === productId);
+      if (!product) {
+        return;
+      }
+
+      setProductSettingsById((current) => ({
+        ...current,
+        [product.id]: {
+          ...(current[product.id] ?? product.settings),
+          image: {
+            ...(current[product.id]?.image ?? product.settings.image),
+            [key]: value,
+          },
+        },
+      }));
+
+      // Story mode ต้องใช้ Omni Flash (Ingredients) ในฝั่งวิดีโอด้วย → sync ให้อัตโนมัติ
+      if (key === 'styleMode' && value === 'story') {
+        updateProductVideoSetting(productId, 'videoModel', 'omni_flash');
+        updateProductVideoSetting(productId, 'videoDuration', 10);
+        updateProductVideoSetting(productId, 'presetStyle', 'เรื่องราวมินิมอล');
+      }
+    },
+    [products, updateProductVideoSetting]
   );
 
   const replaceProductSettings = useCallback(

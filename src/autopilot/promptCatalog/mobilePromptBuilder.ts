@@ -33,6 +33,19 @@ const VIDEO_STYLE_FALLBACKS: Record<string, string> = {
   asmr: 'เน้นเสียง เบาๆ กระซิบ เสียงแกะกล่อง เสียงสัมผัสสินค้า ผ่อนคลาย ดึงดูดด้วยเสียง',
   slow_motion: 'ภาพช้าๆ ชัดๆ เห็นรายละเอียดสินค้าทุกมุม การเคลื่อนไหวสโลว์โมชั่น ดูพรีเมียม สวยงาม',
   unboxing: 'แกะกล่องสินค้า เปิดดูทีละชิ้น แสดงความตื่นเต้นขณะเปิด โชว์สินค้าที่ได้รับ',
+
+  // --- สตอรี่ (ใช้กับ Omni Flash + Ingredients, ต่อยอดจากรูป Story 5-7 ช่อง) ---
+  เรื่องราวมินิมอล:
+    'โทนสีขาว-สว่างแบบบ้านมินิมอล ห้องสว่าง แสงขาว บรรยากาศเรียบง่ายไม่รกตา สินค้าต้องเหมือนภาพอ้างอิงทุกจุด ไม่มีพรีเซนเตอร์หรือคนพูดหน้ากล้อง เคลื่อนกล้องนุ่มนวลต่อเนื่อง ไม่มีการตัดต่อกระชาก',
+};
+
+// ต้องตรงกับ storyStyle ฝั่ง optionSets.ts (STORY_VIDEO_STYLE_KEY) และ VIDEO_STYLE_FALLBACKS ด้านบน
+const STORY_STYLE_KEY = 'เรื่องราวมินิมอล';
+
+// สตอรี่: collage 5-7 ช่องภาพพร้อมคำบรรยายลายมือ ใช้กับ Omni Flash + Ingredients ฝั่งวิดีโอ
+const STORY_STYLE_FALLBACKS: Record<string, string> = {
+  เรื่องราวมินิมอล:
+    'โทนสีขาว-สว่างแบบบ้านมินิมอล ผนังสีขาวหรือสีอ่อนมาก พื้นหลังเป็นมุมบ้านจริงที่ดูสะอาดตา เช่น ชั้นวางของสีขาวหรือไม้อ่อน กระถางต้นไม้ใบเขียวจุดเดียว เส้นสายเรียบง่ายไม่รกตา แสงสว่างจ้าฟุ้งกระจายทั่วห้องแบบ high-key ให้ความรู้สึกโล่ง สะอาด ทันสมัย ให้สินค้าเป็นจุดเด่นกลางภาพในทุกช่อง บรรยากาศ โทนสี และทิศทางแสงต้องเหมือนกันทุกช่องเพื่อความต่อเนื่อง',
 };
 
 const SCRIPT_STYLE_FALLBACKS: Record<string, string> = {
@@ -116,15 +129,19 @@ function resolveImageStylePrompt(
 ): { selectedStyle: string; prompt: string; customText: string } {
   const styleMode = imageSettings.styleMode || 'preset';
   const selectedStyle =
-    styleMode === 'viral'
-      ? imageSettings.viralStyle || ''
-      : styleMode === 'custom'
-        ? imageSettings.customStyle || imageSettings.presetStyle || ''
-        : imageSettings.presetStyle || '';
+    styleMode === 'story'
+      ? imageSettings.storyStyle || STORY_STYLE_KEY
+      : styleMode === 'viral'
+        ? imageSettings.viralStyle || ''
+        : styleMode === 'custom'
+          ? imageSettings.customStyle || imageSettings.presetStyle || ''
+          : imageSettings.presetStyle || '';
   const customText =
-    styleMode === 'viral'
-      ? compactText(imageSettings.viralStyleCustom)
-      : compactText(imageSettings.presetStyleCustom);
+    styleMode === 'story'
+      ? compactText(imageSettings.storyStyleCustom)
+      : styleMode === 'viral'
+        ? compactText(imageSettings.viralStyleCustom)
+        : compactText(imageSettings.presetStyleCustom);
 
   if (!selectedStyle || selectedStyle === 'auto') {
     return { selectedStyle, prompt: '', customText };
@@ -134,14 +151,16 @@ function resolveImageStylePrompt(
   }
 
   const categoryId =
-    styleMode === 'viral'
-      ? 'image_viral_style'
-      : styleMode === 'custom'
-        ? 'image_custom_style'
-        : 'image_preset_style';
+    styleMode === 'story'
+      ? 'image_story_style'
+      : styleMode === 'viral'
+        ? 'image_viral_style'
+        : styleMode === 'custom'
+          ? 'image_custom_style'
+          : 'image_preset_style';
   return {
     selectedStyle,
-    prompt: catalogOptionPrompt(catalog, categoryId, selectedStyle),
+    prompt: catalogOptionPrompt(catalog, categoryId, selectedStyle) || STORY_STYLE_FALLBACKS[selectedStyle] || '',
     customText,
   };
 }
@@ -161,13 +180,17 @@ function buildDesktopLikeImagePrompt(
   const imageSettings = product.settings.image;
   const productName = product.name || 'สินค้า';
   const promptParts: string[] = [];
+  const isStoryMode = (imageSettings.styleMode || 'preset') === 'story';
 
-  let mainInstruction =
-    `สร้างภาพโฆษณาสินค้ามืออาชีพ ภาพต้องเต็มสัดส่วนที่กำหนด ห้ามมีขอบดำหรือพื้นที่ว่างบนล่างหรือซ้ายขวา ต้องเป็นภาพเดียวเท่านั้น ห้ามเป็น collage ห้ามมีภาพซ้อนภาพ ห้ามมี inset หรือ overlay ของสินค้าในมุมภาพ ห้ามมี product shot แยกต่างหาก สินค้าต้องปรากฏในฉากหลักเท่านั้น สินค้าคือ ${productName} ตามรูปสินค้า reference ที่แนบให้`;
+  let mainInstruction = isStoryMode
+    ? `สร้างภาพเดียวในรูปแบบ Story Board Collage สำหรับวางแผนคลิปสั้น ภาพต้องเต็มสัดส่วนที่กำหนด ห้ามมีขอบดำ แบ่งภาพออกเป็นช่อง (panel) จำนวน 5 ถึง 7 ช่อง เลือกจำนวนช่องในช่วง 5-7 ตามความเหมาะสมกับเนื้อหาสินค้า (สินค้าที่มีขั้นตอนการใช้งานเยอะใช้ 7 ช่อง สินค้าเรียบง่ายใช้ 5 ช่อง) คั่นด้วยเส้นขอบสีขาวบางๆ จัดวางเป็นตารางหลายแถวให้เหมาะกับจำนวนช่องที่เลือก (เช่น 5 ช่อง = แถวบน 3 + แถวล่าง 2, 6 ช่อง = 3 แถว x 2 หรือ 2 แถว x 3, 7 ช่อง = แถวบน 4 + แถวล่าง 3) แต่ละช่องคือภาพนิ่งหนึ่งฉากของสินค้าเดียวกัน ต่อเนื่องกันเหมือนสตอรี่บอร์ด ฉากหลัง โทนสี และบรรยากาศต้องเหมือนกันทุกช่องเพื่อความต่อเนื่อง เปลี่ยนแค่มุมกล้องและการกระทำในแต่ละช่อง ห้ามมีช่องซ้อนทับกันเอง สินค้าคือ ${productName} ตามรูปสินค้า reference ที่แนบให้ ต้องปรากฏชัดเจนเป็นจุดเด่นในทุกช่อง รูปทรง สัดส่วน สี และโลโก้ของสินค้าต้องตรงกับภาพต้นฉบับเป๊ะทุกช่อง ห้ามบิดเบือนหรือสร้างสินค้าใหม่ที่ไม่ตรงกับภาพที่แนบ`
+    : `สร้างภาพโฆษณาสินค้ามืออาชีพ ภาพต้องเต็มสัดส่วนที่กำหนด ห้ามมีขอบดำหรือพื้นที่ว่างบนล่างหรือซ้ายขวา ต้องเป็นภาพเดียวเท่านั้น ห้ามเป็น collage ห้ามมีภาพซ้อนภาพ ห้ามมี inset หรือ overlay ของสินค้าในมุมภาพ ห้ามมี product shot แยกต่างหาก สินค้าต้องปรากฏในฉากหลักเท่านั้น สินค้าคือ ${productName} ตามรูปสินค้า reference ที่แนบให้`;
 
   const charMode = imageSettings.characterMode || 'auto';
   if (charMode === 'auto') {
-    mainInstruction += ' และให้สร้างตัวละครคนไทยตามความเหมาะสมกับสินค้า';
+    mainInstruction += isStoryMode
+      ? ' เน้นสินค้าเป็นหลักในทุกช่อง ถ้าจำเป็นให้เห็นเพียงมือของคนกำลังใช้งานสินค้าในบางช่องเท่านั้น ไม่ต้องมีตัวละครเต็มตัว'
+      : ' และให้สร้างตัวละครคนไทยตามความเหมาะสมกับสินค้า';
   } else if (charMode === 'description' && imageSettings.characterDescription) {
     mainInstruction += ` และใช้ตัวละคร ${imageSettings.characterDescription}`;
   } else if (['gallery', 'upload'].includes(charMode)) {
@@ -265,7 +288,9 @@ function buildDesktopLikeImagePrompt(
   }
 
   const textOverlay = imageSettings.textOverlay || 'auto';
-  if (textOverlay === 'auto') {
+  if (isStoryMode) {
+    promptParts.push(`ข้อความในภาพ (บังคับ - สตอรี่ 5-7 ช่อง): จำนวนป้ายเวลาต้องเท่ากับจำนวนช่องที่เลือกไว้ (5-7 ป้าย) รวมเวลาของทุกช่วงบวกกันต้องเท่ากับ 10 วินาทีพอดี แบ่งช่วงเวลาต่อช่องได้อย่างยืดหยุ่นไม่ต้องเท่ากันทุกช่อง (เช่น บางช่องสั้น 1 วินาที บางช่องยาว 2 วินาที) ไล่ป้ายเวลาต่อเนื่องกันตั้งแต่ 0 วินาทีไปจนครบ 10 วินาทีพอดีที่ช่องสุดท้าย มุมบนซ้ายของแต่ละช่องใส่ป้ายเวลารูปแคปซูลพื้นหลังทึบสีเข้มขอบมน ตัวอักษรไทยสีขาวตัวหนา เช่น ถ้าเลือก 5 ช่อง อาจเป็น "ฉาก 1 (0-2s)", "ฉาก 2 (2-4s)", "ฉาก 3 (4-6s)", "ฉาก 4 (6-8s)", "ฉาก 5 (8-10s)" ถ้าเลือก 7 ช่องให้แบ่งช่วงสั้นยาวสลับกันจนรวมครบ 10 วินาทีพอดี; นอกจากป้ายเวลา แต่ละช่องต้องมีคำบรรยายสั้นภาษาไทย 2-4 คำ ตัวอักษรใหญ่ชัดเจนอ่านง่าย (จะถูกตัดไปใช้เป็นคำบรรยายในคลิปวิดีโอด้วย) เขียนด้วยลายมือสไตล์ hand-drawn มินิมอล เส้นเรียบบางไม่หนาเทอะทะ สีขาวตัดกับพื้นหลัง วางในตำแหน่งเด่นไม่บังสินค้า น้ำเสียงคำบรรยายเหมือนเพื่อนแนะนำเพื่อน (โทนป้ายยา) เป็นกันเอง จริงใจ กระตือรือร้น ไม่เป็นทางการ ไล่เนื้อหาตามจังหวะการเล่าเรื่องจากช่องแรกถึงช่องสุดท้าย: เริ่มจากชื่อหรือจุดขายหลักของสินค้า ตามด้วยขั้นตอนการใช้งานทีละขั้น จุดเด่นด้านคุณภาพ และจบด้วยสรุปปิดการขายหรือความคุ้มค่า กระจายเนื้อหาให้เหมาะสมตามจำนวนช่องที่เลือก; ประกอบคำบรรยายด้วยลายเส้นเล็กๆ เรียบง่ายสีขาว 1-2 ชิ้นต่อช่อง เช่น ดาวเล็ก เส้นขีดใต้ ลูกศรโค้งบาง ให้ดูมินิมอลไม่รกตา ห้ามสะกดคำภาษาไทยผิด ห้ามใช้ภาษาอังกฤษยกเว้นชื่อยี่ห้อ;`);
+  } else if (textOverlay === 'auto') {
     promptParts.push('ใส่ข้อความแนวโฆษณาสั้นๆ ที่สะดุดตาในภาพ เช่น ชื่อสินค้า slogan กระตุ้นให้อยากซื้อ ห้ามใส่ราคา จัดวางในตำแหน่งที่โดดเด่นไม่บังสินค้า ใช้ภาษาไทยเป็นหลัก ยกเว้นชื่อยี่ห้อหรือคำที่จำเป็นค่อยใช้ภาษาอังกฤษ;');
   } else if (textOverlay === 'none') {
     promptParts.push('ห้ามมีข้อความหรือตัวอักษรใดๆ ในภาพ;');
@@ -287,6 +312,9 @@ function buildDesktopLikeVideoPrompt(
 ): string {
   const videoSettings = product.settings.video;
   const styleKey = videoSettings.presetStyle || '';
+  if (styleKey === STORY_STYLE_KEY) {
+    return buildStoryVideoPrompt(product, catalog, hasRefImage);
+  }
   let stylePrompt: string;
   if (styleKey === '__custom__') {
     stylePrompt = videoSettings.presetStyleCustom?.trim() || VIDEO_STYLE_FALLBACKS[''];
@@ -386,6 +414,92 @@ function buildDesktopLikeVideoPrompt(
   } else {
     promptParts.push('ข้อห้าม: ห้ามมี subtitle ห้ามมีข้อความบนจอ ทุกบทพูดต้องเป็นเสียงเท่านั้น ห้ามมีขอบดำ วิดีโอต้องเต็มจอ ใช้เสียงพูดภาษาไทยเท่านั้น;');
   }
+
+  if (videoSettings.systemPrompt?.trim()) {
+    promptParts.push(`คำสั่งเพิ่มเติม: ${videoSettings.systemPrompt.trim()}`);
+  }
+
+  return promptParts.join('\n');
+}
+
+/**
+ * สร้าง Prompt สำหรับสไตล์ "สตอรี่" (Omni Flash + Ingredients)
+ * ภาพอ้างอิงคือ Story Board Collage 5-7 ช่องที่สร้างจากฝั่งรูป (buildDesktopLikeImagePrompt isStoryMode)
+ * วิดีโอผลลัพธ์ต้องเป็นคลิปต่อเนื่องเดียว 10 วิ ไล่ตามลำดับช่องในภาพ ไม่ใช่ collage/split screen
+ */
+function buildStoryVideoPrompt(product: AutoPilotProduct, catalog: PromptCatalog, hasRefImage: boolean): string {
+  const videoSettings = product.settings.video;
+  const storyStyleDescription =
+    catalogOptionPrompt(catalog, 'video_style', STORY_STYLE_KEY) || VIDEO_STYLE_FALLBACKS[STORY_STYLE_KEY] || '';
+
+  const dialogueMode = videoSettings.dialogueMode || 'auto';
+  const isNoDialogue = dialogueMode === 'none';
+  const voiceKey = videoSettings.voiceCharacter || '';
+  const isNoVoice = voiceKey === 'none';
+  const isAutoVoice = voiceKey === '';
+  const voiceDescription =
+    voiceKey === '__custom__' && videoSettings.voiceCharacterCustom
+      ? videoSettings.voiceCharacterCustom
+      : catalogOptionPrompt(catalog, 'video_voice', voiceKey) || VOICE_CHARACTER_FALLBACKS[voiceKey];
+
+  const promptParts: string[] = [];
+
+  promptParts.push('สร้างวิดีโอโฆษณาสินค้าภาษาไทย โดยใช้ภาพอ้างอิงที่แนบมาเป็นตัวกำหนดฉากและลำดับเหตุการณ์ทั้งหมด ภาพอ้างอิงเป็น Story Board Collage แบ่ง 5-7 ช่อง มีป้ายเวลาและคำบรรยายกำกับแต่ละช่องอยู่แล้ว ห้ามสร้างฉากใหม่ ห้ามเปลี่ยนสถานที่;');
+
+  if (product.name) {
+    promptParts.push(`สินค้า: ${product.name};`);
+  }
+  if (product.description) {
+    promptParts.push(`รายละเอียดสินค้า: ${product.description};`);
+  }
+
+  promptParts.push(`สไตล์วิดีโอ: ${storyStyleDescription};`);
+
+  promptParts.push('ลำดับเหตุการณ์: ไล่เนื้อหาไปตามลำดับช่องทั้งหมดที่ปรากฏในภาพอ้างอิง (จากซ้ายไปขวา บนลงล่าง ภาพอาจมี 5-7 ช่อง) ให้จำนวนและช่วงเวลาของแต่ละช่วงตรงกับป้ายเวลาที่ระบุไว้จริงบนภาพ (แต่ละช่วงอาจยาวไม่เท่ากัน เช่น 1-2 วินาที) รวมความยาวทั้งหมด 10 วินาที ฉากหลัง โทนสี และทิศทางแสงต้องเหมือนกันตลอดทั้งวิดีโอ เปลี่ยนแค่มุมกล้องและการกระทำตามแต่ละช่วงที่เห็นในภาพอ้างอิง;');
+
+  promptParts.push('สินค้า: รูปทรง สัดส่วน สี และโลโก้ต้องตรงกับภาพอ้างอิงทุกจุด ห้ามบิดเบือนหรือสร้างสินค้าใหม่ที่ไม่ตรงกับภาพ;');
+
+  promptParts.push(
+    hasRefImage
+      ? 'ตัวละคร: เน้นสินค้าเป็นหลัก ถ้าในภาพอ้างอิงเห็นแค่มือก็ให้เห็นแค่มือ ไม่ต้องมีพรีเซนเตอร์หรือคนพูดหน้ากล้อง;'
+      : 'ตัวละคร: ไม่มีตัวละคร โฟกัสที่สินค้าเป็นหลัก;'
+  );
+
+  promptParts.push('ข้อความบนจอ (บังคับ): คงคำบรรยายภาษาไทยลายมือสไตล์มินิมอลตัวใหญ่แบบเดียวกับที่ปรากฏในภาพอ้างอิงไว้บนหน้าจอ ให้ตรงกับจำนวนช่องและช่วงเวลาที่ระบุไว้จริงบนภาพ (ภาพอาจมี 5-7 ช่อง แต่ละช่วงอาจยาวไม่เท่ากัน ให้ยึดตามป้ายเวลาบนภาพจริงเป็นหลัก) ตัวอักษรใหญ่ชัดเจนอ่านง่าย สีขาว ห้ามสะกดคำภาษาไทยผิด ห้ามใช้ภาษาอังกฤษยกเว้นชื่อยี่ห้อ;');
+
+  if (isNoDialogue || isNoVoice) {
+    promptParts.push('เสียง: ไม่มีเสียงพูดหรือเสียงพากย์ใดๆ ทั้งสิ้น มีแค่คำบรรยายบนจอเท่านั้น;');
+  } else {
+    if (isAutoVoice) {
+      promptParts.push(
+        hasRefImage
+          ? 'เสียงพากย์: ออโต้จากภาพ reference ถ้าเห็นตัวละครหรือใบหน้าคน ให้เลือกเสียงพูดภาษาไทยที่เหมาะกับเพศและวัยของตัวละครในภาพ ถ้าเห็นแค่มือหรือสินค้าและไม่เห็นคน ให้ใช้เสียงบรรยายไทยกลางที่เหมาะกับสินค้า เป็นเสียงพากย์ (voice over) เท่านั้น ไม่ต้องมีคนพูดโชว์หน้ากล้อง;'
+          : 'เสียงพากย์: ออโต้ เลือกเสียงพูดภาษาไทยกลางที่เหมาะกับสินค้า เป็นเสียงพากย์ (voice over) เท่านั้น ไม่ต้องมีคนพูดโชว์หน้ากล้อง;'
+      );
+    } else if (voiceDescription) {
+      promptParts.push(`เสียงพากย์: ${voiceDescription} เป็นเสียงพากย์ (voice over) เท่านั้น ไม่ต้องมีคนพูดโชว์หน้ากล้อง;`);
+    }
+
+    if (dialogueMode === 'auto') {
+      promptParts.push('บทพูด: พากย์เสียงบรรยายให้เนื้อหาตรงกับคำบรรยายและรายละเอียดที่ปรากฏจริงในแต่ละช่องของภาพอ้างอิง ไล่ตามลำดับช่องทั้งหมดที่ปรากฏในภาพ (อาจมี 5-7 ช่อง) ให้ตรงกับช่วงเวลาที่ระบุไว้จริงบนภาพ รวมความยาวทั้งหมด 10 วินาที ไม่ต้องยึดหัวข้อตายตัว ให้ดูจากภาพจริงว่าช่องนั้นสื่ออะไรแล้วพูดขยายความเรื่องนั้น สำคัญมาก: ต้องพูดให้จบประโยคภายในเวลาของช่วงนั้นเสมอ ห้ามพูดค้างคาหรือถูกตัดกลางคำเด็ดขาด เลือกใช้คำสั้นกระชับพอดีกับเวลาของแต่ละช่วงตามภาพจริง (บางช่วงอาจสั้นแค่ 1 วินาทีให้พูดสั้นมาก) ถ้าเนื้อหาช่องไหนเยอะให้สรุปสั้นแทนที่จะพูดยาวจนโดนตัด น้ำเสียงเหมือนเพื่อนแนะนำเพื่อน (โทนป้ายยา) เป็นกันเอง จริงใจ กระตือรือร้น;');
+    } else if (dialogueMode === 'custom') {
+      const dialogue = resolveVideoDialogueForDesktopLikePrompt(videoSettings);
+      if (dialogue) {
+        promptParts.push(`บทพูด: ${dialogue};`);
+      }
+    }
+  }
+
+  const musicSfxMode = videoSettings.musicSfxMode || 'auto';
+  if (musicSfxMode === 'none') {
+    promptParts.push('เสียงดนตรีและเอฟเฟค: ห้ามมีเสียงดนตรีหรือเสียงเอฟเฟคใดๆ ทั้งสิ้น;');
+  } else if (musicSfxMode === 'custom' && videoSettings.musicSfxCustom?.trim()) {
+    promptParts.push(`เสียงดนตรีและเอฟเฟค: ${videoSettings.musicSfxCustom.trim()};`);
+  } else {
+    promptParts.push('เสียงดนตรีและเอฟเฟค: ใส่เพลงประกอบบรรยากาศเบาๆ สไตล์มินิมอล/อบอุ่น ดังพอได้ยินแต่ไม่กลบเสียงพากย์หรือคำบรรยาย พร้อมเสียงเอฟเฟคเล็กน้อยตามการกระทำในแต่ละช่วง ให้เข้ากับจังหวะฉากที่เปลี่ยนไป;');
+  }
+
+  promptParts.push('ข้อห้าม: ห้ามมี collage ห้ามแบ่งหลาย panel หรือ split screen ในวิดีโอผลลัพธ์ (แม้ภาพอ้างอิงจะเป็น storyboard แต่วิดีโอต้องเป็นภาพต่อเนื่องเต็มจอเดียวเท่านั้น) ห้ามมีขอบดำ ห้ามมีโลโก้แพลตฟอร์มหรือ watermark วิดีโอต้องเต็มจอ;');
 
   if (videoSettings.systemPrompt?.trim()) {
     promptParts.push(`คำสั่งเพิ่มเติม: ${videoSettings.systemPrompt.trim()}`);

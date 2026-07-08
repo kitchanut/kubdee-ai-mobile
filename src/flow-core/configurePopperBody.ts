@@ -337,10 +337,11 @@ export const CONFIGURE_POPPER_BODY = `
   // --- 2b: select sub-mode (video only) ---
   if (!isImageMode) {
     popper = refetchPopper(popper); await wait(500);
-    var subModeLabel = 'Frames';
-    var subModeIcons = ['crop_free', 'movie_filter', 'video_camera_front'];
-    var subModeControlsKey = 'FRAMES';
-    var subModeTextKeyword = 'frame';
+    var isOmni = vidModel === 'omni_flash';
+    var subModeLabel = isOmni ? 'Ingredients' : 'Frames';
+    var subModeIcons = isOmni ? ['chrome_extension'] : ['crop_free', 'movie_filter', 'video_camera_front'];
+    var subModeControlsKey = isOmni ? 'REFERENCES' : 'FRAMES';
+    var subModeTextKeyword = isOmni ? 'ingredient' : 'frame';
     sendLog('กำลังหา Sub-mode Tab: ' + subModeLabel, 'info');
     var subFound = false;
     for (var sr = 0; sr < 3 && !subFound; sr++) {

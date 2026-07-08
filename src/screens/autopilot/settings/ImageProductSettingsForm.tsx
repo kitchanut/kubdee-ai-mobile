@@ -17,6 +17,8 @@ import {
   PRESET_OPTIONS,
   PRESET_TABS,
   PRODUCT_DISPLAY_OPTIONS,
+  STORY_OPTIONS,
+  STORY_TABS,
   TEXT_OVERLAY_OPTIONS,
   VIRAL_OPTIONS,
   VIRAL_TABS,
@@ -317,6 +319,27 @@ export function ImageProductSettingsForm({
                   accent={accent}
                   value={settings.viralStyle}
                   onChange={(value) => onChange('viralStyle', value)}
+                />
+                <OutfitBlock />
+              </View>
+            ) : null}
+
+            {/* story */}
+            {settings.styleMode === 'story' ? (
+              <View className="gap-2.5">
+                <CategoryTabs
+                  tabs={STORY_TABS}
+                  theme={theme}
+                  accent={accent}
+                  value={settings.storySubTab}
+                  onChange={(key) => onChange('storySubTab', key)}
+                />
+                <CardOptionGrid
+                  options={STORY_OPTIONS[settings.storySubTab] ?? STORY_OPTIONS.minimal}
+                  theme={theme}
+                  accent={accent}
+                  value={settings.storyStyle}
+                  onChange={(value) => onChange('storyStyle', value)}
                 />
                 <OutfitBlock />
               </View>

@@ -327,7 +327,19 @@ export const IMAGE_STYLE_MODE_OPTIONS: AutoPilotOption[] = [
   { value: 'preset', label: 'ชุดเซท' },
   { value: 'custom', label: 'กำหนดเอง' },
   { value: 'viral', label: 'ไวรัล' },
+  { value: 'story', label: 'สตอรี่' },
 ];
+
+// ───────────────────────── รูปภาพ: สไตล์สตอรี่ (Story Board Collage 5-7 ช่อง) ─────────────────────────
+// จัดเป็นหมวด (sub tab) เหมือนสไตล์หลัก/เทศกาล เผื่อเพิ่มหมวดใหม่ทีหลัง ตอนนี้มีแค่หมวด "มินิมอล" ตัวเลือกเดียว "ในบ้าน"
+export const STORY_TABS: AutoPilotTab[] = [{ key: 'minimal', label: 'มินิมอล' }];
+
+export const STORY_OPTIONS: Record<string, AutoPilotOption[]> = {
+  minimal: [{ value: 'เรื่องราวมินิมอล', label: 'ในบ้าน' }],
+};
+
+// ต้องตรงกับ VIDEO_STYLE_OPTIONS ด้านล่าง และ STORY_STYLE_MAP ใน mobilePromptBuilder.ts
+export const STORY_VIDEO_STYLE_KEY = 'เรื่องราวมินิมอล';
 
 export const CHARACTER_OUTFIT_OPTIONS: AutoPilotOption[] = [
   { value: 'auto', label: 'ออโต้' },
@@ -375,6 +387,7 @@ export const VIDEO_STYLE_OPTIONS: AutoPilotOption[] = [
   { value: 'asmr', label: 'ASMR' },
   { value: 'slow_motion', label: 'Slow Motion' },
   { value: 'unboxing', label: 'แกะกล่อง' },
+  { value: STORY_VIDEO_STYLE_KEY, label: 'สตอรี่ (มินิมอล)', isNew: true },
 ];
 
 export const CAMERA_OPTIONS: AutoPilotOption[] = [

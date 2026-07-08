@@ -13,7 +13,7 @@ export type AutoPilotRunStatus = 'idle' | 'running' | 'completed' | 'stopped' | 
 export type AutoPilotLogLevel = 'info' | 'success' | 'warning' | 'error' | 'action';
 
 export type AutoPilotPromptMode = 'auto' | 'ai' | 'custom';
-export type AutoPilotImageStyleMode = 'preset' | 'custom' | 'viral';
+export type AutoPilotImageStyleMode = 'preset' | 'custom' | 'viral' | 'story';
 
 export interface AutoPilotImageSettings {
   imageModel: string;
@@ -42,6 +42,9 @@ export interface AutoPilotImageSettings {
   viralStyle: string;
   viralStyleCustom: string;
   viralSubTab: string;
+  storyStyle: string;
+  storyStyleCustom: string;
+  storySubTab: string;
   customStyle: string;
   // รายละเอียดสไตล์
   background: string;
