@@ -29,3 +29,10 @@ Follow the runbook at `docs/MOBILE_RELEASE.md` — APK is distributed via GitHub
 **Signing (since v0.3.0):** releases MUST be re-signed with key rotation via `scripts/sign-release.mjs`
 (never ship the debug-signed gradle output). The production keystore lives in `signing/` (gitignored)
 and must never be lost. See `docs/MOBILE_RELEASE.md` step 5.
+
+# Sentry issue CLI — moved to monorepo root
+
+The Sentry terminal tooling lives OUTSIDE this repo at `../sentry/sentry.mjs` (token in
+`../sentry/sentry.env`, never commit it). It covers both `kubdee-ai-mobile` and
+`kubdee-ai-desktop`. Usage: `node ../sentry/sentry.mjs list [mobile|desktop]`, `view <id>`,
+`resolve <id>`. The old `scripts/sentry.mjs` here was removed 2026-07-08.
