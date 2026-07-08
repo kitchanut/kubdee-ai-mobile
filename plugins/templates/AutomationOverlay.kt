@@ -570,7 +570,8 @@ internal fun KubdeeAccessibilityService.showAutomationStoppedControls() {
     }
     overlayStopButton = null
     if (overlayReportButton == null) {
-      overlayReportButton = createOverlayActionButton("รายงานปัญหา", Color.rgb(37, 99, 235), 104, 116) {
+      // x = back button's 18dp offset + 72dp width + 8dp gap, so the two sit side by side.
+      overlayReportButton = createOverlayActionButton("รายงานปัญหา", Color.rgb(37, 99, 235), 104, 98) {
         reportAutomationProblem()
       }
     }

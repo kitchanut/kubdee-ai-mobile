@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.13',
+    date: '2026-07-08',
+    highlight: 'จัดปุ่มหลัง Stop ให้ชิดกัน',
+    changes: [
+      {
+        type: 'changed',
+        text: 'ขยับปุ่ม "รายงานปัญหา" กับ "กลับแอป" บน overlay หลังกด Stop ให้อยู่ชิดกัน',
+      },
+    ],
+  },
+  {
     version: '0.3.12',
     date: '2026-07-08',
     highlight: 'รายงานปัญหาแบบพิมพ์อธิบายได้ + ส่งถึงทีมแน่นอน',
