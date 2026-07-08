@@ -54,11 +54,15 @@ export function captureShopeeDiagnostic(
   message: string,
   dump: string,
   context?: Record<string, unknown>,
-  screenshot?: Uint8Array
+  screenshot?: Uint8Array,
+  fingerprint?: string[]
 ): void {
   if (!dump && !screenshot) return;
   try {
     Sentry.withScope((scope) => {
+      // Group intentionally — every diagnostic is captured from this one code path, so the
+      // default stack-trace grouping would merge them all into a single "anonymous" issue.
+      if (fingerprint) scope.setFingerprint(fingerprint);
       if (dump) scope.addAttachment({ filename: 'shopee-tree.txt', data: dump });
       if (screenshot) {
         scope.addAttachment({ filename: 'shopee-screenshot.jpg', data: screenshot, contentType: 'image/jpeg' });

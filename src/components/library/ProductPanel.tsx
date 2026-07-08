@@ -710,7 +710,11 @@ export default function ProductPanel({
       setAutomationActivityRunning('shopee-import', false);
       // Forward any scrape-failure diagnostic the native side left behind (no-op on success).
       // The dump header already carries device + Shopee version, so context stays minimal.
-      void flushShopeeScrapeDiagnostic({ source: nativeSource, appVersion: getCurrentMobileVersion() });
+      void flushShopeeScrapeDiagnostic({
+        trigger: 'import-end',
+        source: nativeSource,
+        appVersion: getCurrentMobileVersion(),
+      });
     }
   }, [
     appendShopeeLog,

@@ -1042,6 +1042,30 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeePartnerOfferCandidate
         products[key] = candidate
         fallbackCount += 1
       }
+    } else if (shareButtons.isEmpty()) {
+      // บางเครื่อง (เช่น Samsung Android 14, Shopee 3.77.25) การ์ดในมุมมองพาร์ทเนอร์ของรายการถูกใจ
+      // ไม่มี resource id/ImageView ให้ accessibility เลย — อ่านการ์ดแถวจากราคา+ชื่อ+ค่าคอมแทน
+      // (Sentry KUBDEE-AI-MOBILE-5)
+      val clickableNodes = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+      collectClickableNodes(root, clickableNodes)
+      val fallbackCandidates = buildShopeePartnerLikedRowCandidatesFromPriceNodes(
+        textNodes = textNodes,
+        imageNodes = imageNodes,
+        clickableNodes = clickableNodes,
+        screen = screen,
+        safeTop = safeTop,
+        safeBottom = safeBottom,
+        status = status
+      )
+      for (candidate in fallbackCandidates) {
+        val key = candidate.product.externalProductId ?: stableProductKey(candidate.product)
+        if (products.containsKey(key)) {
+          duplicateCount += 1
+          continue
+        }
+        products[key] = candidate
+        fallbackCount += 1
+      }
     }
 
     if (logResult) {
@@ -1059,6 +1083,8 @@ internal fun KubdeeAccessibilityService.scrapeVisibleShopeePartnerOfferCandidate
             logStep("ไม่พบ resource id ปุ่มแชร์ Shopee -> fallback ราคา+ชื่อสินค้ายังไม่พบการ์ด")
           }
         }
+      } else if (shareButtons.isEmpty() && fallbackCount > 0) {
+        logStep("ไม่พบ resource id ปุ่มแชร์ (liked) -> ใช้ตำแหน่งปุ่มในการ์ดจากราคา+ชื่อสินค้าแทน (+$fallbackCount การ์ด)")
       }
       logStep(
         "สแกนมุมมองพาร์ทเนอร์พบ ${products.size} การ์ด " +
@@ -1516,6 +1542,201 @@ internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidateFr
       shareBounds = shareTarget.first,
       shareSource = shareTarget.second
     )
+  }
+
+// มุมมองพาร์ทเนอร์ของรายการถูกใจเป็นลิสต์แถวเต็มความกว้าง (ไม่ใช่กริด 2 คอลัมน์แบบหน้าข้อเสนอ)
+// บนเครื่องที่การ์ดไม่มี resource id เลย: หา ViewGroup คลิกได้ที่ครอบราคา = กรอบเนื้อหาการ์ด
+// แล้วยืนยันด้วยชื่อสินค้า + แถวค่าคอมมิชชั่นก่อนสร้าง candidate
+internal fun KubdeeAccessibilityService.buildShopeePartnerLikedRowCandidatesFromPriceNodes(
+    textNodes: List<TextNode>,
+    imageNodes: List<ShopeeImageNode>,
+    clickableNodes: List<Pair<Rect, AccessibilityNodeInfo>>,
+    screen: Rect,
+    safeTop: Int,
+    safeBottom: Int,
+    status: String
+  ): List<ShopeePartnerOfferCandidate> {
+    val visibleTextNodes = textNodes.filter { node ->
+      node.node.isVisibleToUser &&
+        node.bounds.centerY() in safeTop..safeBottom
+    }
+    val priceNodes = findPriceNodes(visibleTextNodes)
+      .filter { node -> node.bounds.centerY() in safeTop..safeBottom }
+      .sortedWith(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+
+    val candidates = mutableListOf<ShopeePartnerOfferCandidate>()
+    val seenCardKeys = mutableSetOf<String>()
+    for (priceNode in priceNodes) {
+      val cardBounds = findShopeePartnerLikedRowCardBounds(
+        clickableNodes = clickableNodes,
+        priceNode = priceNode,
+        screen = screen,
+        safeTop = safeTop,
+        safeBottom = safeBottom
+      ) ?: continue
+      val cardKey = "${cardBounds.left}:${cardBounds.top}:${cardBounds.right}:${cardBounds.bottom}"
+      if (!seenCardKeys.add(cardKey)) continue
+      val candidate = buildShopeePartnerLikedRowCandidate(
+        visibleTextNodes = visibleTextNodes,
+        imageNodes = imageNodes,
+        clickableNodes = clickableNodes,
+        priceNode = priceNode,
+        cardBounds = cardBounds,
+        screen = screen,
+        safeTop = safeTop,
+        safeBottom = safeBottom,
+        status = status
+      ) ?: continue
+      candidates += candidate
+    }
+    return candidates
+  }
+
+internal fun KubdeeAccessibilityService.findShopeePartnerLikedRowCardBounds(
+    clickableNodes: List<Pair<Rect, AccessibilityNodeInfo>>,
+    priceNode: TextNode,
+    screen: Rect,
+    safeTop: Int,
+    safeBottom: Int
+  ): Rect? {
+    val minCardWidth = (screen.width() * 0.40f).toInt()
+    val minCardHeight = (screen.height() * 0.05f).toInt()
+    val maxCardHeight = (screen.height() * 0.30f).toInt()
+    return clickableNodes
+      .filter { (bounds, node) ->
+        node.isVisibleToUser &&
+          node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
+          bounds.contains(priceNode.bounds.centerX(), priceNode.bounds.centerY()) &&
+          bounds.width() >= minCardWidth &&
+          bounds.height() in minCardHeight..maxCardHeight &&
+          bounds.centerY() in safeTop..safeBottom
+      }
+      .minByOrNull { (bounds, _) -> bounds.width() * bounds.height() }
+      ?.first
+      ?.let { Rect(it) }
+  }
+
+internal fun KubdeeAccessibilityService.buildShopeePartnerLikedRowCandidate(
+    visibleTextNodes: List<TextNode>,
+    imageNodes: List<ShopeeImageNode>,
+    clickableNodes: List<Pair<Rect, AccessibilityNodeInfo>>,
+    priceNode: TextNode,
+    cardBounds: Rect,
+    screen: Rect,
+    safeTop: Int,
+    safeBottom: Int,
+    status: String
+  ): ShopeePartnerOfferCandidate? {
+    val price = normalizePrice(priceNode.text) ?: return null
+    val cardTexts = visibleTextNodes.filter { node ->
+      node.bounds.centerX() in cardBounds.left..cardBounds.right &&
+        node.bounds.centerY() in cardBounds.top..cardBounds.bottom
+    }
+    // ต้องมีแถว "ค่าคอมมิชชั่น" ในการ์ดถึงจะนับเป็นการ์ดพาร์ทเนอร์ (กันมุมมองผู้ซื้อ/แถวอื่นปน)
+    findShopeeAffiliateOfferGridCommissionNode(
+      cardTexts = cardTexts,
+      priceBounds = priceNode.bounds,
+      screen = screen,
+      columnLeft = cardBounds.left,
+      columnRight = cardBounds.right,
+      cardBottom = cardBounds.bottom,
+      safeTop = safeTop,
+      safeBottom = safeBottom
+    ) ?: return null
+    // การ์ดพาร์ทเนอร์จริงมีเปอร์เซ็นต์ค่าคอมเสมอ (เช่น "14.6%") — กันการ์ดปลอมจากข้อความอื่น
+    if (cardTexts.none { it.text.contains("%") }) return null
+    val nameNode = findShopeeAffiliateOfferGridNameNode(
+      cardTexts = cardTexts,
+      priceBounds = priceNode.bounds,
+      screen = screen
+    ) ?: return null
+    val name = cleanShopeePartnerProductName(nameNode.text).take(180)
+    if (name.length < 5) return null
+
+    val shareBounds = findShopeePartnerLikedRowShareBounds(
+      clickableNodes = clickableNodes,
+      cardBounds = cardBounds,
+      screen = screen,
+      safeTop = safeTop,
+      safeBottom = safeBottom
+    ) ?: return null
+
+    val productUrl = cardTexts.firstNotNullOfOrNull { extractUrl(it.text) }
+    val externalProductId = productUrl?.let { extractShopeeProductIdFromUrl(it) }
+      ?: fallbackShopeeProductIdFromName(name)
+    val stock = cardTexts.firstNotNullOfOrNull { extractStock(it.text) }
+    val imageUrl = findShopeeAffiliateOfferImageUrl(
+      imageNodes = imageNodes,
+      nameBounds = nameNode.bounds,
+      priceBounds = priceNode.bounds,
+      screen = screen,
+      columnLeft = screen.left,
+      columnRight = cardBounds.right,
+      cardTop = cardBounds.top,
+      cardBottom = cardBounds.bottom,
+      safeTop = safeTop
+    )
+
+    val tapBounds = Rect(
+      maxOf(nameNode.bounds.left, cardBounds.left),
+      maxOf(nameNode.bounds.top, safeTop),
+      minOf(nameNode.bounds.right, shareBounds.left - 12),
+      minOf(maxOf(nameNode.bounds.bottom, nameNode.bounds.top + 48), priceNode.bounds.top - 8)
+    )
+    if (tapBounds.width() <= 0 || tapBounds.height() <= 0) return null
+
+    return ShopeePartnerOfferCandidate(
+      product = ShopeeLikedProduct(
+        name = name,
+        price = price,
+        stock = stock,
+        productUrl = productUrl,
+        externalProductId = externalProductId,
+        imageUrl = imageUrl,
+        status = status,
+        scrapedAt = System.currentTimeMillis()
+      ),
+      tapBounds = tapBounds,
+      safeTop = safeTop,
+      shareBounds = shareBounds,
+      shareSource = "fallback ตำแหน่งปุ่มแชร์ในการ์ด"
+    )
+  }
+
+// ปุ่มแชร์ของการ์ดแถว = ปุ่มคลิกได้ขนาดเล็กที่ "ขวาสุด" ชิดขอบขวาการ์ด ครึ่งล่างของการ์ด
+// ปุ่ม "..." (เมนูเพิ่มเติม) อยู่ติดกันทางซ้าย ห้ามแตะ — คัดด้วยขอบขวาต้องใกล้ขอบการ์ด
+internal fun KubdeeAccessibilityService.findShopeePartnerLikedRowShareBounds(
+    clickableNodes: List<Pair<Rect, AccessibilityNodeInfo>>,
+    cardBounds: Rect,
+    screen: Rect,
+    safeTop: Int,
+    safeBottom: Int
+  ): Rect? {
+    val minButtonSize = maxOf(24, (screen.width() * 0.03f).toInt())
+    val maxButtonWidth = maxOf(72, (screen.width() * 0.14f).toInt())
+    val maxButtonHeight = maxOf(64, (screen.height() * 0.06f).toInt())
+    val rightEdgeTolerance = maxOf(20, (screen.width() * 0.04f).toInt())
+    return clickableNodes
+      .filter { (bounds, node) ->
+        node.isVisibleToUser &&
+          node.packageName?.toString() == TARGET_PACKAGE_SHOPEE &&
+          bounds.left >= cardBounds.left &&
+          bounds.right <= cardBounds.right + 8 &&
+          bounds.top >= cardBounds.top - 8 &&
+          bounds.bottom <= cardBounds.bottom + 8 &&
+          bounds.width() in minButtonSize..maxButtonWidth &&
+          bounds.height() in minButtonSize..maxButtonHeight &&
+          bounds.right >= cardBounds.right - rightEdgeTolerance &&
+          bounds.centerY() >= cardBounds.centerY() &&
+          bounds.centerY() in safeTop..safeBottom &&
+          // มุมขวาล่างของจอ = ปุ่มแชทลอยของ Shopee (tapShopeePartnerOfferShareTarget ไม่ยอมแตะ
+          // เป้า fallback โซนนี้) — ตัดการ์ดนี้ทิ้งก่อน รอเลื่อนจอแล้วเก็บรอบถัดไป
+          !(bounds.centerX() > screen.left + (screen.width() * 0.80f).toInt() &&
+            bounds.centerY() > screen.top + (screen.height() * 0.78f).toInt())
+      }
+      .maxWithOrNull(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.right }.thenBy { it.first.bottom })
+      ?.first
+      ?.let { Rect(it) }
   }
 
 internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferImageUrl(

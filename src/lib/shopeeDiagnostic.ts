@@ -95,8 +95,15 @@ export async function flushShopeeScrapeDiagnostic(context: Record<string, unknow
         ? `Shopee user report: ${description.slice(0, 120)}`
         : 'Shopee user report'
       : 'Shopee automation diagnostic';
+    // Stable trigger for grouping + context, even if the caller forgot to pass one.
+    const trigger = manual
+      ? 'manual-report'
+      : typeof context.trigger === 'string' && context.trigger
+        ? context.trigger
+        : 'unknown';
     console.log('[shopee-diagnostic] sending to Sentry', {
       manual,
+      trigger,
       bytes: dump.length,
       hasScreenshot: Boolean(screenshot),
       hasDescription: Boolean(description),
@@ -104,8 +111,13 @@ export async function flushShopeeScrapeDiagnostic(context: Record<string, unknow
     captureShopeeDiagnostic(
       message,
       dump,
-      manual ? { ...context, trigger: 'manual-report', userDescription: description || null } : context,
-      screenshot
+      manual
+        ? { ...context, trigger, userDescription: description || null }
+        : { ...context, trigger },
+      screenshot,
+      // User reports share one issue (the description varies per report); automation
+      // diagnostics split by what flushed them.
+      manual ? ['shopee-user-report'] : ['shopee-diagnostic', trigger]
     );
     await deleteDiagnosticFiles();
   } catch {
