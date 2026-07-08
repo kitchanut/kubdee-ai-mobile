@@ -14,7 +14,6 @@ import { useAuth } from '@/auth/AuthContext';
 import MobileChangelogModal from '@/components/MobileChangelogModal';
 import MobileHeader from '@/components/MobileHeader';
 import MobileSettingsModal from '@/components/MobileSettingsModal';
-import ShopeeReportModal from '@/components/ShopeeReportModal';
 import TopIconTabs from '@/components/TopIconTabs';
 import Text from '@/components/ui/KubdeeText';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
@@ -716,7 +715,6 @@ export default function KubdeeMobileApp(): React.JSX.Element {
         onClose={closeMobileChangelog}
       />
       <MobileSettingsModal theme={theme} visible={settingsVisible} onClose={closeMobileSettings} />
-      <ShopeeReportModal theme={theme} />
       <Modal animationType="fade" transparent visible={updateDownloadState.visible}>
         <View
           className="flex-1 items-center justify-center px-6"

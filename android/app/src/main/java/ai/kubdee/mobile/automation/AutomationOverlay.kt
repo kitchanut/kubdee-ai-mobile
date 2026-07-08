@@ -588,22 +588,189 @@ internal fun KubdeeAccessibilityService.removeAutomationStoppedControls() {
   overlayReportButton = null
   overlayBackButton?.let { try { automationWindowManager.removeView(it) } catch (_: Exception) {} }
   overlayBackButton = null
+  removeAutomationReportPanel()
 }
 
 internal fun KubdeeAccessibilityService.reportAutomationProblem() {
   val reportButton = overlayReportButton ?: return
-  if (!reportButton.isEnabled) return // already capturing
+  if (!reportButton.isEnabled) return // already capturing / panel open / sent
   reportButton.text = "กำลังเก็บ..."
   reportButton.isEnabled = false
-  overlayBackButton?.isEnabled = false
-  // Capture the frozen screen (log + tree + screenshot) BEFORE leaving it, then jump back into
-  // the app where the report modal asks the user to describe the problem and sends everything.
+  // Capture the frozen screen (log + tree + screenshot) BEFORE the description panel opens —
+  // the panel is a focusable window and would steal rootInActiveWindow from Shopee.
   writeShopeeReportDiagnostic {
-    mainHandler.post { exitAutomationAfterStop() }
+    mainHandler.post {
+      overlayReportButton?.text = "รายงานปัญหา"
+      showAutomationReportPanel()
+    }
   }
 }
 
+// Description panel shown ON TOP of the frozen Shopee screen (focusable overlay, so the keyboard
+// opens right there) — reporting no longer yanks the user back into the app. ส่ง writes the
+// description file (the "ready" marker the JS flush waits for); ยกเลิก throws the capture away.
+internal fun KubdeeAccessibilityService.showAutomationReportPanel() {
+  if (overlayReportPanel != null) return
+  val dismissOnBack = View.OnKeyListener { _, keyCode, event ->
+    if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.action == android.view.KeyEvent.ACTION_UP) {
+      cancelAutomationReportPanel()
+      true
+    } else {
+      false
+    }
+  }
+
+  val input = android.widget.EditText(this).apply {
+    setTextColor(Color.WHITE)
+    setHintTextColor(Color.argb(150, 255, 255, 255))
+    hint = "เล่าหน่อยว่าเกิดอะไรขึ้น (ไม่บังคับ)"
+    textSize = 13f
+    minLines = 3
+    maxLines = 5
+    gravity = Gravity.TOP or Gravity.START
+    inputType = android.text.InputType.TYPE_CLASS_TEXT or
+      android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+      android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+    setPadding(dp(10), dp(8), dp(10), dp(8))
+    background = GradientDrawable().apply {
+      setColor(Color.rgb(30, 41, 59))
+      cornerRadius = dp(8).toFloat()
+      setStroke(dp(1), Color.argb(70, 255, 255, 255))
+    }
+    setOnKeyListener(dismissOnBack)
+  }
+
+  fun panelButton(label: String, bgColor: Int, onClick: () -> Unit): Button = Button(this).apply {
+    text = label
+    textSize = 12f
+    typeface = Typeface.DEFAULT_BOLD
+    isAllCaps = false
+    includeFontPadding = false
+    minHeight = 0
+    minWidth = 0
+    minimumHeight = 0
+    minimumWidth = 0
+    setTextColor(Color.WHITE)
+    setPadding(dp(14), dp(6), dp(14), dp(6))
+    background = GradientDrawable().apply {
+      setColor(bgColor)
+      cornerRadius = dp(999).toFloat()
+    }
+    setOnClickListener { onClick() }
+  }
+
+  val buttonRow = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    gravity = Gravity.END
+    addView(
+      panelButton("ยกเลิก", Color.rgb(71, 85, 105)) { cancelAutomationReportPanel() },
+      LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+    )
+    addView(
+      panelButton("ส่งรายงาน", Color.rgb(37, 99, 235)) { submitAutomationReportPanel() },
+      LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        marginStart = dp(8)
+      }
+    )
+  }
+
+  val panel = LinearLayout(this).apply {
+    orientation = LinearLayout.VERTICAL
+    setPadding(dp(14), dp(12), dp(14), dp(12))
+    background = GradientDrawable().apply {
+      setColor(Color.argb(242, 15, 23, 42))
+      cornerRadius = dp(12).toFloat()
+      setStroke(dp(1), Color.argb(60, 255, 255, 255))
+    }
+    isFocusableInTouchMode = true
+    setOnKeyListener(dismissOnBack)
+    addView(TextView(this@showAutomationReportPanel).apply {
+      text = "รายงานปัญหาถึงทีม — เก็บ log และภาพหน้าจอไว้ให้แล้ว"
+      setTextColor(Color.WHITE)
+      textSize = 12.5f
+      typeface = Typeface.DEFAULT_BOLD
+    })
+    addView(
+      input,
+      LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        topMargin = dp(8)
+      }
+    )
+    addView(
+      buttonRow,
+      LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+        topMargin = dp(10)
+      }
+    )
+  }
+
+  val params = WindowManager.LayoutParams(
+    resources.displayMetrics.widthPixels - dp(24),
+    WindowManager.LayoutParams.WRAP_CONTENT,
+    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+    // Focusable (no FLAG_NOT_FOCUSABLE) so the EditText can take keyboard input over Shopee.
+    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+    PixelFormat.TRANSLUCENT
+  ).apply {
+    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+    y = automationOverlayTopOffset() + dp(200)
+    softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or
+      WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+  }
+
+  try {
+    automationWindowManager.addView(panel, params)
+    overlayReportPanel = panel
+    overlayReportInput = input
+    mainHandler.post {
+      input.requestFocus()
+      val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+      imm?.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+    }
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to show report panel — sending without description", error)
+    overlayReportPanel = null
+    overlayReportInput = null
+    // Fallback: finalize the report immediately so it still reaches the team.
+    writeShopeeReportDescription("")
+    overlayReportButton?.apply {
+      text = "ส่งแล้ว"
+      isEnabled = false
+    }
+  }
+}
+
+internal fun KubdeeAccessibilityService.submitAutomationReportPanel() {
+  val description = overlayReportInput?.text?.toString()?.trim().orEmpty()
+  writeShopeeReportDescription(description)
+  removeAutomationReportPanel()
+  overlayReportButton?.apply {
+    text = "ส่งแล้ว"
+    isEnabled = false
+  }
+  android.widget.Toast.makeText(this, "ส่งรายงานแล้ว — จะถึงทีมเมื่อกลับเข้าแอป", android.widget.Toast.LENGTH_SHORT).show()
+}
+
+internal fun KubdeeAccessibilityService.cancelAutomationReportPanel() {
+  deleteShopeeReportDiagnosticFiles()
+  removeAutomationReportPanel()
+  overlayReportButton?.apply {
+    text = "รายงานปัญหา"
+    isEnabled = true
+  }
+}
+
+internal fun KubdeeAccessibilityService.removeAutomationReportPanel() {
+  overlayReportPanel?.let { try { automationWindowManager.removeView(it) } catch (_: Exception) {} }
+  overlayReportPanel = null
+  overlayReportInput = null
+}
+
 internal fun KubdeeAccessibilityService.exitAutomationAfterStop() {
+  // Leaving while the description panel is still open abandons the report (ส่ง finalizes it).
+  if (overlayReportPanel != null) {
+    deleteShopeeReportDiagnosticFiles()
+  }
   removeAutomationStoppedControls()
   removeAutomationOverlay(removeTapIndicator = true)
   endAutomationForeground()

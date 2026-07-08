@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.14',
+    date: '2026-07-08',
+    highlight: 'พิมพ์รายงานปัญหาได้ทันทีบนหน้า Shopee',
+    changes: [
+      {
+        type: 'improved',
+        text: 'กด "รายงานปัญหา" แล้วพิมพ์อธิบายได้ทันทีบนหน้า Shopee ที่ค้างอยู่ ไม่เด้งกลับแอปแล้ว — ส่งเสร็จอยู่หน้าเดิมต่อได้เลย',
+      },
+    ],
+  },
+  {
     version: '0.3.13',
     date: '2026-07-08',
     highlight: 'จัดปุ่มหลัง Stop ให้ชิดกัน',

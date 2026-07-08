@@ -65,6 +65,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
   internal var overlayStopButton: Button? = null
   internal var overlayReportButton: Button? = null
   internal var overlayBackButton: Button? = null
+  internal var overlayReportPanel: LinearLayout? = null
+  internal var overlayReportInput: android.widget.EditText? = null
   internal var overlayTitleView: TextView? = null
   internal var overlaySubtitleView: TextView? = null
   internal var overlayChipRow: LinearLayout? = null

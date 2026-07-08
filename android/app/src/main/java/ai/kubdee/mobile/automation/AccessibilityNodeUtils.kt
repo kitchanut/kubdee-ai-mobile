@@ -546,6 +546,32 @@ internal fun KubdeeAccessibilityService.writeShopeeReportDiagnostic(onDone: (() 
   takeAutomationScreenshotToFile(onDone)
 }
 
+// The user's description typed on the overlay panel. Its EXISTENCE is also the "ready" marker:
+// the JS side only forwards a manual report once this file appears (i.e. the user tapped ส่ง),
+// so a flush can't race the user while they are still typing.
+internal fun KubdeeAccessibilityService.writeShopeeReportDescription(description: String) {
+  try {
+    java.io.File(filesDir, "shopee-diagnostic-desc.txt").writeText(description)
+  } catch (error: Exception) {
+    Log.w(TAG, "Unable to write report description", error)
+  }
+}
+
+// Cancel path: throw away a captured-but-unsent report (panel dismissed / user left mid-typing).
+internal fun KubdeeAccessibilityService.deleteShopeeReportDiagnosticFiles() {
+  for (name in listOf(
+    "shopee-diagnostic-latest.txt",
+    "shopee-diagnostic-screenshot.jpg",
+    "shopee-diagnostic-desc.txt"
+  )) {
+    try {
+      java.io.File(filesDir, name).delete()
+    } catch (_: Exception) {
+      // best-effort
+    }
+  }
+}
+
 // Capture a downscaled screenshot of the current screen to the files dir (best-effort; API 30+).
 // onDone always fires exactly once — success, failure, or unsupported device.
 internal fun KubdeeAccessibilityService.takeAutomationScreenshotToFile(onDone: (() -> Unit)? = null) {

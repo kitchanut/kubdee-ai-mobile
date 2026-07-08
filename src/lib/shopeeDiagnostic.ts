@@ -4,30 +4,28 @@ import { captureShopeeDiagnostic } from '@/lib/sentry';
 
 // The native accessibility service writes these files (into the app's files dir, shared with the
 // :automation process) when a Shopee scrape finds no cards, or when the user taps "report problem"
-// after Stop. See writeShopeeScrapeDiagnostic / writeShopeeReportDiagnostic.
+// after Stop and submits the description panel shown over the frozen Shopee screen.
+// See writeShopeeScrapeDiagnostic / writeShopeeReportDiagnostic / writeShopeeReportDescription.
 const DIAGNOSTIC_FILE = 'shopee-diagnostic-latest.txt';
 const SCREENSHOT_FILE = 'shopee-diagnostic-screenshot.jpg';
+// Doubles as the "ready" marker for manual reports: it only exists once the user tapped ส่ง on the
+// overlay panel, so a flush can't race them while they are still typing.
+const DESCRIPTION_FILE = 'shopee-diagnostic-desc.txt';
 
 // Header line the native side writes for user-triggered reports (vs automatic scrape diagnostics).
 const MANUAL_REPORT_MARKER = 'type=manual-report';
-
-export interface ShopeeManualReport {
-  dump: string;
-  screenshot?: Uint8Array;
-}
 
 function filePath(name: string): string | null {
   return FileSystem.documentDirectory ? `${FileSystem.documentDirectory}${name}` : null;
 }
 
-async function readDumpFile(): Promise<string | null> {
-  const path = filePath(DIAGNOSTIC_FILE);
+async function readTextFile(name: string): Promise<string | null> {
+  const path = filePath(name);
   if (!path) return null;
   try {
     const info = await FileSystem.getInfoAsync(path);
     if (!info.exists || info.isDirectory) return null;
-    const dump = await FileSystem.readAsStringAsync(path);
-    return dump.trim() ? dump : null;
+    return await FileSystem.readAsStringAsync(path);
   } catch {
     return null;
   }
@@ -53,7 +51,7 @@ async function readScreenshotBytes(): Promise<Uint8Array | undefined> {
 }
 
 async function deleteDiagnosticFiles(): Promise<void> {
-  for (const name of [DIAGNOSTIC_FILE, SCREENSHOT_FILE]) {
+  for (const name of [DIAGNOSTIC_FILE, SCREENSHOT_FILE, DESCRIPTION_FILE]) {
     const path = filePath(name);
     if (!path) continue;
     try {
@@ -69,66 +67,48 @@ function isManualReport(dump: string): boolean {
 }
 
 /**
- * Forward an AUTOMATIC diagnostic the native scraper left behind (scrape found no cards) to
- * Sentry, then delete the files. Manual "report problem" dumps are left in place — those are
- * handled by the report modal (takePendingShopeeManualReport) so the user can add a description.
+ * Forward any diagnostic the native side left behind to Sentry, then delete the files.
+ * - Automatic scrape diagnostics send as "Shopee automation diagnostic".
+ * - Manual reports send as "Shopee user report[: description]" — but only once the description
+ *   file exists (the user tapped ส่ง on the overlay panel); before that they are left in place.
  * Best-effort; never throws. Call on app start and whenever the app returns to foreground.
  */
 export async function flushShopeeScrapeDiagnostic(context: Record<string, unknown> = {}): Promise<void> {
   try {
-    const dump = await readDumpFile();
-    if (!dump) return;
-    if (isManualReport(dump)) {
-      console.log('[shopee-diagnostic] manual report pending — leaving for report modal');
-      return;
+    const dump = await readTextFile(DIAGNOSTIC_FILE);
+    if (!dump || !dump.trim()) return;
+
+    const manual = isManualReport(dump);
+    let description = '';
+    if (manual) {
+      const descFile = await readTextFile(DESCRIPTION_FILE);
+      if (descFile === null) {
+        console.log('[shopee-diagnostic] manual report not finalized yet — waiting for ส่ง');
+        return;
+      }
+      description = descFile.trim();
     }
+
     const screenshot = await readScreenshotBytes();
-    console.log('[shopee-diagnostic] sending auto diagnostic to Sentry', { bytes: dump.length });
-    captureShopeeDiagnostic('Shopee automation diagnostic', dump, context, screenshot);
+    const message = manual
+      ? description
+        ? `Shopee user report: ${description.slice(0, 120)}`
+        : 'Shopee user report'
+      : 'Shopee automation diagnostic';
+    console.log('[shopee-diagnostic] sending to Sentry', {
+      manual,
+      bytes: dump.length,
+      hasScreenshot: Boolean(screenshot),
+      hasDescription: Boolean(description),
+    });
+    captureShopeeDiagnostic(
+      message,
+      dump,
+      manual ? { ...context, trigger: 'manual-report', userDescription: description || null } : context,
+      screenshot
+    );
     await deleteDiagnosticFiles();
   } catch {
     // best-effort — diagnostics must never break the import flow
   }
-}
-
-/**
- * Read a pending user-triggered report ("รายงานปัญหา" after Stop) WITHOUT deleting it, so the
- * report modal can collect a description first. Returns null when there is none.
- */
-export async function takePendingShopeeManualReport(): Promise<ShopeeManualReport | null> {
-  try {
-    const dump = await readDumpFile();
-    if (!dump || !isManualReport(dump)) return null;
-    const screenshot = await readScreenshotBytes();
-    return { dump, screenshot };
-  } catch {
-    return null;
-  }
-}
-
-/** Send a manual report (with the user's description) to Sentry, then delete the files. */
-export async function sendShopeeManualReport(
-  report: ShopeeManualReport,
-  description: string,
-  context: Record<string, unknown> = {}
-): Promise<void> {
-  const trimmed = description.trim();
-  console.log('[shopee-diagnostic] sending manual report to Sentry', {
-    bytes: report.dump.length,
-    hasScreenshot: Boolean(report.screenshot),
-    hasDescription: Boolean(trimmed),
-  });
-  captureShopeeDiagnostic(
-    trimmed ? `Shopee user report: ${trimmed.slice(0, 120)}` : 'Shopee user report',
-    report.dump,
-    { ...context, userDescription: trimmed || null, trigger: 'manual-report' },
-    report.screenshot
-  );
-  await deleteDiagnosticFiles();
-}
-
-/** Discard a pending manual report without sending. */
-export async function discardShopeeManualReport(): Promise<void> {
-  console.log('[shopee-diagnostic] manual report discarded by user');
-  await deleteDiagnosticFiles();
 }
