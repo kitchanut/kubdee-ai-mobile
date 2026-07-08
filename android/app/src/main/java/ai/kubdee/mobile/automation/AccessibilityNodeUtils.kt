@@ -527,8 +527,9 @@ internal fun KubdeeAccessibilityService.writeShopeeScrapeDiagnostic(mode: String
 
 // Manual "report problem" diagnostic (user-triggered after Stop): the full run log + current-screen
 // tree + a screenshot, so we can debug any issue on any device. Written to the shared files dir;
-// the JS side forwards them to Sentry when the app returns to the foreground.
-internal fun KubdeeAccessibilityService.writeShopeeReportDiagnostic() {
+// the JS side picks them up in the report modal when the app returns to the foreground.
+// onDone fires (on the main executor) once the screenshot has been written or given up on.
+internal fun KubdeeAccessibilityService.writeShopeeReportDiagnostic(onDone: (() -> Unit)? = null) {
   try {
     val header = buildString {
       append("type=manual-report\n")
@@ -542,12 +543,16 @@ internal fun KubdeeAccessibilityService.writeShopeeReportDiagnostic() {
   } catch (error: Exception) {
     Log.w(TAG, "Unable to write report diagnostic", error)
   }
-  takeAutomationScreenshotToFile()
+  takeAutomationScreenshotToFile(onDone)
 }
 
 // Capture a downscaled screenshot of the current screen to the files dir (best-effort; API 30+).
-internal fun KubdeeAccessibilityService.takeAutomationScreenshotToFile() {
-  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+// onDone always fires exactly once — success, failure, or unsupported device.
+internal fun KubdeeAccessibilityService.takeAutomationScreenshotToFile(onDone: (() -> Unit)? = null) {
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+    onDone?.invoke()
+    return
+  }
   try {
     takeScreenshot(
       android.view.Display.DEFAULT_DISPLAY,
@@ -571,15 +576,19 @@ internal fun KubdeeAccessibilityService.takeAutomationScreenshotToFile() {
             }
           } catch (error: Exception) {
             Log.w(TAG, "Unable to save automation screenshot", error)
+          } finally {
+            onDone?.invoke()
           }
         }
 
         override fun onFailure(errorCode: Int) {
           Log.w(TAG, "takeScreenshot failed: $errorCode")
+          onDone?.invoke()
         }
       }
     )
   } catch (error: Exception) {
     Log.w(TAG, "takeScreenshot error", error)
+    onDone?.invoke()
   }
 }
