@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.15',
+    date: '2026-07-08',
+    highlight: 'แก้ดึงสินค้าถูกใจ (มุมมองพาร์ทเนอร์) ไม่เจอบนบางเครื่อง',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'บางเครื่อง (เช่น Samsung Android 14) เปิดรายการถูกใจในมุมมองพาร์ทเนอร์แล้วระบบมองไม่เห็นการ์ดสินค้าเลย (พบ 0 รายการทั้งที่มีสินค้าอยู่) ตอนนี้เพิ่มวิธีอ่านการ์ดสำรองจากตำแหน่งราคา+ชื่อสินค้า ทำให้ดึงสินค้าและแชร์ได้ตามปกติ',
+      },
+    ],
+  },
+  {
     version: '0.3.14',
     date: '2026-07-08',
     highlight: 'พิมพ์รายงานปัญหาได้ทันทีบนหน้า Shopee',
