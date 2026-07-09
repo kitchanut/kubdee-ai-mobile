@@ -57,7 +57,7 @@ function cleanText(value: string | null | undefined): string {
 }
 
 function hasWordCharacter(value: string): boolean {
-  return /[\p{L}\p{N}_]/u.test(value);
+  return /[\p{L}\p{M}\p{N}_]/u.test(value);
 }
 
 function getSegmenter(): SegmenterInstance | null {
@@ -86,7 +86,7 @@ function getWordTokens(text: string): WordToken[] {
   }
 
   const tokens: WordToken[] = [];
-  const matcher = /#[\p{L}\p{N}_]+|[\p{L}\p{N}_]+/gu;
+  const matcher = /#[\p{L}\p{M}\p{N}_]+|[\p{L}\p{M}\p{N}_]+/gu;
   for (const match of cleanValue.matchAll(matcher)) {
     const start = match.index ?? 0;
     tokens.push({
@@ -118,7 +118,7 @@ function trimTextToWordLimit(value: string | null | undefined, maxWords: number)
 }
 
 function cleanHashtagToken(value: string): string {
-  const token = value.trim().replace(/^#+/u, '').replace(/[^\p{L}\p{N}_]+/gu, '');
+  const token = value.trim().replace(/^#+/u, '').replace(/[^\p{L}\p{M}\p{N}_]+/gu, '');
   return token ? `#${token}` : '';
 }
 
