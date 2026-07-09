@@ -2059,18 +2059,25 @@ internal fun KubdeeAccessibilityService.findShopeePostingToggleLabelBounds(slot:
           node.bounds.centerY() <= screen.bottom - dp(170) &&
           isShopeePostingToggleLabelText(slot, cleanNodeText(node.text).lowercase(Locale.ROOT))
       }
-      .sortedBy { it.bounds.top }
     if (labels.isEmpty()) continue
-
-    val combined = Rect(labels.first().bounds)
-    labels.drop(1).forEach { node ->
-      if (node.bounds.top <= combined.bottom + dp(32)) {
-        combined.union(node.bounds)
-      }
-    }
-    return combined
+    return combineAdjacentToggleLabelBounds(labels)
   }
   return null
+}
+
+// Toggle labels can wrap into multiple accessibility nodes (e.g. a bold heading plus a
+// multi-line description below it, both matching the same label keywords). Unioning nodes
+// that sit close together yields a bounds whose centerY lines up with the actual switch,
+// instead of just the topmost matching line.
+internal fun KubdeeAccessibilityService.combineAdjacentToggleLabelBounds(nodes: List<TextNode>): Rect {
+  val sorted = nodes.sortedBy { it.bounds.top }
+  val combined = Rect(sorted.first().bounds)
+  sorted.drop(1).forEach { node ->
+    if (node.bounds.top <= combined.bottom + dp(32)) {
+      combined.union(node.bounds)
+    }
+  }
+  return combined
 }
 
 internal fun isShopeePostingToggleLabelText(slot: ShopeePostingToggleSlot, textKey: String): Boolean {
@@ -2334,21 +2341,22 @@ internal fun KubdeeAccessibilityService.tapShopeePostingToggleByLabel(
     val textNodes = mutableListOf<TextNode>()
     collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
     val minToggleY = shopeePostingToggleLabelMinY(textNodes, screen)
-    val label = textNodes
+    val matches = textNodes
       .filter { node ->
         node.node.isVisibleToUser &&
           labels.any { needle -> cleanNodeText(node.text).contains(needle, ignoreCase = true) } &&
           node.bounds.centerY() >= minToggleY &&
           node.bounds.centerY() <= screen.bottom - dp(170)
       }
-      .minByOrNull { it.bounds.top }
-      ?: continue
+      .sortedBy { it.bounds.top }
+    if (matches.isEmpty()) continue
+    val combined = combineAdjacentToggleLabelBounds(matches)
 
     val tapX = shopeePostingToggleFallbackTapX(screen, desiredOn)
-    val tapY = label.bounds.centerY().toFloat()
+    val tapY = combined.centerY().toFloat()
     val tapEventKey = "shopee-post:toggle:${logName.lowercase(Locale.ROOT)}"
     logShopeePostStep(
-      "แตะ toggle $logName จาก label '${label.text.take(28)}'" +
+      "แตะ toggle $logName จาก label '${matches.first().text.take(28)}'" +
         desiredOn?.let { " ${shopeePostingToggleDirectionLabel(it)}" }.orEmpty() +
         " ที่ ${tapX.toInt()},${tapY.toInt()}"
     )
