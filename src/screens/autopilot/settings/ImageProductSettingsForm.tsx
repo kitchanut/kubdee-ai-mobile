@@ -18,11 +18,11 @@ import {
   PRESET_TABS,
   PRODUCT_DISPLAY_OPTIONS,
   STORY_OPTIONS,
-  STORY_TABS,
   TEXT_OVERLAY_OPTIONS,
   VIRAL_OPTIONS,
   VIRAL_TABS,
 } from '@/autopilot/optionSets';
+import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 import { IMAGE_SECTION_KEYS } from '../constants';
@@ -327,20 +327,19 @@ export function ImageProductSettingsForm({
             {/* story */}
             {settings.styleMode === 'story' ? (
               <View className="gap-2.5">
-                <CategoryTabs
-                  tabs={STORY_TABS}
-                  theme={theme}
-                  accent={accent}
-                  value={settings.storySubTab}
-                  onChange={(key) => onChange('storySubTab', key)}
-                />
-                <CardOptionGrid
-                  options={STORY_OPTIONS[settings.storySubTab] ?? STORY_OPTIONS.minimal}
-                  theme={theme}
-                  accent={accent}
-                  value={settings.storyStyle}
-                  onChange={(value) => onChange('storyStyle', value)}
-                />
+                <View className="gap-1.5">
+                  <CardOptionGrid
+                    options={STORY_OPTIONS}
+                    theme={theme}
+                    accent={accent}
+                    value={settings.storyStyle}
+                    onChange={(value) => onChange('storyStyle', value)}
+                  />
+                  <Text className="text-kd-micro leading-4 text-kd-text-subtle">
+                    สร้างภาพเดียวแบบ Story Collage 5 ช่อง พร้อมป้ายเวลาและคำบรรยายลายมือ เหมาะสำหรับวางแผนคลิปสั้น
+                    (สถานที่ใช้ค่าจากหัวข้อ &quot;ฉาก&quot; ด้านล่าง)
+                  </Text>
+                </View>
                 <OutfitBlock />
               </View>
             ) : null}

@@ -44,7 +44,6 @@ export interface AutoPilotImageSettings {
   viralSubTab: string;
   storyStyle: string;
   storyStyleCustom: string;
-  storySubTab: string;
   customStyle: string;
   // รายละเอียดสไตล์
   background: string;

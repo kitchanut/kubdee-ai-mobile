@@ -330,13 +330,9 @@ export const IMAGE_STYLE_MODE_OPTIONS: AutoPilotOption[] = [
   { value: 'story', label: 'สตอรี่' },
 ];
 
-// ───────────────────────── รูปภาพ: สไตล์สตอรี่ (Story Board Collage 5-7 ช่อง) ─────────────────────────
-// จัดเป็นหมวด (sub tab) เหมือนสไตล์หลัก/เทศกาล เผื่อเพิ่มหมวดใหม่ทีหลัง ตอนนี้มีแค่หมวด "มินิมอล" ตัวเลือกเดียว "ในบ้าน"
-export const STORY_TABS: AutoPilotTab[] = [{ key: 'minimal', label: 'มินิมอล' }];
-
-export const STORY_OPTIONS: Record<string, AutoPilotOption[]> = {
-  minimal: [{ value: 'เรื่องราวมินิมอล', label: 'ในบ้าน' }],
-};
+// ───────────────────────── รูปภาพ: สไตล์สตอรี่ (Story Board Collage 5 ช่อง) ─────────────────────────
+// ตัวเลือกเดียว "มินิมอล" — สถานที่ไม่ hardcode ในนี้ ใช้ค่าจากหัวข้อ "ฉาก" ด้านล่างแทน
+export const STORY_OPTIONS: AutoPilotOption[] = [{ value: 'เรื่องราวมินิมอล', label: 'มินิมอล' }];
 
 // ต้องตรงกับ VIDEO_STYLE_OPTIONS ด้านล่าง และ STORY_STYLE_MAP ใน mobilePromptBuilder.ts
 export const STORY_VIDEO_STYLE_KEY = 'เรื่องราวมินิมอล';

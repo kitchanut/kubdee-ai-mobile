@@ -28,7 +28,6 @@ export const IMAGE_SECTION_KEYS = {
     'viralSubTab',
     'storyStyle',
     'storyStyleCustom',
-    'storySubTab',
     'customStyle',
     'characterOutfit',
     'characterOutfitCustom',

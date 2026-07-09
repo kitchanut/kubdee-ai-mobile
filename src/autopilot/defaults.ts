@@ -48,7 +48,6 @@ export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
   viralSubTab: 'survival',
   storyStyle: 'เรื่องราวมินิมอล',
   storyStyleCustom: '',
-  storySubTab: 'minimal',
   customStyle: 'auto',
   background: 'auto',
   backgroundCustom: '',
