@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.18',
+    date: '2026-07-09',
+    highlight: 'แก้วรรณยุกต์แฮชแท็กหายในหน้าโพสต์ Shopee',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'แฮชแท็กภาษาไทยที่มีวรรณยุกต์หรือสระบน-ล่าง (เช่น ่ ้ ๊ ๋ ั ิ ี ึ ื ุ ู ็ ์) โดนตัดหายก่อนโพสต์ลง Shopee ทั้งแฮชแท็กที่พิมพ์เองและที่ AI สร้างให้ ตอนนี้แก้ให้เก็บวรรณยุกต์/สระไว้ครบแล้ว'
+      }
+    ]
+  },
+  {
     version: '0.3.17',
     date: '2026-07-09',
     highlight: 'แก้ปุ่ม "เปิดป้ายกำกับ AI" ในหน้าโพสต์ Shopee กดไม่ติด',
