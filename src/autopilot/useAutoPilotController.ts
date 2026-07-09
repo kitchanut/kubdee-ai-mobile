@@ -723,6 +723,11 @@ export function useAutoPilotController({
         return;
       }
 
+      if (settings.autoPostFacebook && !settings.facebookChannelId) {
+        appendLog('error', 'เปิดโพสต์ Facebook ไว้แต่ยังไม่ได้เลือก channel — เลือก channel ก่อนเริ่มงาน');
+        return;
+      }
+
       const runId = createRunId();
       runIdRef.current = runId;
       beginAutomationActivityRun('auto-pilot', `Auto Workflow · ${selectedProducts.length} สินค้า`);

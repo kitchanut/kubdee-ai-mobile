@@ -21,6 +21,9 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   startNewFlowProjectPerProduct: true,
   deleteLatestFlowProjectBeforeNewProject: false,
   aiHashtagCount: 3,
+  autoPostShopee: false,
+  autoPostFacebook: false,
+  facebookChannelId: null,
 };
 
 export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {

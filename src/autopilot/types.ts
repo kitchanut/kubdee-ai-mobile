@@ -111,6 +111,9 @@ export interface AutoPilotSettings {
   startNewFlowProjectPerProduct: boolean;
   deleteLatestFlowProjectBeforeNewProject: boolean;
   aiHashtagCount: number;
+  autoPostShopee: boolean;
+  autoPostFacebook: boolean;
+  facebookChannelId: string | null;
 }
 
 export interface AutoPilotProduct {

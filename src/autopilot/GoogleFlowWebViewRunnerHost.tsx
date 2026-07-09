@@ -7,6 +7,8 @@ import {
   emitGoogleFlowRunnerLog,
   registerGoogleFlowWebViewRunnerHost,
 } from '@/autopilot/googleFlowRunnerBridge';
+import { postProductAfterGeneration } from '@/autopilot/autoProductPosting';
+import type { AutoPilotProductVideoAsset } from '@/autopilot/autoProductPosting';
 import type {
   AutoPilotStepType,
   GoogleFlowRunnerLogEntry,
@@ -100,6 +102,10 @@ interface GoogleFlowWebViewRunnerHostProps {
   theme: KubdeeTheme;
 }
 
+interface TrackedProductAsset extends AutoPilotProductVideoAsset {
+  step: AutoPilotStepType;
+}
+
 function describeReferenceTransport(args: Record<string, unknown>): string {
   const dataUrl = typeof args.dataUrl === 'string' ? args.dataUrl : '';
   if (dataUrl.startsWith('data:image/')) {
@@ -139,6 +145,7 @@ export default function GoogleFlowWebViewRunnerHost({
   const flowUrlRef = useRef('');
   const actionLogContextRef = useRef<FlowActionLogContext | null>(null);
   const latestGeneratedImageDataUrlsRef = useRef<Map<string, string[]>>(new Map());
+  const latestProductAssetsRef = useRef<Map<string, TrackedProductAsset[]>>(new Map());
   const [visible, setVisible] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [flowWebViewKey, setFlowWebViewKey] = useState(0);
@@ -146,6 +153,14 @@ export default function GoogleFlowWebViewRunnerHost({
   const [overlayProgress, setOverlayProgress] = useState<OverlayProgressState | null>(null);
 
   const emit = useCallback((entry: Omit<GoogleFlowRunnerLogEntry, 'ts'> & { ts?: number }): void => {
+    if (entry.event === 'asset' && entry.productId && entry.step && entry.fileUri) {
+      const existing = latestProductAssetsRef.current.get(entry.productId) ?? [];
+      latestProductAssetsRef.current.set(entry.productId, [
+        ...existing,
+        { step: entry.step, fileUri: entry.fileUri, fileName: entry.fileName, mimeType: entry.mimeType },
+      ]);
+    }
+
     const ts = entry.ts ?? Date.now();
     const plannedAssetStats = payloadRef.current
       ? getPlannedOverlayAssetStats(payloadRef.current)
@@ -3123,6 +3138,9 @@ export default function GoogleFlowWebViewRunnerHost({
           for (let productIndex = 0; productIndex < payload.products.length; productIndex += 1) {
             const product = payload.products[productIndex];
             checkStop();
+            // Multi-round runs revisit the same product id — drop any assets
+            // tracked from a prior round before this round's steps run.
+            latestProductAssetsRef.current.delete(product.id);
             emit({
               event: 'progress',
               runId: payload.runId,
@@ -3249,6 +3267,42 @@ export default function GoogleFlowWebViewRunnerHost({
                     : outputCountForRunnerStep(product, 'image');
                   emitStepFailure(step, stepError, failedOutputs);
                 }
+              }
+            }
+
+            if (payload.settings.autoPostShopee || payload.settings.autoPostFacebook) {
+              const videoAssets = (latestProductAssetsRef.current.get(product.id) ?? []).filter(
+                (asset) => asset.step === 'video'
+              );
+              try {
+                await postProductAfterGeneration({
+                  product,
+                  videoAssets,
+                  settings: payload.settings,
+                  emit,
+                  runId: payload.runId,
+                  round,
+                  totalRounds: payload.settings.totalRounds,
+                  productIndex,
+                  totalProducts: payload.products.length,
+                });
+              } catch (postingError) {
+                // Posting failures must never stop the run — the remaining
+                // products (and cleanup for this one) still need to happen.
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'error',
+                  stage: 'failed',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: `โพสต์สินค้าไม่สำเร็จ: ${postingError instanceof Error ? postingError.message : String(postingError)}`,
+                });
               }
             }
 

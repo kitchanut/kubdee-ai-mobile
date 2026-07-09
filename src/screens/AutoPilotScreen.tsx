@@ -35,6 +35,7 @@ import { ProductSettingsModal } from './autopilot/ProductSettingsModal';
 import type { ProductSettingsTab } from './autopilot/constants';
 import { ExtensionBasicSettingsBlock } from './autopilot/blocks/SettingsBlocks';
 import { PipelineStepsBlock } from './autopilot/blocks/PipelineStepsBlock';
+import { FacebookPostingSettingsBlock } from './autopilot/blocks/FacebookPostingSettingsBlock';
 import { ActivityLogSheet, RunStatusSummaryBlock } from './autopilot/blocks/RunStatus';
 import { ProductCatalogBlock } from './autopilot/blocks/ProductCatalog';
 import {
@@ -324,9 +325,21 @@ export default function AutoPilotScreen({
 
           <PipelineStepsBlock
             enabledSteps={controller.enabledSteps}
+            shopeeEnabled={controller.settings.autoPostShopee}
+            facebookEnabled={controller.settings.autoPostFacebook}
             theme={theme}
             onToggle={(value) => controller.toggleStep(value)}
+            onToggleShopee={() => controller.updateSetting('autoPostShopee', !controller.settings.autoPostShopee)}
+            onToggleFacebook={() => controller.updateSetting('autoPostFacebook', !controller.settings.autoPostFacebook)}
           />
+
+          {controller.settings.autoPostFacebook ? (
+            <FacebookPostingSettingsBlock
+              facebookChannelId={controller.settings.facebookChannelId}
+              theme={theme}
+              onSelectChannel={(channelId) => controller.updateSetting('facebookChannelId', channelId)}
+            />
+          ) : null}
 
           {showRunStatus ? (
             <RunStatusSummaryBlock

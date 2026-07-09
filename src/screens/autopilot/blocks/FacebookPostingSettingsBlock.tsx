@@ -1,0 +1,122 @@
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
+import { AlertTriangle } from 'lucide-react-native';
+import { getBufferConnectionStatus, listFacebookBufferChannels } from '@/autopilot/bufferPosting';
+import type { BufferChannel } from '@/autopilot/bufferPosting';
+import Text from '@/components/ui/KubdeeText';
+import type { KubdeeTheme } from '@/theme/tokens';
+import type { OptionValue } from '../constants';
+import { SelectField } from '../primitives';
+
+type LoadState = 'loading' | 'not_connected' | 'no_channels' | 'ready' | 'error';
+
+// Facebook posting goes through Buffer, and Buffer connection (entering the
+// API key) only happens on the web (kubdee.ai/settings) by design — mobile
+// only reads the connection status + channel list, it never lets the user
+// paste a key here.
+export function FacebookPostingSettingsBlock({
+  facebookChannelId,
+  theme,
+  onSelectChannel,
+}: {
+  facebookChannelId: string | null;
+  theme: KubdeeTheme;
+  onSelectChannel: (channelId: string) => void;
+}): React.JSX.Element {
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [channels, setChannels] = useState<BufferChannel[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load(): Promise<void> {
+      setLoadState('loading');
+      try {
+        const status = await getBufferConnectionStatus();
+        if (cancelled) return;
+        if (!status.connected) {
+          setLoadState('not_connected');
+          return;
+        }
+
+        const facebookChannels = await listFacebookBufferChannels();
+        if (cancelled) return;
+        setChannels(facebookChannels);
+        setLoadState(facebookChannels.length > 0 ? 'ready' : 'no_channels');
+      } catch {
+        if (!cancelled) setLoadState('error');
+      }
+    }
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loadState !== 'ready' || channels.length === 0) return;
+    // Also re-select if the persisted channel no longer exists (e.g. it was
+    // removed/disconnected on Buffer's side since it was last picked) —
+    // otherwise a stale id would silently fail every post instead of falling
+    // back to a channel that's actually still connected.
+    const stillExists = facebookChannelId && channels.some((channel) => channel.id === facebookChannelId);
+    if (!stillExists) {
+      onSelectChannel(channels[0].id);
+    }
+  }, [loadState, facebookChannelId, channels, onSelectChannel]);
+
+  if (loadState === 'loading') {
+    return (
+      <View className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
+        <ActivityIndicator size="small" color={theme.textSubtle} />
+        <Text className="text-kd-micro text-kd-text-subtle">กำลังเช็คการเชื่อมต่อ Buffer...</Text>
+      </View>
+    );
+  }
+
+  if (loadState === 'not_connected') {
+    return (
+      <View className="flex-row items-start gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
+        <AlertTriangle size={14} color={theme.amber} strokeWidth={2} />
+        <Text className="flex-1 text-kd-micro text-kd-text-subtle">
+          ยังไม่ได้เชื่อมต่อ Buffer — ไปเชื่อมต่อที่เว็บ kubdee.ai/settings ก่อน แล้วกลับมาเปิดใช้งานอีกครั้ง
+        </Text>
+      </View>
+    );
+  }
+
+  if (loadState === 'no_channels') {
+    return (
+      <View className="flex-row items-start gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
+        <AlertTriangle size={14} color={theme.amber} strokeWidth={2} />
+        <Text className="flex-1 text-kd-micro text-kd-text-subtle">
+          ยังไม่มี channel Facebook เชื่อมต่อกับ Buffer อยู่ — ไปเพิ่มที่เว็บ Buffer ก่อน
+        </Text>
+      </View>
+    );
+  }
+
+  if (loadState === 'error') {
+    return (
+      <View className="flex-row items-start gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
+        <AlertTriangle size={14} color={theme.red} strokeWidth={2} />
+        <Text className="flex-1 text-kd-micro text-kd-text-subtle">เช็คการเชื่อมต่อ Buffer ไม่สำเร็จ ลองอีกครั้ง</Text>
+      </View>
+    );
+  }
+
+  return (
+    <SelectField
+      label="Channel Facebook สำหรับโพสต์"
+      options={channels.map((channel) => ({
+        label: channel.displayName || channel.name,
+        value: channel.id,
+      }))}
+      theme={theme}
+      value={facebookChannelId ?? channels[0]?.id ?? ''}
+      onChange={(value: OptionValue) => onSelectChannel(String(value))}
+    />
+  );
+}
