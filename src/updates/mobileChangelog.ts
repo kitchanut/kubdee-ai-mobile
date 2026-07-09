@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.17',
+    date: '2026-07-09',
+    highlight: 'แก้ปุ่ม "เปิดป้ายกำกับ AI" ในหน้าโพสต์ Shopee กดไม่ติด',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'หน้าโพสต์ Shopee บางครั้งกดสวิตช์ "ครีเอเตอร์เพิ่มป้ายกำกับ AI" ไม่ติด เพราะระบบคำนวณตำแหน่งกดผิดเมื่อคำอธิบายใต้หัวข้อมีหลายบรรทัด ตอนนี้แก้ให้กดตรงตำแหน่งสวิตช์จริงแล้ว'
+      }
+    ]
+  },
+  {
     version: '0.3.16',
     date: '2026-07-09',
     highlight: 'เพิ่มโหมด "สตอรี่" ในตั้งค่ารูป/วิดีโอ',
