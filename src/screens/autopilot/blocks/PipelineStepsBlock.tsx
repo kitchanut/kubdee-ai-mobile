@@ -61,14 +61,6 @@ export function PipelineStepsBlock({
         <View className="flex-1 items-center">
           <ChevronRight size={12} color={theme.border} strokeWidth={2} />
         </View>
-        <DisabledPipelineIcon icon="tiktok" theme={theme} />
-        <View className="flex-1 items-center">
-          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
-        </View>
-        <DisabledPipelineIcon icon="youtube" theme={theme} />
-        <View className="flex-1 items-center">
-          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
-        </View>
         <PipelineToggleButton
           active={facebookEnabled}
           label="โพสต์ Facebook"
@@ -77,6 +69,14 @@ export function PipelineStepsBlock({
           theme={theme}
           onPress={onToggleFacebook}
         />
+        <View className="flex-1 items-center">
+          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
+        </View>
+        <DisabledPipelineIcon icon="tiktok" theme={theme} />
+        <View className="flex-1 items-center">
+          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
+        </View>
+        <DisabledPipelineIcon icon="youtube" theme={theme} />
       </View>
     </View>
   );

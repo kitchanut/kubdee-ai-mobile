@@ -3,11 +3,36 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { refreshAuthToken } from '@/auth/api';
 import { APP_TYPE, CLIENT_APP } from '@/auth/constants';
 import { getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
+import { readUriAsDataUrl } from '@/native/AccessibilityBridge';
 
 // Thin client for kubdee-ai-api's Buffer (buffer.com) integration — status,
 // Facebook channel listing, and posting a video generated on-device. Mirrors
 // the auth/fetch pattern in src/services/cloudTransferService.ts.
 const BUFFER_API_URL = 'https://api.kubdee.ai';
+// Without a timeout, a stalled connection (dead socket, server never
+// responding) hangs this call forever with no way to recover — and since
+// this runs inside the auto pilot loop, that stalls the entire run, not just
+// this one product. Upload gets longer since it can carry a multi-MB video.
+const BUFFER_REQUEST_TIMEOUT_MS = 30_000;
+const BUFFER_UPLOAD_TIMEOUT_MS = 90_000;
+
+class BufferRequestTimeoutError extends Error {}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new BufferRequestTimeoutError(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 export interface BufferConnectionStatus {
   connected: boolean;
@@ -71,7 +96,13 @@ async function buildHeaders(
 async function bufferFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const request = async (forceRefresh = false): Promise<Response> => {
     const headers = await buildHeaders(Object.fromEntries(new Headers(options.headers).entries()), forceRefresh);
-    return fetch(`${BUFFER_API_URL}${path}`, { ...options, headers });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), BUFFER_REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${BUFFER_API_URL}${path}`, { ...options, headers, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   let response = await request(false);
@@ -143,17 +174,64 @@ async function uploadBufferAssetOnce(
   forceRefresh: boolean
 ): Promise<FileSystem.FileSystemUploadResult> {
   const headers = await buildHeaders({ 'Content-Type': mimeType }, forceRefresh);
-  return FileSystem.uploadAsync(`${BUFFER_API_URL}/api/v1/integrations/buffer/assets`, fileUri, {
-    headers,
-    httpMethod: 'POST',
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+  // FileSystem.uploadAsync has no AbortSignal/cancellation support, so a timeout here can only
+  // stop *waiting* on it (via Promise.race), not cancel the underlying native upload task — still
+  // far better than hanging the whole auto pilot run forever on a stalled connection.
+  return withTimeout(
+    FileSystem.uploadAsync(`${BUFFER_API_URL}/api/v1/integrations/buffer/assets`, fileUri, {
+      headers,
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    }),
+    BUFFER_UPLOAD_TIMEOUT_MS,
+    'อัปโหลดไฟล์ไป Buffer หมดเวลา (นานเกิน 90 วินาที)'
+  );
+}
+
+// FileSystem.uploadAsync only knows how to stream a real file:// path — it can't read a
+// content:// uri (e.g. Google Flow videos saved into the shared Downloads collection via
+// MediaStore on Android, as this app does) and fails with an IOException about a directory
+// that doesn't exist. readUriAsDataUrl (native bridge) already reads content:// correctly
+// elsewhere in this app (local reference images) via ContentResolver, so reuse it: read the
+// file as base64, write it back out to a real local path, then upload that path instead.
+async function materializeUploadableFileUri(fileUri: string): Promise<{ path: string; cleanup: () => Promise<void> }> {
+  if (!fileUri.startsWith('content://')) {
+    return { path: fileUri, cleanup: async () => {} };
+  }
+
+  const dataUrl = await readUriAsDataUrl(fileUri);
+  const commaIndex = dataUrl?.indexOf(',') ?? -1;
+  if (!dataUrl || commaIndex === -1) {
+    throw new Error('อ่านไฟล์วิดีโอจาก content URI ไม่สำเร็จ');
+  }
+
+  const cacheDir = FileSystem.cacheDirectory;
+  if (!cacheDir) {
+    throw new Error('ไม่พบพื้นที่ cache ของแอป');
+  }
+
+  const tempPath = `${cacheDir}kubdee-buffer-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  await FileSystem.writeAsStringAsync(tempPath, dataUrl.slice(commaIndex + 1), {
+    encoding: FileSystem.EncodingType.Base64,
   });
+  return {
+    path: tempPath,
+    cleanup: async () => {
+      await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => {});
+    },
+  };
 }
 
 export async function uploadBufferAsset(fileUri: string, mimeType: string): Promise<string> {
-  let result = await uploadBufferAssetOnce(fileUri, mimeType, false);
-  if (result.status === 401) {
-    result = await uploadBufferAssetOnce(fileUri, mimeType, true);
+  const { path: uploadPath, cleanup } = await materializeUploadableFileUri(fileUri);
+  let result: FileSystem.FileSystemUploadResult;
+  try {
+    result = await uploadBufferAssetOnce(uploadPath, mimeType, false);
+    if (result.status === 401) {
+      result = await uploadBufferAssetOnce(uploadPath, mimeType, true);
+    }
+  } finally {
+    await cleanup();
   }
 
   if (result.status < 200 || result.status >= 300) {
