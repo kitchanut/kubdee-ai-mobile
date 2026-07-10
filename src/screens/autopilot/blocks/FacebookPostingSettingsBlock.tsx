@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
 import { AlertTriangle, Check } from 'lucide-react-native';
 import { getBufferConnectionStatus, listFacebookBufferChannels } from '@/autopilot/bufferPosting';
@@ -8,6 +8,8 @@ import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 const FACEBOOK_BLUE = '#0866FF';
+const CHANNEL_CARD_WIDTH = 176;
+const CHANNEL_CARD_GAP = 8; // ต้องตรงกับ gap-2 ของ contentContainer
 
 type LoadState = 'loading' | 'not_connected' | 'no_channels' | 'ready' | 'error';
 
@@ -26,6 +28,8 @@ export function FacebookPostingSettingsBlock({
 }): React.JSX.Element {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [channels, setChannels] = useState<BufferChannel[]>([]);
+  const scrollRef = useRef<ScrollView>(null);
+  const didAutoScrollRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,7 +117,24 @@ export function FacebookPostingSettingsBlock({
   return (
     <View className="gap-2">
       <Text className="text-kd-micro font-normal text-kd-text-subtle">Channel Facebook สำหรับโพสต์</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pr-1">
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="gap-2 pr-1"
+        onLayout={() => {
+          // เลื่อนไปหา card ที่เลือกไว้เฉพาะครั้งแรกที่ลิสต์โผล่ — ตอนกดเลือกใบที่
+          // มองเห็นอยู่แล้วไม่ควรกระตุกลิสต์
+          if (didAutoScrollRef.current) return;
+          didAutoScrollRef.current = true;
+          const index = channels.findIndex((channel) => channel.id === selectedId);
+          if (index > 0) {
+            // เผื่อขอบซ้ายไว้นิดให้เห็นใบก่อนหน้าโผล่มา จะได้รู้ว่าเลื่อนได้
+            const x = Math.max(0, index * (CHANNEL_CARD_WIDTH + CHANNEL_CARD_GAP) - CHANNEL_CARD_GAP * 2);
+            scrollRef.current?.scrollTo({ x, animated: false });
+          }
+        }}
+      >
         {channels.map((channel) => {
           const selected = channel.id === selectedId;
           return (
@@ -121,8 +142,8 @@ export function FacebookPostingSettingsBlock({
               key={channel.id}
               accessibilityRole="button"
               onPress={() => onSelectChannel(channel.id)}
-              className="w-44 flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
-              style={{ borderColor: selected ? FACEBOOK_BLUE : theme.border }}
+              className="flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
+              style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? FACEBOOK_BLUE : theme.border }}
             >
               <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
                 {channel.avatar ? (
