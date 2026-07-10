@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
-import { AlertTriangle } from 'lucide-react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
+import { AlertTriangle, Check } from 'lucide-react-native';
 import { getBufferConnectionStatus, listFacebookBufferChannels } from '@/autopilot/bufferPosting';
 import type { BufferChannel } from '@/autopilot/bufferPosting';
+import { FacebookLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
-import type { OptionValue } from '../constants';
-import { SelectField } from '../primitives';
+
+const FACEBOOK_BLUE = '#0866FF';
 
 type LoadState = 'loading' | 'not_connected' | 'no_channels' | 'ready' | 'error';
 
@@ -107,16 +108,42 @@ export function FacebookPostingSettingsBlock({
     );
   }
 
+  const selectedId = facebookChannelId ?? channels[0]?.id ?? '';
+
   return (
-    <SelectField
-      label="Channel Facebook สำหรับโพสต์"
-      options={channels.map((channel) => ({
-        label: channel.displayName || channel.name,
-        value: channel.id,
-      }))}
-      theme={theme}
-      value={facebookChannelId ?? channels[0]?.id ?? ''}
-      onChange={(value: OptionValue) => onSelectChannel(String(value))}
-    />
+    <View className="gap-2">
+      <Text className="text-kd-micro font-normal text-kd-text-subtle">Channel Facebook สำหรับโพสต์</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pr-1">
+        {channels.map((channel) => {
+          const selected = channel.id === selectedId;
+          return (
+            <Pressable
+              key={channel.id}
+              accessibilityRole="button"
+              onPress={() => onSelectChannel(channel.id)}
+              className="w-44 flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
+              style={{ borderColor: selected ? FACEBOOK_BLUE : theme.border }}
+            >
+              <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
+                {channel.avatar ? (
+                  <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
+                ) : (
+                  <FacebookLogo size={20} color={FACEBOOK_BLUE} cutoutColor={theme.input} />
+                )}
+              </View>
+              <View className="min-w-0 flex-1">
+                <Text numberOfLines={1} className="text-kd-caption font-semibold text-kd-text">
+                  {channel.displayName || channel.name}
+                </Text>
+                <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                  {channel.isQueuePaused ? 'คิวหยุดชั่วคราว' : 'Facebook'}
+                </Text>
+              </View>
+              {selected ? <Check size={16} color={FACEBOOK_BLUE} strokeWidth={2.5} /> : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }
