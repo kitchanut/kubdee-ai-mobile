@@ -1,5 +1,6 @@
 import type { AutoPilotStepType, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import { readUriAsDataUrl } from '@/native/AccessibilityBridge';
+import { reportWarning } from '@/lib/telemetry';
 
 export function getProductReferenceFileName(
   product: GoogleFlowRunnerProduct,
@@ -143,27 +144,67 @@ export async function loadImageReferenceDataUrl(uri: string): Promise<string | n
     return cleanUri;
   }
   if (isLocalReferenceUri(cleanUri)) {
-    const localDataUrl = await readUriAsDataUrl(cleanUri).catch(() => null);
-    if (localDataUrl?.startsWith('data:image/')) {
-      return localDataUrl;
+    try {
+      const localDataUrl = await readUriAsDataUrl(cleanUri);
+      if (localDataUrl?.startsWith('data:image/')) {
+        return localDataUrl;
+      }
+      reportWarning('loadImageReferenceDataUrl: readUriAsDataUrl returned no data URL', { uri: cleanUri });
+    } catch (error) {
+      reportWarning('loadImageReferenceDataUrl: readUriAsDataUrl threw', {
+        uri: cleanUri,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+    // A local uri (file://, content://, bare path) has no network fallback — fetch() can't
+    // retrieve file:// or content:// at all, so falling through to it here would just fail
+    // again identically (a misleading "Failed to fetch") instead of surfacing why the local
+    // read actually failed above.
+    return null;
   }
 
   try {
     const response = await fetch(cleanUri);
     if (!response.ok) {
+      reportWarning('loadImageReferenceDataUrl: fetch returned non-OK status', {
+        uri: cleanUri,
+        status: response.status,
+      });
       return null;
     }
     const blob = await response.blob();
     if (!blob.size) {
+      reportWarning('loadImageReferenceDataUrl: fetched blob was empty', { uri: cleanUri });
       return null;
     }
     return await blobToDataUrl(blob);
-  } catch {
+  } catch (error) {
+    reportWarning('loadImageReferenceDataUrl: fetch threw', {
+      uri: cleanUri,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
 
 export function isLocalReferenceUri(uri: string): boolean {
   return uri.startsWith('content://') || uri.startsWith('file://') || uri.startsWith('/');
+}
+
+// Buffer's fetch() (and the injected WebView action's own fetch()) can only ever retrieve
+// http(s) URLs. When the app's own attempt to read a local uri as a data URL fails, there is no
+// safe network fallback — passing the local uri through as `imageUrl` would just make a second,
+// doomed fetch() attempt inside the WebView, producing a confusing network-looking error that
+// hides the real (local-read) failure already reported above.
+export function resolveReferenceTransportArgs(
+  dataUrl: string | null,
+  sourceUri: string
+): { dataUrl?: string; imageUrl?: string } {
+  if (dataUrl) {
+    return { dataUrl };
+  }
+  if (isLocalReferenceUri(sourceUri)) {
+    return {};
+  }
+  return { imageUrl: sourceUri };
 }

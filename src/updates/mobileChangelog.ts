@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.19',
+    date: '2026-07-10',
+    highlight: 'ออโต้โพสต์ Shopee + Facebook หลังสร้างวิดีโอเสร็จ',
+    changes: [
+      {
+        type: 'feature',
+        text: 'หน้าออโต้: ตั้งค่าใหม่ให้แต่ละสินค้าสร้างรูป-วิดีโอเสร็จแล้วโพสต์ลง Shopee และ/หรือ Facebook ให้อัตโนมัติ ก่อนไปสินค้าถัดไป โพสต์ Facebook ต้องเชื่อมต่อ Buffer ที่เว็บ kubdee.ai/settings ก่อน แล้วเลือก channel ในหน้าออโต้'
+      },
+      {
+        type: 'fixed',
+        text: 'ออโต้: แนบรูปสินค้าเป็น reference ก่อนสร้างรูป/วิดีโอ ล้มเหลวด้วย "Failed to fetch" ทุกครั้งเมื่อรูปสินค้าถูกดาวน์โหลดเก็บไว้ในเครื่องแล้ว (ไม่ใช่ปัญหาเน็ต) แก้ให้ไม่พยายามโหลดรูปในเครื่องผ่านอินเทอร์เน็ตซ้ำอีกรอบ'
+      }
+    ]
+  },
+  {
     version: '0.3.18',
     date: '2026-07-09',
     highlight: 'แก้วรรณยุกต์แฮชแท็กหายในหน้าโพสต์ Shopee',
