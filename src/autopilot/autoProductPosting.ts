@@ -5,6 +5,7 @@ import {
 import type { AutoPilotLogLevel, AutoPilotSettings, GoogleFlowRunnerLogEntry, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import { limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
+import { reportWarning } from '@/lib/telemetry';
 import {
   getAccessibilityStatus,
   postShopeeVideos,
@@ -16,6 +17,39 @@ export interface AutoPilotProductVideoAsset {
   fileUri: string;
   fileName?: string;
   mimeType?: string;
+}
+
+// Safety net for postShopeeVideos(): normally resolves via a native broadcast once the
+// accessibility automation finishes (see KubdeeAccessibilityService.kt), and that automation
+// itself already caps at 20 minutes. But the broadcast can be silently dropped if the app's main
+// process is backgrounded/frozen at the wrong instant (observed on-device), which would otherwise
+// hang this one product — and the whole remaining auto pilot run behind it — for the full 20
+// minutes. 5 minutes is well above the ~2 minutes a real Shopee post takes end to end.
+const SHOPEE_POST_TIMEOUT_MS = 5 * 60_000;
+
+class ShopeePostTimeoutError extends Error {}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reportWarning('postProductToShopee: withTimeout fired', { timeoutMs });
+      reject(new ShopeePostTimeoutError(message));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        reportWarning('postProductToShopee: postShopeeVideos resolved', {});
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reportWarning('postProductToShopee: postShopeeVideos rejected', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        reject(error);
+      }
+    );
+  });
 }
 
 type EmitFn = (entry: Omit<GoogleFlowRunnerLogEntry, 'ts'> & { ts?: number }) => void;
@@ -117,7 +151,13 @@ async function postProductToShopee(
       };
     });
 
-    const result = await postShopeeVideos(videos);
+    reportWarning('postProductToShopee: calling postShopeeVideos', { videoCount: videos.length });
+    const result = await withTimeout(
+      postShopeeVideos(videos, { skipReturnNavigation: true }),
+      SHOPEE_POST_TIMEOUT_MS,
+      'โพสต์ Shopee หมดเวลา (นานเกิน 5 นาที ไม่ได้รับผลลัพธ์จากระบบอัตโนมัติ)'
+    );
+    reportWarning('postProductToShopee: withTimeout settled, got result', { success: result.success });
 
     if (result.stopped) {
       emitStage(
@@ -137,6 +177,9 @@ async function postProductToShopee(
       result.successCount ?? result.results?.filter((entry) => entry.success).length ?? result.postedCount ?? 0;
     emitStage('posted_shopee', `โพสต์ Shopee สำเร็จ ${successCount}/${videos.length} วิดีโอ`, 'success');
   } catch (error) {
+    reportWarning('postProductToShopee: caught error, emitting failed stage', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     emitStage(
       'failed',
       `โพสต์ Shopee ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
@@ -165,8 +208,12 @@ async function postProductToFacebook(
     const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
 
     emitStage('posting_facebook', `กำลังโพสต์ Facebook: ${product.name || 'สินค้า'}`);
-    const text = [product.caption, product.cta, product.hashtags, product.productUrl]
-      .map((part) => part?.trim())
+    const productUrl = product.productUrl?.trim();
+    const text = [
+      product.caption?.trim(),
+      productUrl ? `พิกัด: ${productUrl}` : null,
+      product.hashtags?.trim(),
+    ]
       .filter((part): part is string => !!part)
       .join('\n\n');
 

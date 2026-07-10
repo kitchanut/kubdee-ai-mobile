@@ -78,6 +78,7 @@ import {
   randomAutoRunDelayMs,
   rewriteVideoPromptForFlowError,
   resolveGeminiTtsVoice,
+  resolveReferenceTransportArgs,
   shouldSkipRefreshAfterFreshProjectOpen,
   sleep,
   stepLabel,
@@ -1606,9 +1607,8 @@ export default function GoogleFlowWebViewRunnerHost({
                   round,
                   step: 'image',
                   args: {
-                    dataUrl: productReferenceDataUrl ?? undefined,
+                    ...resolveReferenceTransportArgs(productReferenceDataUrl, product.preview),
                     fileName: getProductReferenceFileName(product, productIndex, round, 'image'),
-                    imageUrl: productReferenceDataUrl ? undefined : product.preview,
                     referenceLabel: getProductReferenceLabel(product, productIndex),
                   },
                 });
@@ -1654,9 +1654,8 @@ export default function GoogleFlowWebViewRunnerHost({
                   round,
                   step: 'image',
                   args: {
-                    dataUrl: referenceDataUrl ?? undefined,
+                    ...resolveReferenceTransportArgs(referenceDataUrl, reference.uri),
                     fileName: reference.fileName,
-                    imageUrl: referenceDataUrl ? undefined : reference.uri,
                     referenceLabel: `รูป${reference.label}`,
                   },
                 });
@@ -1972,9 +1971,8 @@ export default function GoogleFlowWebViewRunnerHost({
                 round,
                 step,
                 args: {
-                  dataUrl: dataUrl ?? undefined,
+                  ...resolveReferenceTransportArgs(dataUrl, product.preview),
                   fileName: getProductReferenceFileName(product, productIndex, round, step),
-                  imageUrl: dataUrl ? undefined : product.preview,
                   referenceLabel: getProductReferenceLabel(product, productIndex),
                 },
               });
@@ -2562,9 +2560,8 @@ export default function GoogleFlowWebViewRunnerHost({
               round,
               step,
               args: {
-                dataUrl: dataUrl ?? undefined,
+                ...resolveReferenceTransportArgs(dataUrl, product.preview),
                 fileName: getProductReferenceFileName(product, productIndex, round, step),
-                imageUrl: dataUrl ? undefined : product.preview,
                 referenceLabel: getProductReferenceLabel(product, productIndex),
               },
             });
@@ -2613,9 +2610,8 @@ export default function GoogleFlowWebViewRunnerHost({
               round,
               step,
               args: {
-                dataUrl: referenceDataUrl ?? undefined,
+                ...resolveReferenceTransportArgs(referenceDataUrl, reference.uri),
                 fileName: reference.fileName,
-                imageUrl: referenceDataUrl ? undefined : reference.uri,
                 referenceLabel: `รูป${reference.label}`,
               },
             });
@@ -2648,9 +2644,8 @@ export default function GoogleFlowWebViewRunnerHost({
               round,
               step,
               args: {
-                dataUrl: referenceDataUrl ?? undefined,
+                ...resolveReferenceTransportArgs(referenceDataUrl, reference.uri),
                 fileName: reference.fileName,
-                imageUrl: referenceDataUrl ? undefined : reference.uri,
                 referenceLabel: `รูป${reference.label}`,
               },
             });

@@ -21,6 +21,7 @@ import {
   getAutoPilotAiContentLabels,
 } from '@/autopilot/aiCaption';
 import { SHOPEE_POST_SAFE_CHARACTER_LIMIT } from '@/autopilot/shopeePostTextLimit';
+import { reportWarning } from '@/lib/telemetry';
 import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
 import {
   getAutoPilotProductId,
@@ -84,6 +85,19 @@ export function useAutoPilotController({
   const runnerStartingRef = useRef(false);
   const runnerStartedRef = useRef(false);
   const preflightStopRequestedRef = useRef(false);
+  // The Google Flow log listener below must stay subscribed for a run's entire lifetime — Shopee
+  // posting alone backgrounds this app for 1-2 minutes, and re-subscribing on every dependency
+  // change risks a window where a result event (posted_shopee/failed) arrives with no listener
+  // attached and is silently dropped (observed on-device: the promise resolves, but the run UI
+  // never advances past "posting_shopee"). Read the latest values via this ref instead of closing
+  // over them, so the subscription effect itself can run only once (mount to unmount).
+  const listenerDepsRef = useRef({
+    addGeneratedMediaAsset,
+    appendLog: (() => {}) as typeof appendLog,
+    enabledSteps,
+    productById: new Map() as Map<string, AutoPilotProduct>,
+    profileLocalId,
+  });
 
   useEffect(() => {
     let active = true;
@@ -210,9 +224,30 @@ export function useAutoPilotController({
   }, [runState.runId]);
 
   useEffect(() => {
+    listenerDepsRef.current = { addGeneratedMediaAsset, appendLog, enabledSteps, productById, profileLocalId };
+  });
+
+  useEffect(() => {
     const subscription = subscribeGoogleFlowRunnerLogs((entry) => {
+      const { addGeneratedMediaAsset, appendLog, enabledSteps, productById, profileLocalId } = listenerDepsRef.current;
       const incomingRunId = entry.runId?.trim();
       const activeRunId = runIdRef.current;
+      const postingStages = [
+        'posting_shopee',
+        'posted_shopee',
+        'uploading_facebook_asset',
+        'posting_facebook',
+        'posted_facebook',
+        'failed',
+      ];
+      if (entry.stage && postingStages.includes(entry.stage)) {
+        reportWarning('useAutoPilotController: listener received posting-stage entry', {
+          stage: entry.stage,
+          incomingRunId: incomingRunId ?? null,
+          activeRunId: activeRunId ?? null,
+          filtered: !!(incomingRunId && activeRunId && incomingRunId !== activeRunId),
+        });
+      }
       if (incomingRunId && activeRunId && incomingRunId !== activeRunId) {
         return;
       }
@@ -356,7 +391,9 @@ export function useAutoPilotController({
     return () => {
       subscription?.remove();
     };
-  }, [addGeneratedMediaAsset, appendLog, enabledSteps, productById, profileLocalId]);
+    // Intentionally subscribe once for the component's lifetime — see listenerDepsRef above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateSetting = useCallback(
     <K extends keyof AutoPilotSettings>(key: K, value: AutoPilotSettings[K]): void => {

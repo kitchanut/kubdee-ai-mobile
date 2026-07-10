@@ -44,6 +44,29 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.3.19',
+    date: '2026-07-10',
+    highlight: 'ออโต้โพสต์ Shopee + Facebook หลังสร้างวิดีโอเสร็จ',
+    changes: [
+      {
+        type: 'feature',
+        text: 'หน้าออโต้: ตั้งค่าใหม่ให้แต่ละสินค้าสร้างรูป-วิดีโอเสร็จแล้วโพสต์ลง Shopee และ/หรือ Facebook ให้อัตโนมัติ ก่อนไปสินค้าถัดไป โพสต์ Facebook ต้องเชื่อมต่อ Buffer ที่เว็บ kubdee.ai/settings ก่อน แล้วเลือก channel ในหน้าออโต้'
+      },
+      {
+        type: 'fixed',
+        text: 'ออโต้: แนบรูปสินค้าเป็น reference ก่อนสร้างรูป/วิดีโอ ล้มเหลวด้วย "Failed to fetch" ทุกครั้ง สาเหตุจริงคือ React Native อ่าน response รูปจากเน็ตเป็น Blob ไม่ได้ (ไม่ใช่ปัญหาเน็ต) แก้ให้ดาวน์โหลดเป็นไฟล์แล้วอ่านเป็น base64 แทน'
+      },
+      {
+        type: 'fixed',
+        text: 'ออโต้: โพสต์ Shopee เสร็จแล้วแอปค้าง ไม่ไปโพสต์ Facebook หรือสินค้าถัดไปต่อ สาเหตุคือแอปสลับไปแท็บ Shopee อัตโนมัติหลังโพสต์เสร็จ ทำให้หน้าออโต้ถูกปิดทิ้งและไม่ได้รับผลลัพธ์ แก้ให้ไม่สลับแท็บเมื่อโพสต์มาจากออโต้'
+      },
+      {
+        type: 'improved',
+        text: 'หน้าออโต้: ย้ายไอคอนโพสต์ Facebook มาต่อจาก Shopee ในแถบขั้นตอนการทำงาน และปรับรูปแบบแคปชั่นโพสต์ Facebook เป็น แคปชั่น / พิกัด: ลิงก์สินค้า / แฮชแท็ก'
+      }
+    ]
+  },
+  {
     version: '0.3.18',
     date: '2026-07-09',
     highlight: 'แก้วรรณยุกต์แฮชแท็กหายในหน้าโพสต์ Shopee',

@@ -533,6 +533,19 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun startShopeePostAsync(payloadJson: String, runId: String) {
+    // Auto pilot posts Shopee videos from the background while its own screen is showing. The
+    // normal flow below deep-links back into the Shopee tab (kubdeeai://shopee) so a user who
+    // manually triggered the post can see it — but that deep link also switches this app's active
+    // tab, which unmounts the Auto Pilot screen (a plain conditional render, not a real navigator
+    // stack) and tears down its result listener before the finished broadcast arrives, silently
+    // dropping the outcome. Skip the tab-changing deep link in that case; still bring the app to
+    // the foreground (plain launcher intent, no data URI) so the broadcast isn't lost to the OS
+    // backgrounding the process while Shopee had focus.
+    val skipReturnNavigation = try {
+      JSONObject(payloadJson).optBoolean("skipReturnNavigation", false)
+    } catch (_: Exception) {
+      false
+    }
     val runningThread = shopeePostThread
     if (runningThread?.isAlive == true) {
       KubdeeAutomationIpc.sendShopeePostFinished(
@@ -564,19 +577,39 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val postStoppedByUser = stopRequested
       logStep(
         if (postStoppedByUser) "หยุดแล้ว — กด 'รายงานปัญหา' เพื่อส่งข้อมูลให้ทีม หรือ 'กลับแอป'"
+        else if (skipReturnNavigation) "โพสต์ Shopee เสร็จแล้ว กำลังแจ้งผลกลับแอป"
         else "กลับไป Kubdee AI เพื่อเปิดรายการ Shopee Post"
       )
-      KubdeeAutomationIpc.sendShopeePostFinished(
-        this,
-        runId,
-        result,
-        error = result.optString("error").takeIf { it.isNotBlank() },
-        stopped = result.optBoolean("stopped", false)
-      )
       if (postStoppedByUser) {
+        KubdeeAutomationIpc.sendShopeePostFinished(
+          this,
+          runId,
+          result,
+          error = result.optString("error").takeIf { it.isNotBlank() },
+          stopped = result.optBoolean("stopped", false)
+        )
         showAutomationStoppedControls()
       } else {
-        mainHandler.postDelayed({ launchKubdeeShopeePostList() }, 250L)
+        // Bring the main process to the foreground BEFORE sending the finished broadcast. The main
+        // process is often backgrounded/frozen (OEM process freezers, e.g. Samsung Freecess) while
+        // Shopee is in the foreground; a broadcast fired at that instant can be silently dropped,
+        // leaving the JS-side await(postShopeeVideos(...)) hanging forever even though this
+        // automation already finished. Each launch call blocks until startActivity() is dispatched
+        // on the main thread, then a short buffer gives the process time to resume before the
+        // result broadcast goes out.
+        if (skipReturnNavigation) {
+          launchPackage(packageName)
+        } else {
+          launchKubdeeShopeePostList()
+        }
+        Thread.sleep(400L)
+        KubdeeAutomationIpc.sendShopeePostFinished(
+          this,
+          runId,
+          result,
+          error = result.optString("error").takeIf { it.isNotBlank() },
+          stopped = result.optBoolean("stopped", false)
+        )
       }
       if (shopeePostThread === Thread.currentThread()) {
         shopeePostThread = null

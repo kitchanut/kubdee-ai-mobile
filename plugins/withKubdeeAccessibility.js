@@ -140,7 +140,7 @@ function withKubdeeAccessibility(config, props = {}) {
         },
         {
           $: { name: 'kubdee_accessibility_service_description' },
-          _: 'ใช้สำหรับควบคุม Shopee ตามสคริปต์ที่ผู้ใช้สั่งใน Kubdee AI',
+          _: 'ใช้สำหรับควบคุม Shopee และ Google Flow ตาม workflow ที่ผู้ใช้สั่งใน Kubdee AI',
         },
       ],
       config.modResults
@@ -391,6 +391,7 @@ function accessibilityServiceXml(targetPackage) {
   android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
   android:canPerformGestures="true"
   android:canRetrieveWindowContent="true"
+  android:canTakeScreenshot="true"
   android:description="@string/kubdee_accessibility_service_description"
   android:notificationTimeout="100" />
 `;

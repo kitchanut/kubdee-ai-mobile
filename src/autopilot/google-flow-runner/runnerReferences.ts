@@ -1,5 +1,8 @@
+import * as FileSystem from 'expo-file-system/legacy';
+
 import type { AutoPilotStepType, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import { readUriAsDataUrl } from '@/native/AccessibilityBridge';
+import { reportWarning } from '@/lib/telemetry';
 
 export function getProductReferenceFileName(
   product: GoogleFlowRunnerProduct,
@@ -125,13 +128,71 @@ export function getAdditionalVideoReferences(product: GoogleFlowRunnerProduct): 
   return references;
 }
 
-export async function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('อ่านรูป reference ไม่สำเร็จ'));
-    reader.readAsDataURL(blob);
-  });
+function headerValue(headers: Record<string, string> | undefined, key: string): string | null {
+  if (!headers) return null;
+  const direct = headers[key] ?? headers[key.toLowerCase()] ?? headers[key.toUpperCase()];
+  if (direct) return direct;
+  const foundKey = Object.keys(headers).find((headerKey) => headerKey.toLowerCase() === key.toLowerCase());
+  return foundKey ? headers[foundKey] ?? null : null;
+}
+
+function guessImageMimeTypeFromUri(uri: string): string {
+  const path = uri.split('?')[0]?.split('#')[0] ?? '';
+  const extension = path.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  switch (extension) {
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    default:
+      return 'image/jpeg';
+  }
+}
+
+// React Native's fetch()/Response.blob() cannot reliably turn a remote image response into a
+// Blob here — confirmed via a captured Sentry error: "Creating blobs from 'ArrayBuffer' and
+// 'ArrayBufferView' are not supported". This is a JS-polyfill limitation, not a network/CORS
+// issue (the same URL loads fine via <Image>, which uses the native image pipeline instead of
+// fetch()). expo-file-system's downloadAsync + readAsStringAsync writes/reads real files on
+// disk and sidesteps the Blob polyfill entirely — the same approach productImageCache.ts
+// already uses successfully to cache these images in the first place.
+async function downloadRemoteImageAsDataUrl(url: string): Promise<string | null> {
+  const cacheDir = FileSystem.cacheDirectory;
+  if (!cacheDir) return null;
+
+  const tempUri = `${cacheDir}kubdee-reference-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try {
+    const result = await FileSystem.downloadAsync(url, tempUri);
+    if (result.status < 200 || result.status >= 300) {
+      reportWarning('loadImageReferenceDataUrl: downloadAsync returned non-OK status', {
+        uri: url,
+        status: result.status,
+      });
+      return null;
+    }
+
+    const base64 = await FileSystem.readAsStringAsync(result.uri, { encoding: FileSystem.EncodingType.Base64 });
+    if (!base64) {
+      reportWarning('loadImageReferenceDataUrl: downloaded file was empty', { uri: url });
+      return null;
+    }
+
+    const mimeType = headerValue(result.headers, 'content-type')?.split(';')[0]?.trim() || guessImageMimeTypeFromUri(url);
+    return `data:${mimeType};base64,${base64}`;
+  } catch (error) {
+    reportWarning('loadImageReferenceDataUrl: downloadAsync threw', {
+      uri: url,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  } finally {
+    await FileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
+  }
 }
 
 export async function loadImageReferenceDataUrl(uri: string): Promise<string | null> {
@@ -143,27 +204,46 @@ export async function loadImageReferenceDataUrl(uri: string): Promise<string | n
     return cleanUri;
   }
   if (isLocalReferenceUri(cleanUri)) {
-    const localDataUrl = await readUriAsDataUrl(cleanUri).catch(() => null);
-    if (localDataUrl?.startsWith('data:image/')) {
-      return localDataUrl;
+    try {
+      const localDataUrl = await readUriAsDataUrl(cleanUri);
+      if (localDataUrl?.startsWith('data:image/')) {
+        return localDataUrl;
+      }
+      reportWarning('loadImageReferenceDataUrl: readUriAsDataUrl returned no data URL', { uri: cleanUri });
+    } catch (error) {
+      reportWarning('loadImageReferenceDataUrl: readUriAsDataUrl threw', {
+        uri: cleanUri,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-  }
-
-  try {
-    const response = await fetch(cleanUri);
-    if (!response.ok) {
-      return null;
-    }
-    const blob = await response.blob();
-    if (!blob.size) {
-      return null;
-    }
-    return await blobToDataUrl(blob);
-  } catch {
+    // A local uri (file://, content://, bare path) has no network fallback — fetch() can't
+    // retrieve file:// or content:// at all, so falling through to it here would just fail
+    // again identically (a misleading "Failed to fetch") instead of surfacing why the local
+    // read actually failed above.
     return null;
   }
+
+  return downloadRemoteImageAsDataUrl(cleanUri);
 }
 
 export function isLocalReferenceUri(uri: string): boolean {
   return uri.startsWith('content://') || uri.startsWith('file://') || uri.startsWith('/');
+}
+
+// Buffer's fetch() (and the injected WebView action's own fetch()) can only ever retrieve
+// http(s) URLs. When the app's own attempt to read a local uri as a data URL fails, there is no
+// safe network fallback — passing the local uri through as `imageUrl` would just make a second,
+// doomed fetch() attempt inside the WebView, producing a confusing network-looking error that
+// hides the real (local-read) failure already reported above.
+export function resolveReferenceTransportArgs(
+  dataUrl: string | null,
+  sourceUri: string
+): { dataUrl?: string; imageUrl?: string } {
+  if (dataUrl) {
+    return { dataUrl };
+  }
+  if (isLocalReferenceUri(sourceUri)) {
+    return {};
+  }
+  return { imageUrl: sourceUri };
 }

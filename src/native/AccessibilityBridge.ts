@@ -336,10 +336,19 @@ export async function clearPendingShopeeImportProducts(): Promise<boolean> {
   return true;
 }
 
-export async function postShopeeVideos(videos: NativeShopeePostingVideoInput[]): Promise<NativeShopeePostingResult> {
+// skipReturnNavigation: after posting, native normally deep-links back into this app's own
+// Shopee tab (kubdeeai://shopee) so a user who manually triggered the post can see it in the
+// list. Auto pilot calls this in the background while its own screen is showing — that deep
+// link would unmount the Auto Pilot screen (a plain tab switch, not a real navigator) and tear
+// down its log listener before the result arrives, silently dropping posted_shopee/failed.
+export async function postShopeeVideos(
+  videos: NativeShopeePostingVideoInput[],
+  options?: { skipReturnNavigation?: boolean }
+): Promise<NativeShopeePostingResult> {
   if (Platform.OS === 'android' && nativeModule?.postShopeeVideos) {
     const payloadJson = await nativeModule.postShopeeVideos(JSON.stringify({
       videos,
+      skipReturnNavigation: options?.skipReturnNavigation === true,
     }));
     try {
       return JSON.parse(payloadJson) as NativeShopeePostingResult;
