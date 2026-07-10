@@ -54,7 +54,7 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
       },
       {
         type: 'fixed',
-        text: 'ออโต้: แนบรูปสินค้าเป็น reference ก่อนสร้างรูป/วิดีโอ ล้มเหลวด้วย "Failed to fetch" ทุกครั้ง สาเหตุจริงคือ React Native อ่าน response รูปจากเน็ตเป็น Blob ไม่ได้ (ไม่ใช่ปัญหาเน็ต) แก้ให้ดาวน์โหลดเป็นไฟล์แล้วอ่านเป็น base64 แทน'
+        text: 'ออโต้: แนบรูปสินค้าเป็น reference ก่อนสร้างรูป/วิดีโอ ล้มเหลวด้วย "Failed to fetch" ทุกครั้ง (ไม่ใช่ปัญหาเน็ตอย่างที่คิด) แก้วิธีโหลดรูปให้เสถียรขึ้น'
       },
       {
         type: 'fixed',
