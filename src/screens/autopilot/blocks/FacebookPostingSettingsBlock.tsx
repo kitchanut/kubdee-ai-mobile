@@ -115,56 +115,53 @@ export function FacebookPostingSettingsBlock({
   const selectedId = facebookChannelId ?? channels[0]?.id ?? '';
 
   return (
-    <View className="gap-2">
-      <Text className="text-kd-micro font-normal text-kd-text-subtle">Channel Facebook สำหรับโพสต์</Text>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerClassName="gap-2 pr-1"
-        onLayout={() => {
-          // เลื่อนไปหา card ที่เลือกไว้เฉพาะครั้งแรกที่ลิสต์โผล่ — ตอนกดเลือกใบที่
-          // มองเห็นอยู่แล้วไม่ควรกระตุกลิสต์
-          if (didAutoScrollRef.current) return;
-          didAutoScrollRef.current = true;
-          const index = channels.findIndex((channel) => channel.id === selectedId);
-          if (index > 0) {
-            // เผื่อขอบซ้ายไว้นิดให้เห็นใบก่อนหน้าโผล่มา จะได้รู้ว่าเลื่อนได้
-            const x = Math.max(0, index * (CHANNEL_CARD_WIDTH + CHANNEL_CARD_GAP) - CHANNEL_CARD_GAP * 2);
-            scrollRef.current?.scrollTo({ x, animated: false });
-          }
-        }}
-      >
-        {channels.map((channel) => {
-          const selected = channel.id === selectedId;
-          return (
-            <Pressable
-              key={channel.id}
-              accessibilityRole="button"
-              onPress={() => onSelectChannel(channel.id)}
-              className="flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
-              style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? FACEBOOK_BLUE : theme.border }}
-            >
-              <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
-                {channel.avatar ? (
-                  <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
-                ) : (
-                  <FacebookLogo size={20} color={FACEBOOK_BLUE} cutoutColor={theme.input} />
-                )}
-              </View>
-              <View className="min-w-0 flex-1">
-                <Text numberOfLines={1} className="text-kd-caption font-semibold text-kd-text">
-                  {channel.displayName || channel.name}
-                </Text>
-                <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-                  {channel.isQueuePaused ? 'คิวหยุดชั่วคราว' : 'Facebook'}
-                </Text>
-              </View>
-              {selected ? <Check size={16} color={FACEBOOK_BLUE} strokeWidth={2.5} /> : null}
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerClassName="gap-2 pr-1"
+      onLayout={() => {
+        // เลื่อนไปหา card ที่เลือกไว้เฉพาะครั้งแรกที่ลิสต์โผล่ — ตอนกดเลือกใบที่
+        // มองเห็นอยู่แล้วไม่ควรกระตุกลิสต์
+        if (didAutoScrollRef.current) return;
+        didAutoScrollRef.current = true;
+        const index = channels.findIndex((channel) => channel.id === selectedId);
+        if (index > 0) {
+          // เผื่อขอบซ้ายไว้นิดให้เห็นใบก่อนหน้าโผล่มา จะได้รู้ว่าเลื่อนได้
+          const x = Math.max(0, index * (CHANNEL_CARD_WIDTH + CHANNEL_CARD_GAP) - CHANNEL_CARD_GAP * 2);
+          scrollRef.current?.scrollTo({ x, animated: false });
+        }
+      }}
+    >
+      {channels.map((channel) => {
+        const selected = channel.id === selectedId;
+        return (
+          <Pressable
+            key={channel.id}
+            accessibilityRole="button"
+            onPress={() => onSelectChannel(channel.id)}
+            className="flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
+            style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? FACEBOOK_BLUE : theme.border }}
+          >
+            <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
+              {channel.avatar ? (
+                <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
+              ) : (
+                <FacebookLogo size={20} color={FACEBOOK_BLUE} cutoutColor={theme.input} />
+              )}
+            </View>
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="text-kd-caption font-semibold text-kd-text">
+                {channel.displayName || channel.name}
+              </Text>
+              <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+                {channel.isQueuePaused ? 'คิวหยุดชั่วคราว' : 'Facebook'}
+              </Text>
+            </View>
+            {selected ? <Check size={16} color={FACEBOOK_BLUE} strokeWidth={2.5} /> : null}
+          </Pressable>
+        );
+      })}
+  </ScrollView>
   );
 }
