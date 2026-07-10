@@ -44,7 +44,7 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
-    version: '0.3.19',
+    version: '0.4.0',
     date: '2026-07-10',
     highlight: 'ออโต้โพสต์ Shopee + Facebook หลังสร้างวิดีโอเสร็จ',
     changes: [
