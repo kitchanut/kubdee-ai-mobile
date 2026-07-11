@@ -21,7 +21,6 @@ import {
   getAutoPilotAiContentLabels,
 } from '@/autopilot/aiCaption';
 import { SHOPEE_POST_SAFE_CHARACTER_LIMIT } from '@/autopilot/shopeePostTextLimit';
-import { reportWarning } from '@/lib/telemetry';
 import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
 import {
   getAutoPilotProductId,
@@ -232,22 +231,6 @@ export function useAutoPilotController({
       const { addGeneratedMediaAsset, appendLog, enabledSteps, productById, profileLocalId } = listenerDepsRef.current;
       const incomingRunId = entry.runId?.trim();
       const activeRunId = runIdRef.current;
-      const postingStages = [
-        'posting_shopee',
-        'posted_shopee',
-        'uploading_facebook_asset',
-        'posting_facebook',
-        'posted_facebook',
-        'failed',
-      ];
-      if (entry.stage && postingStages.includes(entry.stage)) {
-        reportWarning('useAutoPilotController: listener received posting-stage entry', {
-          stage: entry.stage,
-          incomingRunId: incomingRunId ?? null,
-          activeRunId: activeRunId ?? null,
-          filtered: !!(incomingRunId && activeRunId && incomingRunId !== activeRunId),
-        });
-      }
       if (incomingRunId && activeRunId && incomingRunId !== activeRunId) {
         return;
       }
