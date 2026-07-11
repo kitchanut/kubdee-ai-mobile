@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.6.0',
+    date: '2026-07-12',
+    highlight: 'โพสต์วิดีโอจากคลังไป Facebook / Instagram / YouTube',
+    changes: [
+      {
+        type: 'feature',
+        text: 'แท็บใหม่ Facebook / Instagram / YouTube: เลือกวิดีโอจากคลังแล้วกดปุ่มโพสต์โซเชียล ส่งเข้าคิวโพสต์ของแต่ละแพลตฟอร์ม รีวิวรายการ เลือกช่อง แล้วโพสต์ผ่าน Buffer ได้เหมือนโพสต์ Shopee — Instagram โพสต์เป็น Reels, YouTube เป็น Shorts'
+      },
+      {
+        type: 'fixed',
+        text: 'หน้าออโต้: เปิดโพสต์อัตโนมัติเฉพาะ Instagram หรือ YouTube (ไม่เปิด Shopee/Facebook) แล้วระบบไม่โพสต์ให้หลังสร้างวิดีโอเสร็จ'
+      }
+    ]
+  },
+  {
     version: '0.5.2',
     date: '2026-07-11',
     highlight: 'แก้โพสต์ Shopee ได้คลิปผิดตัว + ปรับปรุงการดึงข้อเสนอ',
