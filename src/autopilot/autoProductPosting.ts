@@ -140,6 +140,12 @@ function isFirstCommentNotAllowedError(error: unknown): boolean {
   return error instanceof Error && /first comment requires a paid plan/i.test(error.message);
 }
 
+// Buffer's free plan rejects first comments (confirmed live 2026-07-11), so
+// this stays off until it becomes a per-channel posting setting — the whole
+// first-comment path (composition, fallback, API support) is kept wired so
+// flipping this back on is all it takes.
+const USE_FIRST_COMMENT = false;
+
 async function postProductToShopee(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
@@ -247,11 +253,11 @@ async function postProductToFacebook(
     const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
 
     emitStage('posting_facebook', `กำลังโพสต์ Facebook: ${product.name || 'สินค้า'}`);
-    const firstComment = buildProductLinkFirstComment(product);
+    const firstComment = USE_FIRST_COMMENT ? buildProductLinkFirstComment(product) : undefined;
     try {
       await createFacebookBufferPost({
         channelId,
-        text: buildBufferPostText(product),
+        text: firstComment ? buildBufferPostText(product) : buildBufferPostTextWithLink(product),
         assetUrl,
         assetType: 'video',
         firstComment,
@@ -296,11 +302,11 @@ async function postProductToInstagram(
     const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
 
     emitStage('posting_instagram', `กำลังโพสต์ Instagram: ${product.name || 'สินค้า'}`);
-    const firstComment = buildProductLinkFirstComment(product);
+    const firstComment = USE_FIRST_COMMENT ? buildProductLinkFirstComment(product) : undefined;
     try {
       await createInstagramBufferPost({
         channelId,
-        text: buildBufferPostText(product),
+        text: firstComment ? buildBufferPostText(product) : buildBufferPostTextWithLink(product),
         assetUrl,
         firstComment,
       });
