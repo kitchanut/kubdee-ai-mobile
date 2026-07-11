@@ -120,9 +120,24 @@ function buildBufferPostText(product: GoogleFlowRunnerProduct): string {
     .join('\n\n');
 }
 
+// Fallback composition with the link in the post body, for when Buffer
+// rejects the first comment (free-plan limitation, confirmed live 2026-07-11).
+function buildBufferPostTextWithLink(product: GoogleFlowRunnerProduct): string {
+  const productUrl = product.productUrl?.trim();
+  return [product.caption?.trim(), productUrl ? `พิกัด: ${productUrl}` : null, product.hashtags?.trim()]
+    .filter((part): part is string => !!part)
+    .join('\n\n');
+}
+
 function buildProductLinkFirstComment(product: GoogleFlowRunnerProduct): string | undefined {
   const productUrl = product.productUrl?.trim();
   return productUrl ? `พิกัด: ${productUrl}` : undefined;
+}
+
+// Buffer's exact wording: "Invalid post: First comment requires a paid plan.
+// Please upgrade to use this feature."
+function isFirstCommentNotAllowedError(error: unknown): boolean {
+  return error instanceof Error && /first comment requires a paid plan/i.test(error.message);
 }
 
 async function postProductToShopee(
@@ -232,13 +247,25 @@ async function postProductToFacebook(
     const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
 
     emitStage('posting_facebook', `กำลังโพสต์ Facebook: ${product.name || 'สินค้า'}`);
-    await createFacebookBufferPost({
-      channelId,
-      text: buildBufferPostText(product),
-      assetUrl,
-      assetType: 'video',
-      firstComment: buildProductLinkFirstComment(product),
-    });
+    const firstComment = buildProductLinkFirstComment(product);
+    try {
+      await createFacebookBufferPost({
+        channelId,
+        text: buildBufferPostText(product),
+        assetUrl,
+        assetType: 'video',
+        firstComment,
+      });
+    } catch (error) {
+      if (!firstComment || !isFirstCommentNotAllowedError(error)) throw error;
+      emitStage('posting_facebook', 'Buffer แพลนฟรีใช้คอมเมนต์แรกไม่ได้ — ใส่ลิงก์ในโพสต์แทนแล้วลองใหม่', 'warning');
+      await createFacebookBufferPost({
+        channelId,
+        text: buildBufferPostTextWithLink(product),
+        assetUrl,
+        assetType: 'video',
+      });
+    }
     emitStage('posted_facebook', `โพสต์ Facebook สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
   } catch (error) {
     emitStage(
@@ -269,12 +296,23 @@ async function postProductToInstagram(
     const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
 
     emitStage('posting_instagram', `กำลังโพสต์ Instagram: ${product.name || 'สินค้า'}`);
-    await createInstagramBufferPost({
-      channelId,
-      text: buildBufferPostText(product),
-      assetUrl,
-      firstComment: buildProductLinkFirstComment(product),
-    });
+    const firstComment = buildProductLinkFirstComment(product);
+    try {
+      await createInstagramBufferPost({
+        channelId,
+        text: buildBufferPostText(product),
+        assetUrl,
+        firstComment,
+      });
+    } catch (error) {
+      if (!firstComment || !isFirstCommentNotAllowedError(error)) throw error;
+      emitStage('posting_instagram', 'Buffer แพลนฟรีใช้คอมเมนต์แรกไม่ได้ — ใส่ลิงก์ในโพสต์แทนแล้วลองใหม่', 'warning');
+      await createInstagramBufferPost({
+        channelId,
+        text: buildBufferPostTextWithLink(product),
+        assetUrl,
+      });
+    }
     emitStage('posted_instagram', `โพสต์ Instagram สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
   } catch (error) {
     emitStage(
