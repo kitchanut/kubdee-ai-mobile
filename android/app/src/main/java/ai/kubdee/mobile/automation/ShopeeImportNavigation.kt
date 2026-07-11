@@ -377,9 +377,14 @@ internal fun KubdeeAccessibilityService.selectShopeeAffiliateOfferCategory(categ
       return tapShopeeAffiliateOfferCategory(candidate, targetCategory)
     }
 
-    repeat(3) {
+    // จอแคบเห็นหมวดไม่กี่อัน หมวดเป้าหมายมักอยู่นอกจอ — log ทุกจังหวะเลื่อน
+    // เพื่อให้ผู้ใช้เห็นว่าบอทยังค้นหาอยู่ ไม่ใช่ค้าง (user report: กดหยุดเองก่อนบอทหาเจอ)
+    logStep("ยังไม่เห็นหมวด '$targetCategory' บนจอ กำลังเลื่อนแถบหมวดค้นหา...")
+
+    repeat(3) { attempt ->
       checkStopRequested()
       if (!swipeShopeeAffiliateOfferCategoryRow(backward = true)) return@repeat
+      logStep("เลื่อนแถบหมวดย้อนกลับหา '$targetCategory' (รอบ ${attempt + 1}/3)")
       sleepStep(450L)
       findShopeeAffiliateOfferCategoryTab(targetCategory)?.let { candidate ->
         return tapShopeeAffiliateOfferCategory(candidate, targetCategory)
@@ -393,11 +398,12 @@ internal fun KubdeeAccessibilityService.selectShopeeAffiliateOfferCategory(categ
       }
       if (attempt < 7) {
         if (!swipeShopeeAffiliateOfferCategoryRow(backward = false)) return@repeat
+        logStep("เลื่อนแถบหมวดไปข้างหน้าหา '$targetCategory' (รอบ ${attempt + 1}/7)")
         sleepStep(550L)
       }
     }
 
-    logStep("ไม่พบหมวดข้อเสนอ: $targetCategory")
+    logStep("ไม่พบหมวดข้อเสนอ: $targetCategory (เลื่อนหาจนสุดแถบแล้ว)")
     return false
   }
 
@@ -412,10 +418,21 @@ internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferCategoryTab(cate
     return textNodes
       .filter { node ->
         node.node.isVisibleToUser &&
-          cleanNodeText(node.text).equals(category, ignoreCase = true) &&
+          shopeeOfferCategoryTabTextMatches(cleanNodeText(node.text), category) &&
           node.bounds.centerY() in topLimit..bottomLimit
       }
       .minWithOrNull(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
+  }
+
+// ชื่อหมวดยาวบนจอแคบอาจโดนตัดท้ายเป็น ellipsis — ยอม match แบบ prefix เฉพาะเมื่อข้อความลงท้ายด้วย …
+internal fun KubdeeAccessibilityService.shopeeOfferCategoryTabTextMatches(text: String, category: String): Boolean {
+    if (text.equals(category, ignoreCase = true)) return true
+    val truncated = when {
+      text.endsWith("…") -> text.dropLast(1)
+      text.endsWith("...") -> text.dropLast(3)
+      else -> return false
+    }.trim()
+    return truncated.length >= 4 && category.startsWith(truncated, ignoreCase = true)
   }
 
 internal fun KubdeeAccessibilityService.tapShopeeAffiliateOfferCategory(candidate: TextNode, category: String): Boolean {
