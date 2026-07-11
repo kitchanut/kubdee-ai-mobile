@@ -26,6 +26,8 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   facebookChannelId: null,
   autoPostYoutube: false,
   youtubeChannelId: null,
+  autoPostInstagram: false,
+  instagramChannelId: null,
 };
 
 export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {

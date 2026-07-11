@@ -2,39 +2,43 @@ import { Fragment } from 'react';
 import { Pressable, View } from 'react-native';
 import { ChevronRight, Check, Image as ImageIcon, Sparkles, Video } from 'lucide-react-native';
 import { AUTO_PILOT_STEPS } from '@/autopilot/defaults';
-import { FacebookLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
-import { FACEBOOK_BLUE, SHOPEE_ORANGE, YOUTUBE_RED } from '@/theme/brandColors';
+import { FacebookLogo, InstagramLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
+import { FACEBOOK_BLUE, INSTAGRAM_PINK, SHOPEE_ORANGE, YOUTUBE_RED } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import type { AutoPilotStepType } from '@/autopilot/types';
 import { ExtensionSectionTitle } from '../primitives';
 
-export type BufferChannelTab = 'facebook' | 'youtube';
+export type BufferChannelTab = 'facebook' | 'instagram' | 'youtube';
 
 export function PipelineStepsBlock({
   enabledSteps,
   shopeeEnabled,
   facebookChecked,
+  instagramChecked,
   youtubeChecked,
   channelTab,
   theme,
   onToggle,
   onToggleShopee,
   onPressFacebook,
+  onPressInstagram,
   onPressYoutube,
 }: {
   enabledSteps: AutoPilotStepType[];
   shopeeEnabled: boolean;
-  // Facebook/YouTube behave as tabs, not toggles: tapping opens that
-  // service's channel picker below, and the check badge only appears once a
-  // channel is actually selected.
+  // Facebook/Instagram/YouTube behave as tabs, not toggles: tapping opens
+  // that service's channel picker below, and the check badge only appears
+  // once a channel is actually selected.
   facebookChecked: boolean;
+  instagramChecked: boolean;
   youtubeChecked: boolean;
   channelTab: BufferChannelTab | null;
   theme: KubdeeTheme;
   onToggle: (value: AutoPilotStepType) => void;
   onToggleShopee: () => void;
   onPressFacebook: () => void;
+  onPressInstagram: () => void;
   onPressYoutube: () => void;
 }): React.JSX.Element {
   return (
@@ -78,6 +82,18 @@ export function PipelineStepsBlock({
           renderIcon={(color) => <FacebookLogo size={16} color={color} cutoutColor={theme.input} />}
           theme={theme}
           onPress={onPressFacebook}
+        />
+        <View className="flex-1 items-center">
+          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
+        </View>
+        <PipelineToggleButton
+          active={channelTab === 'instagram' || instagramChecked}
+          checked={instagramChecked}
+          label="โพสต์ Instagram"
+          accentColor={INSTAGRAM_PINK}
+          renderIcon={(color) => <InstagramLogo size={16} color={color} />}
+          theme={theme}
+          onPress={onPressInstagram}
         />
         <View className="flex-1 items-center">
           <ChevronRight size={12} color={theme.border} strokeWidth={2} />

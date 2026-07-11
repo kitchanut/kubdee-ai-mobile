@@ -3,9 +3,9 @@ import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-nat
 import { AlertTriangle, Check } from 'lucide-react-native';
 import { getBufferConnectionStatus, listBufferChannelsByService } from '@/autopilot/bufferPosting';
 import type { BufferChannel, BufferChannelService } from '@/autopilot/bufferPosting';
-import { FacebookLogo, YouTubeLogo } from '@/components/BrandLogos';
+import { FacebookLogo, InstagramLogo, YouTubeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
-import { FACEBOOK_BLUE, YOUTUBE_RED } from '@/theme/brandColors';
+import { FACEBOOK_BLUE, INSTAGRAM_PINK, YOUTUBE_RED } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 const CHANNEL_CARD_WIDTH = 176;
@@ -218,6 +218,31 @@ export function YoutubePostingSettingsBlock({
       accent={YOUTUBE_RED}
       renderLogo={() => <YouTubeLogo size={20} color={YOUTUBE_RED} cutoutColor={theme.input} />}
       channelId={youtubeChannelId}
+      theme={theme}
+      onSelectChannel={onSelectChannel}
+      onClearChannel={onClearChannel}
+    />
+  );
+}
+
+export function InstagramPostingSettingsBlock({
+  instagramChannelId,
+  theme,
+  onSelectChannel,
+  onClearChannel,
+}: {
+  instagramChannelId: string | null;
+  theme: KubdeeTheme;
+  onSelectChannel: (channelId: string) => void;
+  onClearChannel: () => void;
+}): React.JSX.Element {
+  return (
+    <BufferChannelPickerBlock
+      service="instagram"
+      serviceLabel="Instagram"
+      accent={INSTAGRAM_PINK}
+      renderLogo={() => <InstagramLogo size={20} color={INSTAGRAM_PINK} />}
+      channelId={instagramChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
       onClearChannel={onClearChannel}

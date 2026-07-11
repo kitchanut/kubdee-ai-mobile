@@ -116,6 +116,8 @@ export interface AutoPilotSettings {
   facebookChannelId: string | null;
   autoPostYoutube: boolean;
   youtubeChannelId: string | null;
+  autoPostInstagram: boolean;
+  instagramChannelId: string | null;
 }
 
 export interface AutoPilotProduct {

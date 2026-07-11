@@ -1,5 +1,6 @@
 import {
   createFacebookBufferPost,
+  createInstagramBufferPost,
   createYoutubeBufferPost,
   uploadBufferAsset,
 } from '@/autopilot/bufferPosting';
@@ -101,9 +102,27 @@ export async function postProductAfterGeneration(params: PostProductAfterGenerat
     await postProductToFacebook(product, videoAssets, settings.facebookChannelId, emitStage);
   }
 
+  if (settings.autoPostInstagram && settings.instagramChannelId) {
+    await postProductToInstagram(product, videoAssets, settings.instagramChannelId, emitStage);
+  }
+
   if (settings.autoPostYoutube && settings.youtubeChannelId) {
     await postProductToYoutube(product, videoAssets, settings.youtubeChannelId, emitStage);
   }
+}
+
+// Post body = caption + hashtags; the affiliate link goes into the post's
+// first comment instead ("พิกัดอยู่คอมเมนต์แรก" — links in the Facebook post
+// body get reach-suppressed, so this is the standard affiliate tactic).
+function buildBufferPostText(product: GoogleFlowRunnerProduct): string {
+  return [product.caption?.trim(), product.hashtags?.trim()]
+    .filter((part): part is string => !!part)
+    .join('\n\n');
+}
+
+function buildProductLinkFirstComment(product: GoogleFlowRunnerProduct): string | undefined {
+  const productUrl = product.productUrl?.trim();
+  return productUrl ? `พิกัด: ${productUrl}` : undefined;
 }
 
 async function postProductToShopee(
@@ -213,21 +232,54 @@ async function postProductToFacebook(
     const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
 
     emitStage('posting_facebook', `กำลังโพสต์ Facebook: ${product.name || 'สินค้า'}`);
-    const productUrl = product.productUrl?.trim();
-    const text = [
-      product.caption?.trim(),
-      productUrl ? `พิกัด: ${productUrl}` : null,
-      product.hashtags?.trim(),
-    ]
-      .filter((part): part is string => !!part)
-      .join('\n\n');
-
-    await createFacebookBufferPost({ channelId, text, assetUrl, assetType: 'video' });
+    await createFacebookBufferPost({
+      channelId,
+      text: buildBufferPostText(product),
+      assetUrl,
+      assetType: 'video',
+      firstComment: buildProductLinkFirstComment(product),
+    });
     emitStage('posted_facebook', `โพสต์ Facebook สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
   } catch (error) {
     emitStage(
       'failed',
       `โพสต์ Facebook ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
+      'error'
+    );
+  }
+}
+
+async function postProductToInstagram(
+  product: GoogleFlowRunnerProduct,
+  videoAssets: AutoPilotProductVideoAsset[],
+  channelId: string,
+  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void
+): Promise<void> {
+  if (videoAssets.length === 0) {
+    emitStage('posting_instagram', 'ข้ามโพสต์ Instagram: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
+    return;
+  }
+
+  // Instagram reels take exactly one video — post the first generated one,
+  // same as Facebook/YouTube.
+  const video = videoAssets[0];
+
+  try {
+    emitStage('uploading_instagram_asset', `กำลังอัปโหลดวิดีโอไป Instagram: ${product.name || 'สินค้า'}`);
+    const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
+
+    emitStage('posting_instagram', `กำลังโพสต์ Instagram: ${product.name || 'สินค้า'}`);
+    await createInstagramBufferPost({
+      channelId,
+      text: buildBufferPostText(product),
+      assetUrl,
+      firstComment: buildProductLinkFirstComment(product),
+    });
+    emitStage('posted_instagram', `โพสต์ Instagram สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
+  } catch (error) {
+    emitStage(
+      'failed',
+      `โพสต์ Instagram ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
       'error'
     );
   }

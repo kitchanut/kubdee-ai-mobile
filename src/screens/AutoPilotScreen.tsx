@@ -35,7 +35,11 @@ import { ProductSettingsModal } from './autopilot/ProductSettingsModal';
 import type { ProductSettingsTab } from './autopilot/constants';
 import { ExtensionBasicSettingsBlock } from './autopilot/blocks/SettingsBlocks';
 import { PipelineStepsBlock } from './autopilot/blocks/PipelineStepsBlock';
-import { FacebookPostingSettingsBlock, YoutubePostingSettingsBlock } from './autopilot/blocks/FacebookPostingSettingsBlock';
+import {
+  FacebookPostingSettingsBlock,
+  InstagramPostingSettingsBlock,
+  YoutubePostingSettingsBlock,
+} from './autopilot/blocks/FacebookPostingSettingsBlock';
 import type { BufferChannelTab } from './autopilot/blocks/PipelineStepsBlock';
 import { ActivityLogSheet, RunStatusSummaryBlock } from './autopilot/blocks/RunStatus';
 import { ProductCatalogBlock } from './autopilot/blocks/ProductCatalog';
@@ -329,12 +333,14 @@ export default function AutoPilotScreen({
             enabledSteps={controller.enabledSteps}
             shopeeEnabled={controller.settings.autoPostShopee}
             facebookChecked={controller.settings.autoPostFacebook && !!controller.settings.facebookChannelId}
+            instagramChecked={controller.settings.autoPostInstagram && !!controller.settings.instagramChannelId}
             youtubeChecked={controller.settings.autoPostYoutube && !!controller.settings.youtubeChannelId}
             channelTab={channelTab}
             theme={theme}
             onToggle={(value) => controller.toggleStep(value)}
             onToggleShopee={() => controller.updateSetting('autoPostShopee', !controller.settings.autoPostShopee)}
             onPressFacebook={() => setChannelTab((tab) => (tab === 'facebook' ? null : 'facebook'))}
+            onPressInstagram={() => setChannelTab((tab) => (tab === 'instagram' ? null : 'instagram'))}
             onPressYoutube={() => setChannelTab((tab) => (tab === 'youtube' ? null : 'youtube'))}
           />
 
@@ -349,6 +355,21 @@ export default function AutoPilotScreen({
               onClearChannel={() => {
                 controller.updateSetting('autoPostFacebook', false);
                 controller.updateSetting('facebookChannelId', null);
+              }}
+            />
+          ) : null}
+
+          {channelTab === 'instagram' ? (
+            <InstagramPostingSettingsBlock
+              instagramChannelId={controller.settings.instagramChannelId}
+              theme={theme}
+              onSelectChannel={(channelId) => {
+                controller.updateSetting('instagramChannelId', channelId);
+                controller.updateSetting('autoPostInstagram', true);
+              }}
+              onClearChannel={() => {
+                controller.updateSetting('autoPostInstagram', false);
+                controller.updateSetting('instagramChannelId', null);
               }}
             />
           ) : null}

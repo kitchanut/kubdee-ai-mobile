@@ -55,6 +55,7 @@ export interface CreateFacebookBufferPostParams {
   text: string;
   assetUrl: string;
   assetType?: BufferPostAssetType;
+  firstComment?: string;
 }
 
 async function getAccessToken(forceRefresh = false): Promise<string> {
@@ -147,7 +148,7 @@ export async function getBufferConnectionStatus(): Promise<BufferConnectionStatu
   }
 }
 
-export type BufferChannelService = 'facebook' | 'youtube';
+export type BufferChannelService = 'facebook' | 'youtube' | 'instagram';
 
 export async function listBufferChannelsByService(service: BufferChannelService): Promise<BufferChannel[]> {
   const response = await bufferFetch('/api/v1/integrations/buffer/channels');
@@ -253,6 +254,7 @@ export async function createFacebookBufferPost({
   text,
   assetUrl,
   assetType = 'video',
+  firstComment,
 }: CreateFacebookBufferPostParams): Promise<void> {
   const response = await bufferFetch('/api/v1/integrations/buffer/posts', {
     method: 'POST',
@@ -262,12 +264,51 @@ export async function createFacebookBufferPost({
       text,
       mode: 'now',
       assets: [{ type: assetType, url: assetUrl }],
+      ...(firstComment ? { facebook: { firstComment } } : {}),
     }),
   });
 
   const data = await readJson(response);
   if (!response.ok || data.success !== true) {
     throw new Error(extractApiError(data, `โพสต์ Facebook ไม่สำเร็จ (${response.status})`));
+  }
+}
+
+export interface CreateInstagramBufferPostParams {
+  channelId: string;
+  text: string;
+  assetUrl: string;
+  firstComment?: string;
+}
+
+// Buffer posts the generated video to Instagram as a reel that also shows in
+// the feed; the videos are AI-made, so the AI disclosure is always sent.
+export async function createInstagramBufferPost({
+  channelId,
+  text,
+  assetUrl,
+  firstComment,
+}: CreateInstagramBufferPostParams): Promise<void> {
+  const response = await bufferFetch('/api/v1/integrations/buffer/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      channelId,
+      text,
+      mode: 'now',
+      assets: [{ type: 'video', url: assetUrl }],
+      instagram: {
+        type: 'reel',
+        shouldShareToFeed: true,
+        isAiGenerated: true,
+        ...(firstComment ? { firstComment } : {}),
+      },
+    }),
+  });
+
+  const data = await readJson(response);
+  if (!response.ok || data.success !== true) {
+    throw new Error(extractApiError(data, `โพสต์ Instagram ไม่สำเร็จ (${response.status})`));
   }
 }
 
