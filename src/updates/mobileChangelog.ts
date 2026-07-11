@@ -44,6 +44,29 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.5.0',
+    date: '2026-07-11',
+    highlight: 'โพสต์ Instagram Reels + YouTube Shorts อัตโนมัติ',
+    changes: [
+      {
+        type: 'feature',
+        text: 'หน้าออโต้: โพสต์ Instagram (Reels) และ YouTube Shorts อัตโนมัติผ่าน Buffer หลังสร้างวิดีโอเสร็จ เพิ่มจาก Facebook เดิม — Instagram ต้องเป็นบัญชี Business/Creator ที่เชื่อมกับ Buffer แล้ว'
+      },
+      {
+        type: 'improved',
+        text: 'หน้าออโต้: เลือกเพจ/ช่องสำหรับโพสต์เป็นการ์ดรูปโปรไฟล์วงกลม พร้อมไอคอนช่องทางมุมขวาล่าง เลื่อนแนวนอนได้ และเลื่อนไปหา channel ที่เลือกไว้ให้อัตโนมัติ'
+      },
+      {
+        type: 'improved',
+        text: 'หน้าออโต้: ปุ่ม Facebook / Instagram / YouTube ในแถบขั้นตอนการทำงานเป็นแท็บกดสลับดูรายชื่อ channel — เครื่องหมายถูกขึ้นเมื่อเลือก channel แล้วเท่านั้น และกดการ์ดที่เลือกซ้ำเพื่อยกเลิก'
+      },
+      {
+        type: 'changed',
+        text: 'หน้าออโต้: ย้ายไอคอน TikTok ไปท้ายแถบขั้นตอนการทำงาน'
+      }
+    ]
+  },
+  {
     version: '0.4.0',
     date: '2026-07-10',
     highlight: 'ออโต้โพสต์ Shopee + Facebook หลังสร้างวิดีโอเสร็จ',
