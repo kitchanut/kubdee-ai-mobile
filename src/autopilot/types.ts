@@ -114,6 +114,8 @@ export interface AutoPilotSettings {
   autoPostShopee: boolean;
   autoPostFacebook: boolean;
   facebookChannelId: string | null;
+  autoPostYoutube: boolean;
+  youtubeChannelId: string | null;
 }
 
 export interface AutoPilotProduct {

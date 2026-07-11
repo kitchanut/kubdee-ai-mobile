@@ -3,30 +3,32 @@ import { Pressable, View } from 'react-native';
 import { ChevronRight, Check, Image as ImageIcon, Sparkles, Video } from 'lucide-react-native';
 import { AUTO_PILOT_STEPS } from '@/autopilot/defaults';
 import { FacebookLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
-import { SHOPEE_ORANGE } from '@/theme/brandColors';
+import { FACEBOOK_BLUE, SHOPEE_ORANGE, YOUTUBE_RED } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import type { AutoPilotStepType } from '@/autopilot/types';
 import { ExtensionSectionTitle } from '../primitives';
 
-const FACEBOOK_BLUE = '#0866FF';
-
 export function PipelineStepsBlock({
   enabledSteps,
   shopeeEnabled,
   facebookEnabled,
+  youtubeEnabled,
   theme,
   onToggle,
   onToggleShopee,
   onToggleFacebook,
+  onToggleYoutube,
 }: {
   enabledSteps: AutoPilotStepType[];
   shopeeEnabled: boolean;
   facebookEnabled: boolean;
+  youtubeEnabled: boolean;
   theme: KubdeeTheme;
   onToggle: (value: AutoPilotStepType) => void;
   onToggleShopee: () => void;
   onToggleFacebook: () => void;
+  onToggleYoutube: () => void;
 }): React.JSX.Element {
   return (
     <View className="gap-2.5">
@@ -76,7 +78,14 @@ export function PipelineStepsBlock({
         <View className="flex-1 items-center">
           <ChevronRight size={12} color={theme.border} strokeWidth={2} />
         </View>
-        <DisabledPipelineIcon icon="youtube" theme={theme} />
+        <PipelineToggleButton
+          active={youtubeEnabled}
+          label="โพสต์ YouTube"
+          accentColor={YOUTUBE_RED}
+          renderIcon={(color) => <YouTubeLogo size={16} color={color} cutoutColor={theme.input} />}
+          theme={theme}
+          onPress={onToggleYoutube}
+        />
       </View>
     </View>
   );

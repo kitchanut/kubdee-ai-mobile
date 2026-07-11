@@ -1,28 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
 import { AlertTriangle, Check } from 'lucide-react-native';
-import { getBufferConnectionStatus, listFacebookBufferChannels } from '@/autopilot/bufferPosting';
-import type { BufferChannel } from '@/autopilot/bufferPosting';
-import { FacebookLogo } from '@/components/BrandLogos';
+import { getBufferConnectionStatus, listBufferChannelsByService } from '@/autopilot/bufferPosting';
+import type { BufferChannel, BufferChannelService } from '@/autopilot/bufferPosting';
+import { FacebookLogo, YouTubeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
+import { FACEBOOK_BLUE, YOUTUBE_RED } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 
-const FACEBOOK_BLUE = '#0866FF';
 const CHANNEL_CARD_WIDTH = 176;
 const CHANNEL_CARD_GAP = 8; // ต้องตรงกับ gap-2 ของ contentContainer
 
 type LoadState = 'loading' | 'not_connected' | 'no_channels' | 'ready' | 'error';
 
-// Facebook posting goes through Buffer, and Buffer connection (entering the
-// API key) only happens on the web (kubdee.ai/settings) by design — mobile
-// only reads the connection status + channel list, it never lets the user
-// paste a key here.
-export function FacebookPostingSettingsBlock({
-  facebookChannelId,
+// Posting goes through Buffer, and Buffer connection (entering the API key)
+// only happens on the web (kubdee.ai/settings) by design — mobile only reads
+// the connection status + channel list, it never lets the user paste a key
+// here.
+function BufferChannelPickerBlock({
+  service,
+  serviceLabel,
+  accent,
+  renderLogo,
+  channelId,
   theme,
   onSelectChannel,
 }: {
-  facebookChannelId: string | null;
+  service: BufferChannelService;
+  serviceLabel: string;
+  accent: string;
+  renderLogo: () => React.JSX.Element;
+  channelId: string | null;
   theme: KubdeeTheme;
   onSelectChannel: (channelId: string) => void;
 }): React.JSX.Element {
@@ -44,10 +52,10 @@ export function FacebookPostingSettingsBlock({
           return;
         }
 
-        const facebookChannels = await listFacebookBufferChannels();
+        const serviceChannels = await listBufferChannelsByService(service);
         if (cancelled) return;
-        setChannels(facebookChannels);
-        setLoadState(facebookChannels.length > 0 ? 'ready' : 'no_channels');
+        setChannels(serviceChannels);
+        setLoadState(serviceChannels.length > 0 ? 'ready' : 'no_channels');
       } catch {
         if (!cancelled) setLoadState('error');
       }
@@ -58,7 +66,7 @@ export function FacebookPostingSettingsBlock({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [service]);
 
   useEffect(() => {
     if (loadState !== 'ready' || channels.length === 0) return;
@@ -66,11 +74,11 @@ export function FacebookPostingSettingsBlock({
     // removed/disconnected on Buffer's side since it was last picked) —
     // otherwise a stale id would silently fail every post instead of falling
     // back to a channel that's actually still connected.
-    const stillExists = facebookChannelId && channels.some((channel) => channel.id === facebookChannelId);
+    const stillExists = channelId && channels.some((channel) => channel.id === channelId);
     if (!stillExists) {
       onSelectChannel(channels[0].id);
     }
-  }, [loadState, facebookChannelId, channels, onSelectChannel]);
+  }, [loadState, channelId, channels, onSelectChannel]);
 
   if (loadState === 'loading') {
     return (
@@ -97,7 +105,7 @@ export function FacebookPostingSettingsBlock({
       <View className="flex-row items-start gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
         <AlertTriangle size={14} color={theme.amber} strokeWidth={2} />
         <Text className="flex-1 text-kd-micro text-kd-text-subtle">
-          ยังไม่มี channel Facebook เชื่อมต่อกับ Buffer อยู่ — ไปเพิ่มที่เว็บ Buffer ก่อน
+          ยังไม่มี channel {serviceLabel} เชื่อมต่อกับ Buffer อยู่ — ไปเพิ่มที่เว็บ Buffer ก่อน
         </Text>
       </View>
     );
@@ -112,7 +120,7 @@ export function FacebookPostingSettingsBlock({
     );
   }
 
-  const selectedId = facebookChannelId ?? channels[0]?.id ?? '';
+  const selectedId = channelId ?? channels[0]?.id ?? '';
 
   return (
     <ScrollView
@@ -141,13 +149,13 @@ export function FacebookPostingSettingsBlock({
             accessibilityRole="button"
             onPress={() => onSelectChannel(channel.id)}
             className="flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
-            style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? FACEBOOK_BLUE : theme.border }}
+            style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? accent : theme.border }}
           >
             <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
               {channel.avatar ? (
                 <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
               ) : (
-                <FacebookLogo size={20} color={FACEBOOK_BLUE} cutoutColor={theme.input} />
+                renderLogo()
               )}
             </View>
             <View className="min-w-0 flex-1">
@@ -155,13 +163,57 @@ export function FacebookPostingSettingsBlock({
                 {channel.displayName || channel.name}
               </Text>
               <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-                {channel.isQueuePaused ? 'คิวหยุดชั่วคราว' : 'Facebook'}
+                {channel.isQueuePaused ? 'คิวหยุดชั่วคราว' : serviceLabel}
               </Text>
             </View>
-            {selected ? <Check size={16} color={FACEBOOK_BLUE} strokeWidth={2.5} /> : null}
+            {selected ? <Check size={16} color={accent} strokeWidth={2.5} /> : null}
           </Pressable>
         );
       })}
-  </ScrollView>
+    </ScrollView>
+  );
+}
+
+export function FacebookPostingSettingsBlock({
+  facebookChannelId,
+  theme,
+  onSelectChannel,
+}: {
+  facebookChannelId: string | null;
+  theme: KubdeeTheme;
+  onSelectChannel: (channelId: string) => void;
+}): React.JSX.Element {
+  return (
+    <BufferChannelPickerBlock
+      service="facebook"
+      serviceLabel="Facebook"
+      accent={FACEBOOK_BLUE}
+      renderLogo={() => <FacebookLogo size={20} color={FACEBOOK_BLUE} cutoutColor={theme.input} />}
+      channelId={facebookChannelId}
+      theme={theme}
+      onSelectChannel={onSelectChannel}
+    />
+  );
+}
+
+export function YoutubePostingSettingsBlock({
+  youtubeChannelId,
+  theme,
+  onSelectChannel,
+}: {
+  youtubeChannelId: string | null;
+  theme: KubdeeTheme;
+  onSelectChannel: (channelId: string) => void;
+}): React.JSX.Element {
+  return (
+    <BufferChannelPickerBlock
+      service="youtube"
+      serviceLabel="YouTube"
+      accent={YOUTUBE_RED}
+      renderLogo={() => <YouTubeLogo size={20} color={YOUTUBE_RED} cutoutColor={theme.input} />}
+      channelId={youtubeChannelId}
+      theme={theme}
+      onSelectChannel={onSelectChannel}
+    />
   );
 }

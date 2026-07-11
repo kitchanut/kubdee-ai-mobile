@@ -1,5 +1,6 @@
 import {
   createFacebookBufferPost,
+  createYoutubeBufferPost,
   uploadBufferAsset,
 } from '@/autopilot/bufferPosting';
 import type { AutoPilotLogLevel, AutoPilotSettings, GoogleFlowRunnerLogEntry, GoogleFlowRunnerProduct } from '@/autopilot/types';
@@ -68,10 +69,10 @@ export interface PostProductAfterGenerationParams {
 
 // Runs after auto pilot finishes generating (image +) video for one product,
 // before the loop advances to the next one — deliberately awaited by the
-// caller so posting always finishes before the next product starts. Shopee
-// and Facebook are independent: one failing is logged but never blocks the
-// other or throws out to the caller (same "log and continue" behavior the
-// image/video generation steps already have).
+// caller so posting always finishes before the next product starts. Shopee,
+// Facebook and YouTube are independent: one failing is logged but never
+// blocks the others or throws out to the caller (same "log and continue"
+// behavior the image/video generation steps already have).
 export async function postProductAfterGeneration(params: PostProductAfterGenerationParams): Promise<void> {
   const { product, videoAssets, settings, emit, runId, round, totalRounds, productIndex, totalProducts } = params;
 
@@ -98,6 +99,10 @@ export async function postProductAfterGeneration(params: PostProductAfterGenerat
 
   if (settings.autoPostFacebook && settings.facebookChannelId) {
     await postProductToFacebook(product, videoAssets, settings.facebookChannelId, emitStage);
+  }
+
+  if (settings.autoPostYoutube && settings.youtubeChannelId) {
+    await postProductToYoutube(product, videoAssets, settings.youtubeChannelId, emitStage);
   }
 }
 
@@ -223,6 +228,53 @@ async function postProductToFacebook(
     emitStage(
       'failed',
       `โพสต์ Facebook ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
+      'error'
+    );
+  }
+}
+
+// YouTube caps titles at 100 characters (enforced server-side too).
+const YOUTUBE_TITLE_MAX_LENGTH = 100;
+
+async function postProductToYoutube(
+  product: GoogleFlowRunnerProduct,
+  videoAssets: AutoPilotProductVideoAsset[],
+  channelId: string,
+  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void
+): Promise<void> {
+  if (videoAssets.length === 0) {
+    emitStage('posting_youtube', 'ข้ามโพสต์ YouTube: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
+    return;
+  }
+
+  // Buffer publishes YouTube posts as Shorts with exactly one video — post
+  // the first generated video, same as Facebook.
+  const video = videoAssets[0];
+
+  try {
+    emitStage('uploading_youtube_asset', `กำลังอัปโหลดวิดีโอไป YouTube: ${product.name || 'สินค้า'}`);
+    const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
+
+    emitStage('posting_youtube', `กำลังโพสต์ YouTube: ${product.name || 'สินค้า'}`);
+    const title = (product.name?.trim() || product.caption?.trim().split('\n')[0] || 'วิดีโอสินค้า').slice(
+      0,
+      YOUTUBE_TITLE_MAX_LENGTH
+    );
+    const productUrl = product.productUrl?.trim();
+    const text = [
+      product.caption?.trim(),
+      productUrl ? `พิกัด: ${productUrl}` : null,
+      product.hashtags?.trim(),
+    ]
+      .filter((part): part is string => !!part)
+      .join('\n\n');
+
+    await createYoutubeBufferPost({ channelId, text, assetUrl, title });
+    emitStage('posted_youtube', `โพสต์ YouTube สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
+  } catch (error) {
+    emitStage(
+      'failed',
+      `โพสต์ YouTube ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
       'error'
     );
   }

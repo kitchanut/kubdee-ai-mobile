@@ -147,7 +147,9 @@ export async function getBufferConnectionStatus(): Promise<BufferConnectionStatu
   }
 }
 
-export async function listFacebookBufferChannels(): Promise<BufferChannel[]> {
+export type BufferChannelService = 'facebook' | 'youtube';
+
+export async function listBufferChannelsByService(service: BufferChannelService): Promise<BufferChannel[]> {
   const response = await bufferFetch('/api/v1/integrations/buffer/channels');
   const data = await readJson(response);
   if (!response.ok || !Array.isArray(data.channels)) {
@@ -156,13 +158,13 @@ export async function listFacebookBufferChannels(): Promise<BufferChannel[]> {
 
   return (data.channels as Record<string, unknown>[])
     .filter((channel): channel is Record<string, unknown> => {
-      return !!channel && typeof channel.id === 'string' && channel.service === 'facebook';
+      return !!channel && typeof channel.id === 'string' && channel.service === service;
     })
     .map((channel) => ({
       id: channel.id as string,
-      name: typeof channel.name === 'string' ? channel.name : 'Facebook',
+      name: typeof channel.name === 'string' ? channel.name : service,
       displayName: typeof channel.displayName === 'string' ? channel.displayName : null,
-      service: 'facebook',
+      service,
       avatar: typeof channel.avatar === 'string' ? channel.avatar : null,
       isQueuePaused: channel.isQueuePaused === true,
     }));
@@ -266,5 +268,39 @@ export async function createFacebookBufferPost({
   const data = await readJson(response);
   if (!response.ok || data.success !== true) {
     throw new Error(extractApiError(data, `โพสต์ Facebook ไม่สำเร็จ (${response.status})`));
+  }
+}
+
+export interface CreateYoutubeBufferPostParams {
+  channelId: string;
+  text: string;
+  assetUrl: string;
+  title: string;
+}
+
+// Buffer publishes YouTube posts as Shorts and requires exactly one video
+// asset plus a title. The generated videos are AI-made, so the YouTube
+// "altered content" disclosure is always sent.
+export async function createYoutubeBufferPost({
+  channelId,
+  text,
+  assetUrl,
+  title,
+}: CreateYoutubeBufferPostParams): Promise<void> {
+  const response = await bufferFetch('/api/v1/integrations/buffer/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      channelId,
+      text,
+      mode: 'now',
+      assets: [{ type: 'video', url: assetUrl }],
+      youtube: { title, isAiGenerated: true },
+    }),
+  });
+
+  const data = await readJson(response);
+  if (!response.ok || data.success !== true) {
+    throw new Error(extractApiError(data, `โพสต์ YouTube ไม่สำเร็จ (${response.status})`));
   }
 }

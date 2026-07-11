@@ -24,6 +24,8 @@ export const DEFAULT_AUTO_PILOT_SETTINGS: AutoPilotSettings = {
   autoPostShopee: false,
   autoPostFacebook: false,
   facebookChannelId: null,
+  autoPostYoutube: false,
+  youtubeChannelId: null,
 };
 
 export const DEFAULT_AUTO_PILOT_IMAGE_SETTINGS: AutoPilotImageSettings = {
