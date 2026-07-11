@@ -25,6 +25,7 @@ import FlowWebView, {
 import Text from '@/components/ui/KubdeeText';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { getCurrentMobileVersion, getCurrentMobileVersionCode } from '@/updates/mobileUpdate';
+import { cacheProductImage } from '@/library/productImageCache';
 import {
   mergeGoogleFlowVideos,
   probeGoogleFlowVideos,
@@ -1598,7 +1599,37 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalProducts: payload.products.length,
                   message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}/${sceneCount}: ${product.name || 'สินค้า'}`,
                 });
-                const productReferenceDataUrl = await loadImageReferenceDataUrl(product.preview);
+                let productReferenceUri = product.preview;
+                let productReferenceDataUrl = await loadImageReferenceDataUrl(productReferenceUri);
+                const previewFallbackUrl = product.previewFallbackUrl?.trim() || '';
+                if (!productReferenceDataUrl && previewFallbackUrl && previewFallbackUrl !== productReferenceUri) {
+                  emit({
+                    event: 'progress',
+                    runId: payload.runId,
+                    status: 'running',
+                    level: 'warning',
+                    step: 'image',
+                    stage: 'multi_scene_attach_product_reference',
+                    productId: product.id,
+                    productName: product.name,
+                    currentRound: round,
+                    totalRounds: payload.settings.totalRounds,
+                    currentProduct: productIndex + 1,
+                    totalProducts: payload.products.length,
+                    message: `รูปสินค้าในเครื่องเปิดไม่ได้ กำลังโหลดรูปจาก URL แทน: ${product.name || 'สินค้า'}`,
+                  });
+                  productReferenceDataUrl = await loadImageReferenceDataUrl(previewFallbackUrl);
+                  if (productReferenceDataUrl) {
+                    productReferenceUri = previewFallbackUrl;
+                    // ซ่อมไฟล์ cache ที่หายกลับคืน — ชื่อไฟล์ deterministic ต่อ (สินค้า, URL)
+                    // จึงกลับมาตรง imagePath เดิมใน DB ให้รอบถัดไปอ่านไฟล์เครื่องได้ตามปกติ
+                    void cacheProductImage({
+                      externalProductId: product.productId,
+                      name: product.name,
+                      imageUrl: previewFallbackUrl,
+                    }).catch(() => {});
+                  }
+                }
                 await uploadReferenceImageOrThrow({
                   handle,
                   payload,
@@ -1607,7 +1638,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   round,
                   step: 'image',
                   args: {
-                    ...resolveReferenceTransportArgs(productReferenceDataUrl, product.preview),
+                    ...resolveReferenceTransportArgs(productReferenceDataUrl, productReferenceUri),
                     fileName: getProductReferenceFileName(product, productIndex, round, 'image'),
                     referenceLabel: getProductReferenceLabel(product, productIndex),
                   },
