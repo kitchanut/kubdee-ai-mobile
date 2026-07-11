@@ -3296,7 +3296,15 @@ export default function GoogleFlowWebViewRunnerHost({
               }
             }
 
-            if (payload.settings.autoPostShopee || payload.settings.autoPostFacebook) {
+            // ครบทั้ง 4 platform — postProductAfterGeneration เช็ค flag+channel
+            // รายตัวข้างในอีกชั้น (เคย gate แค่ Shopee/Facebook ทำให้เปิดเฉพาะ
+            // Instagram/YouTube แล้วไม่โพสต์เงียบๆ — issue #16)
+            const shouldPostAfterGeneration =
+              payload.settings.autoPostShopee ||
+              payload.settings.autoPostFacebook ||
+              payload.settings.autoPostInstagram ||
+              payload.settings.autoPostYoutube;
+            if (shouldPostAfterGeneration) {
               const videoAssets = (latestProductAssetsRef.current.get(product.id) ?? []).filter(
                 (asset) => asset.step === 'video'
               );
