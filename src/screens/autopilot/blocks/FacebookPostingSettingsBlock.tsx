@@ -22,6 +22,7 @@ function BufferChannelPickerBlock({
   serviceLabel,
   accent,
   renderLogo,
+  renderBadge,
   channelId,
   theme,
   onSelectChannel,
@@ -31,6 +32,9 @@ function BufferChannelPickerBlock({
   serviceLabel: string;
   accent: string;
   renderLogo: () => React.JSX.Element;
+  // Small service icon pinned to the avatar's bottom-right corner (matches
+  // how Buffer's own app marks a channel's network).
+  renderBadge: () => React.JSX.Element;
   channelId: string | null;
   theme: KubdeeTheme;
   onSelectChannel: (channelId: string) => void;
@@ -152,12 +156,20 @@ function BufferChannelPickerBlock({
             className="flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
             style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? accent : theme.border }}
           >
-            <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-kd-md border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
-              {channel.avatar ? (
-                <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
-              ) : (
-                renderLogo()
-              )}
+            <View className="relative">
+              <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
+                {channel.avatar ? (
+                  <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
+                ) : (
+                  renderLogo()
+                )}
+              </View>
+              <View
+                className="absolute -bottom-1 -right-1 items-center justify-center rounded-full"
+                style={{ backgroundColor: theme.input, padding: 2 }}
+              >
+                {renderBadge()}
+              </View>
             </View>
             <View className="min-w-0 flex-1">
               <Text numberOfLines={1} className="text-kd-caption font-semibold text-kd-text">
@@ -192,6 +204,7 @@ export function FacebookPostingSettingsBlock({
       serviceLabel="Facebook"
       accent={FACEBOOK_BLUE}
       renderLogo={() => <FacebookLogo size={20} color={FACEBOOK_BLUE} cutoutColor={theme.input} />}
+      renderBadge={() => <FacebookLogo size={15} color={FACEBOOK_BLUE} cutoutColor="#ffffff" />}
       channelId={facebookChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
@@ -217,6 +230,7 @@ export function YoutubePostingSettingsBlock({
       serviceLabel="YouTube"
       accent={YOUTUBE_RED}
       renderLogo={() => <YouTubeLogo size={20} color={YOUTUBE_RED} cutoutColor={theme.input} />}
+      renderBadge={() => <YouTubeLogo size={15} color={YOUTUBE_RED} cutoutColor="#ffffff" />}
       channelId={youtubeChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
@@ -242,6 +256,14 @@ export function InstagramPostingSettingsBlock({
       serviceLabel="Instagram"
       accent={INSTAGRAM_PINK}
       renderLogo={() => <InstagramLogo size={20} color={INSTAGRAM_PINK} />}
+      renderBadge={() => (
+        <View
+          className="h-[15px] w-[15px] items-center justify-center rounded-full"
+          style={{ backgroundColor: INSTAGRAM_PINK }}
+        >
+          <InstagramLogo size={10} color="#ffffff" />
+        </View>
+      )}
       channelId={instagramChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
