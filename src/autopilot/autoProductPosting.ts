@@ -40,7 +40,6 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
     promise.then(
       (value) => {
         clearTimeout(timer);
-        reportWarning('postProductToShopee: postShopeeVideos resolved', {});
         resolve(value);
       },
       (error) => {
@@ -196,13 +195,11 @@ async function postProductToShopee(
       };
     });
 
-    reportWarning('postProductToShopee: calling postShopeeVideos', { videoCount: videos.length });
     const result = await withTimeout(
       postShopeeVideos(videos, { skipReturnNavigation: true }),
       SHOPEE_POST_TIMEOUT_MS,
       'โพสต์ Shopee หมดเวลา (นานเกิน 5 นาที ไม่ได้รับผลลัพธ์จากระบบอัตโนมัติ)'
     );
-    reportWarning('postProductToShopee: withTimeout settled, got result', { success: result.success });
 
     if (result.stopped) {
       emitStage(
