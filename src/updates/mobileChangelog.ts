@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.5.1',
+    date: '2026-07-11',
+    highlight: 'ปรับปรุงภายในระบบโพสต์อัตโนมัติ',
+    changes: [
+      {
+        type: 'improved',
+        text: 'ออโต้: ตัดการส่งข้อมูลบันทึกการทำงานภายใน (debug log) ที่เกินจำเป็นระหว่างโพสต์อัตโนมัติออก หลังยืนยันจากการใช้งานจริงแล้วว่าการแก้ปัญหาโพสต์ Shopee ค้างในเวอร์ชันก่อนทำงานได้ตามปกติ'
+      }
+    ]
+  },
+  {
     version: '0.5.0',
     date: '2026-07-11',
     highlight: 'โพสต์ Instagram Reels + YouTube Shorts อัตโนมัติ',
