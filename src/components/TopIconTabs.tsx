@@ -8,7 +8,7 @@ import {
 } from 'lucide-react-native';
 import { Pressable, View } from 'react-native';
 
-import { FacebookLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
+import { FacebookLogo, InstagramLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
 import type { KubdeeTheme } from '@/theme/tokens';
 import type { TabId } from '@/types/navigation';
 
@@ -33,6 +33,7 @@ const tabs: {
   { id: 'shopee', label: 'Shopee', icon: ShopeeLogo, brandIcon: true },
   { id: 'youtube', label: 'YouTube', icon: YouTubeLogo, brandIcon: true },
   { id: 'facebook', label: 'Facebook', icon: FacebookLogo, brandIcon: true },
+  { id: 'instagram', label: 'Instagram', icon: InstagramLogo, brandIcon: true },
   { id: 'mobile', label: 'มือถือ', icon: Smartphone },
   { id: 'profile', label: 'โปรไฟล์', icon: UserCircle },
 ];

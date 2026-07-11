@@ -1,6 +1,6 @@
 // Pure text builders for Buffer posts (Facebook / Instagram / YouTube),
 // shared between the auto pilot posting loop (autoProductPosting.ts) and the
-// library "post to social" modal (SocialPostModal.tsx). They take a plain
+// per-platform post screens (SocialPostScreen.tsx). They take a plain
 // source object so both GoogleFlowRunnerProduct and GeneratedMediaAsset data
 // can feed them without coupling to either type.
 export interface BufferPostTextSource {

@@ -14,6 +14,7 @@ import MediaPanel from '@/components/library/MediaPanel';
 import ProductPanel from '@/components/library/ProductPanel';
 import SimpleListPanel from '@/components/library/SimpleListPanel';
 import type { KubdeeTheme } from '@/theme/tokens';
+import type { SocialService } from '@/types/navigation';
 
 type IconProps = {
   size?: number;
@@ -30,6 +31,7 @@ interface LibraryScreenProps {
   theme: KubdeeTheme;
   onSendProductsToAutoPilot?: (productIds: string[], profileLocalId: string) => void;
   onSendVideosToShopee?: (videoIds: string[]) => void;
+  onSendVideosToSocial?: (service: SocialService, videoIds: string[]) => void;
 }
 
 /**
@@ -55,6 +57,7 @@ export default function LibraryScreen({
   theme,
   onSendProductsToAutoPilot,
   onSendVideosToShopee,
+  onSendVideosToSocial,
 }: LibraryScreenProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<LibraryTabId>('products');
 
@@ -96,6 +99,7 @@ export default function LibraryScreen({
           theme={theme}
           kind="videos"
           onSendVideosToShopee={onSendVideosToShopee}
+          onSendVideosToSocial={onSendVideosToSocial}
         />
       ) : null}
       {activeTab === 'characters' ? (
