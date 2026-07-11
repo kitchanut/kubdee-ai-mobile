@@ -35,6 +35,7 @@ function isTabId(value: string | null | undefined): value is TabId {
     value === 'shopee' ||
     value === 'youtube' ||
     value === 'facebook' ||
+    value === 'instagram' ||
     value === 'library' ||
     value === 'profile' ||
     value === 'mobile' ||

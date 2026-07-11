@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {
+  ChevronRight,
   ChevronsDown,
   ChevronsUp,
   Download,
@@ -9,13 +10,16 @@ import {
   Image as ImageIcon,
   Package,
   RefreshCw,
+  Share2,
   Upload,
   Video,
+  X,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 
 import { useAuth } from '@/auth/AuthContext';
+import { FacebookLogo, InstagramLogo, YouTubeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
@@ -31,7 +35,10 @@ import {
   type CloudTransferItem,
   type CloudTransferProgress,
 } from '@/services/cloudTransferService';
+import { FACEBOOK_BLUE, INSTAGRAM_PINK, YOUTUBE_RED } from '@/theme/brandColors';
+import { alpha } from '@/theme/tokens';
 import type { KubdeeTheme } from '@/theme/tokens';
+import type { SocialService } from '@/types/navigation';
 
 import {
   CardBackdrop,
@@ -78,16 +85,29 @@ import type { MediaKind, MediaMode, MediaSubItem, UploadDraft } from './media-pa
 
 export type { MediaKind } from './media-panel';
 
+// สีม่วงเดียวกับปุ่ม "โพสต์โซเชียล" ใน SelectionBar (shared.tsx)
+const SOCIAL_VIOLET = '#7c3aed';
+
+const SOCIAL_DESTINATION_META: Record<SocialService, { label: string; color: string; note: string }> = {
+  facebook: { label: 'Facebook', color: FACEBOOK_BLUE, note: 'โพสต์วิดีโอผ่าน Buffer' },
+  instagram: { label: 'Instagram', color: INSTAGRAM_PINK, note: 'โพสต์เป็น Reels ผ่าน Buffer' },
+  youtube: { label: 'YouTube', color: YOUTUBE_RED, note: 'โพสต์เป็น Shorts ผ่าน Buffer' },
+};
+
+const SOCIAL_DESTINATION_ORDER: SocialService[] = ['facebook', 'instagram', 'youtube'];
+
 export default function MediaPanel({
   theme,
   kind,
   selectedProfileId,
   onSendVideosToShopee,
+  onSendVideosToSocial,
 }: {
   theme: KubdeeTheme;
   kind: MediaKind;
   selectedProfileId: string;
   onSendVideosToShopee?: (videoIds: string[]) => void;
+  onSendVideosToSocial?: (service: SocialService, videoIds: string[]) => void;
 }): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
@@ -142,6 +162,7 @@ export default function MediaPanel({
   const [cloudUploadConfirmAssets, setCloudUploadConfirmAssets] = useState<GeneratedMediaAsset[]>([]);
   const [cloudTransferStatus, setCloudTransferStatus] = useState<CloudTransferProgress | null>(null);
   const [cloudTransferWorking, setCloudTransferWorking] = useState(false);
+  const [socialSheetOpen, setSocialSheetOpen] = useState(false);
   const ensuringVideoThumbnailsRef = useRef(false);
 
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
@@ -320,6 +341,40 @@ export default function MediaPanel({
     onSendVideosToShopee(ids);
     setSelectedIds(new Set());
     toast.success(`ส่งไป Shopee ${ids.length} วิดีโอ`);
+  };
+
+  // เปิด sheet เลือกปลายทางโซเชียล — คิวจริงอยู่ที่แท็บของแต่ละแพลตฟอร์ม
+  // (SocialPostScreen) แบบเดียวกับ flow ของ Shopee
+  const openSocialSheet = (): void => {
+    if (kind !== 'videos' || !onSendVideosToSocial) {
+      return;
+    }
+
+    const ids = Array.from(selectedIds).filter((id) => generatedAssetById.has(id));
+    if (ids.length === 0) {
+      toast.warning('เลือกวิดีโอก่อนโพสต์โซเชียล');
+      return;
+    }
+
+    setSocialSheetOpen(true);
+  };
+
+  const sendSelectedVideosToSocial = (service: SocialService): void => {
+    if (kind !== 'videos' || !onSendVideosToSocial) {
+      return;
+    }
+
+    const ids = Array.from(selectedIds).filter((id) => generatedAssetById.has(id));
+    if (ids.length === 0) {
+      setSocialSheetOpen(false);
+      toast.warning('เลือกวิดีโอก่อนโพสต์โซเชียล');
+      return;
+    }
+
+    setSocialSheetOpen(false);
+    onSendVideosToSocial(service, ids);
+    setSelectedIds(new Set());
+    toast.success(`ส่งไป ${SOCIAL_DESTINATION_META[service].label} ${ids.length} วิดีโอ`);
   };
 
   const openCloudInbox = async (): Promise<void> => {
@@ -1172,13 +1227,93 @@ export default function MediaPanel({
           count={selectedIds.size}
           showCloudUpload={kind === 'videos'}
           showShopee={kind === 'videos'}
+          showSocial={kind === 'videos'}
           onClear={() => setSelectedIds(new Set())}
           onDelete={() => void deleteSelected()}
           onEdit={editSelected}
           onCloudUpload={kind === 'videos' ? uploadSelectedVideosToCloud : undefined}
           onShopee={kind === 'videos' ? sendSelectedVideosToShopee : undefined}
+          onSocial={kind === 'videos' ? openSocialSheet : undefined}
         />
       ) : null}
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={socialSheetOpen}
+        onRequestClose={() => setSocialSheetOpen(false)}
+      >
+        <View className="flex-1 justify-end bg-black/45">
+          <Pressable
+            accessibilityLabel="ปิดตัวเลือกโพสต์โซเชียล"
+            accessibilityRole="button"
+            onPress={() => setSocialSheetOpen(false)}
+            className="flex-1"
+          />
+          <View
+            className="rounded-t-[20px] border border-kd-border bg-kd-panel"
+            style={{ paddingBottom: Math.max(insets.bottom + 12, 20) }}
+          >
+            <View className="flex-row items-center justify-between gap-3 border-b border-kd-border px-4 py-3">
+              <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                <Share2 size={16} color={SOCIAL_VIOLET} strokeWidth={2.2} />
+                <View className="min-w-0 flex-1">
+                  <Text numberOfLines={1} className="text-kd-title font-semibold text-kd-text">
+                    โพสต์โซเชียล
+                  </Text>
+                  <Text numberOfLines={1} className="text-kd-caption text-kd-text-subtle">
+                    เลือกปลายทางสำหรับ {selectedIds.size} วิดีโอ
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                accessibilityLabel="ปิด"
+                accessibilityRole="button"
+                onPress={() => setSocialSheetOpen(false)}
+                className="h-8 w-8 items-center justify-center rounded-full bg-kd-card-muted"
+              >
+                <X size={16} color={theme.textSubtle} strokeWidth={2.4} />
+              </Pressable>
+            </View>
+
+            {SOCIAL_DESTINATION_ORDER.map((service, index) => {
+              const destination = SOCIAL_DESTINATION_META[service];
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={service}
+                  onPress={() => sendSelectedVideosToSocial(service)}
+                  className={`flex-row items-center gap-3 px-4 py-3 active:opacity-70 ${
+                    index < SOCIAL_DESTINATION_ORDER.length - 1 ? 'border-b border-kd-border' : ''
+                  }`}
+                >
+                  <View
+                    className="h-9 w-9 items-center justify-center rounded-full"
+                    style={{ backgroundColor: alpha(destination.color, theme.isDark ? 0.16 : 0.1) }}
+                  >
+                    {service === 'facebook' ? (
+                      <FacebookLogo size={18} color={destination.color} cutoutColor="#ffffff" />
+                    ) : service === 'instagram' ? (
+                      <InstagramLogo size={18} color={destination.color} />
+                    ) : (
+                      <YouTubeLogo size={18} color={destination.color} cutoutColor="#ffffff" />
+                    )}
+                  </View>
+                  <View className="min-w-0 flex-1">
+                    <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
+                      ส่งไป {destination.label}
+                    </Text>
+                    <Text numberOfLines={1} className="text-kd-caption text-kd-text-subtle">
+                      {destination.note} · {selectedIds.size} วิดีโอ
+                    </Text>
+                  </View>
+                  <ChevronRight size={16} color={theme.textSubtle} strokeWidth={2.2} />
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
 
       <MediaPanelModals
         accentColor={accentColor}

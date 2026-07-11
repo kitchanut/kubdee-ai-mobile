@@ -31,6 +31,7 @@ import MobileDevicesScreen from '@/screens/MobileDevicesScreen';
 import PlanRequiredScreen from '@/screens/PlanRequiredScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import ShopeeScreen from '@/screens/ShopeeScreen';
+import SocialPostScreen from '@/screens/SocialPostScreen';
 import {
   isThemeMode,
   resolveThemeMode,
@@ -38,7 +39,7 @@ import {
   type ThemeMode,
 } from '@/theme/mode';
 import { darkTheme, lightTheme } from '@/theme/tokens';
-import type { TabId } from '@/types/navigation';
+import type { SocialService, TabId } from '@/types/navigation';
 import { CURRENT_CHANGELOG_VERSION } from '@/updates/mobileChangelog';
 import {
   checkMobileUpdate,
@@ -104,6 +105,9 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const [autoPilotSelectionRequest, setAutoPilotSelectionRequest] =
     useState<AutoPilotProductSelectionRequest | null>(null);
   const [pendingShopeeVideoIds, setPendingShopeeVideoIds] = useState<string[]>([]);
+  const [pendingSocialVideoIdsByService, setPendingSocialVideoIdsByService] = useState<
+    Record<SocialService, string[]>
+  >({ facebook: [], instagram: [], youtube: [] });
   const [libraryTabRequest, setLibraryTabRequest] =
     useState<{ tab: 'videos'; requestId: number } | null>(null);
   const [hasLoadedSelectedProfile, setHasLoadedSelectedProfile] = useState(false);
@@ -342,6 +346,33 @@ export default function KubdeeMobileApp(): React.JSX.Element {
 
   const clearPendingShopeeVideos = useCallback((): void => {
     setPendingShopeeVideoIds([]);
+  }, []);
+
+  const sendVideosToSocial = useCallback((service: SocialService, videoIds: string[]): void => {
+    const cleanVideoIds = uniqueVideoIds(videoIds);
+    if (cleanVideoIds.length === 0) {
+      return;
+    }
+
+    setPendingSocialVideoIdsByService((current) => {
+      const existing = new Set(current[service]);
+      return {
+        ...current,
+        [service]: [...current[service], ...cleanVideoIds.filter((videoId) => !existing.has(videoId))],
+      };
+    });
+    setActiveTab(service);
+  }, []);
+
+  const removePendingSocialVideo = useCallback((service: SocialService, videoId: string): void => {
+    setPendingSocialVideoIdsByService((current) => ({
+      ...current,
+      [service]: current[service].filter((id) => id !== videoId),
+    }));
+  }, []);
+
+  const clearPendingSocialVideos = useCallback((service: SocialService): void => {
+    setPendingSocialVideoIdsByService((current) => ({ ...current, [service]: [] }));
   }, []);
 
   const handleAutoPilotSelectedProductIdsChange = useCallback((productIds: string[], profileLocalId: string): void => {
@@ -588,6 +619,23 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const updateModalTrack = theme.isDark ? '#374151' : '#e5e7eb';
   const updateModalBackdrop = theme.isDark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(17, 24, 39, 0.45)';
 
+  const openVideoLibrary = (): void => {
+    setLibraryTabRequest({ tab: 'videos', requestId: Date.now() });
+    setActiveTab('library');
+  };
+
+  const renderSocialPostScreen = (service: SocialService): React.JSX.Element => (
+    <SocialPostScreen
+      service={service}
+      pendingVideoIds={pendingSocialVideoIdsByService[service]}
+      selectedProfileId={selectedProfileId}
+      theme={theme}
+      onClearPendingVideos={() => clearPendingSocialVideos(service)}
+      onOpenVideoLibrary={openVideoLibrary}
+      onRemovePendingVideo={(videoId) => removePendingSocialVideo(service, videoId)}
+    />
+  );
+
   const renderScreen = (): React.JSX.Element => {
     switch (activeTab) {
       case 'pipeline':
@@ -615,10 +663,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             selectedProfileId={selectedProfileId}
             theme={theme}
             onClearPendingVideos={clearPendingShopeeVideos}
-            onOpenVideoLibrary={() => {
-              setLibraryTabRequest({ tab: 'videos', requestId: Date.now() });
-              setActiveTab('library');
-            }}
+            onOpenVideoLibrary={openVideoLibrary}
             onRemovePendingVideo={removePendingShopeeVideo}
           />
         );
@@ -636,9 +681,11 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       case 'tiktok':
         return <PlaceholderScreen theme={theme} title="TikTok" accent="cyan" />;
       case 'youtube':
-        return <PlaceholderScreen theme={theme} title="YouTube" accent="red" />;
+        return renderSocialPostScreen('youtube');
       case 'facebook':
-        return <PlaceholderScreen theme={theme} title="Facebook" accent="blue" />;
+        return renderSocialPostScreen('facebook');
+      case 'instagram':
+        return renderSocialPostScreen('instagram');
       case 'library':
         return (
           <LibraryScreen
@@ -647,6 +694,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             theme={theme}
             onSendProductsToAutoPilot={sendProductsToAutoPilot}
             onSendVideosToShopee={sendVideosToShopee}
+            onSendVideosToSocial={sendVideosToSocial}
           />
         );
       default:
