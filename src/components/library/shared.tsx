@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Check, ChevronDown, ChevronUp, Pencil, Search, Star, Trash2, Upload, X } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, Pencil, Search, Share2, Star, Trash2, Upload, X } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
 import { ShopeeLogo } from '@/components/BrandLogos';
@@ -398,9 +398,11 @@ export function SelectionBar({
   showAuto = false,
   showCloudUpload = false,
   showShopee = false,
+  showSocial = false,
   onAuto,
   onCloudUpload,
   onShopee,
+  onSocial,
   onClear,
   onDelete,
   onEdit,
@@ -412,9 +414,11 @@ export function SelectionBar({
   showAuto?: boolean;
   showCloudUpload?: boolean;
   showShopee?: boolean;
+  showSocial?: boolean;
   onAuto?: () => void;
   onCloudUpload?: () => void;
   onShopee?: () => void;
+  onSocial?: () => void;
   onClear: () => void;
   onDelete?: () => void;
   onEdit?: () => void;
@@ -472,6 +476,20 @@ export function SelectionBar({
               style={{ backgroundColor: SHOPEE_ORANGE }}
             >
               <ShopeeLogo size={14} color={theme.white} cutoutColor={SHOPEE_ORANGE} />
+            </Pressable>
+          ) : null}
+          {showSocial ? (
+            <Pressable
+              accessibilityLabel="โพสต์โซเชียล"
+              accessibilityRole="button"
+              disabled={!onSocial}
+              onPress={onSocial}
+              className="h-7 w-7 items-center justify-center rounded-full"
+              // สีม่วง (violet-600) กลางๆ ไม่ชนแบรนด์ใดแบรนด์หนึ่ง — ปุ่มนี้รวม
+              // Facebook / Instagram / YouTube ไว้ด้วยกัน
+              style={{ backgroundColor: '#7c3aed' }}
+            >
+              <Share2 size={12} color={theme.white} strokeWidth={2.5} />
             </Pressable>
           ) : null}
           {showCloudUpload ? (

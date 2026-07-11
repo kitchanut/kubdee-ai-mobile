@@ -33,6 +33,7 @@ import {
 } from '@/services/cloudTransferService';
 import type { KubdeeTheme } from '@/theme/tokens';
 
+import SocialPostModal from './SocialPostModal';
 import {
   CardBackdrop,
   EmptyHint,
@@ -142,6 +143,8 @@ export default function MediaPanel({
   const [cloudUploadConfirmAssets, setCloudUploadConfirmAssets] = useState<GeneratedMediaAsset[]>([]);
   const [cloudTransferStatus, setCloudTransferStatus] = useState<CloudTransferProgress | null>(null);
   const [cloudTransferWorking, setCloudTransferWorking] = useState(false);
+  const [socialPostOpen, setSocialPostOpen] = useState(false);
+  const [socialPostAssets, setSocialPostAssets] = useState<GeneratedMediaAsset[]>([]);
   const ensuringVideoThumbnailsRef = useRef(false);
 
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
@@ -320,6 +323,25 @@ export default function MediaPanel({
     onSendVideosToShopee(ids);
     setSelectedIds(new Set());
     toast.success(`ส่งไป Shopee ${ids.length} วิดีโอ`);
+  };
+
+  // เปิด modal โพสต์โซเชียลด้วยวิดีโอที่เลือกไว้ — ต่างจาก Shopee ตรงที่ยังไม่ล้าง
+  // selection ทันที (ล้างเมื่อโพสต์สำเร็จผ่าน onPosted เท่านั้น)
+  const openSocialPostModal = (): void => {
+    if (kind !== 'videos') {
+      return;
+    }
+
+    const assets = Array.from(selectedIds)
+      .map((id) => generatedAssetById.get(id))
+      .filter((asset): asset is GeneratedMediaAsset => !!asset);
+    if (assets.length === 0) {
+      toast.warning('เลือกวิดีโอก่อนโพสต์โซเชียล');
+      return;
+    }
+
+    setSocialPostAssets(assets);
+    setSocialPostOpen(true);
   };
 
   const openCloudInbox = async (): Promise<void> => {
@@ -1172,13 +1194,26 @@ export default function MediaPanel({
           count={selectedIds.size}
           showCloudUpload={kind === 'videos'}
           showShopee={kind === 'videos'}
+          showSocial={kind === 'videos'}
           onClear={() => setSelectedIds(new Set())}
           onDelete={() => void deleteSelected()}
           onEdit={editSelected}
           onCloudUpload={kind === 'videos' ? uploadSelectedVideosToCloud : undefined}
           onShopee={kind === 'videos' ? sendSelectedVideosToShopee : undefined}
+          onSocial={kind === 'videos' ? openSocialPostModal : undefined}
         />
       ) : null}
+
+      <SocialPostModal
+        visible={socialPostOpen}
+        assets={socialPostAssets}
+        theme={theme}
+        onClose={() => {
+          setSocialPostOpen(false);
+          setSocialPostAssets([]);
+        }}
+        onPosted={() => setSelectedIds(new Set())}
+      />
 
       <MediaPanelModals
         accentColor={accentColor}

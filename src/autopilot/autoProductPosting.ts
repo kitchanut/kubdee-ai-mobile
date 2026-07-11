@@ -4,6 +4,12 @@ import {
   createYoutubeBufferPost,
   uploadBufferAsset,
 } from '@/autopilot/bufferPosting';
+import {
+  buildBufferPostText,
+  buildBufferPostTextWithLink,
+  buildProductLinkFirstComment,
+  buildYoutubeTitle,
+} from '@/autopilot/bufferPostText';
 import type { AutoPilotLogLevel, AutoPilotSettings, GoogleFlowRunnerLogEntry, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import { limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
@@ -110,28 +116,12 @@ export async function postProductAfterGeneration(params: PostProductAfterGenerat
   }
 }
 
-// Post body = caption + hashtags; the affiliate link goes into the post's
-// first comment instead ("พิกัดอยู่คอมเมนต์แรก" — links in the Facebook post
-// body get reach-suppressed, so this is the standard affiliate tactic).
-function buildBufferPostText(product: GoogleFlowRunnerProduct): string {
-  return [product.caption?.trim(), product.hashtags?.trim()]
-    .filter((part): part is string => !!part)
-    .join('\n\n');
-}
-
-// Fallback composition with the link in the post body, for when Buffer
-// rejects the first comment (free-plan limitation, confirmed live 2026-07-11).
-function buildBufferPostTextWithLink(product: GoogleFlowRunnerProduct): string {
-  const productUrl = product.productUrl?.trim();
-  return [product.caption?.trim(), productUrl ? `พิกัด: ${productUrl}` : null, product.hashtags?.trim()]
-    .filter((part): part is string => !!part)
-    .join('\n\n');
-}
-
-function buildProductLinkFirstComment(product: GoogleFlowRunnerProduct): string | undefined {
-  const productUrl = product.productUrl?.trim();
-  return productUrl ? `พิกัด: ${productUrl}` : undefined;
-}
+// Post text composition lives in bufferPostText.ts (shared with the library
+// social post modal) — buildBufferPostText (caption + hashtags, link goes to
+// the first comment), buildBufferPostTextWithLink (link in the body, for when
+// Buffer rejects the first comment), buildProductLinkFirstComment, and
+// buildYoutubeTitle. GoogleFlowRunnerProduct is structurally compatible with
+// the builders' source object, so products pass straight through.
 
 // Buffer's exact wording: "Invalid post: First comment requires a paid plan.
 // Please upgrade to use this feature."
@@ -326,9 +316,6 @@ async function postProductToInstagram(
   }
 }
 
-// YouTube caps titles at 100 characters (enforced server-side too).
-const YOUTUBE_TITLE_MAX_LENGTH = 100;
-
 async function postProductToYoutube(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
@@ -349,18 +336,8 @@ async function postProductToYoutube(
     const assetUrl = await uploadBufferAsset(video.fileUri, video.mimeType || 'video/mp4');
 
     emitStage('posting_youtube', `กำลังโพสต์ YouTube: ${product.name || 'สินค้า'}`);
-    const title = (product.name?.trim() || product.caption?.trim().split('\n')[0] || 'วิดีโอสินค้า').slice(
-      0,
-      YOUTUBE_TITLE_MAX_LENGTH
-    );
-    const productUrl = product.productUrl?.trim();
-    const text = [
-      product.caption?.trim(),
-      productUrl ? `พิกัด: ${productUrl}` : null,
-      product.hashtags?.trim(),
-    ]
-      .filter((part): part is string => !!part)
-      .join('\n\n');
+    const title = buildYoutubeTitle(product);
+    const text = buildBufferPostTextWithLink(product);
 
     await createYoutubeBufferPost({ channelId, text, assetUrl, title });
     emitStage('posted_youtube', `โพสต์ YouTube สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
