@@ -14,6 +14,7 @@ import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.graphics.Path
 import android.graphics.PixelFormat
@@ -207,8 +208,14 @@ internal fun KubdeeAccessibilityService.tapAndroidPermissionAllow(): Boolean =
     exact = false
   )
 
-internal fun KubdeeAccessibilityService.tapFirstShopeeGalleryMedia(): Boolean {
+// ยอมให้เวลาบน label เพี้ยนจากการปัดเศษของ Shopee ได้เล็กน้อย
+private const val SHOPEE_GALLERY_DURATION_TOLERANCE_SECONDS = 2L
+
+private val SHOPEE_GALLERY_DURATION_LABEL_REGEX = Regex("""\b(\d{1,2}):([0-5]\d)\b""")
+
+internal fun KubdeeAccessibilityService.tapFirstShopeeGalleryMedia(expectedDurationSeconds: Long? = null): Boolean {
   val candidates = mutableListOf<Pair<Rect, AccessibilityNodeInfo>>()
+  val durationLabels = mutableListOf<Pair<Rect, Long>>()
   val roots = shopeeWindowRoots()
   for (root in roots) {
     val screen = screenBounds(root)
@@ -216,12 +223,34 @@ internal fun KubdeeAccessibilityService.tapFirstShopeeGalleryMedia(): Boolean {
     if (candidates.isEmpty()) {
       collectShopeeGalleryTileCandidates(root, screen, candidates)
     }
+    collectShopeeGalleryDurationLabels(root, durationLabels)
   }
-  logShopeePostStep("พบ media candidate ${candidates.size} รายการในคลัง")
+  logShopeePostStep("พบ media candidate ${candidates.size} รายการในคลัง (label เวลา ${durationLabels.size} จุด)")
 
-  val candidate = candidates
+  val ordered = candidates
     .sortedWith(compareBy<Pair<Rect, AccessibilityNodeInfo>> { it.first.top }.thenBy { it.first.left })
-    .firstOrNull()
+
+  // tile แรกสุดไม่จำเป็นต้องเป็นไฟล์ที่เพิ่งเตรียม (มีสื่อใหม่กว่าแทรก/ลำดับ picker ไม่ตรง DATE_ADDED ได้)
+  // จึงจับคู่ความยาวคลิปกับ label เวลาที่ทับอยู่บน tile ก่อน แล้วค่อย fallback เป็น tile แรกแบบเดิม
+  if (expectedDurationSeconds != null && expectedDurationSeconds > 0) {
+    val matched = ordered.firstOrNull { (bounds, _) ->
+      durationLabels.any { (labelBounds, labelSeconds) ->
+        bounds.contains(labelBounds.centerX(), labelBounds.centerY()) &&
+          Math.abs(labelSeconds - expectedDurationSeconds) <= SHOPEE_GALLERY_DURATION_TOLERANCE_SECONDS
+      }
+    }
+    if (matched != null) {
+      logShopeePostStep(
+        "พบ tile ที่ความยาวตรงกับคลิปที่เตรียม (~$expectedDurationSeconds วิ) แตะที่ ${matched.first.centerX()},${matched.first.centerY()}"
+      )
+      return tapBlocking(matched.first.centerX().toFloat(), matched.first.centerY().toFloat())
+    }
+    logShopeePostStep(
+      "ไม่พบ tile ที่ความยาวตรงกับคลิปที่เตรียม (~$expectedDurationSeconds วิ) จะแตะ tile แรกแทน — ถ้าคลิปที่โพสต์ไม่ตรง กด 'รายงานปัญหา' ให้ทีมตรวจ"
+    )
+  }
+
+  val candidate = ordered.firstOrNull()
   if (candidate != null) {
     return tapBlocking(candidate.first.centerX().toFloat(), candidate.first.centerY().toFloat())
   }
@@ -232,6 +261,31 @@ internal fun KubdeeAccessibilityService.tapFirstShopeeGalleryMedia(): Boolean {
     screen.top + screen.height() * 0.195f,
     durationMs = 120L
   )
+}
+
+// เก็บ TextView label เวลา (mm:ss) ที่ทับอยู่บน tile วิดีโอในคลังของ Shopee
+internal fun KubdeeAccessibilityService.collectShopeeGalleryDurationLabels(
+  node: AccessibilityNodeInfo?,
+  output: MutableList<Pair<Rect, Long>>
+) {
+  if (node == null) return
+  if (node.isVisibleToUser) {
+    val text = listOfNotNull(node.text?.toString(), node.contentDescription?.toString()).joinToString(" ")
+    val match = SHOPEE_GALLERY_DURATION_LABEL_REGEX.find(text)
+    if (match != null) {
+      val minutes = match.groupValues[1].toLongOrNull()
+      val seconds = match.groupValues[2].toLongOrNull()
+      if (minutes != null && seconds != null) {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        output.add(Rect(bounds) to (minutes * 60L + seconds))
+      }
+    }
+  }
+
+  for (index in 0 until node.childCount) {
+    collectShopeeGalleryDurationLabels(node.getChild(index), output)
+  }
 }
 
 internal fun KubdeeAccessibilityService.collectShopeeGalleryMediaCandidates(
@@ -338,10 +392,29 @@ internal fun KubdeeAccessibilityService.prepareShopeePostingVideoUri(source: Str
       null
     )
     waitForPreparedShopeeVideoIndexed(fileName, 5_000L)
-    return PreparedShopeeVideo(targetUri, fileName)
+    return PreparedShopeeVideo(targetUri, fileName, readShopeeVideoDurationSeconds(targetUri))
   } catch (error: Exception) {
     contentResolver.delete(targetUri, null, null)
     throw friendlyShopeePostingVideoSourceError(error)
+  }
+}
+
+internal fun KubdeeAccessibilityService.readShopeeVideoDurationSeconds(uri: Uri): Long? {
+  val retriever = MediaMetadataRetriever()
+  return try {
+    retriever.setDataSource(this, uri)
+    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+      ?.toLongOrNull()
+      ?.takeIf { it > 0L }
+      ?.let { (it + 500L) / 1000L }
+  } catch (_: Exception) {
+    null
+  } finally {
+    try {
+      retriever.release()
+    } catch (_: Exception) {
+      // best-effort
+    }
   }
 }
 

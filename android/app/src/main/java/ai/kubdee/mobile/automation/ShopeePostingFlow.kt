@@ -276,9 +276,10 @@ internal fun KubdeeAccessibilityService.selectPreparedShopeeVideoFromGallery(pre
   sleepStep(3000L)
   tapAndroidPermissionAllow()
 
-  logShopeePostStep("เลือกไฟล์ล่าสุดจากคลัง: ${preparedVideo.displayName}")
-  if (!tapFirstShopeeGalleryMedia()) {
-    throw IllegalStateException("ไม่พบไฟล์ล่าสุดจากคลัง (${preparedVideo.displayName})")
+  val durationNote = preparedVideo.durationSeconds?.let { " (~$it วิ)" } ?: ""
+  logShopeePostStep("เลือกไฟล์ที่เตรียมไว้จากคลัง: ${preparedVideo.displayName}$durationNote")
+  if (!tapFirstShopeeGalleryMedia(preparedVideo.durationSeconds)) {
+    throw IllegalStateException("ไม่พบไฟล์ที่เตรียมไว้ในคลัง (${preparedVideo.displayName})")
   }
   sleepStep(3000L)
 }

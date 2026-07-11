@@ -185,7 +185,9 @@ data class ShopeePostingVideo(
 
 data class PreparedShopeeVideo(
   val uri: Uri,
-  val displayName: String
+  val displayName: String,
+  // ความยาวคลิป (วินาที) ไว้จับคู่กับ label เวลาใน gallery picker ของ Shopee — null เมื่ออ่าน metadata ไม่ได้
+  val durationSeconds: Long? = null
 )
 
 internal data class TextNode(
