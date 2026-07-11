@@ -189,6 +189,8 @@ export interface GoogleFlowRunnerProduct {
   id: string;
   catalogId: string;
   preview: string | null;
+  /** imageUrl ต้นทางของรูปสินค้า — ใช้โหลด reference ซ้ำเมื่อไฟล์ cache ใน preview หายจากเครื่อง */
+  previewFallbackUrl?: string | null;
   name: string;
   description: string;
   productId: string;

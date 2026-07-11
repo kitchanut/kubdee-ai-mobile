@@ -82,6 +82,7 @@ export function toGoogleFlowRunnerProduct(product: AutoPilotProduct): GoogleFlow
     id: product.id,
     catalogId: product.catalogId,
     preview: product.preview,
+    previewFallbackUrl: cleanText(product.source.imageUrl) || null,
     name: product.name,
     description: product.description,
     productId: product.productId,
