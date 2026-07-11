@@ -9,26 +9,33 @@ import { alpha } from '@/theme/tokens';
 import type { AutoPilotStepType } from '@/autopilot/types';
 import { ExtensionSectionTitle } from '../primitives';
 
+export type BufferChannelTab = 'facebook' | 'youtube';
+
 export function PipelineStepsBlock({
   enabledSteps,
   shopeeEnabled,
-  facebookEnabled,
-  youtubeEnabled,
+  facebookChecked,
+  youtubeChecked,
+  channelTab,
   theme,
   onToggle,
   onToggleShopee,
-  onToggleFacebook,
-  onToggleYoutube,
+  onPressFacebook,
+  onPressYoutube,
 }: {
   enabledSteps: AutoPilotStepType[];
   shopeeEnabled: boolean;
-  facebookEnabled: boolean;
-  youtubeEnabled: boolean;
+  // Facebook/YouTube behave as tabs, not toggles: tapping opens that
+  // service's channel picker below, and the check badge only appears once a
+  // channel is actually selected.
+  facebookChecked: boolean;
+  youtubeChecked: boolean;
+  channelTab: BufferChannelTab | null;
   theme: KubdeeTheme;
   onToggle: (value: AutoPilotStepType) => void;
   onToggleShopee: () => void;
-  onToggleFacebook: () => void;
-  onToggleYoutube: () => void;
+  onPressFacebook: () => void;
+  onPressYoutube: () => void;
 }): React.JSX.Element {
   return (
     <View className="gap-2.5">
@@ -64,28 +71,30 @@ export function PipelineStepsBlock({
           <ChevronRight size={12} color={theme.border} strokeWidth={2} />
         </View>
         <PipelineToggleButton
-          active={facebookEnabled}
+          active={channelTab === 'facebook' || facebookChecked}
+          checked={facebookChecked}
           label="โพสต์ Facebook"
           accentColor={FACEBOOK_BLUE}
           renderIcon={(color) => <FacebookLogo size={16} color={color} cutoutColor={theme.input} />}
           theme={theme}
-          onPress={onToggleFacebook}
+          onPress={onPressFacebook}
+        />
+        <View className="flex-1 items-center">
+          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
+        </View>
+        <PipelineToggleButton
+          active={channelTab === 'youtube' || youtubeChecked}
+          checked={youtubeChecked}
+          label="โพสต์ YouTube"
+          accentColor={YOUTUBE_RED}
+          renderIcon={(color) => <YouTubeLogo size={16} color={color} cutoutColor={theme.input} />}
+          theme={theme}
+          onPress={onPressYoutube}
         />
         <View className="flex-1 items-center">
           <ChevronRight size={12} color={theme.border} strokeWidth={2} />
         </View>
         <DisabledPipelineIcon icon="tiktok" theme={theme} />
-        <View className="flex-1 items-center">
-          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
-        </View>
-        <PipelineToggleButton
-          active={youtubeEnabled}
-          label="โพสต์ YouTube"
-          accentColor={YOUTUBE_RED}
-          renderIcon={(color) => <YouTubeLogo size={16} color={color} cutoutColor={theme.input} />}
-          theme={theme}
-          onPress={onToggleYoutube}
-        />
       </View>
     </View>
   );
@@ -109,6 +118,7 @@ function DisabledPipelineIcon({
 
 function PipelineToggleButton({
   active,
+  checked,
   label,
   accentColor,
   renderIcon,
@@ -116,17 +126,22 @@ function PipelineToggleButton({
   onPress,
 }: {
   active: boolean;
+  // Green check badge; defaults to following `active` (plain toggles), but
+  // tab-style buttons highlight while open without being checked yet.
+  checked?: boolean;
   label: string;
   accentColor: string;
   renderIcon: (color: string) => React.ReactNode;
   theme: KubdeeTheme;
   onPress: () => void;
 }): React.JSX.Element {
+  const showCheck = checked ?? active;
+
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="checkbox"
-      accessibilityState={{ checked: active }}
+      accessibilityState={{ checked: showCheck }}
       onPress={onPress}
       className="relative h-8 w-8 items-center justify-center rounded-kd-lg border"
       style={{
@@ -135,7 +150,7 @@ function PipelineToggleButton({
       }}
     >
       {renderIcon(active ? accentColor : theme.textSubtle)}
-      {active ? (
+      {showCheck ? (
         <View className="absolute -right-1 -top-1 h-3.5 w-3.5 items-center justify-center rounded-full bg-kd-emerald">
           <Check size={9} color={theme.white} strokeWidth={3} />
         </View>

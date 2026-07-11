@@ -36,6 +36,7 @@ import type { ProductSettingsTab } from './autopilot/constants';
 import { ExtensionBasicSettingsBlock } from './autopilot/blocks/SettingsBlocks';
 import { PipelineStepsBlock } from './autopilot/blocks/PipelineStepsBlock';
 import { FacebookPostingSettingsBlock, YoutubePostingSettingsBlock } from './autopilot/blocks/FacebookPostingSettingsBlock';
+import type { BufferChannelTab } from './autopilot/blocks/PipelineStepsBlock';
 import { ActivityLogSheet, RunStatusSummaryBlock } from './autopilot/blocks/RunStatus';
 import { ProductCatalogBlock } from './autopilot/blocks/ProductCatalog';
 import {
@@ -75,6 +76,7 @@ export default function AutoPilotScreen({
   const [settingsPresetName, setSettingsPresetName] = useState('');
   const [settingsPresets, setSettingsPresets] = useState<AutoPilotSettingsPreset[]>([]);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
+  const [channelTab, setChannelTab] = useState<BufferChannelTab | null>(null);
   const [dismissedRunStatusKey, setDismissedRunStatusKey] = useState<string | null>(null);
   const activitySnapshot = useAutomationActivitySnapshot();
 
@@ -326,28 +328,43 @@ export default function AutoPilotScreen({
           <PipelineStepsBlock
             enabledSteps={controller.enabledSteps}
             shopeeEnabled={controller.settings.autoPostShopee}
-            facebookEnabled={controller.settings.autoPostFacebook}
-            youtubeEnabled={controller.settings.autoPostYoutube}
+            facebookChecked={controller.settings.autoPostFacebook && !!controller.settings.facebookChannelId}
+            youtubeChecked={controller.settings.autoPostYoutube && !!controller.settings.youtubeChannelId}
+            channelTab={channelTab}
             theme={theme}
             onToggle={(value) => controller.toggleStep(value)}
             onToggleShopee={() => controller.updateSetting('autoPostShopee', !controller.settings.autoPostShopee)}
-            onToggleFacebook={() => controller.updateSetting('autoPostFacebook', !controller.settings.autoPostFacebook)}
-            onToggleYoutube={() => controller.updateSetting('autoPostYoutube', !controller.settings.autoPostYoutube)}
+            onPressFacebook={() => setChannelTab((tab) => (tab === 'facebook' ? null : 'facebook'))}
+            onPressYoutube={() => setChannelTab((tab) => (tab === 'youtube' ? null : 'youtube'))}
           />
 
-          {controller.settings.autoPostFacebook ? (
+          {channelTab === 'facebook' ? (
             <FacebookPostingSettingsBlock
               facebookChannelId={controller.settings.facebookChannelId}
               theme={theme}
-              onSelectChannel={(channelId) => controller.updateSetting('facebookChannelId', channelId)}
+              onSelectChannel={(channelId) => {
+                controller.updateSetting('facebookChannelId', channelId);
+                controller.updateSetting('autoPostFacebook', true);
+              }}
+              onClearChannel={() => {
+                controller.updateSetting('autoPostFacebook', false);
+                controller.updateSetting('facebookChannelId', null);
+              }}
             />
           ) : null}
 
-          {controller.settings.autoPostYoutube ? (
+          {channelTab === 'youtube' ? (
             <YoutubePostingSettingsBlock
               youtubeChannelId={controller.settings.youtubeChannelId}
               theme={theme}
-              onSelectChannel={(channelId) => controller.updateSetting('youtubeChannelId', channelId)}
+              onSelectChannel={(channelId) => {
+                controller.updateSetting('youtubeChannelId', channelId);
+                controller.updateSetting('autoPostYoutube', true);
+              }}
+              onClearChannel={() => {
+                controller.updateSetting('autoPostYoutube', false);
+                controller.updateSetting('youtubeChannelId', null);
+              }}
             />
           ) : null}
 

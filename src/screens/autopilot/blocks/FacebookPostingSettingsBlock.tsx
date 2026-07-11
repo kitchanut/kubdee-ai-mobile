@@ -25,6 +25,7 @@ function BufferChannelPickerBlock({
   channelId,
   theme,
   onSelectChannel,
+  onClearChannel,
 }: {
   service: BufferChannelService;
   serviceLabel: string;
@@ -33,6 +34,7 @@ function BufferChannelPickerBlock({
   channelId: string | null;
   theme: KubdeeTheme;
   onSelectChannel: (channelId: string) => void;
+  onClearChannel: () => void;
 }): React.JSX.Element {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [channels, setChannels] = useState<BufferChannel[]>([]);
@@ -69,16 +71,15 @@ function BufferChannelPickerBlock({
   }, [service]);
 
   useEffect(() => {
-    if (loadState !== 'ready' || channels.length === 0) return;
-    // Also re-select if the persisted channel no longer exists (e.g. it was
-    // removed/disconnected on Buffer's side since it was last picked) —
-    // otherwise a stale id would silently fail every post instead of falling
-    // back to a channel that's actually still connected.
-    const stillExists = channelId && channels.some((channel) => channel.id === channelId);
-    if (!stillExists) {
-      onSelectChannel(channels[0].id);
+    if (loadState !== 'ready') return;
+    // Selecting a channel is an explicit user action (it's what enables
+    // posting), so never auto-pick one — but do clear a persisted channel
+    // that no longer exists on Buffer's side (removed/disconnected since it
+    // was last picked), otherwise a stale id would silently fail every post.
+    if (channelId && !channels.some((channel) => channel.id === channelId)) {
+      onClearChannel();
     }
-  }, [loadState, channelId, channels, onSelectChannel]);
+  }, [loadState, channelId, channels, onClearChannel]);
 
   if (loadState === 'loading') {
     return (
@@ -120,7 +121,7 @@ function BufferChannelPickerBlock({
     );
   }
 
-  const selectedId = channelId ?? channels[0]?.id ?? '';
+  const selectedId = channelId ?? '';
 
   return (
     <ScrollView
@@ -147,7 +148,7 @@ function BufferChannelPickerBlock({
           <Pressable
             key={channel.id}
             accessibilityRole="button"
-            onPress={() => onSelectChannel(channel.id)}
+            onPress={() => (selected ? onClearChannel() : onSelectChannel(channel.id))}
             className="flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
             style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? accent : theme.border }}
           >
@@ -178,10 +179,12 @@ export function FacebookPostingSettingsBlock({
   facebookChannelId,
   theme,
   onSelectChannel,
+  onClearChannel,
 }: {
   facebookChannelId: string | null;
   theme: KubdeeTheme;
   onSelectChannel: (channelId: string) => void;
+  onClearChannel: () => void;
 }): React.JSX.Element {
   return (
     <BufferChannelPickerBlock
@@ -192,6 +195,7 @@ export function FacebookPostingSettingsBlock({
       channelId={facebookChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
+      onClearChannel={onClearChannel}
     />
   );
 }
@@ -200,10 +204,12 @@ export function YoutubePostingSettingsBlock({
   youtubeChannelId,
   theme,
   onSelectChannel,
+  onClearChannel,
 }: {
   youtubeChannelId: string | null;
   theme: KubdeeTheme;
   onSelectChannel: (channelId: string) => void;
+  onClearChannel: () => void;
 }): React.JSX.Element {
   return (
     <BufferChannelPickerBlock
@@ -214,6 +220,7 @@ export function YoutubePostingSettingsBlock({
       channelId={youtubeChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
+      onClearChannel={onClearChannel}
     />
   );
 }
