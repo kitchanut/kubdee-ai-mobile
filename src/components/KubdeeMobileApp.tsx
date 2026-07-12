@@ -20,7 +20,6 @@ import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalPr
 import { useLibrary } from '@/library/LibraryContext';
 import { consumePendingTab, tabFromUrl } from '@/navigation/pendingNavigation';
 import type { AutoPilotProductSelectionRequest } from '@/autopilot/selectionRequest';
-import PlaceholderScreen from '@/screens/PlaceholderScreen';
 import AutoPilotScreen from '@/screens/AutoPilotScreen';
 import AuthLoadingScreen from '@/screens/AuthLoadingScreen';
 import ImageCreateScreen from '@/screens/ImageWorkspaceLibraryStyleScreen';
@@ -32,6 +31,7 @@ import PlanRequiredScreen from '@/screens/PlanRequiredScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import ShopeeScreen from '@/screens/ShopeeScreen';
 import SocialPostScreen from '@/screens/SocialPostScreen';
+import TikTokScreen from '@/tiktok/TikTokScreen';
 import {
   isThemeMode,
   resolveThemeMode,
@@ -679,7 +679,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
           />
         );
       case 'tiktok':
-        return <PlaceholderScreen theme={theme} title="TikTok" accent="cyan" />;
+        return <TikTokScreen profileId={selectedProfileId} theme={theme} />;
       case 'youtube':
         return renderSocialPostScreen('youtube');
       case 'facebook':
