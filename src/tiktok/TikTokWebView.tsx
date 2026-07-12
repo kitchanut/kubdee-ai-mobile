@@ -11,10 +11,12 @@ import {
   snapshotProfileCookies,
 } from '@/tiktok/tiktokCookieStore';
 
-// Pretend to be real mobile Chrome (NO "; wv" token) — the same spoof FlowWebView uses so
-// the site does not fall back to a degraded / blocked in-app-browser experience.
-const CHROME_MOBILE_UA =
-  'Mozilla/5.0 (Linux; Android 14; SM-A075F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36';
+// Present as DESKTOP Chrome. TikTok's mobile web aggressively deep-links into the native
+// TikTok app (snssdk1233://, intent://, …) which yanks the user out of this WebView — that
+// redirect does not exist on the desktop site (there is no desktop app to open). Desktop UA
+// also renders the same cookie-based login, so per-profile sessions still work.
+const DESKTOP_CHROME_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 export interface TikTokWebViewProps {
   profileId: string;
@@ -140,7 +142,7 @@ export function TikTokWebView({
       ) : null}
       <WebView
         source={{ uri: TIKTOK_LOGIN_URL }}
-        userAgent={CHROME_MOBILE_UA}
+        userAgent={DESKTOP_CHROME_UA}
         javaScriptEnabled
         domStorageEnabled
         thirdPartyCookiesEnabled
