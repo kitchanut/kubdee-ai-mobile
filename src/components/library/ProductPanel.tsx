@@ -23,6 +23,7 @@ import {
 import { useAuth } from '@/auth/AuthContext';
 import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
+import TikTokShowcaseModal from '@/tiktok/TikTokShowcaseModal';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
 import { storePendingTab } from '@/navigation/pendingNavigation';
@@ -266,6 +267,7 @@ export default function ProductPanel({
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isShopeeImporting, setIsShopeeImporting] = useState(false);
   const [shopeeImportModalOpen, setShopeeImportModalOpen] = useState(false);
+  const [showcaseOpen, setShowcaseOpen] = useState(false);
   const [shopeeImportSource, setShopeeImportSource] = useState<ShopeeImportSource>('liked');
   const [shopeeOfferCategory, setShopeeOfferCategory] = useState<ShopeeOfferCategory>('แนะนำ');
   const [shopeeLikedViewMode, setShopeeLikedViewMode] = useState<ShopeeLikedViewMode>('buyer');
@@ -580,9 +582,13 @@ export default function ProductPanel({
     });
   }, [appendShopeeLog, isSyncing, selectedProfileId, showSyncResult, syncProducts, user]);
 
-  const handleTikTokComingSoon = useCallback((): void => {
-    Alert.alert('กำลังพัฒนา', 'ฟีเจอร์ TikTok กำลังพัฒนา');
-  }, []);
+  const handleOpenShowcase = useCallback((): void => {
+    if (!selectedProfileId) {
+      Alert.alert('เลือกโปรไฟล์ก่อน', 'เลือกโปรไฟล์ที่ล็อกอิน TikTok ไว้ แล้วจึงดึงสินค้า Showcase');
+      return;
+    }
+    setShowcaseOpen(true);
+  }, [selectedProfileId]);
 
   const syncShopeeImportQueue = useCallback(async (): Promise<void> => {
     const result = await syncProducts(
@@ -1039,7 +1045,7 @@ export default function ProductPanel({
                     iconOnly
                     label="ShowCase"
                     leading={<TikTokLogo size={12} color={darkButtonContentColor(theme)} />}
-                    onPress={handleTikTokComingSoon}
+                    onPress={handleOpenShowcase}
                   />
                   <DarkActionButton
                     theme={theme}
@@ -1551,6 +1557,13 @@ export default function ProductPanel({
           onEdit={handleEditSelected}
         />
       ) : null}
+
+      <TikTokShowcaseModal
+        profileId={selectedProfileId}
+        theme={theme}
+        visible={showcaseOpen}
+        onClose={() => setShowcaseOpen(false)}
+      />
     </View>
   );
 }
