@@ -123,11 +123,9 @@ export default function TikTokProfileButton({
           </View>
           <View className="flex-1">
             {open ? (
-              <TikTokWebView
-                profileId={profileId}
-                onLoginStateChange={handleLoginState}
-                onClose={closeModal}
-              />
+              // ไม่ส่ง onClose — ใช้ปุ่มปิดของ header ด้านบนอันเดียว
+              // (ถ้าส่ง TikTokWebView จะ render header + ปุ่มปิดของตัวเองซ้อนขึ้นมาอีกแถบ)
+              <TikTokWebView profileId={profileId} onLoginStateChange={handleLoginState} />
             ) : (
               <View className="flex-1 items-center justify-center bg-black">
                 <ActivityIndicator color="#ffffff" />
