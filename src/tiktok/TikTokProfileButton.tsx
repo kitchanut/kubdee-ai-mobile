@@ -1,5 +1,5 @@
 import { ActivityIndicator, Modal, TouchableOpacity, View } from 'react-native';
-import { X } from 'lucide-react-native';
+import { Check, X } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -82,14 +82,17 @@ export default function TikTokProfileButton({
         }
         activeOpacity={0.7}
         onPress={() => setOpen(true)}
-        className="w-11 items-center justify-center gap-1 border-l border-kd-border"
+        className="w-11 items-center justify-center border-l border-kd-border"
       >
-        <TikTokLogo size={17} isDark={theme.isDark} />
-        <View
-          className={`h-1.5 w-1.5 rounded-full ${
-            loggedIn ? 'bg-kd-emerald' : loggedIn === false ? 'bg-kd-border-strong' : 'bg-transparent'
-          }`}
-        />
+        <View className="relative">
+          <TikTokLogo size={18} isDark={theme.isDark} />
+          {/* badge ติ๊กถูกสีเขียว โชว์เฉพาะตอนเชื่อมต่อแล้ว */}
+          {loggedIn ? (
+            <View className="absolute -bottom-1 -right-1 h-3.5 w-3.5 items-center justify-center rounded-full border border-kd-panel bg-kd-emerald">
+              <Check size={9} color="#ffffff" strokeWidth={3.5} />
+            </View>
+          ) : null}
+        </View>
       </TouchableOpacity>
 
       <Modal animationType="slide" visible={open} onRequestClose={closeModal}>
