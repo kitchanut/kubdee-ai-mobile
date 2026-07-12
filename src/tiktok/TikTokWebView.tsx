@@ -4,6 +4,7 @@ import { ActivityIndicator, AppState, Pressable, StyleSheet, View } from 'react-
 import { WebView } from 'react-native-webview';
 import type { WebViewNavigation } from 'react-native-webview';
 
+import { DESKTOP_CHROME_UA, DESKTOP_ENV_SPOOF } from '@/tiktok/desktopSpoof';
 import {
   TIKTOK_LOGIN_URL,
   readLiveLoginState,
@@ -11,12 +12,9 @@ import {
   snapshotProfileCookies,
 } from '@/tiktok/tiktokCookieStore';
 
-// Present as DESKTOP Chrome. TikTok's mobile web aggressively deep-links into the native
-// TikTok app (snssdk1233://, intent://, …) which yanks the user out of this WebView — that
-// redirect does not exist on the desktop site (there is no desktop app to open). Desktop UA
-// also renders the same cookie-based login, so per-profile sessions still work.
-const DESKTOP_CHROME_UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+// Desktop UA + env spoof (touch/platform/viewport) shared with the Showcase scraper — see
+// desktopSpoof.ts. Logging in under the desktop spoof also avoids the native-app deep-link
+// redirect and gives a "desktop" session that should unlock the Creator Showcase.
 
 export interface TikTokWebViewProps {
   profileId: string;
@@ -148,6 +146,8 @@ export function TikTokWebView({
         thirdPartyCookiesEnabled
         sharedCookiesEnabled
         cacheEnabled
+        scalesPageToFit
+        injectedJavaScriptBeforeContentLoaded={DESKTOP_ENV_SPOOF}
         originWhitelist={['https://*', 'http://*']}
         setSupportMultipleWindows={false}
         // อยู่ในเว็บ TikTok เท่านั้น — บล็อก deep link (snssdk1233://, tiktok://, intent://,

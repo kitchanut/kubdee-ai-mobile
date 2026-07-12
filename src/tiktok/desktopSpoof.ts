@@ -1,0 +1,32 @@
+/**
+ * Shared desktop spoof for the TikTok WebViews (login + Showcase scraper).
+ *
+ * A desktop User-Agent alone is not enough: TikTok also detects mobile via touch/platform
+ * signals and (a) deep-links into the native app and (b) gates the Creator Showcase, serving
+ * an empty modal on mobile even for an account that has products on real desktop. So before
+ * TikTok's own scripts run we override those signals and force a wide desktop viewport,
+ * zoomed out so the full width fits the phone screen.
+ *
+ * Applying this at LOGIN time (not just when scraping) is intentional — the session may be
+ * tagged desktop/mobile when it is created, so logging in under the desktop spoof gives a
+ * "desktop" session that should unlock the Showcase.
+ */
+export const DESKTOP_CHROME_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+export const DESKTOP_ENV_SPOOF = `(function(){
+  try { Object.defineProperty(navigator, 'maxTouchPoints', { get: function(){ return 0; }, configurable: true }); } catch(e){}
+  try { Object.defineProperty(navigator, 'platform', { get: function(){ return 'MacIntel'; }, configurable: true }); } catch(e){}
+  try { Object.defineProperty(navigator, 'vendor', { get: function(){ return 'Google Inc.'; }, configurable: true }); } catch(e){}
+  try { Object.defineProperty(navigator, 'userAgentData', { get: function(){ return undefined; }, configurable: true }); } catch(e){}
+  try { delete window.ontouchstart; } catch(e){}
+
+  var WANT = 'width=1400, initial-scale=0.3, minimum-scale=0.2, maximum-scale=3, user-scalable=yes';
+  function apply(){
+    var m = document.querySelector('meta[name="viewport"]');
+    if (!m){ m = document.createElement('meta'); m.setAttribute('name','viewport'); (document.head||document.documentElement).appendChild(m); }
+    if (m.getAttribute('content') !== WANT) m.setAttribute('content', WANT);
+  }
+  apply();
+  try { new MutationObserver(apply).observe(document.documentElement, { childList:true, subtree:true }); } catch(e){}
+})(); true;`;

@@ -91,16 +91,35 @@ export function buildShowcaseScraperScript(): string {
     }, 120000, 2000);
   }
 
-  function clickAdd(){
+  function findAddLinkButton(){
+    // 1) original desktop selector
     var container = qs('div[data-e2e="anchor_container"]');
-    if (!container) return false;
-    var btn = container.querySelector('.TUXButton');
-    if (!btn) {
-      var buttons = container.querySelectorAll('button');
-      for (var i=0;i<buttons.length;i++){ var t = buttons[i].textContent || ''; if (t.indexOf('เพิ่ม')>=0 || t.indexOf('Add')>=0){ btn = buttons[i]; break; } }
-    }
+    if (container){ var b = container.querySelector('.TUXButton') || container.querySelector('button'); if (b) return b; }
+    // 2) any anchor-ish container
+    var anchors = document.querySelectorAll('[data-e2e*="anchor"], [class*="anchor"], [class*="Anchor"]');
+    for (var i=0;i<anchors.length;i++){ if (anchors[i].querySelector){ var bb = anchors[i].querySelector('.TUXButton, button, [role="button"]'); if (bb) return bb; } }
+    // 3) by text: an "เพิ่ม"/"Add"/"เพิ่มลิงก์" button
+    var buttons = document.querySelectorAll('.TUXButton, button, [role="button"]');
+    for (var j=0;j<buttons.length;j++){ var t = (buttons[j].textContent||'').trim(); if (t === 'เพิ่ม' || t === 'Add' || t.indexOf('เพิ่มลิงก์')>=0 || t.indexOf('Add link')>=0 || t.indexOf('ลิงก์สินค้า')>=0){ return buttons[j]; } }
+    return null;
+  }
+
+  function clickAdd(){
+    var btn = findAddLinkButton();
     if (btn){ btn.click(); return true; }
     return false;
+  }
+
+  // Diagnostic dump for updating selectors when the flow stalls (posts to logcat via the modal).
+  function domDiag(){
+    var e2e = [], seen = {};
+    document.querySelectorAll('[data-e2e]').forEach(function(el){ var v = el.getAttribute('data-e2e'); if(!seen[v]){ seen[v]=1; e2e.push(v); } });
+    var btns = [];
+    document.querySelectorAll('.TUXButton, button, [role="button"]').forEach(function(el){
+      var t = (el.textContent||'').trim().slice(0,24); if (!t) return;
+      btns.push(t + ' | e2e=' + (el.getAttribute('data-e2e')||'') + ' | cls=' + ((el.className||'')+'').slice(0,44));
+    });
+    return { url: location.href, e2e: e2e, buttons: btns.slice(0, 70) };
   }
 
   async function ensureProductType(){
@@ -139,6 +158,26 @@ export function buildShowcaseScraperScript(): string {
     var tabs = document.querySelectorAll('.TUXTabBar-itemTitle, .TUXTabBar-item');
     for (var i=0;i<tabs.length;i++){ var t = (tabs[i].textContent||'').trim(); for (var l=0;l<labels.length;l++){ if (t.indexOf(labels[l])>=0){ tabs[i].click(); return true; } } }
     return false;
+  }
+
+  // Diagnostic for when 0 products scrape — dumps the real modal/list structure so we
+  // can rewrite selectors (TikTok moved off the old <table> layout).
+  function scrapeDiag(){
+    var modal = document.querySelector('[role="dialog"]') || document.querySelector('[class*="common-modal"]') || document.querySelector('[class*="TUXModal"]') || document.querySelector('[class*="modal"]');
+    var area = modal || document.body;
+    var html = '';
+    try {
+      html = area.innerHTML
+        .replace(/<svg[\\s\\S]*?<\\/svg>/g, '<svg/>')
+        .replace(/<style[\\s\\S]*?<\\/style>/g, '')
+        .replace(/\\s+/g, ' ')
+        .slice(0, 2600);
+    } catch(e){ html = 'ERR ' + (e && e.message); }
+    return {
+      allTr: document.querySelectorAll('tr').length,
+      modalCls: modal ? ((modal.className||'')+'').slice(0,70) : 'NO-MODAL',
+      html: html
+    };
   }
 
   function scrapePage(){
@@ -190,7 +229,17 @@ export function buildShowcaseScraperScript(): string {
       log('รอหน้าแก้ไข (editor)...');
       if (!(await waitEditor())){ done(false, [], 'ไม่พบหน้าแก้ไข (2 นาที)'); return; }
       log('คลิกปุ่มเพิ่มสินค้า...');
-      if (!clickAdd()){ done(false, [], 'ไม่พบปุ่มเพิ่มสินค้า (anchor_container)'); return; }
+      window.scrollTo(0, 0);
+      await sleep(1500);
+      if (!clickAdd()){
+        window.scrollTo(0, document.body.scrollHeight);
+        await sleep(1500);
+        if (!clickAdd()){
+          log('DIAG ' + JSON.stringify(domDiag()));
+          done(false, [], 'ไม่พบปุ่มเพิ่มสินค้า — ดู DIAG ใน log');
+          return;
+        }
+      }
       await sleep(2000);
       log('ตรวจประเภทลิงก์ = สินค้า...');
       await ensureProductType();
@@ -199,7 +248,7 @@ export function buildShowcaseScraperScript(): string {
       await sleep(1500);
       log('เลือกแท็บนำเสนอสินค้า...');
       clickShowcaseTab();
-      await sleep(1500);
+      await sleep(2500);
       log('ดึงข้อมูลสินค้า...');
       var all = [];
       var guard = 0;
@@ -211,6 +260,10 @@ export function buildShowcaseScraperScript(): string {
         if (!sc.hasNextPage) break;
         if (!clickSel('.tiktok-pagination-item-right-arrow')) break;
         await sleep(1500);
+      }
+      if (all.length === 0){
+        done(false, [], 'SCRAPE-DIAG ' + JSON.stringify(scrapeDiag()));
+        return;
       }
       done(true, all, null);
     } catch(e){ done(false, [], (e && e.message) || e); }
