@@ -1,4 +1,4 @@
-import { ActivityIndicator, Modal, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, TouchableOpacity, View } from 'react-native';
 import { Check, X } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { TikTokWebView } from '@/tiktok/TikTokWebView';
-import { isProfileLoggedIn } from '@/tiktok/tiktokCookieStore';
+import { clearProfileTikTokSession, isProfileLoggedIn } from '@/tiktok/tiktokCookieStore';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 interface TikTokProfileButtonProps {
@@ -71,6 +71,41 @@ export default function TikTokProfileButton({
     }
   }, [profileId, handleLoginState]);
 
+  // ออกจากระบบ = ล้าง cookie TikTok ของโปรไฟล์นี้ + ลบไฟล์ snapshot
+  const signOut = useCallback((): void => {
+    Alert.alert(
+      'ออกจากระบบ TikTok?',
+      `เซสชัน TikTok ของ "${profileName || 'โปรไฟล์นี้'}" จะถูกล้างออกจากเครื่อง (ลบ cookie) ต้องล็อกอินใหม่เมื่อใช้งานอีกครั้ง`,
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'ออกจากระบบ',
+          style: 'destructive',
+          onPress: () => {
+            void clearProfileTikTokSession(profileId)
+              .then(() => handleLoginState(false))
+              .catch(() => {
+                Alert.alert('ล้าง session ไม่สำเร็จ', 'ลองใหม่อีกครั้ง');
+              });
+          },
+        },
+      ]
+    );
+  }, [profileId, profileName, handleLoginState]);
+
+  // แตะปุ่ม: ยังไม่ล็อกอิน → เปิด WebView; ล็อกอินแล้ว → เมนู เปิด/ออกจากระบบ
+  const handlePress = useCallback((): void => {
+    if (loggedIn) {
+      Alert.alert(profileName ? `TikTok · ${profileName}` : 'TikTok', 'เชื่อมต่ออยู่', [
+        { text: 'เปิดหน้า TikTok', onPress: () => setOpen(true) },
+        { text: 'ออกจากระบบ / ล้าง session', style: 'destructive', onPress: signOut },
+        { text: 'ยกเลิก', style: 'cancel' },
+      ]);
+    } else {
+      setOpen(true);
+    }
+  }, [loggedIn, profileName, signOut]);
+
   return (
     <>
       <TouchableOpacity
@@ -81,7 +116,7 @@ export default function TikTokProfileButton({
             : `ล็อกอิน TikTok ให้ ${profileName || 'โปรไฟล์นี้'}`
         }
         activeOpacity={0.7}
-        onPress={() => setOpen(true)}
+        onPress={handlePress}
         className="w-11 items-center justify-center border-l border-kd-border"
       >
         <View className="relative">
