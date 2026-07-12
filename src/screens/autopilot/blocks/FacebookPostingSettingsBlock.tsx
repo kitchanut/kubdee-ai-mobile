@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
 import { AlertTriangle, Check } from 'lucide-react-native';
 import { getBufferConnectionStatus, listBufferChannelsByService } from '@/autopilot/bufferPosting';
@@ -8,8 +8,11 @@ import Text from '@/components/ui/KubdeeText';
 import { FACEBOOK_BLUE, INSTAGRAM_PINK, YOUTUBE_RED } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 
-const CHANNEL_CARD_WIDTH = 176;
-const CHANNEL_CARD_GAP = 8; // ต้องตรงกับ gap-2 ของ contentContainer
+// Chip pill layout: 1 row when channels fit, capped at 2 rows tall — extra
+// channels scroll instead of growing the header past 2 rows.
+const CHANNEL_CHIP_HEIGHT = 32;
+const CHANNEL_CHIP_GAP = 6;
+const CHANNEL_PICKER_HEIGHT = CHANNEL_CHIP_HEIGHT * 2 + CHANNEL_CHIP_GAP;
 
 type LoadState = 'loading' | 'not_connected' | 'no_channels' | 'ready' | 'error';
 
@@ -22,7 +25,6 @@ function BufferChannelPickerBlock({
   serviceLabel,
   accent,
   renderLogo,
-  renderBadge,
   channelId,
   theme,
   onSelectChannel,
@@ -32,9 +34,6 @@ function BufferChannelPickerBlock({
   serviceLabel: string;
   accent: string;
   renderLogo: () => React.JSX.Element;
-  // Small service icon pinned to the avatar's bottom-right corner (matches
-  // how Buffer's own app marks a channel's network).
-  renderBadge: () => React.JSX.Element;
   channelId: string | null;
   theme: KubdeeTheme;
   onSelectChannel: (channelId: string) => void;
@@ -42,8 +41,6 @@ function BufferChannelPickerBlock({
 }): React.JSX.Element {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [channels, setChannels] = useState<BufferChannel[]>([]);
-  const scrollRef = useRef<ScrollView>(null);
-  const didAutoScrollRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,18 +84,18 @@ function BufferChannelPickerBlock({
 
   if (loadState === 'loading') {
     return (
-      <View className="flex-row items-center gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
+      <View className="h-8 flex-row items-center gap-1.5">
         <ActivityIndicator size="small" color={theme.textSubtle} />
-        <Text className="text-kd-micro text-kd-text-subtle">กำลังเช็คการเชื่อมต่อ Buffer...</Text>
+        <Text className="text-kd-caption text-kd-text-subtle">กำลังโหลดช่อง...</Text>
       </View>
     );
   }
 
   if (loadState === 'not_connected') {
     return (
-      <View className="flex-row items-start gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
-        <AlertTriangle size={14} color={theme.amber} strokeWidth={2} />
-        <Text className="flex-1 text-kd-micro text-kd-text-subtle">
+      <View className="flex-row items-start gap-1.5">
+        <AlertTriangle size={13} color={theme.amber} strokeWidth={2.2} style={{ marginTop: 2 }} />
+        <Text numberOfLines={2} className="flex-1 text-kd-caption text-kd-text-subtle">
           ยังไม่ได้เชื่อมต่อ Buffer — ไปเชื่อมต่อที่เว็บ kubdee.ai/settings ก่อน แล้วกลับมาเปิดใช้งานอีกครั้ง
         </Text>
       </View>
@@ -107,9 +104,9 @@ function BufferChannelPickerBlock({
 
   if (loadState === 'no_channels') {
     return (
-      <View className="flex-row items-start gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
-        <AlertTriangle size={14} color={theme.amber} strokeWidth={2} />
-        <Text className="flex-1 text-kd-micro text-kd-text-subtle">
+      <View className="flex-row items-start gap-1.5">
+        <AlertTriangle size={13} color={theme.amber} strokeWidth={2.2} style={{ marginTop: 2 }} />
+        <Text numberOfLines={2} className="flex-1 text-kd-caption text-kd-text-subtle">
           ยังไม่มี channel {serviceLabel} เชื่อมต่อกับ Buffer อยู่ — ไปเพิ่มที่เว็บ Buffer ก่อน
         </Text>
       </View>
@@ -118,9 +115,9 @@ function BufferChannelPickerBlock({
 
   if (loadState === 'error') {
     return (
-      <View className="flex-row items-start gap-2 rounded-kd-lg border border-kd-border bg-kd-input px-3 py-2.5">
-        <AlertTriangle size={14} color={theme.red} strokeWidth={2} />
-        <Text className="flex-1 text-kd-micro text-kd-text-subtle">เช็คการเชื่อมต่อ Buffer ไม่สำเร็จ ลองอีกครั้ง</Text>
+      <View className="h-8 flex-row items-center gap-1.5">
+        <AlertTriangle size={13} color={theme.red} strokeWidth={2.2} />
+        <Text className="text-kd-caption text-kd-text-subtle">เช็คการเชื่อมต่อ Buffer ไม่สำเร็จ ลองอีกครั้ง</Text>
       </View>
     );
   }
@@ -129,57 +126,33 @@ function BufferChannelPickerBlock({
 
   return (
     <ScrollView
-      ref={scrollRef}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerClassName="gap-2 pr-1"
-      onLayout={() => {
-        // เลื่อนไปหา card ที่เลือกไว้เฉพาะครั้งแรกที่ลิสต์โผล่ — ตอนกดเลือกใบที่
-        // มองเห็นอยู่แล้วไม่ควรกระตุกลิสต์
-        if (didAutoScrollRef.current) return;
-        didAutoScrollRef.current = true;
-        const index = channels.findIndex((channel) => channel.id === selectedId);
-        if (index > 0) {
-          // เผื่อขอบซ้ายไว้นิดให้เห็นใบก่อนหน้าโผล่มา จะได้รู้ว่าเลื่อนได้
-          const x = Math.max(0, index * (CHANNEL_CARD_WIDTH + CHANNEL_CARD_GAP) - CHANNEL_CARD_GAP * 2);
-          scrollRef.current?.scrollTo({ x, animated: false });
-        }
-      }}
+      showsVerticalScrollIndicator={false}
+      style={{ maxHeight: CHANNEL_PICKER_HEIGHT }}
+      contentContainerClassName="flex-row flex-wrap gap-1.5"
     >
       {channels.map((channel) => {
         const selected = channel.id === selectedId;
+        // คิวหยุดชั่วคราวสำคัญกว่าสถานะเลือก — เตือนสีเหลืองทับได้แม้กำลังเลือกอยู่
+        const borderColor = channel.isQueuePaused ? theme.amber : selected ? accent : theme.border;
         return (
           <Pressable
             key={channel.id}
             accessibilityRole="button"
             onPress={() => (selected ? onClearChannel() : onSelectChannel(channel.id))}
-            className="flex-row items-center gap-2 rounded-kd-lg border bg-kd-input p-2"
-            style={{ width: CHANNEL_CARD_WIDTH, borderColor: selected ? accent : theme.border }}
+            className="h-8 flex-row items-center gap-1.5 rounded-full border bg-kd-input py-1 pl-1 pr-2.5"
+            style={{ borderColor }}
           >
-            <View className="relative">
-              <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
-                {channel.avatar ? (
-                  <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
-                ) : (
-                  renderLogo()
-                )}
-              </View>
-              <View
-                className="absolute -bottom-1 -right-1 items-center justify-center rounded-full"
-                style={{ backgroundColor: theme.input, padding: 2 }}
-              >
-                {renderBadge()}
-              </View>
+            <View className="h-[22px] w-[22px] items-center justify-center overflow-hidden rounded-full bg-kd-panel-muted dark:bg-kd-card-muted">
+              {channel.avatar ? (
+                <Image source={{ uri: channel.avatar }} className="h-full w-full" resizeMode="cover" />
+              ) : (
+                renderLogo()
+              )}
             </View>
-            <View className="min-w-0 flex-1">
-              <Text numberOfLines={1} className="text-kd-caption font-semibold text-kd-text">
-                {channel.displayName || channel.name}
-              </Text>
-              <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-                {channel.isQueuePaused ? 'คิวหยุดชั่วคราว' : serviceLabel}
-              </Text>
-            </View>
-            {selected ? <Check size={16} color={accent} strokeWidth={2.5} /> : null}
+            <Text numberOfLines={1} className="max-w-[112px] text-kd-caption font-medium text-kd-text">
+              {channel.displayName || channel.name}
+            </Text>
+            {selected ? <Check size={13} color={accent} strokeWidth={2.5} /> : null}
           </Pressable>
         );
       })}
@@ -204,7 +177,6 @@ export function FacebookPostingSettingsBlock({
       serviceLabel="Facebook"
       accent={FACEBOOK_BLUE}
       renderLogo={() => <FacebookLogo size={20} color={FACEBOOK_BLUE} cutoutColor={theme.input} />}
-      renderBadge={() => <FacebookLogo size={15} color={FACEBOOK_BLUE} cutoutColor="#ffffff" />}
       channelId={facebookChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
@@ -230,7 +202,6 @@ export function YoutubePostingSettingsBlock({
       serviceLabel="YouTube"
       accent={YOUTUBE_RED}
       renderLogo={() => <YouTubeLogo size={20} color={YOUTUBE_RED} cutoutColor={theme.input} />}
-      renderBadge={() => <YouTubeLogo size={15} color={YOUTUBE_RED} cutoutColor="#ffffff" />}
       channelId={youtubeChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}
@@ -256,14 +227,6 @@ export function InstagramPostingSettingsBlock({
       serviceLabel="Instagram"
       accent={INSTAGRAM_PINK}
       renderLogo={() => <InstagramLogo size={20} color={INSTAGRAM_PINK} />}
-      renderBadge={() => (
-        <View
-          className="h-[15px] w-[15px] items-center justify-center rounded-full"
-          style={{ backgroundColor: INSTAGRAM_PINK }}
-        >
-          <InstagramLogo size={10} color="#ffffff" />
-        </View>
-      )}
       channelId={instagramChannelId}
       theme={theme}
       onSelectChannel={onSelectChannel}

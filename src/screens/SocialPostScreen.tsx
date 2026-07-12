@@ -382,24 +382,25 @@ export default function SocialPostScreen({
         }
       >
         <View className="min-h-full bg-kd-screen">
-          <View className="gap-2.5 border-b border-kd-border px-3 py-3">
-            <View className="flex-row items-center gap-2.5">
+          <View
+            className={`gap-1.5 px-3 py-2 ${postQueueVideos.length > 0 ? 'border-b border-kd-border' : ''}`}
+          >
+            <View className="flex-row items-center gap-2">
               <View
-                className="h-9 w-9 items-center justify-center rounded-kd-lg"
+                className="h-8 w-8 items-center justify-center rounded-kd-lg"
                 style={{ backgroundColor: alpha(meta.color, theme.isDark ? 0.16 : 0.1) }}
               >
-                {renderServiceLogo(20)}
+                {renderServiceLogo(17)}
               </View>
               <View className="min-w-0 flex-1">
-                <Text numberOfLines={1} className="text-kd-title font-semibold text-kd-text">
+                <Text numberOfLines={1} className="text-kd-label font-semibold text-kd-text">
                   {meta.label}
                 </Text>
-                <Text numberOfLines={1} className="text-kd-caption text-kd-text-subtle">
+                <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
                   {meta.subtitle}
                 </Text>
               </View>
             </View>
-            <Text className="text-kd-caption font-semibold text-kd-text-subtle">ช่องที่จะโพสต์</Text>
             {renderChannelPicker()}
           </View>
 

@@ -44,6 +44,25 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.6.2',
+    date: '2026-07-12',
+    highlight: 'ปรับดีไซน์หน้า Shopee และช่องโพสต์โซเชียล',
+    changes: [
+      {
+        type: 'improved',
+        text: 'หน้า Shopee: ดีไซน์ใหม่ แถบหัวข้อกระชับขึ้น ย้ายตั้งค่าไปเป็นชีตที่เปิดจากปุ่มไอคอนเลื่อน แทนแท็บโพส/ตั้งค่าเดิม'
+      },
+      {
+        type: 'improved',
+        text: 'หน้า Facebook / Instagram / YouTube: แถบหัวข้อกระชับขึ้น เลือกช่องโพสต์เป็นชิปขนาดเล็กแทนการ์ดใหญ่'
+      },
+      {
+        type: 'improved',
+        text: 'สลับแท็บ Facebook / Instagram / YouTube ไปมาเร็วขึ้น ไม่ต้องรอโหลดช่องซ้ำทุกครั้ง'
+      }
+    ]
+  },
+  {
     version: '0.6.1',
     date: '2026-07-12',
     highlight: 'ปรับโฉมแถบเครื่องมือในคลังวิดีโอ',

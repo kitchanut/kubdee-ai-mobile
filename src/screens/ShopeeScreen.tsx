@@ -1,5 +1,6 @@
-import { ActivityIndicator, Alert, Image as NativeImage, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { FolderOpen, Send, Settings, Video, X } from 'lucide-react-native';
+import { ActivityIndicator, Alert, Image as NativeImage, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FolderOpen, Send, Settings, SlidersHorizontal, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner-native';
 
@@ -13,8 +14,8 @@ import {
 } from '@/activity/automationActivityLogStore';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
+import { ShopeeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
-import SectionHeader from '@/components/ui/SectionHeader';
 import {
   getAccessibilityStatus,
   openAccessibilitySettings,
@@ -27,6 +28,7 @@ import type { NativeShopeePostLog, NativeShopeePostingResult, NativeShopeePostin
 import { SHOPEE_POST_SAFE_WORD_LIMIT, limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
 import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
+import { alpha } from '@/theme/tokens';
 import type { KubdeeTheme } from '@/theme/tokens';
 
 interface ShopeeScreenProps {
@@ -46,12 +48,13 @@ export default function ShopeeScreen({
   onOpenVideoLibrary,
   onRemovePendingVideo,
 }: ShopeeScreenProps): React.JSX.Element {
-  const [subMode, setSubMode] = useState<'post' | 'settings'>('post');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [postMessage, setPostMessage] = useState('เลือกวิดีโอจากคลังเพื่อเตรียมโพสต์ Shopee');
   const [postLogs, setPostLogs] = useState<NativeShopeePostLog[]>([]);
   const [isPosting, setIsPosting] = useState(false);
   const [isStoppingPost, setIsStoppingPost] = useState(false);
   const { getAssetsByKind } = useGeneratedMedia();
+  const insets = useSafeAreaInsets();
 
   const generatedVideos = useMemo(
     () => getAssetsByKind('videos', selectedProfileId),
@@ -251,129 +254,121 @@ export default function ShopeeScreen({
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="flex-1">
-      <View className="flex-row border-b border-kd-border px-2">
-        <SubTab
-          active={subMode === 'post'}
-          color={SHOPEE_ORANGE}
-          icon={Video}
-          label="โพส"
-          theme={theme}
-          onPress={() => setSubMode('post')}
-        />
-        <SubTab
-          active={subMode === 'settings'}
-          color={theme.textSubtle}
-          icon={Settings}
-          label="ตั้งค่า"
-          theme={theme}
-          onPress={() => setSubMode('settings')}
-        />
+      <View className="border-b border-kd-border bg-kd-screen px-3 py-2">
+        <View className="flex-row items-center gap-2">
+          <View
+            className="h-8 w-8 items-center justify-center rounded-kd-lg"
+            style={{ backgroundColor: alpha(SHOPEE_ORANGE, theme.isDark ? 0.16 : 0.1) }}
+          >
+            <ShopeeLogo size={17} color={SHOPEE_ORANGE} cutoutColor={theme.isDark ? theme.card : '#ffffff'} />
+          </View>
+          <View className="min-w-0 flex-1">
+            <Text numberOfLines={1} className="text-kd-label font-semibold text-kd-text">
+              Shopee
+            </Text>
+            <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
+              โพสต์วิดีโอผ่าน Shopee
+            </Text>
+          </View>
+          <Pressable
+            accessibilityLabel="ตั้งค่า Shopee"
+            accessibilityRole="button"
+            onPress={() => setIsSettingsOpen(true)}
+            className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted active:opacity-70 dark:bg-kd-card-muted"
+          >
+            <SlidersHorizontal size={15} color={theme.textMuted} strokeWidth={2.2} />
+          </Pressable>
+        </View>
       </View>
 
       <View className="flex-1">
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerClassName={
-            subMode === 'post'
-              ? postQueueVideos.length > 0 || isPosting
-                ? 'pb-[104px]'
-                : 'pb-[18px]'
-              : 'gap-1.5 p-2 pb-[18px]'
-          }
+          contentContainerClassName={postQueueVideos.length > 0 || isPosting ? 'pb-[104px]' : 'pb-[18px]'}
         >
-          {subMode === 'post' ? (
-            <View className="min-h-full bg-kd-screen">
-              {postQueueVideos.length > 0 ? (
-                <View className="flex-row items-center justify-between border-b border-kd-border px-3 py-2">
-                  <Text className="text-kd-caption font-semibold text-kd-text-subtle">
-                    {postQueueVideos.length} วิดีโอ
-                  </Text>
-                  <View className="flex-row items-center gap-3">
-                    {onOpenVideoLibrary ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={onOpenVideoLibrary}
-                        className="h-7 justify-center active:opacity-70"
-                      >
-                        <Text className="text-kd-caption font-semibold" style={{ color: SHOPEE_ORANGE }}>
-                          เพิ่มวิดีโอ
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={onClearPendingVideos}
-                      className="h-7 justify-center active:opacity-70"
-                    >
-                      <Text className="text-kd-caption font-semibold text-kd-red">ล้างทั้งหมด</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null}
-
-              {/* โชว์บรรทัดสถานะเฉพาะตอนมีความคืบหน้าจริง — ข้อความชวนเลือกวิดีโอซ้ำกับ empty state */}
-              {postQueueVideos.length > 0 &&
-              (isPosting || postMessage !== 'เลือกวิดีโอจากคลังเพื่อเตรียมโพสต์ Shopee') ? (
-                <Text numberOfLines={1} className="border-b border-kd-border px-3 py-1.5 text-kd-micro text-kd-text-subtle">
-                  {postMessage}
+          <View className="min-h-full bg-kd-screen">
+            {postQueueVideos.length > 0 ? (
+              <View className="flex-row items-center justify-between border-b border-kd-border px-3 py-2">
+                <Text className="text-kd-caption font-semibold text-kd-text-subtle">
+                  {postQueueVideos.length} วิดีโอ
                 </Text>
-              ) : null}
-
-              {postQueueVideos.length > 0 ? (
-                postQueueVideos.map((video, index) => (
-                  <PostVideoRow
-                    key={video.id}
-                    index={index}
-                    theme={theme}
-                    video={video}
-                    onRemove={() => onRemovePendingVideo?.(video.id)}
-                  />
-                ))
-              ) : (
-                <View className="min-h-[520px] items-center justify-center px-8">
-                  <View
-                    className="h-14 w-14 items-center justify-center rounded-full"
-                    style={{ backgroundColor: SHOPEE_ORANGE_SOFT }}
-                  >
-                    <Video size={24} color={SHOPEE_ORANGE} strokeWidth={1.8} />
-                  </View>
-                  <Text className="mt-2 text-kd-subtitle font-semibold text-kd-text">ยังไม่มีวิดีโอในคิว</Text>
-                  <Text className="mt-1 text-center text-kd-caption leading-4 text-kd-text-subtle">
-                    เลือกวิดีโอจากคลัง แล้วกดปุ่ม Shopee เพื่อส่งมาเตรียมโพสต์
-                  </Text>
+                <View className="flex-row items-center gap-3">
                   {onOpenVideoLibrary ? (
                     <Pressable
                       accessibilityRole="button"
                       onPress={onOpenVideoLibrary}
-                      className="mt-3 h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg px-3 active:opacity-75"
-                      style={{ backgroundColor: SHOPEE_ORANGE }}
+                      className="h-7 justify-center active:opacity-70"
                     >
-                      <FolderOpen size={14} color={theme.white} strokeWidth={2.2} />
-                      <Text className="text-kd-body font-semibold text-white">ไปคลังวิดีโอ</Text>
+                      <Text className="text-kd-caption font-semibold" style={{ color: SHOPEE_ORANGE }}>
+                        เพิ่มวิดีโอ
+                      </Text>
                     </Pressable>
                   ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={onClearPendingVideos}
+                    className="h-7 justify-center active:opacity-70"
+                  >
+                    <Text className="text-kd-caption font-semibold text-kd-red">ล้างทั้งหมด</Text>
+                  </Pressable>
                 </View>
-              )}
+              </View>
+            ) : null}
 
-              {missingQueuedVideoCount > 0 ? (
-                <Text className="px-3 py-2 text-center text-kd-caption text-kd-text-subtle">
-                  มีรายการที่หาไม่พบในคลัง {missingQueuedVideoCount} วิดีโอ
+            {/* โชว์บรรทัดสถานะเฉพาะตอนมีความคืบหน้าจริง — ข้อความชวนเลือกวิดีโอซ้ำกับ empty state */}
+            {postQueueVideos.length > 0 &&
+            (isPosting || postMessage !== 'เลือกวิดีโอจากคลังเพื่อเตรียมโพสต์ Shopee') ? (
+              <Text numberOfLines={1} className="border-b border-kd-border px-3 py-1.5 text-kd-micro text-kd-text-subtle">
+                {postMessage}
+              </Text>
+            ) : null}
+
+            {postQueueVideos.length > 0 ? (
+              postQueueVideos.map((video, index) => (
+                <PostVideoRow
+                  key={video.id}
+                  index={index}
+                  theme={theme}
+                  video={video}
+                  onRemove={() => onRemovePendingVideo?.(video.id)}
+                />
+              ))
+            ) : (
+              <View className="min-h-[520px] items-center justify-center px-8">
+                <View
+                  className="h-14 w-14 items-center justify-center rounded-full"
+                  style={{ backgroundColor: SHOPEE_ORANGE_SOFT }}
+                >
+                  <Video size={24} color={SHOPEE_ORANGE} strokeWidth={1.8} />
+                </View>
+                <Text className="mt-2 text-kd-subtitle font-semibold text-kd-text">ยังไม่มีวิดีโอในคิว</Text>
+                <Text className="mt-1 text-center text-kd-caption leading-4 text-kd-text-subtle">
+                  เลือกวิดีโอจากคลัง แล้วกดปุ่ม Shopee เพื่อส่งมาเตรียมโพสต์
                 </Text>
-              ) : null}
-            </View>
-          ) : (
-            <View className="gap-1.5">
-              <SectionHeader icon={Settings} theme={theme} title="ตั้งค่า Shopee" />
-              <SettingsRow label="แอปเป้าหมาย" value="com.shopee.th" theme={theme} />
-              <SettingsRow label="แหล่งสินค้า" value="คลังสินค้า" theme={theme} />
-              <SettingsRow label="วิธีการกด" value="Accessibility action + gesture fallback" theme={theme} />
-              <SettingsRow label="ปลายทางซิงก์" value="Kubdee Cloud product library" theme={theme} />
-            </View>
-          )}
+                {onOpenVideoLibrary ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={onOpenVideoLibrary}
+                    className="mt-3 h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg px-3 active:opacity-75"
+                    style={{ backgroundColor: SHOPEE_ORANGE }}
+                  >
+                    <FolderOpen size={14} color={theme.white} strokeWidth={2.2} />
+                    <Text className="text-kd-body font-semibold text-white">ไปคลังวิดีโอ</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
+
+            {missingQueuedVideoCount > 0 ? (
+              <Text className="px-3 py-2 text-center text-kd-caption text-kd-text-subtle">
+                มีรายการที่หาไม่พบในคลัง {missingQueuedVideoCount} วิดีโอ
+              </Text>
+            ) : null}
+          </View>
         </ScrollView>
 
         {/* คิวว่างซ่อนปุ่มโพส (empty state มีปุ่มไปคลังวิดีโอนำทางแล้ว) — ตอนกำลังโพสคงปุ่มหยุดไว้ */}
-        {subMode === 'post' && (postQueueVideos.length > 0 || isPosting) ? (
+        {postQueueVideos.length > 0 || isPosting ? (
           <View className="absolute bottom-0 left-0 right-0 bg-kd-screen px-4 pb-3 pt-3">
             {isPosting ? (
               <Pressable
@@ -412,6 +407,40 @@ export default function ShopeeScreen({
           </View>
         ) : null}
       </View>
+
+      {isSettingsOpen ? (
+        <Modal animationType="slide" onRequestClose={() => setIsSettingsOpen(false)} transparent visible>
+          <View className="flex-1 justify-end bg-black/60">
+            <View
+              className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
+              style={{ maxHeight: '72%', marginBottom: Math.max(insets.bottom + 12, 20) }}
+            >
+              <View className="flex-row items-center justify-between border-b border-kd-border bg-kd-card px-3 py-3">
+                <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                  <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+                    <Settings size={15} color={theme.textMuted} strokeWidth={2.1} />
+                  </View>
+                  <Text className="text-kd-label font-semibold text-kd-text">ตั้งค่า Shopee</Text>
+                </View>
+                <Pressable
+                  accessibilityLabel="ปิดตั้งค่า Shopee"
+                  accessibilityRole="button"
+                  onPress={() => setIsSettingsOpen(false)}
+                  className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+                >
+                  <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+                </Pressable>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 p-2.5">
+                <SettingsRow label="แอปเป้าหมาย" value="com.shopee.th" theme={theme} />
+                <SettingsRow label="แหล่งสินค้า" value="คลังสินค้า" theme={theme} />
+                <SettingsRow label="วิธีการกด" value="Accessibility action + gesture fallback" theme={theme} />
+                <SettingsRow label="ปลายทางซิงก์" value="Kubdee Cloud product library" theme={theme} />
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -579,38 +608,6 @@ function PostVideoRow({
         <X size={19} color={theme.textMuted} strokeWidth={2} />
       </Pressable>
     </View>
-  );
-}
-
-function SubTab({
-  active,
-  color,
-  icon: Icon,
-  label,
-  theme,
-  onPress,
-}: {
-  active: boolean;
-  color: string;
-  icon: typeof Video;
-  label: string;
-  theme: KubdeeTheme;
-  onPress: () => void;
-}): React.JSX.Element {
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      className="-mb-px flex-1 flex-row items-center justify-center gap-1.5 border-b-2 py-2.5"
-      // Dynamic prop-driven accent color — className cannot express it.
-      style={{ borderBottomColor: active ? color : 'transparent' }}
-    >
-      <Icon size={14} color={active ? color : theme.textSubtle} strokeWidth={2.2} />
-      <Text className="text-kd-body font-semibold" style={{ color: active ? color : theme.textSubtle }}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 

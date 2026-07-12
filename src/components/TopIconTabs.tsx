@@ -31,9 +31,9 @@ const tabs: {
   { id: 'library', label: 'คลัง', icon: FolderOpen },
   { id: 'tiktok', label: 'TikTok', icon: TikTokLogo, brandIcon: true },
   { id: 'shopee', label: 'Shopee', icon: ShopeeLogo, brandIcon: true },
-  { id: 'youtube', label: 'YouTube', icon: YouTubeLogo, brandIcon: true },
   { id: 'facebook', label: 'Facebook', icon: FacebookLogo, brandIcon: true },
   { id: 'instagram', label: 'Instagram', icon: InstagramLogo, brandIcon: true },
+  { id: 'youtube', label: 'YouTube', icon: YouTubeLogo, brandIcon: true },
   { id: 'mobile', label: 'มือถือ', icon: Smartphone },
   { id: 'profile', label: 'โปรไฟล์', icon: UserCircle },
 ];

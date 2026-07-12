@@ -133,42 +133,93 @@ function extractApiError(data: Record<string, unknown>, fallback: string): strin
   return typeof data.error === 'string' && data.error ? data.error : fallback;
 }
 
-export async function getBufferConnectionStatus(): Promise<BufferConnectionStatus> {
-  try {
-    const response = await bufferFetch('/api/v1/integrations/buffer');
-    const data = await readJson(response);
-    if (!response.ok) return { connected: false, bufferName: null };
+// Facebook/Instagram/YouTube posting screens each mount their own channel
+// picker, and switching between those tabs used to re-fetch status + the
+// full channel list every time — this cache (short TTL, shared across the 3
+// services, de-duped in-flight requests) makes tab switches instant instead
+// of flashing a loading state on every visit.
+const BUFFER_CACHE_TTL_MS = 60_000;
 
-    return {
-      connected: data.connected === true,
-      bufferName: typeof data.bufferName === 'string' ? data.bufferName : null,
-    };
-  } catch {
-    return { connected: false, bufferName: null };
+let connectionStatusCache: { value: BufferConnectionStatus; expiresAt: number } | null = null;
+let connectionStatusPromise: Promise<BufferConnectionStatus> | null = null;
+
+export async function getBufferConnectionStatus(): Promise<BufferConnectionStatus> {
+  if (connectionStatusCache && connectionStatusCache.expiresAt > Date.now()) {
+    return connectionStatusCache.value;
   }
+  if (connectionStatusPromise) {
+    return connectionStatusPromise;
+  }
+
+  connectionStatusPromise = (async () => {
+    let value: BufferConnectionStatus;
+    try {
+      const response = await bufferFetch('/api/v1/integrations/buffer');
+      const data = await readJson(response);
+      value = !response.ok
+        ? { connected: false, bufferName: null }
+        : {
+            connected: data.connected === true,
+            bufferName: typeof data.bufferName === 'string' ? data.bufferName : null,
+          };
+    } catch {
+      value = { connected: false, bufferName: null };
+    }
+    connectionStatusCache = { value, expiresAt: Date.now() + BUFFER_CACHE_TTL_MS };
+    connectionStatusPromise = null;
+    return value;
+  })();
+
+  return connectionStatusPromise;
 }
 
 export type BufferChannelService = 'facebook' | 'youtube' | 'instagram';
 
-export async function listBufferChannelsByService(service: BufferChannelService): Promise<BufferChannel[]> {
-  const response = await bufferFetch('/api/v1/integrations/buffer/channels');
-  const data = await readJson(response);
-  if (!response.ok || !Array.isArray(data.channels)) {
-    return [];
+let allChannelsCache: { value: BufferChannel[]; expiresAt: number } | null = null;
+let allChannelsPromise: Promise<BufferChannel[]> | null = null;
+
+// Fetches every connected channel once (unfiltered) so Facebook/Instagram/
+// YouTube pickers share a single cached response instead of each hitting
+// this same endpoint on its own.
+async function listAllBufferChannels(): Promise<BufferChannel[]> {
+  if (allChannelsCache && allChannelsCache.expiresAt > Date.now()) {
+    return allChannelsCache.value;
+  }
+  if (allChannelsPromise) {
+    return allChannelsPromise;
   }
 
-  return (data.channels as Record<string, unknown>[])
-    .filter((channel): channel is Record<string, unknown> => {
-      return !!channel && typeof channel.id === 'string' && channel.service === service;
-    })
-    .map((channel) => ({
-      id: channel.id as string,
-      name: typeof channel.name === 'string' ? channel.name : service,
-      displayName: typeof channel.displayName === 'string' ? channel.displayName : null,
-      service,
-      avatar: typeof channel.avatar === 'string' ? channel.avatar : null,
-      isQueuePaused: channel.isQueuePaused === true,
-    }));
+  allChannelsPromise = (async () => {
+    const response = await bufferFetch('/api/v1/integrations/buffer/channels');
+    const data = await readJson(response);
+    const value: BufferChannel[] =
+      !response.ok || !Array.isArray(data.channels)
+        ? []
+        : (data.channels as Record<string, unknown>[])
+            .filter((channel): channel is Record<string, unknown> => !!channel && typeof channel.id === 'string')
+            .map((channel) => ({
+              id: channel.id as string,
+              name: typeof channel.name === 'string' ? channel.name : '',
+              displayName: typeof channel.displayName === 'string' ? channel.displayName : null,
+              service: typeof channel.service === 'string' ? channel.service : '',
+              avatar: typeof channel.avatar === 'string' ? channel.avatar : null,
+              isQueuePaused: channel.isQueuePaused === true,
+            }));
+    allChannelsCache = { value, expiresAt: Date.now() + BUFFER_CACHE_TTL_MS };
+    return value;
+  })();
+
+  try {
+    return await allChannelsPromise;
+  } finally {
+    // ล้าง in-flight promise เสมอแม้ fetch throw — ไม่งั้น request ถัดไปจะรอ promise ที่ตายไปแล้วตลอดกาล
+    allChannelsPromise = null;
+  }
+}
+
+export async function listBufferChannelsByService(service: BufferChannelService): Promise<BufferChannel[]> {
+  const channels = await listAllBufferChannels();
+  return channels.filter((channel) => channel.service === service);
 }
 
 async function uploadBufferAssetOnce(
