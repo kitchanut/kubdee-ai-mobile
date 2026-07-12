@@ -1543,7 +1543,6 @@ export default function ProductPanel({
       {selectedIds.size > 0 ? (
         <SelectionBar
           theme={theme}
-          accent={theme.emerald}
           count={selectedIds.size}
           showAuto
           onAuto={handleSendSelectedToAutoPilot}

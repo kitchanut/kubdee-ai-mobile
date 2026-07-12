@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Check, ChevronDown, ChevronUp, Pencil, Search, Share2, Star, Trash2, Upload, X } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, CloudUpload, Pencil, Search, Share2, Star, Trash2, X } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
 import { ShopeeLogo } from '@/components/BrandLogos';
@@ -392,7 +392,6 @@ export function EmptyHint({ theme, label }: { theme: KubdeeTheme; label: string 
 /** Extension: fixed bottom rounded-full selection bar */
 export function SelectionBar({
   theme,
-  accent,
   count,
   bottomInset = 0,
   showAuto = false,
@@ -408,7 +407,6 @@ export function SelectionBar({
   onEdit,
 }: {
   theme: KubdeeTheme;
-  accent: string;
   count: number;
   bottomInset?: number;
   showAuto?: boolean;
@@ -484,12 +482,9 @@ export function SelectionBar({
               accessibilityRole="button"
               disabled={!onSocial}
               onPress={onSocial}
-              className="h-7 w-7 items-center justify-center rounded-full"
-              // สีม่วง (violet-600) กลางๆ ไม่ชนแบรนด์ใดแบรนด์หนึ่ง — ปุ่มนี้รวม
-              // Facebook / Instagram / YouTube ไว้ด้วยกัน
-              style={{ backgroundColor: '#7c3aed' }}
+              className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
             >
-              <Share2 size={12} color={theme.white} strokeWidth={2.5} />
+              <Share2 size={12} color={theme.textSubtle} strokeWidth={2} />
             </Pressable>
           ) : null}
           {showCloudUpload ? (
@@ -498,19 +493,18 @@ export function SelectionBar({
               accessibilityRole="button"
               disabled={!onCloudUpload}
               onPress={onCloudUpload}
-              className="h-7 w-7 items-center justify-center rounded-full bg-kd-blue"
+              className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
             >
-              <Upload size={12} color={theme.white} strokeWidth={2.5} />
+              <CloudUpload size={13} color={theme.textSubtle} strokeWidth={2} />
             </Pressable>
           ) : null}
           <Pressable
             accessibilityLabel="แก้ไข"
             accessibilityRole="button"
             onPress={onEdit}
-            className="h-7 w-7 items-center justify-center rounded-full"
-            style={{ backgroundColor: accent }}
+            className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
           >
-            <Pencil size={12} color={theme.white} strokeWidth={2.5} />
+            <Pencil size={12} color={theme.textSubtle} strokeWidth={2} />
           </Pressable>
           <Pressable
             accessibilityLabel="ลบ"
@@ -518,7 +512,7 @@ export function SelectionBar({
             onPress={onDelete}
             className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
           >
-            <Trash2 size={12} color={theme.textSubtle} strokeWidth={2} />
+            <Trash2 size={12} color={theme.red} strokeWidth={2} />
           </Pressable>
         </View>
       </View>

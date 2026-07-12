@@ -5,7 +5,7 @@ import {
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
-  Download,
+  CloudDownload,
   Grid2X2,
   Image as ImageIcon,
   Package,
@@ -85,7 +85,7 @@ import type { MediaKind, MediaMode, MediaSubItem, UploadDraft } from './media-pa
 
 export type { MediaKind } from './media-panel';
 
-// สีม่วงเดียวกับปุ่ม "โพสต์โซเชียล" ใน SelectionBar (shared.tsx)
+// สี accent ของ flow โพสต์โซเชียล (ใช้ใน header ของ sheet เลือกปลายทาง)
 const SOCIAL_VIOLET = '#7c3aed';
 
 const SOCIAL_DESTINATION_META: Record<SocialService, { label: string; color: string; note: string }> = {
@@ -1012,7 +1012,7 @@ export default function MediaPanel({
               {kind === 'videos' ? (
                 <HeaderIconButton
                   theme={theme}
-                  icon={Download}
+                  icon={CloudDownload}
                   label={cloudInboxLoading ? 'กำลังโหลด Cloud Transfer' : 'รับ Cloud Transfer'}
                   onPress={() => void openCloudInbox()}
                 />
@@ -1222,7 +1222,6 @@ export default function MediaPanel({
       {selectedIds.size > 0 ? (
         <SelectionBar
           theme={theme}
-          accent={accentColor}
           bottomInset={insets.bottom}
           count={selectedIds.size}
           showCloudUpload={kind === 'videos'}
