@@ -12,9 +12,6 @@ import type {
   AutoPilotStepType,
   AutoPilotVideoSettings,
 } from '@/autopilot/types';
-import type { AffiliateProduct } from '@/library/types';
-
-export type AutoPilotProductEditableField = 'name' | 'productId' | 'productUrl' | 'caption' | 'hashtags' | 'cta';
 
 export const AUTO_PILOT_RUNTIME_SETTINGS_KEY = 'kubdee_ai_mobile_auto_runtime_settings_v1';
 export const DEFAULT_ENABLED_STEPS: AutoPilotStepType[] = ['image', 'video'];
@@ -47,45 +44,6 @@ export const initialRunState: AutoPilotRunState = {
 
 export function createRunId(): string {
   return `mobile-auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-export function createManualSourceProduct(profileLocalId: string, localId: string): AffiliateProduct {
-  const now = Date.now();
-
-  return {
-    id: localId,
-    userId: '',
-    localId,
-    profileLocalId: profileLocalId || null,
-    name: '',
-    description: null,
-    externalProductId: '',
-    productUrl: '',
-    price: null,
-    stock: null,
-    caption: null,
-    hashtags: null,
-    cta: null,
-    imagePath: null,
-    imageR2Key: null,
-    imageUrl: null,
-    imageHash: null,
-    imageMimeType: null,
-    imageSize: null,
-    imageUploadedAt: null,
-    platform: 'manual',
-    status: 'draft',
-    scrapedAt: null,
-    localCreatedAt: now,
-    originApp: 'kubdee-ai-mobile',
-    createdByApp: 'kubdee-ai-mobile',
-    updatedByApp: 'kubdee-ai-mobile',
-    lastSyncedAt: null,
-    createdAt: now,
-    updatedAt: now,
-    profileName: null,
-    groupLocalId: null,
-  };
 }
 
 export function normalizeRuntimeSettings(value: unknown): AutoPilotSettings {

@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.6.3',
+    date: '2026-07-12',
+    highlight: 'จัดระเบียบหน้าออโต้',
+    changes: [
+      {
+        type: 'removed',
+        text: 'หน้าออโต้: เอาปุ่ม "เพิ่มเอง" ในส่วนเลือกสินค้าออก เหลือเลือกจากคลังอย่างเดียว'
+      },
+      {
+        type: 'improved',
+        text: 'หน้าออโต้: เปลี่ยนไอคอนหัวข้อ "ตั้งค่าพื้นฐาน" ให้ตรงกับแอปเดสก์ท็อป'
+      }
+    ]
+  },
+  {
     version: '0.6.2',
     date: '2026-07-12',
     highlight: 'ปรับดีไซน์หน้า Shopee และช่องโพสต์โซเชียล',

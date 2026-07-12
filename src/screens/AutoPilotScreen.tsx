@@ -402,13 +402,11 @@ export default function AutoPilotScreen({
             profileProducts={profileProducts}
             selectedProducts={controller.selectedProducts}
             theme={theme}
-            onAddManualProduct={controller.addManualProduct}
             onClearProducts={controller.clearProducts}
             onOpenSettings={openProductSettings}
             onOpenPreset={openProductPresetSheet}
             onOpenProductSelect={() => setProductSelectSheetOpen(true)}
             onRemoveProduct={(productId) => controller.toggleProduct(productId)}
-            onUpdateProductField={controller.updateProductField}
           />
         </View>
       </ScrollView>

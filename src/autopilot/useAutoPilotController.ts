@@ -42,7 +42,6 @@ import type { AffiliateProduct } from '@/library/types';
 import {
   AUTO_PILOT_RUNTIME_SETTINGS_KEY,
   DEFAULT_ENABLED_STEPS,
-  createManualSourceProduct,
   createRunId,
   formatAutomationActivityMessage,
   getPlannedAutoTotals,
@@ -53,7 +52,6 @@ import {
   normalizeRuntimeSettings,
   orderEnabledSteps,
 } from '@/autopilot/useAutoPilotControllerUtils';
-import type { AutoPilotProductEditableField } from '@/autopilot/useAutoPilotControllerUtils';
 
 export function useAutoPilotController({
   initialSelectedProductIds = [],
@@ -67,12 +65,12 @@ export function useAutoPilotController({
   const { addGeneratedMediaAsset } = useGeneratedMedia();
   const [settings, setSettings] = useState<AutoPilotSettings>(DEFAULT_AUTO_PILOT_SETTINGS);
   const [enabledSteps, setEnabledSteps] = useState<AutoPilotStepType[]>(DEFAULT_ENABLED_STEPS);
-  const [manualProducts, setManualProducts] = useState<AffiliateProduct[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(
     () => new Set(initialSelectedProductIds)
   );
+  // เก็บ caption/hashtags/cta ที่ AI generate ระหว่าง run ไว้ทับค่าจาก catalog เดิม
   const [productFieldsById, setProductFieldsById] = useState<
-    Record<string, Partial<Pick<AutoPilotProduct, AutoPilotProductEditableField>>>
+    Record<string, Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>>
   >({});
   const [productSettingsById, setProductSettingsById] = useState<Record<string, AutoPilotProductSettings>>({});
   const [runState, setRunState] = useState<AutoPilotRunState>(initialRunState);
@@ -140,7 +138,7 @@ export function useAutoPilotController({
 
   const products = useMemo(
     () =>
-      [...sourceProducts, ...manualProducts].map((sourceProduct) => {
+      sourceProducts.map((sourceProduct) => {
         const product = toAutoPilotProduct(sourceProduct);
         const fieldOverride = productFieldsById[product.id];
         const override = productSettingsById[product.id];
@@ -150,7 +148,7 @@ export function useAutoPilotController({
           settings: override ? normalizeAutoPilotProductSettings(override) : product.settings,
         };
       }),
-    [manualProducts, productFieldsById, productSettingsById, sourceProducts]
+    [productFieldsById, productSettingsById, sourceProducts]
   );
 
   const selectedProducts = useMemo(
@@ -418,42 +416,6 @@ export function useAutoPilotController({
     });
   }, []);
 
-  const addManualProduct = useCallback((): void => {
-    const localId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const product = createManualSourceProduct(profileLocalId, localId);
-
-    setManualProducts((current) => [...current, product]);
-    setProductFieldsById((current) => ({
-      ...current,
-      [localId]: {
-        caption: '',
-        cta: '',
-        hashtags: '',
-        name: '',
-        productId: '',
-        productUrl: '',
-      },
-    }));
-    setSelectedProductIds((current) => {
-      const next = new Set(current);
-      next.add(localId);
-      return next;
-    });
-  }, [profileLocalId]);
-
-  const updateProductField = useCallback(
-    (productId: string, field: AutoPilotProductEditableField, value: string): void => {
-      setProductFieldsById((current) => ({
-        ...current,
-        [productId]: {
-          ...current[productId],
-          [field]: value,
-        },
-      }));
-    },
-    []
-  );
-
   const selectAllVisibleProducts = useCallback((visibleProducts: AffiliateProduct[]): void => {
     setSelectedProductIds(new Set(visibleProducts.map(getAutoPilotProductId)));
   }, []);
@@ -494,17 +456,7 @@ export function useAutoPilotController({
   );
 
   const clearProducts = useCallback((): void => {
-    setManualProducts([]);
     setSelectedProductIds(new Set());
-    setProductFieldsById((current) => {
-      const next = { ...current };
-      for (const productId of Object.keys(next)) {
-        if (productId.startsWith('manual-')) {
-          delete next[productId];
-        }
-      }
-      return next;
-    });
   }, []);
 
   const clearLogs = useCallback((): void => {
@@ -971,7 +923,6 @@ export function useAutoPilotController({
 
   return {
     appendLog,
-    addManualProduct,
     clearLogs,
     clearProducts,
     enabledSteps,
@@ -990,7 +941,6 @@ export function useAutoPilotController({
     stopRun,
     toggleProduct,
     toggleStep,
-    updateProductField,
     applyProductImageSectionToAll,
     applyProductSettingsToAll,
     applyProductVideoSectionToAll,
