@@ -34,6 +34,7 @@ import { BACKEND_URL } from '@/auth/constants';
 import { formatExpiryLabel, formatPlanLabel } from '@/auth/plan';
 import type { SyncedProfile, SyncedProfileGroup } from '@/auth/types';
 import Text from '@/components/ui/KubdeeText';
+import TikTokProfileButton from '@/tiktok/TikTokProfileButton';
 import { kubdeeFontFamilies } from '@/theme/fonts';
 import type { KubdeeTheme } from '@/theme/tokens';
 
@@ -157,6 +158,8 @@ function ProfileRow({
         </View>
       </TouchableOpacity>
 
+      <TikTokProfileButton profileId={profile.id} profileName={profile.name} theme={theme} />
+
       {onDelete ? (
         <TouchableOpacity
           accessibilityLabel="ลบโปรไฟล์"
@@ -164,7 +167,7 @@ function ProfileRow({
           activeOpacity={0.7}
           disabled={disabled}
           onPress={() => onDelete(profile)}
-          className="w-9 items-center justify-center disabled:opacity-50"
+          className="w-9 items-center justify-center border-l border-kd-border disabled:opacity-50"
         >
           <Trash2 size={14} color={theme.red} strokeWidth={2} />
         </TouchableOpacity>
