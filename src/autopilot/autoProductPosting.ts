@@ -33,11 +33,11 @@ export interface AutoPilotProductVideoAsset {
 // process is backgrounded/frozen at the wrong instant (observed on-device), which would otherwise
 // hang this one product — and the whole remaining auto pilot run behind it — for the full 20
 // minutes. 5 minutes is well above the ~2 minutes a real Shopee post takes end to end.
-const SHOPEE_POST_TIMEOUT_MS = 5 * 60_000;
+export const SHOPEE_POST_TIMEOUT_MS = 5 * 60_000;
 
-class ShopeePostTimeoutError extends Error {}
+export class ShopeePostTimeoutError extends Error {}
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reportWarning('postProductToShopee: withTimeout fired', { timeoutMs });

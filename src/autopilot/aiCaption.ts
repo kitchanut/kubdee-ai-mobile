@@ -9,7 +9,25 @@ import {
   getShopeeSafeHashtagCount,
   normalizeShopeeHashtags,
 } from '@/autopilot/shopeePostTextLimit';
-import type { AutoPilotProduct, AutoPilotSettings } from '@/autopilot/types';
+
+// รับแค่ field ที่ AI content generation ใช้จริง — AutoPilotProduct/AutoPilotSettings (types.ts)
+// มี field ครบเกินความจำเป็น (structurally satisfy interface นี้อยู่แล้ว จึงใช้ต่อได้โดยไม่ต้องแก้ caller เดิม)
+export interface AutoPilotAiContentProductInput {
+  name: string;
+  description: string;
+  productId: string;
+  productUrl: string;
+  caption: string;
+  hashtags: string;
+  cta: string;
+}
+
+export interface AutoPilotAiContentSettingsInput {
+  aiGenerateCaption: boolean;
+  aiGenerateHashtags: boolean;
+  aiGenerateCta: boolean;
+  aiHashtagCount: number;
+}
 
 interface AiGenerateResponse {
   text?: string;
@@ -44,7 +62,7 @@ interface AiContentLengthCheck {
   message: string;
 }
 
-export function getAutoPilotAiContentLabels(settings: AutoPilotSettings): string {
+export function getAutoPilotAiContentLabels(settings: AutoPilotAiContentSettingsInput): string {
   return [
     settings.aiGenerateCaption && 'Caption',
     settings.aiGenerateHashtags && 'Hashtags',
@@ -56,8 +74,8 @@ function buildAutoPilotCaptionPrompt({
   product,
   settings,
 }: {
-  product: AutoPilotProduct;
-  settings: AutoPilotSettings;
+  product: AutoPilotAiContentProductInput;
+  settings: AutoPilotAiContentSettingsInput;
 }): string {
   const jsonLines: string[] = [];
   const hashtagCount = getShopeeSafeHashtagCount(settings.aiHashtagCount);
@@ -110,8 +128,8 @@ function buildAutoPilotCaptionRewritePrompt({
   validation,
 }: {
   content: NormalizedAiContent;
-  product: AutoPilotProduct;
-  settings: AutoPilotSettings;
+  product: AutoPilotAiContentProductInput;
+  settings: AutoPilotAiContentSettingsInput;
   validation: AiContentLengthCheck;
 }): string {
   return `ข้อความ Shopee ที่คุณสร้างยังยาวเกินกำหนด กรุณาคิดใหม่ให้สั้นลงและตอบเป็น JSON เท่านั้น
@@ -199,7 +217,7 @@ function cleanAiField(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
 
-function normalizeGeneratedContent(parsed: Record<string, unknown>, settings: AutoPilotSettings): NormalizedAiContent {
+function normalizeGeneratedContent(parsed: Record<string, unknown>, settings: AutoPilotAiContentSettingsInput): NormalizedAiContent {
   return {
     caption: settings.aiGenerateCaption ? cleanAiField(parsed.caption) : '',
     hashtags: settings.aiGenerateHashtags ? normalizeShopeeHashtags(cleanAiField(parsed.hashtags), Number.MAX_SAFE_INTEGER) : '',
@@ -217,8 +235,8 @@ function checkAiContentLength({
   settings,
 }: {
   content: NormalizedAiContent;
-  product: AutoPilotProduct;
-  settings: AutoPilotSettings;
+  product: AutoPilotAiContentProductInput;
+  settings: AutoPilotAiContentSettingsInput;
 }): AiContentLengthCheck {
   const caption = settings.aiGenerateCaption ? content.caption : product.caption;
   const hashtags = settings.aiGenerateHashtags ? content.hashtags : product.hashtags;
@@ -245,8 +263,8 @@ export async function generateAutoPilotProductContent({
   product,
   settings,
 }: {
-  product: AutoPilotProduct;
-  settings: AutoPilotSettings;
+  product: AutoPilotAiContentProductInput;
+  settings: AutoPilotAiContentSettingsInput;
 }): Promise<AutoPilotAiContentResult> {
   if (!settings.aiGenerateCaption && !settings.aiGenerateHashtags && !settings.aiGenerateCta) {
     return { success: false, error: 'ไม่ได้เลือกให้ AI สร้างข้อมูลใด' };

@@ -1,7 +1,7 @@
 import { ActivityIndicator, Alert, Image as NativeImage, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FolderOpen, Send, Settings, SlidersHorizontal, Video, X } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner-native';
 
 import {
@@ -14,10 +14,20 @@ import {
 } from '@/activity/automationActivityLogStore';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
+import { generateAutoPilotProductContent, getAutoPilotAiContentLabels } from '@/autopilot/aiCaption';
+import { SHOPEE_POST_TIMEOUT_MS, withTimeout } from '@/autopilot/autoProductPosting';
+import {
+  DEFAULT_SHOPEE_AI_CONTENT_SETTINGS,
+  getShopeeAiContentSettings,
+  saveShopeeAiContentSettings,
+} from '@/autopilot/shopeeAiContentSettingsStore';
+import type { ShopeeAiContentSettings } from '@/autopilot/shopeeAiContentSettingsStore';
+import { ExtensionToggleRow, HashtagCountSelector } from '@/screens/autopilot/blocks/SettingsBlocks';
 import { ShopeeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import {
   getAccessibilityStatus,
+  launchTargetApp,
   openAccessibilitySettings,
   postShopeeVideos,
   requestAndroidVideoPermission,
@@ -49,12 +59,39 @@ export default function ShopeeScreen({
   onRemovePendingVideo,
 }: ShopeeScreenProps): React.JSX.Element {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [postMessage, setPostMessage] = useState('เลือกวิดีโอจากคลังเพื่อเตรียมโพสต์ Shopee');
   const [postLogs, setPostLogs] = useState<NativeShopeePostLog[]>([]);
   const [isPosting, setIsPosting] = useState(false);
   const [isStoppingPost, setIsStoppingPost] = useState(false);
-  const { getAssetsByKind } = useGeneratedMedia();
+  const [aiContentSettings, setAiContentSettings] = useState<ShopeeAiContentSettings>(DEFAULT_SHOPEE_AI_CONTENT_SETTINGS);
+  const { getAssetsByKind, updateGeneratedMediaAsset } = useGeneratedMedia();
   const insets = useSafeAreaInsets();
+  const postLogScrollRef = useRef<ScrollView>(null);
+  // native เคลียร์ stop-flag ของตัวเองใหม่ทุกครั้งที่เรียก postShopeeVideos (ต่อคลิป) — ใช้ ref นี้กันเอง
+  // ฝั่ง JS แทน ไม่งั้นกด "หยุด" ระหว่างรอยต่อของคลิปจะโดนเคลียร์ทิ้งเงียบๆ แล้วคลิปถัดไปโพสต์ต่อ
+  const stopRequestedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getShopeeAiContentSettings().then((settings) => {
+      if (!cancelled) {
+        setAiContentSettings(settings);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const updateAiContentSetting = useCallback(
+    <K extends keyof ShopeeAiContentSettings>(key: K, value: ShopeeAiContentSettings[K]): void => {
+      setAiContentSettings((current) => {
+        const next = { ...current, [key]: value };
+        void saveShopeeAiContentSettings(next);
+        return next;
+      });
+    },
+    []
+  );
 
   const generatedVideos = useMemo(
     () => getAssetsByKind('videos', selectedProfileId),
@@ -79,14 +116,12 @@ export default function ShopeeScreen({
 
   const appendPostLog = useCallback((message: string, ts = Date.now()): void => {
     setPostLogs((current) => [...current, { message, ts }].slice(-MAX_AUTOMATION_LOGS_PER_RUN));
-    setPostMessage(message);
     pushAutomationActivityLog('shopee-post', message, ts);
   }, []);
 
   useEffect(() => {
     const subscription = subscribeShopeePostLogs((entry) => {
       setPostLogs((current) => [...current, entry].slice(-MAX_AUTOMATION_LOGS_PER_RUN));
-      setPostMessage(entry.message);
     });
 
     return () => {
@@ -104,7 +139,7 @@ export default function ShopeeScreen({
 
     if (missingFileCount > 0) {
       const message = `ยังไม่พร้อมโพสต์: ต้องใช้ไฟล์วิดีโอในเครื่อง ${missingFileCount}`;
-      setPostMessage(message);
+      setPostLogs([{ message, ts: Date.now() }]);
       toast.warning(message);
       return;
     }
@@ -121,6 +156,7 @@ export default function ShopeeScreen({
     setIsPosting(true);
     setIsStoppingPost(false);
     setPostLogs([]);
+    stopRequestedRef.current = false;
     beginAutomationActivityRun('shopee-post');
     appendPostLog(`เริ่มโพสต์ Shopee ${postQueueVideos.length} วิดีโอ`);
 
@@ -168,59 +204,185 @@ export default function ShopeeScreen({
 
       await flushAutomationActivitySnapshot();
 
-      const postPayloadItems = postQueueVideos.map((video) => {
-        const productName = getPostPayloadProductName(video);
-        const productCode = getPostPayloadProductCode(video);
-        const limitedText = limitShopeePostTextParts({
-          caption: video.caption,
-          cta: video.cta,
-          fallbackCaption: productName,
-          hashtags: video.hashtags,
+      // เปิดแอป Shopee ทันที (แค่ launch เฉยๆ ยังไม่ automation) ให้รู้สึกว่าเริ่มทำงานทันที
+      // ไม่ต้องรอ AI คิด caption เสร็จก่อน — ตอนคลิปแรกพร้อม native จะ reset+navigate เข้า flow จริงอีกที
+      appendPostLog('เปิดแอป Shopee...');
+      launchTargetApp('com.shopee.th').catch(() => {});
+
+      const shouldGenerateAiContent = aiContentSettings.aiGenerateCaption || aiContentSettings.aiGenerateHashtags;
+      const aiSettings = {
+        aiGenerateCaption: aiContentSettings.aiGenerateCaption,
+        aiGenerateHashtags: aiContentSettings.aiGenerateHashtags,
+        aiGenerateCta: false,
+        aiHashtagCount: aiContentSettings.aiHashtagCount,
+      };
+      const generateClipAiContent = async (
+        video: GeneratedMediaAsset,
+        index: number
+      ): Promise<Partial<Pick<GeneratedMediaAsset, 'caption' | 'hashtags'>>> => {
+        if (!shouldGenerateAiContent) {
+          return {};
+        }
+
+        // ปิด "เขียนทับของเดิม" อยู่ → คิดเฉพาะ field ที่คลิปนี้ยังว่างเท่านั้น กันเขียนทับ
+        // caption/hashtags ที่ผู้ใช้ตั้งใจแก้เองไว้แล้ว
+        const needsCaption = aiContentSettings.aiGenerateCaption
+          && (aiContentSettings.aiOverwriteExisting || !video.caption?.trim());
+        const needsHashtags = aiContentSettings.aiGenerateHashtags
+          && (aiContentSettings.aiOverwriteExisting || !video.hashtags?.trim());
+        if (!needsCaption && !needsHashtags) {
+          return {};
+        }
+
+        const clipAiSettings = { ...aiSettings, aiGenerateCaption: needsCaption, aiGenerateHashtags: needsHashtags };
+        const clipAiContentLabels = getAutoPilotAiContentLabels(clipAiSettings);
+
+        const result = await generateAutoPilotProductContent({
+          product: {
+            name: getPostPayloadProductName(video) || getPostVideoFallbackLabel(video, index),
+            description: '',
+            productId: getPostPayloadProductCode(video) || '',
+            productUrl: video.productUrl || '',
+            caption: video.caption || '',
+            hashtags: video.hashtags || '',
+            cta: video.cta || '',
+          },
+          settings: clipAiSettings,
         });
+
+        if (stopRequestedRef.current) {
+          // ผู้ใช้กดหยุดระหว่าง AI กำลังคิดคลิปนี้ล่วงหน้า — คลิปนี้จะไม่ได้โพสต์รอบนี้แล้ว
+          // อย่าเขียนทับ caption/hashtags เดิมของมันด้วยผลจาก AI ที่คิดไปแล้วเสียเปล่า
+          return {};
+        }
+
+        if (!result.success) {
+          appendPostLog(
+            `AI ${clipAiContentLabels} ไม่สำเร็จ (${getPostVideoFallbackLabel(video, index)}): ${result.error || 'unknown'} — ใช้ค่าเดิม`
+          );
+          return {};
+        }
+
+        const patch: Partial<Pick<GeneratedMediaAsset, 'caption' | 'hashtags'>> = {};
+        if (needsCaption && result.caption) {
+          patch.caption = result.caption;
+        }
+        if (needsHashtags && result.hashtags) {
+          patch.hashtags = result.hashtags;
+        }
+        if (Object.keys(patch).length > 0) {
+          void updateGeneratedMediaAsset(video.id, patch);
+        }
+        return patch;
+      };
+
+      const total = postQueueVideos.length;
+      let successCount = 0;
+      let failedCount = 0;
+      let stoppedEarly = false;
+      let abortedOnError = false;
+      // คิด caption ของคลิปแรกทันที ให้ overlap กับตอนแอป Shopee กำลังเปิดด้านบน
+      let nextAiContentPromise = generateClipAiContent(postQueueVideos[0], 0);
+
+      for (let index = 0; index < total; index += 1) {
+        // เช็คก่อนเริ่มคลิปใหม่ทุกครั้ง — native เคลียร์ stop-flag ของตัวเองใหม่ทุกครั้งที่เรียก
+        // postShopeeVideos ต่อคลิป เลยต้องกันเองฝั่ง JS ไม่งั้นคลิปถัดไปจะโพสต์ต่อทั้งที่กดหยุดแล้ว
+        if (stopRequestedRef.current) {
+          stoppedEarly = true;
+          appendPostLog(`หยุดโพสต์ Shopee แล้ว (${successCount}/${total})`);
+          break;
+        }
+
+        const video = postQueueVideos[index];
+        appendPostLog(`กำลังทำคลิปที่ ${index + 1}/${total}: ${getPostVideoFallbackLabel(video, index)}`);
+
+        const aiPatch = await nextAiContentPromise;
+        const effectiveVideo = { ...video, ...aiPatch };
+
+        // คิด caption คลิปถัดไปตอนนี้เลย ให้ทำงานคู่ขนานกับตอนคลิปนี้กำลังโพสต์ผ่าน native automation
+        // (ไม่คิดต่อถ้ากดหยุดแล้ว กันคิด caption เสียเปล่าเพิ่มสำหรับคลิปที่ไม่มีทางได้โพสต์รอบนี้)
+        const nextVideo = postQueueVideos[index + 1];
+        nextAiContentPromise = nextVideo && !stopRequestedRef.current
+          ? generateClipAiContent(nextVideo, index + 1)
+          : Promise.resolve({});
+
+        const productName = getPostPayloadProductName(effectiveVideo);
+        const productCode = getPostPayloadProductCode(effectiveVideo);
+        const limitedText = limitShopeePostTextParts({
+          caption: effectiveVideo.caption,
+          cta: effectiveVideo.cta,
+          fallbackCaption: productName,
+          hashtags: effectiveVideo.hashtags,
+        });
+        if (limitedText.wasLimited) {
+          appendPostLog(`ปรับแคปชั่น/แฮชแท็กคลิปที่ ${index + 1} ให้อยู่ไม่เกิน ${SHOPEE_POST_SAFE_WORD_LIMIT} คำ`);
+        }
+
         const payload: NativeShopeePostingVideoInput = {
-          fileUri: video.fileUri || '',
+          fileUri: effectiveVideo.fileUri || '',
           productName,
           productId: productCode,
-          productUrl: isShopeeShortLink(video.productUrl) ? video.productUrl : null,
+          productUrl: isShopeeShortLink(effectiveVideo.productUrl) ? effectiveVideo.productUrl : null,
           caption: limitedText.caption || null,
           hashtags: limitedText.hashtags || null,
           cta: limitedText.cta || null,
-          galleryVideoId: video.id,
-          platform: video.platform || 'shopee',
+          galleryVideoId: effectiveVideo.id,
+          platform: effectiveVideo.platform || 'shopee',
         };
-        return { limitedText, payload };
-      });
-      const limitedPostTextCount = postPayloadItems.filter((item) => item.limitedText.wasLimited).length;
-      if (limitedPostTextCount > 0) {
-        const maxWordCount = Math.max(...postPayloadItems.map((item) => item.limitedText.wordCount), 0);
-        appendPostLog(
-          `ปรับแคปชั่น/แฮชแท็กให้อยู่ไม่เกิน ${SHOPEE_POST_SAFE_WORD_LIMIT} คำ ${limitedPostTextCount} รายการ (สูงสุด ${maxWordCount} คำ)`
-        );
+
+        let result: NativeShopeePostingResult;
+        try {
+          // skipReturnNavigation ทุกคลิปยกเว้นคลิปสุดท้าย — จะได้ค้างอยู่ใน Shopee ต่อเนื่องไม่กระโดดกลับแอปเรากลางคัน
+          // withTimeout กัน native broadcast หายเงียบๆ (เกิดได้ง่ายขึ้นเพราะสลับ background/foreground ทุกคลิปแล้ว)
+          result = await withTimeout(
+            postShopeeVideos([payload], { skipReturnNavigation: index < total - 1 }),
+            SHOPEE_POST_TIMEOUT_MS,
+            `คลิปที่ ${index + 1} หมดเวลา (native ไม่ตอบสนอง)`
+          );
+        } catch (error) {
+          failedCount += 1;
+          const message = error instanceof Error ? error.message : String(error);
+          appendPostLog(`คลิปที่ ${index + 1} ล้มเหลว: ${message} — หยุดที่เหลือเพราะน่าจะเป็นปัญหาระบบ`);
+          // error ที่ throw ออกมา (ไม่ใช่แค่ result.success===false ต่อคลิป) มักเป็นปัญหาระบบ
+          // (bridge/accessibility service พัง) ลองต่อคลิปที่เหลือไปก็รอเสียเวลาแล้วพังซ้ำเหมือนกัน
+          abortedOnError = true;
+          break;
+        }
+
+        if (result.stopped) {
+          stoppedEarly = true;
+          appendPostLog(`หยุดโพสต์ Shopee แล้ว (${successCount}/${total})`);
+          break;
+        }
+
+        if (result.success) {
+          successCount += 1;
+          onRemovePendingVideo?.(video.id);
+        } else {
+          failedCount += 1;
+          appendPostLog(`คลิปที่ ${index + 1} ล้มเหลว: ${result.error || 'unknown'}`);
+        }
       }
 
-      const result = await postShopeeVideos(postPayloadItems.map((item) => item.payload));
-
-      if (result.stopped) {
-        const message = `หยุดโพสต์ Shopee แล้ว (${result.postedCount || 0}/${postQueueVideos.length})`;
-        appendPostLog(message);
-        removePostedVideosFromQueue(result, postQueueVideos, onClearPendingVideos, onRemovePendingVideo);
-        toast.warning(message);
-        return;
-      }
-
-      if (!result.success) {
-        const message = result.error || 'โพสต์ Shopee ไม่สำเร็จ';
+      if (stoppedEarly) {
+        toast.warning(`หยุดโพสต์ Shopee แล้ว (${successCount}/${total})`);
+      } else if (abortedOnError) {
+        const message = `โพสต์ Shopee หยุดกลางทาง สำเร็จ ${successCount}/${total} วิดีโอ (เหลือ ${total - successCount - failedCount} วิดีโอที่ยังไม่ได้ลอง)`;
         appendPostLog(message);
         toast.error(message);
-        return;
+      } else if (successCount === total) {
+        const message = `โพสต์ Shopee สำเร็จ ${successCount}/${total} วิดีโอ`;
+        appendPostLog(message);
+        toast.success(message);
+      } else if (successCount > 0) {
+        const message = `โพสต์ Shopee สำเร็จ ${successCount}/${total} วิดีโอ (ล้มเหลว ${failedCount})`;
+        appendPostLog(message);
+        toast.warning(message);
+      } else {
+        const message = 'โพสต์ Shopee ไม่สำเร็จทั้งหมด';
+        appendPostLog(message);
+        toast.error(message);
       }
-
-      const successCount =
-        result.successCount ?? result.results?.filter((entry) => entry.success).length ?? result.postedCount ?? 0;
-      const message = `โพสต์ Shopee สำเร็จ ${result.postedCount || successCount}/${postQueueVideos.length} วิดีโอ`;
-      appendPostLog(message);
-      removePostedVideosFromQueue(result, postQueueVideos, onClearPendingVideos, onRemovePendingVideo);
-      toast.success(message);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       appendPostLog(message);
@@ -231,13 +393,15 @@ export default function ShopeeScreen({
       setAutomationActivityRunning('shopee-post', false);
       void flushAutomationActivitySnapshot();
     }
-  }, [appendPostLog, isPosting, onClearPendingVideos, onRemovePendingVideo, postQueueVideos]);
+  }, [aiContentSettings, appendPostLog, isPosting, onRemovePendingVideo, postQueueVideos, updateGeneratedMediaAsset]);
 
   const handleStopPost = useCallback(async (): Promise<void> => {
     if (!isPosting || isStoppingPost) {
       return;
     }
 
+    // ตั้ง ref ทันทีก่อนอย่างอื่น กันคลิปถัดไปเริ่มระหว่างที่ยัง await native call อยู่
+    stopRequestedRef.current = true;
     setIsStoppingPost(true);
     setAutomationActivityStopping('shopee-post', true);
     appendPostLog('กำลังส่งคำสั่งหยุด Shopee post...');
@@ -315,12 +479,25 @@ export default function ShopeeScreen({
               </View>
             ) : null}
 
-            {/* โชว์บรรทัดสถานะเฉพาะตอนมีความคืบหน้าจริง — ข้อความชวนเลือกวิดีโอซ้ำกับ empty state */}
-            {postQueueVideos.length > 0 &&
-            (isPosting || postMessage !== 'เลือกวิดีโอจากคลังเพื่อเตรียมโพสต์ Shopee') ? (
-              <Text numberOfLines={1} className="border-b border-kd-border px-3 py-1.5 text-kd-micro text-kd-text-subtle">
-                {postMessage}
-              </Text>
+            {/* โชว์ log แบบ scroll เฉพาะตอนมีความคืบหน้าจริง — ให้เห็นทุกขั้นตอน (รวม AI คิด caption/hashtags) ไม่ใช่แค่บรรทัดล่าสุด */}
+            {postQueueVideos.length > 0 && postLogs.length > 0 ? (
+              <ScrollView
+                ref={postLogScrollRef}
+                onContentSizeChange={() => postLogScrollRef.current?.scrollToEnd({ animated: true })}
+                showsVerticalScrollIndicator={false}
+                className="max-h-[92px] border-b border-kd-border"
+                contentContainerClassName="gap-1 px-3 py-1.5"
+              >
+                {postLogs.map((log, index) => (
+                  <Text
+                    key={`${log.ts}-${index}`}
+                    numberOfLines={1}
+                    className="text-kd-micro text-kd-text-subtle"
+                  >
+                    {log.message}
+                  </Text>
+                ))}
+              </ScrollView>
             ) : null}
 
             {postQueueVideos.length > 0 ? (
@@ -409,11 +586,17 @@ export default function ShopeeScreen({
       </View>
 
       {isSettingsOpen ? (
-        <Modal animationType="slide" onRequestClose={() => setIsSettingsOpen(false)} transparent visible>
-          <View className="flex-1 justify-end bg-black/60">
+        <Modal animationType="fade" onRequestClose={() => setIsSettingsOpen(false)} transparent visible>
+          {/* backdrop อยู่ใน Modal ได้แล้ว (ก่อนหน้านี้แยกไว้นอก Modal เพราะ animationType="slide" จะลาก
+              backdrop ขึ้นมาพร้อม sheet — ตอนนี้เปลี่ยนเป็น "fade" แล้วไม่มีปัญหานั้น และ Modal เป็น native
+              overlay เต็มจอเสมอ ต่างจาก View ธรรมดาที่ครอบได้แค่พื้นที่ของ ShopeeScreen เอง ไม่รวมแถบ tab/status bar */}
+          <View
+            className="flex-1 justify-center bg-black/60"
+            style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+          >
             <View
               className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
-              style={{ maxHeight: '72%', marginBottom: Math.max(insets.bottom + 12, 20) }}
+              style={{ height: '95%' }}
             >
               <View className="flex-row items-center justify-between border-b border-kd-border bg-kd-card px-3 py-3">
                 <View className="min-w-0 flex-1 flex-row items-center gap-2">
@@ -432,10 +615,43 @@ export default function ShopeeScreen({
                 </Pressable>
               </View>
               <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 p-2.5">
-                <SettingsRow label="แอปเป้าหมาย" value="com.shopee.th" theme={theme} />
-                <SettingsRow label="แหล่งสินค้า" value="คลังสินค้า" theme={theme} />
-                <SettingsRow label="วิธีการกด" value="Accessibility action + gesture fallback" theme={theme} />
-                <SettingsRow label="ปลายทางซิงก์" value="Kubdee Cloud product library" theme={theme} />
+                <ExtensionToggleRow
+                  label="AI คิด Caption"
+                  theme={theme}
+                  value={aiContentSettings.aiGenerateCaption}
+                  onValueChange={(value) => updateAiContentSetting('aiGenerateCaption', value)}
+                />
+                <ExtensionToggleRow
+                  label="AI คิด Hashtags"
+                  rightSlot={
+                    aiContentSettings.aiGenerateHashtags ? (
+                      <HashtagCountSelector
+                        enabled={aiContentSettings.aiGenerateHashtags}
+                        theme={theme}
+                        value={aiContentSettings.aiHashtagCount}
+                        onChange={(value) => updateAiContentSetting('aiHashtagCount', value)}
+                      />
+                    ) : null
+                  }
+                  theme={theme}
+                  value={aiContentSettings.aiGenerateHashtags}
+                  onValueChange={(value) => updateAiContentSetting('aiGenerateHashtags', value)}
+                />
+                {aiContentSettings.aiGenerateCaption || aiContentSettings.aiGenerateHashtags ? (
+                  <>
+                    <ExtensionToggleRow
+                      label="เขียนทับของเดิม"
+                      theme={theme}
+                      value={aiContentSettings.aiOverwriteExisting}
+                      onValueChange={(value) => updateAiContentSetting('aiOverwriteExisting', value)}
+                    />
+                    <Text className="text-kd-micro text-kd-text-subtle">
+                      {aiContentSettings.aiOverwriteExisting
+                        ? 'AI จะคิดใหม่ทับ caption/hashtags เดิมทุกคลิป (ใช้เครดิต KUBDEE AI)'
+                        : 'AI จะคิดเฉพาะคลิปที่ยังไม่มี caption/hashtags เท่านั้น'}
+                    </Text>
+                  </>
+                ) : null}
               </ScrollView>
             </View>
           </View>
@@ -484,47 +700,6 @@ function getPostPayloadProductCode(video: GeneratedMediaAsset): string | null {
   }
 
   return null;
-}
-
-function getPostedVideoIds(result: NativeShopeePostingResult, videos: GeneratedMediaAsset[]): string[] {
-  const resultSuccessIds = result.results
-    ?.filter((entry) => entry.success)
-    .map((entry) => videos[entry.videoIndex]?.id)
-    .filter((videoId): videoId is string => Boolean(videoId));
-
-  if (resultSuccessIds?.length) {
-    return resultSuccessIds;
-  }
-
-  const postedCount = Math.max(0, Math.min(result.postedCount ?? result.successCount ?? 0, videos.length));
-  if (postedCount > 0) {
-    return videos.slice(0, postedCount).map((video) => video.id);
-  }
-
-  if (result.success) {
-    return videos.map((video) => video.id);
-  }
-
-  return [];
-}
-
-function removePostedVideosFromQueue(
-  result: NativeShopeePostingResult,
-  videos: GeneratedMediaAsset[],
-  onClearPendingVideos: (() => void) | undefined,
-  onRemovePendingVideo: ((videoId: string) => void) | undefined
-): void {
-  const postedVideoIds = getPostedVideoIds(result, videos);
-  if (postedVideoIds.length === 0) {
-    return;
-  }
-
-  if (postedVideoIds.length >= videos.length) {
-    onClearPendingVideos?.();
-    return;
-  }
-
-  postedVideoIds.forEach((videoId) => onRemovePendingVideo?.(videoId));
 }
 
 function getPostVideoFallbackLabel(video: GeneratedMediaAsset, index: number): string {
@@ -607,25 +782,6 @@ function PostVideoRow({
       >
         <X size={19} color={theme.textMuted} strokeWidth={2} />
       </Pressable>
-    </View>
-  );
-}
-
-function SettingsRow({
-  label,
-  value,
-  theme,
-}: {
-  label: string;
-  value: string;
-  theme: KubdeeTheme;
-}): React.JSX.Element {
-  return (
-    <View className="flex-row items-center gap-2.5 rounded-kd-2xl border border-kd-border bg-kd-card p-2.5">
-      <Text className="min-w-[104px] text-kd-micro font-semibold text-kd-text-subtle">{label}</Text>
-      <Text className="flex-1 text-kd-caption font-medium text-kd-text" numberOfLines={2}>
-        {value}
-      </Text>
     </View>
   );
 }

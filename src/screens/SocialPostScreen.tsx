@@ -1,9 +1,11 @@
-import { ActivityIndicator, Image as NativeImage, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Image as NativeImage, Modal, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FolderOpen, Send, Video, X } from 'lucide-react-native';
+import { FolderOpen, Send, Settings, SlidersHorizontal, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner-native';
 
+import { generateAutoPilotProductContent } from '@/autopilot/aiCaption';
 import {
   createFacebookBufferPost,
   createInstagramBufferPost,
@@ -18,6 +20,12 @@ import {
 } from '@/autopilot/bufferPostText';
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
+import {
+  DEFAULT_SOCIAL_POST_AI_CONTENT_SETTINGS,
+  getSocialPostAiContentSettings,
+  saveSocialPostAiContentSettings,
+} from '@/autopilot/socialPostAiContentSettingsStore';
+import type { SocialPostAiContentSettings } from '@/autopilot/socialPostAiContentSettingsStore';
 import { FacebookLogo, InstagramLogo, YouTubeLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import {
@@ -25,6 +33,7 @@ import {
   InstagramPostingSettingsBlock,
   YoutubePostingSettingsBlock,
 } from '@/screens/autopilot/blocks/FacebookPostingSettingsBlock';
+import { ExtensionToggleRow, HashtagCountSelector } from '@/screens/autopilot/blocks/SettingsBlocks';
 import { FACEBOOK_BLUE, INSTAGRAM_PINK, YOUTUBE_RED } from '@/theme/brandColors';
 import { alpha } from '@/theme/tokens';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -149,12 +158,15 @@ export default function SocialPostScreen({
   onOpenVideoLibrary,
 }: SocialPostScreenProps): React.JSX.Element {
   const meta = SERVICE_META[service];
-  const { getAssetsByKind } = useGeneratedMedia();
+  const { getAssetsByKind, updateGeneratedMediaAsset } = useGeneratedMedia();
+  const insets = useSafeAreaInsets();
   const [channels, setChannels] = useState<LibrarySocialChannels>({ ...EMPTY_CHANNELS });
   const [isPosting, setIsPosting] = useState(false);
   const [progressText, setProgressText] = useState<string | null>(null);
   const [stopRequested, setStopRequested] = useState(false);
   const [assetResults, setAssetResults] = useState<Record<string, AssetPostResult>>({});
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [aiContentSettings, setAiContentSettings] = useState<SocialPostAiContentSettings>(DEFAULT_SOCIAL_POST_AI_CONTENT_SETTINGS);
   const stopRef = useRef(false);
 
   useEffect(() => {
@@ -170,6 +182,18 @@ export default function SocialPostScreen({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getSocialPostAiContentSettings().then((settings) => {
+      if (!cancelled) {
+        setAiContentSettings(settings);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const updateChannels = useCallback((patch: Partial<LibrarySocialChannels>): void => {
     setChannels((current) => {
       const next = { ...current, ...patch };
@@ -177,6 +201,17 @@ export default function SocialPostScreen({
       return next;
     });
   }, []);
+
+  const updateAiContentSetting = useCallback(
+    <K extends keyof SocialPostAiContentSettings>(key: K, value: SocialPostAiContentSettings[K]): void => {
+      setAiContentSettings((current) => {
+        const next = { ...current, [key]: value };
+        void saveSocialPostAiContentSettings(next);
+        return next;
+      });
+    },
+    []
+  );
 
   const channelId = channels[CHANNEL_KEYS[service]];
 
@@ -230,6 +265,65 @@ export default function SocialPostScreen({
     let failureCount = 0;
     let stoppedEarly = false;
 
+    const shouldGenerateAiContent = aiContentSettings.aiGenerateCaption || aiContentSettings.aiGenerateHashtags;
+    const aiSettings = {
+      aiGenerateCaption: aiContentSettings.aiGenerateCaption,
+      aiGenerateHashtags: aiContentSettings.aiGenerateHashtags,
+      aiGenerateCta: false,
+      aiHashtagCount: aiContentSettings.aiHashtagCount,
+    };
+
+    const generateAssetAiContent = async (
+      asset: GeneratedMediaAsset,
+      index: number
+    ): Promise<Partial<Pick<GeneratedMediaAsset, 'caption' | 'hashtags'>>> => {
+      if (!shouldGenerateAiContent) {
+        return {};
+      }
+
+      // ปิด "เขียนทับของเดิม" อยู่ → คิดเฉพาะ field ที่คลิปนี้ยังว่างเท่านั้น
+      const needsCaption = aiContentSettings.aiGenerateCaption
+        && (aiContentSettings.aiOverwriteExisting || !asset.caption?.trim());
+      const needsHashtags = aiContentSettings.aiGenerateHashtags
+        && (aiContentSettings.aiOverwriteExisting || !asset.hashtags?.trim());
+      if (!needsCaption && !needsHashtags) {
+        return {};
+      }
+
+      const result = await generateAutoPilotProductContent({
+        product: {
+          name: getPostProductName(asset) || getPostVideoFallbackLabel(asset, index),
+          description: '',
+          productId: '',
+          productUrl: asset.productUrl || '',
+          caption: asset.caption || '',
+          hashtags: asset.hashtags || '',
+          cta: '',
+        },
+        settings: { ...aiSettings, aiGenerateCaption: needsCaption, aiGenerateHashtags: needsHashtags },
+      });
+
+      if (stopRef.current || !result.success) {
+        // กดหยุดระหว่าง AI กำลังคิดคลิปนี้ล่วงหน้า หรือ AI พัง — ใช้ค่าเดิม ไม่เขียนทับ
+        return {};
+      }
+
+      const patch: Partial<Pick<GeneratedMediaAsset, 'caption' | 'hashtags'>> = {};
+      if (needsCaption && result.caption) {
+        patch.caption = result.caption;
+      }
+      if (needsHashtags && result.hashtags) {
+        patch.hashtags = result.hashtags;
+      }
+      if (Object.keys(patch).length > 0) {
+        void updateGeneratedMediaAsset(asset.id, patch);
+      }
+      return patch;
+    };
+
+    // คิด caption ของคลิปแรกทันที ให้ overlap กับตอนคลิปแรกกำลังอัปโหลด/โพสต์
+    let nextAiContentPromise = generateAssetAiContent(assets[0], 0);
+
     try {
       for (let index = 0; index < assets.length; index += 1) {
         // "หยุดหลังคลิปนี้" — เช็คก่อนเริ่มคลิปถัดไป คลิปที่กำลังโพสต์อยู่ทำจนจบ
@@ -242,7 +336,16 @@ export default function SocialPostScreen({
         const label = getPostVideoFallbackLabel(asset, index);
         const position = `${index + 1}/${assets.length}`;
 
-        if (!isLocalPostableVideo(asset) || !asset.fileUri) {
+        const aiPatch = await nextAiContentPromise;
+        const effectiveAsset = { ...asset, ...aiPatch };
+
+        // คิด caption คลิปถัดไปตอนนี้เลย ให้ทำงานคู่ขนานกับตอนคลิปนี้กำลังอัปโหลด/โพสต์
+        const nextAsset = assets[index + 1];
+        nextAiContentPromise = nextAsset && !stopRef.current
+          ? generateAssetAiContent(nextAsset, index + 1)
+          : Promise.resolve({});
+
+        if (!isLocalPostableVideo(effectiveAsset) || !effectiveAsset.fileUri) {
           failureCount += 1;
           recordResult(asset.id, { ok: false, message: 'ข้าม: ไม่พบไฟล์วิดีโอในเครื่อง' });
           continue;
@@ -251,7 +354,7 @@ export default function SocialPostScreen({
         setProgressText(`กำลังอัปโหลด ${position}: ${label}`);
         let assetUrl: string;
         try {
-          assetUrl = await uploadBufferAsset(asset.fileUri, asset.mimeType || 'video/mp4');
+          assetUrl = await uploadBufferAsset(effectiveAsset.fileUri, effectiveAsset.mimeType || 'video/mp4');
         } catch (error) {
           failureCount += 1;
           recordResult(asset.id, {
@@ -262,10 +365,10 @@ export default function SocialPostScreen({
         }
 
         const source: BufferPostTextSource = {
-          caption: asset.caption,
-          hashtags: asset.hashtags,
-          productUrl: asset.productUrl,
-          name: getPostProductName(asset),
+          caption: effectiveAsset.caption,
+          hashtags: effectiveAsset.hashtags,
+          productUrl: effectiveAsset.productUrl,
+          name: getPostProductName(effectiveAsset),
         };
         // ลิงก์สินค้าใส่ในตัวโพสต์เลย — พฤติกรรมเดียวกับ auto pilot ตอนนี้
         // (first comment ปิดอยู่เพราะ Buffer แพลนฟรีไม่รับ first comment)
@@ -282,7 +385,7 @@ export default function SocialPostScreen({
             const hasContentTitle = !!(source.name?.trim() || source.caption?.trim());
             const title = hasContentTitle
               ? buildYoutubeTitle(source)
-              : (asset.title?.trim() || 'วิดีโอสินค้า').slice(0, YOUTUBE_TITLE_MAX_LENGTH);
+              : (effectiveAsset.title?.trim() || 'วิดีโอสินค้า').slice(0, YOUTUBE_TITLE_MAX_LENGTH);
             await createYoutubeBufferPost({ channelId: serviceChannelId, text, assetUrl, title });
           }
           postedIds.push(asset.id);
@@ -320,6 +423,7 @@ export default function SocialPostScreen({
       postedIds.forEach((videoId) => onRemovePendingVideo(videoId));
     }
   }, [
+    aiContentSettings,
     channelId,
     isPosting,
     meta.label,
@@ -328,6 +432,7 @@ export default function SocialPostScreen({
     postQueueVideos,
     recordResult,
     service,
+    updateGeneratedMediaAsset,
   ]);
 
   const renderChannelPicker = (): React.JSX.Element => {
@@ -400,6 +505,14 @@ export default function SocialPostScreen({
                   {meta.subtitle}
                 </Text>
               </View>
+              <Pressable
+                accessibilityLabel={`ตั้งค่า ${meta.label}`}
+                accessibilityRole="button"
+                onPress={() => setIsSettingsOpen(true)}
+                className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted active:opacity-70 dark:bg-kd-card-muted"
+              >
+                <SlidersHorizontal size={15} color={theme.textMuted} strokeWidth={2.2} />
+              </Pressable>
             </View>
             {renderChannelPicker()}
           </View>
@@ -521,6 +634,76 @@ export default function SocialPostScreen({
             </Pressable>
           )}
         </View>
+      ) : null}
+
+      {isSettingsOpen ? (
+        <Modal animationType="fade" onRequestClose={() => setIsSettingsOpen(false)} transparent visible>
+          <View
+            className="flex-1 justify-center bg-black/60"
+            style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+          >
+            <View
+              className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
+              style={{ height: '95%' }}
+            >
+              <View className="flex-row items-center justify-between border-b border-kd-border bg-kd-card px-3 py-3">
+                <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                  <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
+                    <Settings size={15} color={theme.textMuted} strokeWidth={2.1} />
+                  </View>
+                  <Text className="text-kd-label font-semibold text-kd-text">ตั้งค่า {meta.label}</Text>
+                </View>
+                <Pressable
+                  accessibilityLabel={`ปิดตั้งค่า ${meta.label}`}
+                  accessibilityRole="button"
+                  onPress={() => setIsSettingsOpen(false)}
+                  className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
+                >
+                  <X size={15} color={theme.textMuted} strokeWidth={2.3} />
+                </Pressable>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 p-2.5">
+                <ExtensionToggleRow
+                  label="AI คิด Caption"
+                  theme={theme}
+                  value={aiContentSettings.aiGenerateCaption}
+                  onValueChange={(value) => updateAiContentSetting('aiGenerateCaption', value)}
+                />
+                <ExtensionToggleRow
+                  label="AI คิด Hashtags"
+                  rightSlot={
+                    aiContentSettings.aiGenerateHashtags ? (
+                      <HashtagCountSelector
+                        enabled={aiContentSettings.aiGenerateHashtags}
+                        theme={theme}
+                        value={aiContentSettings.aiHashtagCount}
+                        onChange={(value) => updateAiContentSetting('aiHashtagCount', value)}
+                      />
+                    ) : null
+                  }
+                  theme={theme}
+                  value={aiContentSettings.aiGenerateHashtags}
+                  onValueChange={(value) => updateAiContentSetting('aiGenerateHashtags', value)}
+                />
+                {aiContentSettings.aiGenerateCaption || aiContentSettings.aiGenerateHashtags ? (
+                  <>
+                    <ExtensionToggleRow
+                      label="เขียนทับของเดิม"
+                      theme={theme}
+                      value={aiContentSettings.aiOverwriteExisting}
+                      onValueChange={(value) => updateAiContentSetting('aiOverwriteExisting', value)}
+                    />
+                    <Text className="text-kd-micro text-kd-text-subtle">
+                      {aiContentSettings.aiOverwriteExisting
+                        ? 'AI จะคิดใหม่ทับ caption/hashtags เดิมทุกคลิป (ใช้เครดิต KUBDEE AI)'
+                        : 'AI จะคิดเฉพาะคลิปที่ยังไม่มี caption/hashtags เท่านั้น'}
+                    </Text>
+                  </>
+                ) : null}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       ) : null}
     </View>
   );

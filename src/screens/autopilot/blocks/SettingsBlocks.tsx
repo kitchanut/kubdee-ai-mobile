@@ -155,7 +155,7 @@ export function ExtensionBasicSettingsBlock({
   );
 }
 
-function HashtagCountSelector({
+export function HashtagCountSelector({
   enabled,
   theme,
   value,
@@ -195,7 +195,7 @@ function HashtagCountSelector({
   );
 }
 
-function ExtensionToggleRow({
+export function ExtensionToggleRow({
   disabled = false,
   label,
   rightSlot,

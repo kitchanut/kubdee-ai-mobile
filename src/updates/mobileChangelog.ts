@@ -44,6 +44,33 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.7.0',
+    date: '2026-07-12',
+    highlight: 'AI คิด Caption/Hashtags อัตโนมัติตอนโพสต์',
+    changes: [
+      {
+        type: 'feature',
+        text: 'เพิ่มปุ่มให้ AI คิด Caption/Hashtags อัตโนมัติตอนโพสต์ Shopee และ Facebook/Instagram/YouTube เลือกได้ว่าจะเขียนทับของเดิมหรือคิดเฉพาะคลิปที่ยังไม่มี'
+      },
+      {
+        type: 'improved',
+        text: 'โพสต์ Shopee: กดโพสต์แล้วเข้าแอป Shopee ทันที พร้อมโชว์ความคืบหน้าทีละคลิป'
+      },
+      {
+        type: 'fixed',
+        text: 'แก้บั๊กปุ่ม "หยุด" ระหว่างโพสต์ Shopee บางจังหวะไม่หยุดจริง'
+      },
+      {
+        type: 'fixed',
+        text: 'แก้บั๊กโพสต์ Shopee ค้างไม่จบในบางกรณี'
+      },
+      {
+        type: 'improved',
+        text: 'ปรับหน้าตั้งค่า Shopee ให้เป็นกล่องกลางจอ แทนแบบเลื่อนขึ้นจากล่าง'
+      }
+    ]
+  },
+  {
     version: '0.6.3',
     date: '2026-07-12',
     highlight: 'จัดระเบียบหน้าออโต้',
