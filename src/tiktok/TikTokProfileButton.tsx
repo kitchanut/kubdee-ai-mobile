@@ -1,13 +1,30 @@
-import { ActivityIndicator, Alert, Modal, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Check, X } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 import { TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { TikTokWebView } from '@/tiktok/TikTokWebView';
-import { clearProfileTikTokSession, isProfileLoggedIn } from '@/tiktok/tiktokCookieStore';
+import {
+  TIKTOK_URL,
+  clearLiveTikTokCookies,
+  clearProfileTikTokSession,
+  isProfileLoggedIn,
+} from '@/tiktok/tiktokCookieStore';
 import type { KubdeeTheme } from '@/theme/tokens';
+
+// Desktop UA so the logout reset load never deep-links into the native TikTok app.
+const DESKTOP_CHROME_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+// Clearing cookies alone does NOT log TikTok out: it keeps auth tokens in localStorage and
+// silently re-authenticates on the next load. Wipe web storage on the tiktok origin BEFORE
+// its scripts run (so they can't re-auth), then again after load, and report back.
+const RESET_STORAGE_BEFORE = 'try{localStorage.clear();sessionStorage.clear();}catch(e){}; true;';
+const RESET_STORAGE_AFTER =
+  'try{localStorage.clear();sessionStorage.clear();if(window.indexedDB&&indexedDB.databases){indexedDB.databases().then(function(d){d.forEach(function(x){try{indexedDB.deleteDatabase(x.name);}catch(e){}});});}}catch(e){}; if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage("reset-done");} true;';
 
 interface TikTokProfileButtonProps {
   profileId: string;
@@ -29,6 +46,7 @@ export default function TikTokProfileButton({
   const [open, setOpen] = useState(false);
   // ผลตรวจ login ผูกกับ profileId เพื่อ derive สถานะโดยไม่ต้อง reset state ใน effect
   const [status, setStatus] = useState<{ profileId: string; loggedIn: boolean } | null>(null);
+  const [resetting, setResetting] = useState(false);
   const loggedIn = status && status.profileId === profileId ? status.loggedIn : null;
 
   useEffect(() => {
@@ -71,27 +89,55 @@ export default function TikTokProfileButton({
     }
   }, [profileId, handleLoginState]);
 
-  // ออกจากระบบ = ล้าง cookie TikTok ของโปรไฟล์นี้ + ลบไฟล์ snapshot
+  // ปิด reset webview + เคลียร์ cookie ซ้ำ (กัน tiktok เซ็ต cookie ใหม่ตอนโหลด) แล้วตั้งสถานะ logged-out
+  const finishReset = useCallback(async (): Promise<void> => {
+    try {
+      await clearLiveTikTokCookies();
+    } catch {
+      // best-effort
+    }
+    setResetting(false);
+    handleLoginState(false);
+  }, [handleLoginState]);
+
+  // ออกจากระบบ = ล้าง cookie + snapshot แล้วเปิด reset webview ไปล้าง localStorage/IndexedDB
+  // บน origin tiktok (ไม่งั้น TikTok เอา token ใน localStorage มา auth กลับ = ยัง login อยู่)
+  const performSignOut = useCallback(async (): Promise<void> => {
+    try {
+      await clearProfileTikTokSession(profileId);
+    } catch {
+      // ไปล้าง web storage ต่อแม้เคลียร์ cookie พลาด
+    }
+    setResetting(true);
+  }, [profileId]);
+
   const signOut = useCallback((): void => {
     Alert.alert(
       'ออกจากระบบ TikTok?',
-      `เซสชัน TikTok ของ "${profileName || 'โปรไฟล์นี้'}" จะถูกล้างออกจากเครื่อง (ลบ cookie) ต้องล็อกอินใหม่เมื่อใช้งานอีกครั้ง`,
+      `เซสชัน TikTok ของ "${profileName || 'โปรไฟล์นี้'}" จะถูกล้างออกจากเครื่อง ต้องล็อกอินใหม่เมื่อใช้งานอีกครั้ง`,
       [
         { text: 'ยกเลิก', style: 'cancel' },
         {
           text: 'ออกจากระบบ',
           style: 'destructive',
           onPress: () => {
-            void clearProfileTikTokSession(profileId)
-              .then(() => handleLoginState(false))
-              .catch(() => {
-                Alert.alert('ล้าง session ไม่สำเร็จ', 'ลองใหม่อีกครั้ง');
-              });
+            void performSignOut();
           },
         },
       ]
     );
-  }, [profileId, profileName, handleLoginState]);
+  }, [profileName, performSignOut]);
+
+  // กันค้าง: ถ้า reset webview ไม่ยิง reset-done ภายใน 8 วิ ให้จบเอง
+  useEffect(() => {
+    if (!resetting) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      void finishReset();
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [resetting, finishReset]);
 
   // แตะปุ่ม: ยังไม่ล็อกอิน → เปิด WebView; ล็อกอินแล้ว → เมนู เปิด/ออกจากระบบ
   const handlePress = useCallback((): void => {
@@ -169,6 +215,54 @@ export default function TikTokProfileButton({
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* reset webview (ซ่อน) — ล้าง localStorage/IndexedDB บน origin tiktok ตอนออกจากระบบ */}
+      <Modal
+        visible={resetting}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          void finishReset();
+        }}
+      >
+        <View className="flex-1 items-center justify-center bg-black/70">
+          <View className="items-center gap-3 rounded-kd-xl bg-kd-panel px-6 py-5">
+            <ActivityIndicator color={theme.textMuted} />
+            <Text className="text-kd-caption font-medium text-kd-text">กำลังออกจากระบบ...</Text>
+          </View>
+          {resetting ? (
+            <WebView
+              source={{ uri: TIKTOK_URL }}
+              userAgent={DESKTOP_CHROME_UA}
+              javaScriptEnabled
+              domStorageEnabled
+              thirdPartyCookiesEnabled
+              sharedCookiesEnabled
+              cacheEnabled={false}
+              injectedJavaScriptBeforeContentLoaded={RESET_STORAGE_BEFORE}
+              injectedJavaScript={RESET_STORAGE_AFTER}
+              onMessage={(event) => {
+                if (event.nativeEvent.data === 'reset-done') {
+                  void finishReset();
+                }
+              }}
+              onError={() => {
+                void finishReset();
+              }}
+              style={styles.hiddenWebview}
+            />
+          ) : null}
+        </View>
+      </Modal>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  hiddenWebview: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
+});
