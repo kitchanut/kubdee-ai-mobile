@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.6.1',
+    date: '2026-07-12',
+    highlight: 'ปรับโฉมแถบเครื่องมือในคลังวิดีโอ',
+    changes: [
+      {
+        type: 'improved',
+        text: 'คลัง: ปรับปุ่มแถบเลือกรายการ — โพสต์โซเชียล / Cloud Transfer / แก้ไข เป็นปุ่มโทนรอง ปุ่มลบใช้ไอคอนสีแดงให้แยกชัด และเปลี่ยนไอคอน Cloud Transfer เป็นรูปก้อนเมฆอัปโหลด/ดาวน์โหลดทั้งชุด'
+      }
+    ]
+  },
+  {
     version: '0.6.0',
     date: '2026-07-12',
     highlight: 'โพสต์วิดีโอจากคลังไป Facebook / Instagram / YouTube',
