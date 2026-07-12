@@ -148,6 +148,13 @@ export function TikTokWebView({
         cacheEnabled
         originWhitelist={['https://*', 'http://*']}
         setSupportMultipleWindows={false}
+        // อยู่ในเว็บ TikTok เท่านั้น — บล็อก deep link (snssdk1233://, tiktok://, intent://,
+        // market:// ฯลฯ) ที่หน้าเว็บใช้เปิดแอป TikTok เนทีฟ ไม่งั้น WebView จะเด้งออกไปเปิดแอป
+        onShouldStartLoadWithRequest={(request) =>
+          request.url.startsWith('https://') ||
+          request.url.startsWith('http://') ||
+          request.url.startsWith('about:')
+        }
         onNavigationStateChange={handleNavigationStateChange}
         style={styles.webview}
       />
