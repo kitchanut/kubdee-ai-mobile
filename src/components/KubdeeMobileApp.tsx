@@ -31,7 +31,6 @@ import PlanRequiredScreen from '@/screens/PlanRequiredScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import ShopeeScreen from '@/screens/ShopeeScreen';
 import SocialPostScreen from '@/screens/SocialPostScreen';
-import TikTokScreen from '@/tiktok/TikTokScreen';
 import {
   isThemeMode,
   resolveThemeMode,
@@ -678,8 +677,6 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             onSelectProfile={setSelectedProfileId}
           />
         );
-      case 'tiktok':
-        return <TikTokScreen profileId={selectedProfileId} theme={theme} />;
       case 'youtube':
         return renderSocialPostScreen('youtube');
       case 'facebook':

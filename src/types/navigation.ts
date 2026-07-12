@@ -3,7 +3,6 @@ export type DeviceMode = 'desktop' | 'mobile';
 export type TabId =
   | 'pipeline'
   | 'image-create'
-  | 'tiktok'
   | 'shopee'
   | 'youtube'
   | 'facebook'

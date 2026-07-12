@@ -31,7 +31,6 @@ function isTabId(value: string | null | undefined): value is TabId {
   return (
     value === 'pipeline' ||
     value === 'image-create' ||
-    value === 'tiktok' ||
     value === 'shopee' ||
     value === 'youtube' ||
     value === 'facebook' ||

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react-native';
 import { Pressable, View } from 'react-native';
 
-import { FacebookLogo, InstagramLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
+import { FacebookLogo, InstagramLogo, ShopeeLogo, YouTubeLogo } from '@/components/BrandLogos';
 import type { KubdeeTheme } from '@/theme/tokens';
 import type { TabId } from '@/types/navigation';
 
@@ -29,7 +29,6 @@ const tabs: {
   { id: 'pipeline', label: 'Auto Pipeline', icon: Star },
   { id: 'image-create', label: 'สร้างภาพ', icon: ImagePlus },
   { id: 'library', label: 'คลัง', icon: FolderOpen },
-  { id: 'tiktok', label: 'TikTok', icon: TikTokLogo, brandIcon: true },
   { id: 'shopee', label: 'Shopee', icon: ShopeeLogo, brandIcon: true },
   { id: 'facebook', label: 'Facebook', icon: FacebookLogo, brandIcon: true },
   { id: 'instagram', label: 'Instagram', icon: InstagramLogo, brandIcon: true },
