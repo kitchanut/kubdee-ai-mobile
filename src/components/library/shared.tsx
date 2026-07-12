@@ -512,7 +512,7 @@ export function SelectionBar({
             onPress={onDelete}
             className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
           >
-            <Trash2 size={12} color={theme.textSubtle} strokeWidth={2} />
+            <Trash2 size={12} color={theme.red} strokeWidth={2} />
           </Pressable>
         </View>
       </View>
