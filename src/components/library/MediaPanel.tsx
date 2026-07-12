@@ -5,7 +5,7 @@ import {
   ChevronRight,
   ChevronsDown,
   ChevronsUp,
-  Download,
+  CloudDownload,
   Grid2X2,
   Image as ImageIcon,
   Package,
@@ -1012,7 +1012,7 @@ export default function MediaPanel({
               {kind === 'videos' ? (
                 <HeaderIconButton
                   theme={theme}
-                  icon={Download}
+                  icon={CloudDownload}
                   label={cloudInboxLoading ? 'กำลังโหลด Cloud Transfer' : 'รับ Cloud Transfer'}
                   onPress={() => void openCloudInbox()}
                 />

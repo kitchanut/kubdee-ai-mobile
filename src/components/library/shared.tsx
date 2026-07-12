@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Check, ChevronDown, ChevronUp, Pencil, Search, Share2, Star, Trash2, Upload, X } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronUp, CloudUpload, Pencil, Search, Share2, Star, Trash2, X } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
 import { ShopeeLogo } from '@/components/BrandLogos';
@@ -495,7 +495,7 @@ export function SelectionBar({
               onPress={onCloudUpload}
               className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
             >
-              <Upload size={12} color={theme.textSubtle} strokeWidth={2} />
+              <CloudUpload size={13} color={theme.textSubtle} strokeWidth={2} />
             </Pressable>
           ) : null}
           <Pressable

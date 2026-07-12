@@ -1,5 +1,5 @@
 import { ActivityIndicator, Image as NativeImage, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
-import { ChevronRight, Download, Image as ImageIcon, Package, Play, RefreshCw, Search, ShoppingBag, Upload, Video, X } from 'lucide-react-native';
+import { ChevronRight, CloudDownload, CloudUpload, Image as ImageIcon, Package, Play, RefreshCw, Search, ShoppingBag, Upload, Video, X } from 'lucide-react-native';
 
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import Text from '@/components/ui/KubdeeText';
@@ -172,7 +172,7 @@ export function MediaPanelModals({
           <View className="w-full max-w-[420px] overflow-hidden rounded-[18px] border border-kd-border bg-kd-panel">
             <View className="flex-row items-center gap-3 border-b border-kd-red/15 px-4 py-3 dark:border-kd-red/30">
               <View className="h-10 w-10 items-center justify-center rounded-kd-lg bg-kd-red-soft">
-                <Upload size={18} color={accentColor} strokeWidth={2.2} />
+                <CloudUpload size={18} color={accentColor} strokeWidth={2.2} />
               </View>
               <View className="min-w-0 flex-1">
                 <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
@@ -258,7 +258,7 @@ export function MediaPanelModals({
                 onPress={() => void confirmCloudUpload()}
                 className="h-9 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-red px-3 disabled:opacity-50"
               >
-                {cloudTransferWorking ? <ActivityIndicator color={theme.white} size="small" /> : <Upload size={13} color={theme.white} strokeWidth={2.4} />}
+                {cloudTransferWorking ? <ActivityIndicator color={theme.white} size="small" /> : <CloudUpload size={13} color={theme.white} strokeWidth={2.4} />}
                 <Text className="text-kd-caption font-semibold text-white">เริ่มส่งขึ้น</Text>
               </Pressable>
             </View>
@@ -276,9 +276,9 @@ export function MediaPanelModals({
             <View className="flex-row items-center gap-3 border-b border-kd-border px-4 py-3">
               <View className="h-10 w-10 items-center justify-center rounded-kd-lg bg-kd-red-soft">
                 {cloudTransferStatus?.mode === 'download' ? (
-                  <Download size={18} color={accentColor} strokeWidth={2.2} />
+                  <CloudDownload size={18} color={accentColor} strokeWidth={2.2} />
                 ) : (
-                  <Upload size={18} color={accentColor} strokeWidth={2.2} />
+                  <CloudUpload size={18} color={accentColor} strokeWidth={2.2} />
                 )}
               </View>
               <View className="min-w-0 flex-1">
@@ -341,7 +341,7 @@ export function MediaPanelModals({
           >
             <View className="flex-row items-center justify-between gap-3 border-b border-kd-border px-4 py-3">
               <View className="min-w-0 flex-1 flex-row items-center gap-2">
-                <Download size={16} color={accentColor} strokeWidth={2.2} />
+                <CloudDownload size={16} color={accentColor} strokeWidth={2.2} />
                 <View className="min-w-0 flex-1">
                   <Text numberOfLines={1} className="text-kd-title font-semibold text-kd-text">
                     Cloud Transfer
@@ -480,7 +480,7 @@ export function MediaPanelModals({
                 })
               ) : (
                 <View className="items-center justify-center gap-2 py-12">
-                  <Download size={28} color={theme.textSubtle} strokeWidth={1.5} />
+                  <CloudDownload size={28} color={theme.textSubtle} strokeWidth={1.5} />
                   <Text className="text-kd-body font-semibold text-kd-text-muted">ยังไม่มีวิดีโอใน Cloud Transfer</Text>
                   <Text className="max-w-[240px] text-center text-kd-caption text-kd-text-subtle">
                     วิดีโอที่ส่งจาก Desktop หรือ Extension จะมาแสดงที่นี่
@@ -504,7 +504,7 @@ export function MediaPanelModals({
                 onPress={() => void downloadSelectedCloudTransfers()}
                 className="h-11 flex-1 flex-row items-center justify-center gap-1.5 rounded-kd-lg bg-kd-red px-3 disabled:opacity-50"
               >
-                <Download size={14} color={theme.white} strokeWidth={2.3} />
+                <CloudDownload size={14} color={theme.white} strokeWidth={2.3} />
                 <Text className="text-kd-body font-semibold text-white">
                   รับเข้าคลัง {selectedCloudTransferIds.size || ''}
                 </Text>
@@ -640,7 +640,7 @@ export function MediaPanelModals({
                 onPress={() => void pickMediaFiles(true)}
                 className="min-h-10 flex-row items-center gap-1.5 rounded-kd-lg px-1 disabled:opacity-50"
               >
-                <Upload size={13} color={accentColor} strokeWidth={2.2} />
+                <CloudUpload size={13} color={accentColor} strokeWidth={2.2} />
                 <Text className="text-kd-caption font-semibold" style={{ color: accentColor }}>
                   เพิ่มไฟล์
                 </Text>
@@ -662,7 +662,7 @@ export function MediaPanelModals({
                   className="h-10 min-w-28 flex-row items-center justify-center gap-1.5 rounded-kd-lg px-4 disabled:opacity-50"
                   style={{ backgroundColor: accentColor }}
                 >
-                  {isUploadingMedia ? <ActivityIndicator color={theme.white} size="small" /> : <Upload size={13} color={theme.white} strokeWidth={2.2} />}
+                  {isUploadingMedia ? <ActivityIndicator color={theme.white} size="small" /> : <CloudUpload size={13} color={theme.white} strokeWidth={2.2} />}
                   <Text className="text-kd-caption font-semibold text-white">
                     {isUploadingMedia ? 'กำลังอัพโหลด...' : `อัพโหลด ${uploadDrafts.length} ไฟล์`}
                   </Text>
@@ -819,7 +819,7 @@ export function MediaPanelModals({
                         {isReplacingEditVideo ? (
                           <ActivityIndicator color={theme.white} size="small" />
                         ) : (
-                          <Upload size={13} color={theme.white} strokeWidth={2.3} />
+                          <CloudUpload size={13} color={theme.white} strokeWidth={2.3} />
                         )}
                         <Text className="text-kd-caption font-semibold text-white">
                           {isReplacingEditVideo ? 'กำลังแทนที่' : 'แทนที่'}
