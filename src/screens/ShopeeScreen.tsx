@@ -1,5 +1,5 @@
 import { ActivityIndicator, Alert, Image as NativeImage, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { FolderOpen, Send, SlidersHorizontal, Video, X } from 'lucide-react-native';
+import { FolderOpen, Send, SlidersHorizontal, TriangleAlert, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner-native';
 
@@ -102,16 +102,12 @@ export default function ShopeeScreen({
       .map((videoId) => byId.get(videoId))
       .filter((video): video is GeneratedMediaAsset => !!video);
   }, [generatedVideos, pendingVideoIds]);
-  const readyPostVideoCount = useMemo(
-    () => postQueueVideos.filter(isLocalPostableVideo).length,
-    [postQueueVideos]
-  );
+  // โพสต์ได้เฉพาะคลิปที่มีไฟล์ในเครื่อง + ลิงก์สินค้า Shopee (short link) + ไม่ใช่สินค้าผิดแพลตฟอร์ม
+  const postableVideos = useMemo(() => postQueueVideos.filter(isReadyForShopeePost), [postQueueVideos]);
+  const skipBreakdown = useMemo(() => summarizeShopeePostBlocks(postQueueVideos), [postQueueVideos]);
+  const blockedCount = postQueueVideos.length - postableVideos.length;
   const missingQueuedVideoCount = pendingVideoIds.length - postQueueVideos.length;
-  const canPost =
-    postQueueVideos.length > 0 &&
-    readyPostVideoCount === postQueueVideos.length &&
-    !isPosting &&
-    !!selectedProfileId;
+  const canPost = postableVideos.length > 0 && !isPosting && !!selectedProfileId;
 
   const appendPostLog = useCallback((message: string, ts = Date.now()): void => {
     setPostLogs((current) => [...current, { message, ts }].slice(-MAX_AUTOMATION_LOGS_PER_RUN));
@@ -134,10 +130,8 @@ export default function ShopeeScreen({
       return;
     }
 
-    const missingFileCount = postQueueVideos.filter((video) => !isLocalPostableVideo(video)).length;
-
-    if (missingFileCount > 0) {
-      const message = `ยังไม่พร้อมโพสต์: ต้องใช้ไฟล์วิดีโอในเครื่อง ${missingFileCount}`;
+    if (postableVideos.length === 0) {
+      const message = 'ไม่มีวิดีโอที่โพสต์ได้ — ต้องมีลิงก์สินค้า Shopee และไม่ใช่สินค้าผิดแพลตฟอร์ม';
       setPostLogs([{ message, ts: Date.now() }]);
       toast.warning(message);
       return;
@@ -147,30 +141,31 @@ export default function ShopeeScreen({
       return;
     }
 
-    // ช่องค้นหาสินค้าของ Shopee หาเจอเฉพาะ short link — ลิงก์เต็มถือว่าใช้ค้นหาไม่ได้
-    const videosWithoutProductUrl = postQueueVideos.filter((video) => !isShopeeShortLink(video.productUrl));
-    const productNameFallbackCount = videosWithoutProductUrl.filter((video) => !!getPostPayloadProductName(video)).length;
-    const missingProductInfoCount = videosWithoutProductUrl.length - productNameFallbackCount;
+    // โพสต์เฉพาะคลิปที่มีลิงก์สินค้า Shopee — ที่เหลือ (ผิดแพลตฟอร์ม/ไม่มีลิงก์/ไฟล์ไม่พร้อม) ข้ามไป
+    const { wrongPlatform: wrongPlatformCount, noLink: noLinkCount, noFile: noFileCount } = skipBreakdown;
 
     setIsPosting(true);
     setIsStoppingPost(false);
     setPostLogs([]);
     stopRequestedRef.current = false;
     beginAutomationActivityRun('shopee-post');
-    appendPostLog(`เริ่มโพสต์ Shopee ${postQueueVideos.length} วิดีโอ`);
+    appendPostLog(`เริ่มโพสต์ Shopee ${postableVideos.length} วิดีโอ`);
 
     try {
       await flushAutomationActivitySnapshot();
 
-      if (productNameFallbackCount > 0) {
-        const message = `ไม่มีลิงก์สินค้า ${productNameFallbackCount} รายการ จะค้นหาด้วยชื่อสินค้าแทน`;
+      if (wrongPlatformCount > 0) {
+        const message = `ข้าม ${wrongPlatformCount} รายการที่มาจากผิดแพลตฟอร์ม (TikTok)`;
         appendPostLog(message);
         toast.warning(message);
       }
-      if (missingProductInfoCount > 0) {
-        const message = `ไม่มีข้อมูลสินค้า ${missingProductInfoCount} รายการ จะโพสต์โดยไม่แนบสินค้า`;
+      if (noLinkCount > 0) {
+        const message = `ข้าม ${noLinkCount} รายการที่ไม่มีลิงก์สินค้า Shopee`;
         appendPostLog(message);
         toast.warning(message);
+      }
+      if (noFileCount > 0) {
+        appendPostLog(`ข้าม ${noFileCount} รายการที่ไฟล์ยังไม่พร้อม`);
       }
 
       const status = await getAccessibilityStatus();
@@ -275,13 +270,13 @@ export default function ShopeeScreen({
         return patch;
       };
 
-      const total = postQueueVideos.length;
+      const total = postableVideos.length;
       let successCount = 0;
       let failedCount = 0;
       let stoppedEarly = false;
       let abortedOnError = false;
       // คิด caption ของคลิปแรกทันที ให้ overlap กับตอนแอป Shopee กำลังเปิดด้านบน
-      let nextAiContentPromise = generateClipAiContent(postQueueVideos[0], 0);
+      let nextAiContentPromise = generateClipAiContent(postableVideos[0], 0);
 
       for (let index = 0; index < total; index += 1) {
         // เช็คก่อนเริ่มคลิปใหม่ทุกครั้ง — native เคลียร์ stop-flag ของตัวเองใหม่ทุกครั้งที่เรียก
@@ -292,7 +287,7 @@ export default function ShopeeScreen({
           break;
         }
 
-        const video = postQueueVideos[index];
+        const video = postableVideos[index];
         appendPostLog(`กำลังทำคลิปที่ ${index + 1}/${total}: ${getPostVideoFallbackLabel(video, index)}`);
 
         const aiPatch = await nextAiContentPromise;
@@ -300,7 +295,7 @@ export default function ShopeeScreen({
 
         // คิด caption คลิปถัดไปตอนนี้เลย ให้ทำงานคู่ขนานกับตอนคลิปนี้กำลังโพสต์ผ่าน native automation
         // (ไม่คิดต่อถ้ากดหยุดแล้ว กันคิด caption เสียเปล่าเพิ่มสำหรับคลิปที่ไม่มีทางได้โพสต์รอบนี้)
-        const nextVideo = postQueueVideos[index + 1];
+        const nextVideo = postableVideos[index + 1];
         nextAiContentPromise = nextVideo && !stopRequestedRef.current
           ? generateClipAiContent(nextVideo, index + 1)
           : Promise.resolve({});
@@ -392,7 +387,7 @@ export default function ShopeeScreen({
       setAutomationActivityRunning('shopee-post', false);
       void flushAutomationActivitySnapshot();
     }
-  }, [aiContentSettings, appendPostLog, isPosting, onRemovePendingVideo, postQueueVideos, updateGeneratedMediaAsset]);
+  }, [aiContentSettings, appendPostLog, isPosting, onRemovePendingVideo, postQueueVideos, postableVideos, skipBreakdown, updateGeneratedMediaAsset]);
 
   const handleStopPost = useCallback(async (): Promise<void> => {
     if (!isPosting || isStoppingPost) {
@@ -475,6 +470,16 @@ export default function ShopeeScreen({
                     <Text className="text-kd-caption font-semibold text-kd-red">ล้างทั้งหมด</Text>
                   </Pressable>
                 </View>
+              </View>
+            ) : null}
+
+            {/* เตือนรายการที่โพสต์ Shopee ไม่ได้ (ไม่มีลิงก์/ผิดแพลตฟอร์ม/ไฟล์ไม่พร้อม) — กดโพสต์จะข้ามให้ */}
+            {blockedCount > 0 ? (
+              <View className="flex-row items-center gap-2 border-b border-kd-border bg-kd-red-soft px-3 py-2">
+                <TriangleAlert size={14} color={theme.red} strokeWidth={2.2} />
+                <Text numberOfLines={2} className="min-w-0 flex-1 text-kd-caption text-kd-red">
+                  {formatShopeeSkipBanner(skipBreakdown)}
+                </Text>
               </View>
             ) : null}
 
@@ -576,7 +581,7 @@ export default function ShopeeScreen({
               >
                 <Send size={16} color={theme.white} strokeWidth={2.2} />
                 <Text className="text-kd-subtitle font-semibold text-white">
-                  {`โพส Shopee ${postQueueVideos.length} คลิป`}
+                  {`โพส Shopee ${postableVideos.length} คลิป`}
                 </Text>
               </Pressable>
             )}
@@ -645,6 +650,67 @@ function isLocalPostableVideo(video: GeneratedMediaAsset): boolean {
   );
 }
 
+// สถานะความพร้อมโพสต์ Shopee ต่อคลิป — 'ok' โพสต์ได้, ที่เหลือถูกข้าม (แต่ยังโชว์ในลิสต์)
+type ShopeePostBlock = 'ok' | 'no-file' | 'wrong-platform' | 'no-link';
+
+// เดาว่าสินค้ามาจากตลาดไหน (Shopee/TikTok) จาก platform flag ก่อน แล้ว fallback ที่ host ของลิงก์
+function resolveVideoMarketplace(video: GeneratedMediaAsset): 'shopee' | 'tiktok' | null {
+  const flag = video.platform?.trim().toLowerCase() ?? '';
+  if (flag.includes('shopee')) return 'shopee';
+  if (flag.includes('tiktok')) return 'tiktok';
+
+  const url = video.productUrl?.trim().toLowerCase() ?? '';
+  if (url.includes('shopee') || url.includes('shp.ee')) return 'shopee';
+  if (url.includes('tiktok') || url.includes('tokopedia')) return 'tiktok';
+
+  return null;
+}
+
+function getShopeePostBlock(video: GeneratedMediaAsset): ShopeePostBlock {
+  if (!isLocalPostableVideo(video)) {
+    return 'no-file';
+  }
+  // สินค้าจาก TikTok/Tokopedia โพสต์ผ่าน Shopee ไม่ได้ — ต้องเตือนว่าเอาเข้ามาผิดแพลตฟอร์ม
+  if (resolveVideoMarketplace(video) === 'tiktok') {
+    return 'wrong-platform';
+  }
+  // ช่องค้นหาสินค้าของ Shopee หาเจอเฉพาะ short link — ไม่มี short link = ผูกสินค้าตอนโพสต์ไม่ได้
+  if (!isShopeeShortLink(video.productUrl)) {
+    return 'no-link';
+  }
+  return 'ok';
+}
+
+function isReadyForShopeePost(video: GeneratedMediaAsset): boolean {
+  return getShopeePostBlock(video) === 'ok';
+}
+
+function summarizeShopeePostBlocks(videos: GeneratedMediaAsset[]): {
+  wrongPlatform: number;
+  noLink: number;
+  noFile: number;
+} {
+  let wrongPlatform = 0;
+  let noLink = 0;
+  let noFile = 0;
+  for (const video of videos) {
+    const block = getShopeePostBlock(video);
+    if (block === 'wrong-platform') wrongPlatform += 1;
+    else if (block === 'no-link') noLink += 1;
+    else if (block === 'no-file') noFile += 1;
+  }
+  return { wrongPlatform, noLink, noFile };
+}
+
+function formatShopeeSkipBanner(breakdown: { wrongPlatform: number; noLink: number; noFile: number }): string {
+  const total = breakdown.wrongPlatform + breakdown.noLink + breakdown.noFile;
+  const parts: string[] = [];
+  if (breakdown.wrongPlatform > 0) parts.push(`ผิดแพลตฟอร์ม ${breakdown.wrongPlatform}`);
+  if (breakdown.noLink > 0) parts.push(`ไม่มีลิงก์ Shopee ${breakdown.noLink}`);
+  if (breakdown.noFile > 0) parts.push(`ไฟล์ไม่พร้อม ${breakdown.noFile}`);
+  return parts.length > 0 ? `ข้าม ${total} รายการที่โพสต์ไม่ได้ · ${parts.join(' · ')}` : '';
+}
+
 function isGenericPostVideoLabel(value: string | null | undefined): boolean {
   const label = value?.trim();
   return !label || label === 'ไฟล์นำเข้า' || label === 'สินค้า';
@@ -688,24 +754,29 @@ function PostVideoRow({
   video: GeneratedMediaAsset;
   onRemove: () => void;
 }): React.JSX.Element {
-  const hasFile = isLocalPostableVideo(video);
-  const hasProductUrl = Boolean(video.productUrl);
-  const hasPostableLink = isShopeeShortLink(video.productUrl);
+  const block = getShopeePostBlock(video);
+  const isBlockedRed = block === 'wrong-platform' || block === 'no-link';
   const productName = getPostPayloadProductName(video);
   const productCode = getPostPayloadProductCode(video);
   const productLabel = productName || getPostVideoFallbackLabel(video, index);
-  const hasProductInfo = hasProductUrl || Boolean(productName || productCode);
   const productMeta = productCode ? `#${productCode}` : productName ? 'มีชื่อสินค้า แต่ยังไม่มีรหัส' : 'ยังไม่ได้ผูกสินค้า';
-  const productStatus = hasPostableLink
-    ? 'มีลิงก์สินค้า'
-    : hasProductUrl
-      ? 'ลิงก์แบบเต็มใช้ค้นหาไม่ได้ จะค้นหาด้วยชื่อสินค้า'
-      : hasProductInfo
-        ? 'ไม่มีลิงก์สินค้า จะค้นหาด้วยชื่อสินค้า'
-        : 'ไม่มีข้อมูลสินค้า';
+  const statusText =
+    block === 'no-file'
+      ? 'ไฟล์ยังไม่พร้อม'
+      : block === 'wrong-platform'
+        ? 'สินค้ามาจาก TikTok — โพสต์ Shopee ไม่ได้'
+        : block === 'no-link'
+          ? 'ไม่มีลิงก์สินค้า Shopee — จะไม่โพสต์'
+          : 'มีลิงก์สินค้า Shopee';
+  const statusColorClass =
+    block === 'ok' ? 'text-kd-emerald' : block === 'no-file' ? 'text-kd-amber' : 'text-kd-red';
 
   return (
-    <View className="flex-row items-center gap-2.5 bg-kd-screen px-3 py-2.5">
+    <View
+      className={`flex-row items-center gap-2.5 px-3 py-2.5 ${
+        isBlockedRed ? 'border-l-2 border-kd-red bg-kd-red/5 dark:bg-kd-red/10' : 'bg-kd-screen'
+      }`}
+    >
       <View className="h-[54px] w-[72px] shrink-0 overflow-hidden rounded-kd-sm bg-kd-card-muted">
         {video.thumbnailUri ? (
           <NativeImage source={{ uri: video.thumbnailUri }} className="h-full w-full" resizeMode="cover" />
@@ -729,20 +800,12 @@ function PostVideoRow({
         <Text numberOfLines={1} className="mt-0.5 text-kd-caption text-kd-text-subtle">
           {productMeta}
         </Text>
-        <Text
-          numberOfLines={1}
-          className={`mt-0.5 text-kd-caption ${
-            hasPostableLink
-              ? 'text-kd-emerald'
-              : hasProductUrl
-                ? 'text-kd-amber'
-                : hasProductInfo
-                  ? 'text-kd-text-subtle'
-                  : 'text-kd-amber'
-          }`}
-        >
-          {hasFile ? productStatus : 'ไฟล์ไม่พร้อม'}
-        </Text>
+        <View className="mt-0.5 flex-row items-center gap-1">
+          {isBlockedRed ? <TriangleAlert size={11} color={theme.red} strokeWidth={2.4} /> : null}
+          <Text numberOfLines={1} className={`min-w-0 flex-1 text-kd-caption ${statusColorClass}`}>
+            {statusText}
+          </Text>
+        </View>
       </View>
 
       <Pressable
