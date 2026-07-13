@@ -1,7 +1,7 @@
 import { ActivityIndicator, Image as NativeImage, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FolderOpen, Send, Settings, SlidersHorizontal, Video, X } from 'lucide-react-native';
+import { FolderOpen, Send, Settings, SlidersHorizontal, TriangleAlert, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner-native';
 
@@ -27,6 +27,7 @@ import {
 } from '@/autopilot/socialPostAiContentSettingsStore';
 import type { SocialPostAiContentSettings } from '@/autopilot/socialPostAiContentSettingsStore';
 import { FacebookLogo, InstagramLogo, YouTubeLogo } from '@/components/BrandLogos';
+import { PostContentChip, PostWarnChip, resolvePostCaptionState, resolvePostHashtagState } from '@/components/post/PostStatusChips';
 import Text from '@/components/ui/KubdeeText';
 import {
   FacebookPostingSettingsBlock,
@@ -225,8 +226,11 @@ export default function SocialPostScreen({
       .map((videoId) => byId.get(videoId))
       .filter((video): video is GeneratedMediaAsset => !!video);
   }, [generatedVideos, pendingVideoIds]);
+  // โพสต์ได้เฉพาะคลิปที่มีไฟล์ในเครื่อง — คลิปไม่มีไฟล์จะถูกข้าม (แต่ยังโชว์ในลิสต์)
+  const postableVideos = useMemo(() => postQueueVideos.filter(isLocalPostableVideo), [postQueueVideos]);
+  const blockedCount = postQueueVideos.length - postableVideos.length;
   const missingQueuedVideoCount = pendingVideoIds.length - postQueueVideos.length;
-  const canPost = postQueueVideos.length > 0 && !isPosting && !!channelId;
+  const canPost = postableVideos.length > 0 && !isPosting && !!channelId;
 
   const requestStop = useCallback((): void => {
     stopRef.current = true;
@@ -546,6 +550,25 @@ export default function SocialPostScreen({
             </View>
           ) : null}
 
+          {/* เตือนสำคัญสุด: ยังไม่ได้เลือกช่อง → โพสต์ไม่ได้เลย (ปุ่ม disabled) */}
+          {postQueueVideos.length > 0 && !channelId ? (
+            <View className="flex-row items-center gap-2 border-b border-kd-border bg-kd-amber/10 px-3 py-2">
+              <TriangleAlert size={14} color={theme.amber} strokeWidth={2.2} />
+              <Text numberOfLines={2} className="min-w-0 flex-1 text-kd-caption text-kd-amber">
+                {`ยังไม่ได้เลือกช่อง ${meta.label} — เลือกช่องด้านบนก่อนโพสต์`}
+              </Text>
+            </View>
+          ) : null}
+
+          {blockedCount > 0 ? (
+            <View className="flex-row items-center gap-2 border-b border-kd-border bg-kd-amber/10 px-3 py-2">
+              <TriangleAlert size={14} color={theme.amber} strokeWidth={2.2} />
+              <Text numberOfLines={2} className="min-w-0 flex-1 text-kd-caption text-kd-amber">
+                {`ข้าม ${blockedCount} รายการที่ไฟล์ยังไม่พร้อม`}
+              </Text>
+            </View>
+          ) : null}
+
           {isPosting && progressText ? (
             <View className="flex-row items-center gap-2 border-b border-kd-border px-3 py-1.5">
               <ActivityIndicator size="small" color={meta.color} />
@@ -561,6 +584,8 @@ export default function SocialPostScreen({
                 key={video.id}
                 index={index}
                 accentColor={meta.color}
+                aiCaption={aiContentSettings.aiGenerateCaption}
+                aiHashtags={aiContentSettings.aiGenerateHashtags}
                 disabled={isPosting}
                 result={assetResults[video.id] ?? null}
                 theme={theme}
@@ -631,7 +656,7 @@ export default function SocialPostScreen({
             >
               <Send size={16} color={theme.white} strokeWidth={2.2} />
               <Text className="text-kd-subtitle font-semibold text-white">
-                {`โพสต์ ${meta.label} ${postQueueVideos.length} คลิป`}
+                {`โพสต์ ${meta.label} ${postableVideos.length} คลิป`}
               </Text>
             </Pressable>
           )}
@@ -714,6 +739,8 @@ export default function SocialPostScreen({
 function PostVideoRow({
   index,
   accentColor,
+  aiCaption,
+  aiHashtags,
   disabled,
   result,
   theme,
@@ -722,6 +749,8 @@ function PostVideoRow({
 }: {
   index: number;
   accentColor: string;
+  aiCaption: boolean;
+  aiHashtags: boolean;
   disabled: boolean;
   result: AssetPostResult | null;
   theme: KubdeeTheme;
@@ -732,10 +761,10 @@ function PostVideoRow({
   const hasProductUrl = Boolean(video.productUrl?.trim());
   const productName = getPostProductName(video);
   const productLabel = productName || getPostVideoFallbackLabel(video, index);
-  const captionPreview = video.caption?.trim().split('\n')[0] || '';
-  // โพสต์จะว่างจริงๆ เมื่อไม่มีทั้งแคปชั่น/แฮชแท็ก/ชื่อสินค้า — เตือนเป็นสีเหลือง
-  const hasAnyPostText = Boolean(captionPreview || video.hashtags?.trim() || productName);
-  const linkStatus = hasProductUrl ? 'มีลิงก์สินค้า (พิกัดใส่ท้ายโพสต์)' : 'ไม่มีลิงก์สินค้า';
+  // body ของโพสต์ (buildBufferPostTextWithLink) = caption + link + hashtags — ไม่ fallback ชื่อสินค้า
+  const captionState = resolvePostCaptionState(video.caption, aiCaption, false);
+  const hashtagState = resolvePostHashtagState(video.hashtags, aiHashtags);
+  const linkStatus = hasProductUrl ? 'มีลิงก์สินค้า (พิกัดใส่ในโพสต์)' : 'ไม่มีลิงก์สินค้า';
 
   return (
     <View className="flex-row items-center gap-2.5 bg-kd-screen px-3 py-2.5">
@@ -761,18 +790,15 @@ function PostVideoRow({
         </View>
         <Text
           numberOfLines={1}
-          className={`mt-0.5 text-kd-caption ${hasAnyPostText ? 'text-kd-text-subtle' : 'text-kd-amber'}`}
+          className={`mt-0.5 text-kd-caption ${hasProductUrl ? 'text-kd-emerald' : 'text-kd-text-subtle'}`}
         >
-          {captionPreview || 'ไม่มีแคปชั่น'}
+          {linkStatus}
         </Text>
-        <Text
-          numberOfLines={1}
-          className={`mt-0.5 text-kd-caption ${
-            !hasFile ? 'text-kd-amber' : hasProductUrl ? 'text-kd-emerald' : 'text-kd-text-subtle'
-          }`}
-        >
-          {hasFile ? linkStatus : 'ไม่พบไฟล์ในเครื่อง จะถูกข้าม'}
-        </Text>
+        <View className="mt-1 flex-row flex-wrap items-center gap-1.5">
+          {!hasFile ? <PostWarnChip text="ไฟล์ยังไม่พร้อม" theme={theme} /> : null}
+          <PostContentChip label="แคปชั่น" state={captionState} theme={theme} />
+          <PostContentChip label="แฮชแท็ก" state={hashtagState} theme={theme} />
+        </View>
         {result ? (
           <Text
             numberOfLines={2}
