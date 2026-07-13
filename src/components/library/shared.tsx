@@ -557,7 +557,7 @@ export function RowIconButton({
       accessibilityLabel={label}
       accessibilityRole="button"
       onPress={onPress}
-      className="h-6 w-6 items-center justify-center rounded-kd-sm"
+      className="h-6 w-6 items-center justify-center rounded-kd-md bg-white/60 active:opacity-70 dark:bg-kd-card-muted/60"
     >
       <Icon size={12} color={iconColor} strokeWidth={2} fill={fill ? iconColor : 'none'} />
     </Pressable>

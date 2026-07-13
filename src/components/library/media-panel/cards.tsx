@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import { Image as NativeImage, Pressable, View } from 'react-native';
-import { Check, ChevronDown, ChevronRight, Download, Eye, Heart, Image as ImageIcon, Pencil, Play, Trash2 } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Download, Eye, Heart, Image as ImageIcon, Pencil, Play, Trash2 } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
 import { FacebookLogo, InstagramLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
@@ -65,33 +65,24 @@ function PostedStatusRow({
   postedPlatforms?: Record<string, number> | null;
 }): React.JSX.Element {
   const posted = postedPlatforms ?? {};
-  const anyPosted = POSTED_DESTINATIONS.some((dest) => Boolean(posted[dest.key]));
   return (
-    <View className="min-w-0 shrink flex-row items-center gap-1.5">
-      {anyPosted ? (
-        <Text className="shrink-0 text-[9px] font-semibold text-kd-emerald">โพสต์แล้ว</Text>
-      ) : null}
-      <View className="flex-row items-center gap-[5px]">
-        {POSTED_DESTINATIONS.map(({ key, label, Logo }) => {
-          const isPosted = Boolean(posted[key]);
-          return (
-            <View
-              key={key}
-              accessibilityLabel={`${label} ${isPosted ? 'โพสต์แล้ว' : 'ยังไม่โพส'}`}
-              accessibilityRole="image"
-              className="relative"
-              style={{ opacity: isPosted ? 1 : 0.25 }}
-            >
-              <Logo size={14} isDark={theme.isDark} />
-              {isPosted ? (
-                <View className="absolute -right-1.5 -top-1.5 h-3 w-3 items-center justify-center rounded-full border border-kd-panel bg-kd-emerald">
-                  <Check size={7} color="#ffffff" strokeWidth={4} />
-                </View>
-              ) : null}
-            </View>
-          );
-        })}
-      </View>
+    <View className="min-w-0 shrink flex-row items-center gap-0.5">
+      {POSTED_DESTINATIONS.map(({ key, label, Logo }) => {
+        const isPosted = Boolean(posted[key]);
+        return (
+          <View
+            key={key}
+            accessibilityLabel={`${label} ${isPosted ? 'โพสต์แล้ว' : 'ยังไม่โพส'}`}
+            accessibilityRole="image"
+            className={`h-6 w-6 items-center justify-center rounded-kd-md border ${
+              isPosted ? 'border-kd-emerald bg-kd-emerald/10' : 'border-kd-border'
+            }`}
+            style={isPosted ? undefined : { opacity: 0.45 }}
+          >
+            <Logo size={13} isDark={theme.isDark} />
+          </View>
+        );
+      })}
     </View>
   );
 }
