@@ -145,6 +145,8 @@ type NativeAccessibilityModule = {
   getPendingShopeeImportProducts?: () => Promise<NativeShopeeImportProduct[]>;
   clearPendingShopeeImportProducts?: () => Promise<boolean>;
   postShopeeVideos?: (payloadJson: string) => Promise<string>;
+  prepareTikTokWebViewUpload?: (fileUri: string) => Promise<boolean>;
+  clearTikTokWebViewUpload?: () => Promise<boolean>;
   convertShopeeLinks?: (payloadJson: string) => Promise<string>;
   getPendingShopeeConvertResults?: () => Promise<string>;
   clearPendingShopeeConvertResults?: () => Promise<boolean>;
@@ -189,6 +191,23 @@ const moduleName = 'KubdeeAccessibility';
 const nativeModule = NativeModules[moduleName] as NativeAccessibilityModule | undefined;
 const nativeEventEmitter =
   Platform.OS === 'android' && nativeModule ? new NativeEventEmitter(nativeModule as never) : null;
+
+export async function prepareTikTokWebViewUpload(fileUri: string): Promise<void> {
+  const value = fileUri.trim();
+  if (!value) {
+    throw new Error('ไม่พบ URI ของวิดีโอ TikTok');
+  }
+  if (Platform.OS !== 'android' || !nativeModule?.prepareTikTokWebViewUpload) {
+    throw new Error('อุปกรณ์นี้ยังไม่รองรับการเตรียมวิดีโอสำหรับ TikTok WebView');
+  }
+  await nativeModule.prepareTikTokWebViewUpload(value);
+}
+
+export async function clearTikTokWebViewUpload(): Promise<void> {
+  if (Platform.OS === 'android' && nativeModule?.clearTikTokWebViewUpload) {
+    await nativeModule.clearTikTokWebViewUpload();
+  }
+}
 
 export async function openAccessibilitySettings(): Promise<void> {
   if (Platform.OS === 'android' && nativeModule?.openAccessibilitySettings) {

@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Check, ChevronDown, ChevronUp, CloudUpload, Pencil, Search, Share2, Star, Trash2, X } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient, Pattern, Rect, Stop } from 'react-native-svg';
 
-import { ShopeeLogo } from '@/components/BrandLogos';
+import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { SHOPEE_ORANGE } from '@/theme/brandColors';
 import { kubdeeFontFamilies } from '@/theme/fonts';
@@ -397,10 +397,12 @@ export function SelectionBar({
   showAuto = false,
   showCloudUpload = false,
   showShopee = false,
+  showTikTok = false,
   showSocial = false,
   onAuto,
   onCloudUpload,
   onShopee,
+  onTikTok,
   onSocial,
   onClear,
   onDelete,
@@ -412,10 +414,12 @@ export function SelectionBar({
   showAuto?: boolean;
   showCloudUpload?: boolean;
   showShopee?: boolean;
+  showTikTok?: boolean;
   showSocial?: boolean;
   onAuto?: () => void;
   onCloudUpload?: () => void;
   onShopee?: () => void;
+  onTikTok?: () => void;
   onSocial?: () => void;
   onClear: () => void;
   onDelete?: () => void;
@@ -474,6 +478,17 @@ export function SelectionBar({
               style={{ backgroundColor: SHOPEE_ORANGE }}
             >
               <ShopeeLogo size={14} color={theme.white} cutoutColor={SHOPEE_ORANGE} />
+            </Pressable>
+          ) : null}
+          {showTikTok ? (
+            <Pressable
+              accessibilityLabel="ส่งไป TikTok"
+              accessibilityRole="button"
+              disabled={!onTikTok}
+              onPress={onTikTok}
+              className="h-7 w-7 items-center justify-center rounded-full border border-kd-border bg-kd-panel"
+            >
+              <TikTokLogo size={14} isDark={theme.isDark} />
             </Pressable>
           ) : null}
           {showSocial ? (

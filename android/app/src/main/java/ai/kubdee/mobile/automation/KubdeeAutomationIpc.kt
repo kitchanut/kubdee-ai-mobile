@@ -13,6 +13,7 @@ object KubdeeAutomationIpc {
   const val ACTION_START_SHOPEE_POST = "ai.kubdee.mobile.automation.START_SHOPEE_POST"
   const val ACTION_START_SHOPEE_CONVERT = "ai.kubdee.mobile.automation.START_SHOPEE_CONVERT"
   const val ACTION_STOP_SHOPEE = "ai.kubdee.mobile.automation.STOP_SHOPEE"
+  const val ACTION_TAP_SCREEN = "ai.kubdee.mobile.automation.TAP_SCREEN"
 
   const val ACTION_EVENT_SHOPEE_IMPORT_LOG = "ai.kubdee.mobile.automation.EVENT_SHOPEE_IMPORT_LOG"
   const val ACTION_EVENT_SHOPEE_IMPORT_PRODUCT = "ai.kubdee.mobile.automation.EVENT_SHOPEE_IMPORT_PRODUCT"
@@ -34,6 +35,8 @@ object KubdeeAutomationIpc {
   const val EXTRA_PROFILE_LOCAL_ID = "profileLocalId"
   const val EXTRA_IMPORT_SOURCE = "importSource"
   const val EXTRA_OFFER_CATEGORY = "offerCategory"
+  const val EXTRA_SCREEN_X = "screenX"
+  const val EXTRA_SCREEN_Y = "screenY"
 
   const val EXTRA_PRODUCT_NAME = "name"
   const val EXTRA_PRODUCT_PRICE = "price"

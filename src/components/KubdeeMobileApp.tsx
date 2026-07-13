@@ -31,6 +31,7 @@ import PlanRequiredScreen from '@/screens/PlanRequiredScreen';
 import ProfileScreen from '@/screens/ProfileScreen';
 import ShopeeScreen from '@/screens/ShopeeScreen';
 import SocialPostScreen from '@/screens/SocialPostScreen';
+import TikTokPostScreen from '@/screens/TikTokPostScreen';
 import {
   isThemeMode,
   resolveThemeMode,
@@ -104,6 +105,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   const [autoPilotSelectionRequest, setAutoPilotSelectionRequest] =
     useState<AutoPilotProductSelectionRequest | null>(null);
   const [pendingShopeeVideoIds, setPendingShopeeVideoIds] = useState<string[]>([]);
+  const [pendingTikTokVideoIdsByProfile, setPendingTikTokVideoIdsByProfile] = useState<Record<string, string[]>>({});
   const [pendingSocialVideoIdsByService, setPendingSocialVideoIdsByService] = useState<
     Record<SocialService, string[]>
   >({ facebook: [], instagram: [], youtube: [] });
@@ -367,6 +369,33 @@ export default function KubdeeMobileApp(): React.JSX.Element {
 
   const clearPendingShopeeVideos = useCallback((): void => {
     setPendingShopeeVideoIds([]);
+  }, []);
+
+  const sendVideosToTikTok = useCallback((videoIds: string[]): void => {
+    const profileId = selectedProfileId.trim();
+    const cleanVideoIds = uniqueVideoIds(videoIds);
+    if (!profileId || cleanVideoIds.length === 0) return;
+
+    setPendingTikTokVideoIdsByProfile((current) => {
+      const currentIds = current[profileId] ?? [];
+      const existing = new Set(currentIds);
+      return {
+        ...current,
+        [profileId]: [...currentIds, ...cleanVideoIds.filter((id) => !existing.has(id))],
+      };
+    });
+    setActiveTab('tiktok');
+  }, [selectedProfileId]);
+
+  const removePendingTikTokVideo = useCallback((profileId: string, videoId: string): void => {
+    setPendingTikTokVideoIdsByProfile((current) => ({
+      ...current,
+      [profileId]: (current[profileId] ?? []).filter((id) => id !== videoId),
+    }));
+  }, []);
+
+  const clearPendingTikTokVideos = useCallback((profileId: string): void => {
+    setPendingTikTokVideoIdsByProfile((current) => ({ ...current, [profileId]: [] }));
   }, []);
 
   const sendVideosToSocial = useCallback((service: SocialService, videoIds: string[]): void => {
@@ -688,6 +717,17 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             onRemovePendingVideo={removePendingShopeeVideo}
           />
         );
+      case 'tiktok':
+        return (
+          <TikTokPostScreen
+            pendingVideoIds={pendingTikTokVideoIdsByProfile[selectedProfileId] ?? []}
+            selectedProfileId={selectedProfileId}
+            theme={theme}
+            onClearPendingVideos={() => clearPendingTikTokVideos(selectedProfileId)}
+            onOpenVideoLibrary={openVideoLibrary}
+            onRemovePendingVideo={(videoId) => removePendingTikTokVideo(selectedProfileId, videoId)}
+          />
+        );
       case 'logs':
         return <LogsScreen theme={theme} />;
       case 'profile':
@@ -713,6 +753,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
             theme={theme}
             onSendProductsToAutoPilot={sendProductsToAutoPilot}
             onSendVideosToShopee={sendVideosToShopee}
+            onSendVideosToTikTok={sendVideosToTikTok}
             onSendVideosToSocial={sendVideosToSocial}
           />
         );

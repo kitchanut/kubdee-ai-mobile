@@ -74,6 +74,24 @@ class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
           Log.w(TAG, "Accessibility service is not connected yet; queued Shopee stop")
         }
       }
+
+      KubdeeAutomationIpc.ACTION_TAP_SCREEN -> {
+        val x = intent.getFloatExtra(KubdeeAutomationIpc.EXTRA_SCREEN_X, Float.NaN)
+        val y = intent.getFloatExtra(KubdeeAutomationIpc.EXTRA_SCREEN_Y, Float.NaN)
+        val metrics = context.resources.displayMetrics
+        if (!x.isFinite() || !y.isFinite() || x < 0 || y < 0 || x > metrics.widthPixels || y > metrics.heightPixels) {
+          Log.w(TAG, "Rejected invalid screen tap coordinates")
+          return
+        }
+        val service = KubdeeAccessibilityService.getInstance()
+        if (service == null) {
+          Log.w(TAG, "Accessibility service is not connected; ignored screen tap")
+          return
+        }
+        service.tap(x, y) { success ->
+          if (!success) Log.w(TAG, "Screen tap gesture was cancelled")
+        }
+      }
     }
   }
 

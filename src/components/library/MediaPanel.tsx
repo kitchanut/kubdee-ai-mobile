@@ -101,12 +101,14 @@ export default function MediaPanel({
   kind,
   selectedProfileId,
   onSendVideosToShopee,
+  onSendVideosToTikTok,
   onSendVideosToSocial,
 }: {
   theme: KubdeeTheme;
   kind: MediaKind;
   selectedProfileId: string;
   onSendVideosToShopee?: (videoIds: string[]) => void;
+  onSendVideosToTikTok?: (videoIds: string[]) => void;
   onSendVideosToSocial?: (service: SocialService, videoIds: string[]) => void;
 }): React.JSX.Element {
   const insets = useSafeAreaInsets();
@@ -346,6 +348,18 @@ export default function MediaPanel({
     onSendVideosToShopee(ids);
     setSelectedIds(new Set());
     toast.success(`ส่งไป Shopee ${ids.length} วิดีโอ`);
+  };
+
+  const sendSelectedVideosToTikTok = (): void => {
+    if (kind !== 'videos' || !onSendVideosToTikTok) return;
+    const ids = Array.from(selectedIds).filter((id) => generatedAssetById.has(id));
+    if (ids.length === 0) {
+      toast.warning('เลือกวิดีโอก่อนส่งไป TikTok');
+      return;
+    }
+    onSendVideosToTikTok(ids);
+    setSelectedIds(new Set());
+    toast.success(`ส่งไป TikTok ${ids.length} วิดีโอ`);
   };
 
   // เปิด sheet เลือกปลายทางโซเชียล — คิวจริงอยู่ที่แท็บของแต่ละแพลตฟอร์ม
@@ -1231,12 +1245,14 @@ export default function MediaPanel({
           count={selectedIds.size}
           showCloudUpload={kind === 'videos'}
           showShopee={kind === 'videos'}
+          showTikTok={kind === 'videos'}
           showSocial={kind === 'videos'}
           onClear={() => setSelectedIds(new Set())}
           onDelete={() => void deleteSelected()}
           onEdit={editSelected}
           onCloudUpload={kind === 'videos' ? uploadSelectedVideosToCloud : undefined}
           onShopee={kind === 'videos' ? sendSelectedVideosToShopee : undefined}
+          onTikTok={kind === 'videos' ? sendSelectedVideosToTikTok : undefined}
           onSocial={kind === 'videos' ? openSocialSheet : undefined}
         />
       ) : null}

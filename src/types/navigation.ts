@@ -4,6 +4,7 @@ export type TabId =
   | 'pipeline'
   | 'image-create'
   | 'shopee'
+  | 'tiktok'
   | 'youtube'
   | 'facebook'
   | 'instagram'

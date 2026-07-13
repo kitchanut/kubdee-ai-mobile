@@ -32,6 +32,7 @@ function isTabId(value: string | null | undefined): value is TabId {
     value === 'pipeline' ||
     value === 'image-create' ||
     value === 'shopee' ||
+    value === 'tiktok' ||
     value === 'youtube' ||
     value === 'facebook' ||
     value === 'instagram' ||

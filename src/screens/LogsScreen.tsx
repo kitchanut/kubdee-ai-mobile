@@ -21,6 +21,7 @@ import {
 import { getAutoPilotStageLabel } from '@/autopilot/stageLabels';
 import type { AutoPilotFlowStats, AutoPilotStepType } from '@/autopilot/types';
 import Text from '@/components/ui/KubdeeText';
+import { TikTokLogo } from '@/components/BrandLogos';
 import SectionHeader from '@/components/ui/SectionHeader';
 import { alpha, type KubdeeTheme } from '@/theme/tokens';
 
@@ -28,7 +29,13 @@ interface LogsScreenProps {
   theme: KubdeeTheme;
 }
 
-const ACTIVITY_ORDER: AutomationActivityKind[] = ['auto-pilot', 'shopee-import', 'shopee-post', 'shopee-convert'];
+const ACTIVITY_ORDER: AutomationActivityKind[] = [
+  'auto-pilot',
+  'shopee-import',
+  'shopee-post',
+  'tiktok-post',
+  'shopee-convert',
+];
 
 export default function LogsScreen({ theme }: LogsScreenProps): React.JSX.Element {
   const snapshot = useAutomationActivitySnapshot();
@@ -76,6 +83,7 @@ function ActivityRunCard({
         : run.kind === 'shopee-convert'
           ? Link2
           : ShoppingBag;
+  const isTikTok = run.kind === 'tiktok-post';
   const orderedLogs = useMemo(() => sortLogsByTime(run.logs), [run.logs]);
   const logs = orderedLogs.slice(-MAX_AUTOMATION_LOGS_PER_RUN);
   const elapsedMs = getRunElapsedMs(run);
@@ -92,7 +100,11 @@ function ActivityRunCard({
     <View className="gap-2 rounded-kd-lg border border-kd-border bg-kd-card p-3">
       <View className="flex-row items-center gap-2">
         <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
-          <Icon size={15} color={statusColor} strokeWidth={2.2} />
+          {isTikTok ? (
+            <TikTokLogo size={15} color={statusColor} />
+          ) : (
+            <Icon size={15} color={statusColor} strokeWidth={2.2} />
+          )}
         </View>
         <View className="min-w-0 flex-1">
           <Text numberOfLines={1} className="text-kd-body font-black text-kd-text">

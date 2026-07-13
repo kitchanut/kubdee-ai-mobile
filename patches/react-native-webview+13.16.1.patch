@@ -1,0 +1,99 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/KubdeePendingFileUpload.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/KubdeePendingFileUpload.java
+new file mode 100644
+index 0000000..3effb29
+--- /dev/null
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/KubdeePendingFileUpload.java
+@@ -0,0 +1,79 @@
++package com.reactnativecommunity.webview;
++
++import android.net.Uri;
++import android.os.SystemClock;
++
++import androidx.annotation.Nullable;
++
++import java.util.Locale;
++import java.util.concurrent.atomic.AtomicReference;
++
++/**
++ * One-shot bridge for supplying a prepared local video URI to the next video file input.
++ * The app module validates the URI before storing it here. Entries expire so a later,
++ * unrelated chooser cannot accidentally consume a stale video.
++ */
++public final class KubdeePendingFileUpload {
++    private static final long TIMEOUT_MS = 120_000L;
++    private static final AtomicReference<PendingUpload> PENDING = new AtomicReference<>();
++
++    private KubdeePendingFileUpload() {}
++
++    public static void prepare(Uri uri) {
++        PENDING.set(new PendingUpload(uri, SystemClock.elapsedRealtime() + TIMEOUT_MS));
++    }
++
++    public static void clear() {
++        PENDING.set(null);
++    }
++
++    @Nullable
++    public static Uri consumeVideo(String[] acceptTypes) {
++        if (!acceptsVideo(acceptTypes)) {
++            clearIfExpired();
++            return null;
++        }
++
++        while (true) {
++            PendingUpload pending = PENDING.get();
++            if (pending == null) return null;
++            if (pending.expiresAtElapsedMs < SystemClock.elapsedRealtime()) {
++                if (PENDING.compareAndSet(pending, null)) return null;
++                continue;
++            }
++            if (PENDING.compareAndSet(pending, null)) return pending.uri;
++        }
++    }
++
++    private static void clearIfExpired() {
++        PendingUpload pending = PENDING.get();
++        if (pending != null && pending.expiresAtElapsedMs < SystemClock.elapsedRealtime()) {
++            PENDING.compareAndSet(pending, null);
++        }
++    }
++
++    private static boolean acceptsVideo(String[] acceptTypes) {
++        if (acceptTypes == null || acceptTypes.length == 0) return false;
++        for (String acceptType : acceptTypes) {
++            if (acceptType == null) continue;
++            String[] values = acceptType.toLowerCase(Locale.ROOT).split(",");
++            for (String rawValue : values) {
++                String value = rawValue.trim();
++                if (value.startsWith("video/") || value.matches("\\.(mp4|m4v|mov|webm|mkv|avi|3gp|3gpp|mpeg|mpg)")) {
++                    return true;
++                }
++            }
++        }
++        return false;
++    }
++
++    private static final class PendingUpload {
++        final Uri uri;
++        final long expiresAtElapsedMs;
++
++        PendingUpload(Uri uri, long expiresAtElapsedMs) {
++            this.uri = uri;
++            this.expiresAtElapsedMs = expiresAtElapsedMs;
++        }
++    }
++}
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
+index 07f73fd..9c03280 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebChromeClient.java
+@@ -331,4 +331,9 @@ public class RNCWebChromeClient extends WebChromeClient implements LifecycleEven
+     @Override
+     public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+         String[] acceptTypes = fileChooserParams.getAcceptTypes();
++        Uri preparedVideo = KubdeePendingFileUpload.consumeVideo(acceptTypes);
++        if (preparedVideo != null) {
++            filePathCallback.onReceiveValue(new Uri[]{preparedVideo});
++            return true;
++        }
+         boolean allowMultiple = fileChooserParams.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE;

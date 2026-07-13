@@ -1,6 +1,5 @@
-import { ActivityIndicator, Alert, Image as NativeImage, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FolderOpen, Send, Settings, SlidersHorizontal, Video, X } from 'lucide-react-native';
+import { ActivityIndicator, Alert, Image as NativeImage, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { FolderOpen, Send, SlidersHorizontal, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner-native';
 
@@ -24,6 +23,7 @@ import {
 import type { ShopeeAiContentSettings } from '@/autopilot/shopeeAiContentSettingsStore';
 import { ExtensionToggleRow, HashtagCountSelector } from '@/screens/autopilot/blocks/SettingsBlocks';
 import { ShopeeLogo } from '@/components/BrandLogos';
+import PostSettingsModal from '@/components/post/PostSettingsModal';
 import Text from '@/components/ui/KubdeeText';
 import {
   getAccessibilityStatus,
@@ -64,7 +64,6 @@ export default function ShopeeScreen({
   const [isStoppingPost, setIsStoppingPost] = useState(false);
   const [aiContentSettings, setAiContentSettings] = useState<ShopeeAiContentSettings>(DEFAULT_SHOPEE_AI_CONTENT_SETTINGS);
   const { getAssetsByKind, updateGeneratedMediaAsset } = useGeneratedMedia();
-  const insets = useSafeAreaInsets();
   const postLogScrollRef = useRef<ScrollView>(null);
   // native เคลียร์ stop-flag ของตัวเองใหม่ทุกครั้งที่เรียก postShopeeVideos (ต่อคลิป) — ใช้ ref นี้กันเอง
   // ฝั่ง JS แทน ไม่งั้นกด "หยุด" ระหว่างรอยต่อของคลิปจะโดนเคลียร์ทิ้งเงียบๆ แล้วคลิปถัดไปโพสต์ต่อ
@@ -585,78 +584,50 @@ export default function ShopeeScreen({
         ) : null}
       </View>
 
-      {isSettingsOpen ? (
-        <Modal animationType="fade" onRequestClose={() => setIsSettingsOpen(false)} transparent visible>
-          {/* backdrop อยู่ใน Modal ได้แล้ว (ก่อนหน้านี้แยกไว้นอก Modal เพราะ animationType="slide" จะลาก
-              backdrop ขึ้นมาพร้อม sheet — ตอนนี้เปลี่ยนเป็น "fade" แล้วไม่มีปัญหานั้น และ Modal เป็น native
-              overlay เต็มจอเสมอ ต่างจาก View ธรรมดาที่ครอบได้แค่พื้นที่ของ ShopeeScreen เอง ไม่รวมแถบ tab/status bar */}
-          <View
-            className="flex-1 justify-center bg-black/60"
-            style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-          >
-            <View
-              className="mx-3 overflow-hidden rounded-kd-2xl border border-kd-border bg-kd-panel"
-              style={{ height: '95%' }}
-            >
-              <View className="flex-row items-center justify-between border-b border-kd-border bg-kd-card px-3 py-3">
-                <View className="min-w-0 flex-1 flex-row items-center gap-2">
-                  <View className="h-8 w-8 items-center justify-center rounded-kd-lg bg-kd-panel-muted dark:bg-kd-card-muted">
-                    <Settings size={15} color={theme.textMuted} strokeWidth={2.1} />
-                  </View>
-                  <Text className="text-kd-label font-semibold text-kd-text">ตั้งค่า Shopee</Text>
-                </View>
-                <Pressable
-                  accessibilityLabel="ปิดตั้งค่า Shopee"
-                  accessibilityRole="button"
-                  onPress={() => setIsSettingsOpen(false)}
-                  className="h-8 w-8 items-center justify-center rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted"
-                >
-                  <X size={15} color={theme.textMuted} strokeWidth={2.3} />
-                </Pressable>
-              </View>
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-1.5 p-2.5">
-                <ExtensionToggleRow
-                  label="AI คิด Caption"
-                  theme={theme}
-                  value={aiContentSettings.aiGenerateCaption}
-                  onValueChange={(value) => updateAiContentSetting('aiGenerateCaption', value)}
-                />
-                <ExtensionToggleRow
-                  label="AI คิด Hashtags"
-                  rightSlot={
-                    aiContentSettings.aiGenerateHashtags ? (
-                      <HashtagCountSelector
-                        enabled={aiContentSettings.aiGenerateHashtags}
-                        theme={theme}
-                        value={aiContentSettings.aiHashtagCount}
-                        onChange={(value) => updateAiContentSetting('aiHashtagCount', value)}
-                      />
-                    ) : null
-                  }
-                  theme={theme}
-                  value={aiContentSettings.aiGenerateHashtags}
-                  onValueChange={(value) => updateAiContentSetting('aiGenerateHashtags', value)}
-                />
-                {aiContentSettings.aiGenerateCaption || aiContentSettings.aiGenerateHashtags ? (
-                  <>
-                    <ExtensionToggleRow
-                      label="เขียนทับของเดิม"
-                      theme={theme}
-                      value={aiContentSettings.aiOverwriteExisting}
-                      onValueChange={(value) => updateAiContentSetting('aiOverwriteExisting', value)}
-                    />
-                    <Text className="text-kd-micro text-kd-text-subtle">
-                      {aiContentSettings.aiOverwriteExisting
-                        ? 'AI จะคิดใหม่ทับ caption/hashtags เดิมทุกคลิป (ใช้เครดิต KUBDEE AI)'
-                        : 'AI จะคิดเฉพาะคลิปที่ยังไม่มี caption/hashtags เท่านั้น'}
-                    </Text>
-                  </>
-                ) : null}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
-      ) : null}
+      <PostSettingsModal
+        onClose={() => setIsSettingsOpen(false)}
+        theme={theme}
+        title="ตั้งค่า Shopee"
+        visible={isSettingsOpen}
+      >
+        <ExtensionToggleRow
+          label="AI คิด Caption"
+          theme={theme}
+          value={aiContentSettings.aiGenerateCaption}
+          onValueChange={(value) => updateAiContentSetting('aiGenerateCaption', value)}
+        />
+        <ExtensionToggleRow
+          label="AI คิด Hashtags"
+          rightSlot={
+            aiContentSettings.aiGenerateHashtags ? (
+              <HashtagCountSelector
+                enabled={aiContentSettings.aiGenerateHashtags}
+                theme={theme}
+                value={aiContentSettings.aiHashtagCount}
+                onChange={(value) => updateAiContentSetting('aiHashtagCount', value)}
+              />
+            ) : null
+          }
+          theme={theme}
+          value={aiContentSettings.aiGenerateHashtags}
+          onValueChange={(value) => updateAiContentSetting('aiGenerateHashtags', value)}
+        />
+        {aiContentSettings.aiGenerateCaption || aiContentSettings.aiGenerateHashtags ? (
+          <>
+            <ExtensionToggleRow
+              label="เขียนทับของเดิม"
+              theme={theme}
+              value={aiContentSettings.aiOverwriteExisting}
+              onValueChange={(value) => updateAiContentSetting('aiOverwriteExisting', value)}
+            />
+            <Text className="text-kd-micro text-kd-text-subtle">
+              {aiContentSettings.aiOverwriteExisting
+                ? 'AI จะคิดใหม่ทับ caption/hashtags เดิมทุกคลิป (ใช้เครดิต KUBDEE AI)'
+                : 'AI จะคิดเฉพาะคลิปที่ยังไม่มี caption/hashtags เท่านั้น'}
+            </Text>
+          </>
+        ) : null}
+      </PostSettingsModal>
     </KeyboardAvoidingView>
   );
 }

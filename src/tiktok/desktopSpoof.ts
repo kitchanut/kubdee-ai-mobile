@@ -21,10 +21,10 @@ export const DESKTOP_ENV_SPOOF = `(function(){
   try { Object.defineProperty(navigator, 'userAgentData', { get: function(){ return undefined; }, configurable: true }); } catch(e){}
   try { delete window.ontouchstart; } catch(e){}
 
-  var DESKTOP_WIDTH = 1440;
-  var deviceWidth = Number(screen && screen.width) || 360;
-  var fitScale = Math.max(0.2, Math.min(1, deviceWidth / DESKTOP_WIDTH));
-  var WANT = 'width=' + DESKTOP_WIDTH + ', initial-scale=' + fitScale.toFixed(4) + ', minimum-scale=0.2, maximum-scale=3, user-scalable=yes';
+  var DESKTOP_WIDTH = Math.max(1024, Number(window.__kubdeeDesktopWidth) || 1440);
+  var deviceWidth = Number(window.__kubdeeDesktopDeviceWidth) || Number(screen && screen.width) || 360;
+  var fitScale = Math.max(0.1, Math.min(1, deviceWidth / DESKTOP_WIDTH));
+  var WANT = 'width=' + DESKTOP_WIDTH + ', initial-scale=' + fitScale.toFixed(4) + ', minimum-scale=0.1, maximum-scale=3, user-scalable=yes';
   function apply(){
     var m = document.querySelector('meta[name="viewport"]');
     if (!m){ m = document.createElement('meta'); m.setAttribute('name','viewport'); (document.head||document.documentElement).appendChild(m); }

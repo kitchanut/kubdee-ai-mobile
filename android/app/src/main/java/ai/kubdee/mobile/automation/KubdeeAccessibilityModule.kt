@@ -17,6 +17,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
+import androidx.core.content.FileProvider
 import android.util.Base64
 import android.util.Log
 import androidx.annotation.OptIn
@@ -37,6 +38,7 @@ import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.google.common.collect.ImmutableList
+import com.reactnativecommunity.webview.KubdeePendingFileUpload
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -74,6 +76,7 @@ class KubdeeAccessibilityModule(
   override fun getName(): String = "KubdeeAccessibility"
 
   override fun invalidate() {
+    KubdeePendingFileUpload.clear()
     try {
       reactContext.unregisterReceiver(automationEventReceiver)
     } catch (_: Exception) {
@@ -95,6 +98,70 @@ class KubdeeAccessibilityModule(
       eventContext = null
     }
     super.invalidate()
+  }
+
+  @ReactMethod
+  fun prepareTikTokWebViewUpload(fileUri: String, promise: Promise) {
+    KubdeePendingFileUpload.clear()
+    try {
+      val uri = validateTikTokVideoUri(fileUri)
+      KubdeePendingFileUpload.prepare(uri)
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("INVALID_TIKTOK_VIDEO_URI", error.message ?: "ไฟล์วิดีโอ TikTok ไม่ถูกต้อง", error)
+    }
+  }
+
+  @ReactMethod
+  fun clearTikTokWebViewUpload(promise: Promise) {
+    KubdeePendingFileUpload.clear()
+    promise.resolve(true)
+  }
+
+  private fun validateTikTokVideoUri(fileUri: String): Uri {
+    val value = fileUri.trim()
+    require(value.isNotEmpty()) { "ไม่พบ URI ของวิดีโอ TikTok" }
+
+    val uri = if (value.startsWith("/")) Uri.fromFile(File(value)) else Uri.parse(value)
+    val scheme = uri.scheme?.lowercase(Locale.ROOT)
+    require(scheme == "content" || scheme == "file") {
+      "รองรับเฉพาะ absolute path, content:// หรือ file:// URI"
+    }
+
+    if (scheme == "content") {
+      reactContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+        require(descriptor.length != 0L) { "ไฟล์วิดีโอว่างเปล่า" }
+      } ?: throw IllegalArgumentException("เปิดไฟล์วิดีโอไม่ได้")
+    } else {
+      val file = File(uri.path ?: "")
+      require(file.isFile && file.canRead() && file.length() > 0L) { "เปิดไฟล์วิดีโอไม่ได้" }
+    }
+
+    val mimeType = reactContext.contentResolver.getType(uri)?.lowercase(Locale.ROOT)
+    val extension = (uri.path ?: value).substringBefore('?').substringAfterLast('.', "").lowercase(Locale.ROOT)
+    val knownVideoExtension = extension in setOf(
+      "mp4", "m4v", "mov", "webm", "mkv", "avi", "3gp", "3gpp", "mpeg", "mpg"
+    )
+    val genericMimeType = mimeType == null || mimeType == "application/octet-stream"
+    require(mimeType?.startsWith("video/") == true || (genericMimeType && knownVideoExtension)) {
+      "URI ที่เลือกไม่ใช่ไฟล์วิดีโอ"
+    }
+
+    if (scheme != "file") return uri
+
+    val file = File(uri.path ?: "")
+    val filesRoot = reactContext.filesDir.canonicalFile
+    val cacheRoot = reactContext.cacheDir.canonicalFile
+    val target = file.canonicalFile
+    val authority = if (
+      target.path.startsWith(filesRoot.path + File.separator) ||
+      target.path.startsWith(cacheRoot.path + File.separator)
+    ) {
+      "${reactContext.packageName}.FileSystemFileProvider"
+    } else {
+      "${reactContext.packageName}.fileprovider"
+    }
+    return FileProvider.getUriForFile(reactContext, authority, target)
   }
 
   private fun registerAutomationEventReceiver() {
@@ -351,19 +418,20 @@ class KubdeeAccessibilityModule(
 
   @ReactMethod
   fun tap(x: Double, y: Double, promise: Promise) {
-    val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
-      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!x.isFinite() || !y.isFinite() || x < 0 || y < 0) {
+      promise.reject("INVALID_COORDINATES", "Invalid screen tap coordinates")
       return
     }
-
-    service.tap(x.toFloat(), y.toFloat()) { success ->
-      if (success) {
-        promise.resolve(true)
-      } else {
-        promise.reject("GESTURE_CANCELLED", "Tap gesture was cancelled")
-      }
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
+      return
     }
+    sendAutomationCommand(KubdeeAutomationIpc.ACTION_TAP_SCREEN) {
+      putExtra(KubdeeAutomationIpc.EXTRA_SCREEN_X, x.toFloat())
+      putExtra(KubdeeAutomationIpc.EXTRA_SCREEN_Y, y.toFloat())
+    }
+    promise.resolve(true)
   }
 
   @ReactMethod

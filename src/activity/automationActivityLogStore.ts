@@ -13,7 +13,12 @@ import type {
 } from '@/native/AccessibilityBridge';
 import type { AutoPilotFlowStats, AutoPilotStepType } from '@/autopilot/types';
 
-export type AutomationActivityKind = 'auto-pilot' | 'shopee-import' | 'shopee-post' | 'shopee-convert';
+export type AutomationActivityKind =
+  | 'auto-pilot'
+  | 'shopee-import'
+  | 'shopee-post'
+  | 'shopee-convert'
+  | 'tiktok-post';
 
 export interface AutomationActivityLogEntry {
   message: string;
@@ -45,6 +50,7 @@ const defaultTitles: Record<AutomationActivityKind, string> = {
   'shopee-import': 'Shopee import ล่าสุด',
   'shopee-post': 'Shopee post ล่าสุด',
   'shopee-convert': 'Shopee แปลงลิงก์ล่าสุด',
+  'tiktok-post': 'TikTok post ล่าสุด',
 };
 
 const listeners = new Set<() => void>();
@@ -70,6 +76,7 @@ let snapshot: AutomationActivitySnapshot = {
     'shopee-import': createRun('shopee-import'),
     'shopee-post': createRun('shopee-post'),
     'shopee-convert': createRun('shopee-convert'),
+    'tiktok-post': createRun('tiktok-post'),
   },
 };
 
@@ -193,6 +200,7 @@ function normalizeStoredSnapshot(value: unknown): AutomationActivitySnapshot | n
       'shopee-import': normalizeStoredRun('shopee-import', value.runs['shopee-import']),
       'shopee-post': normalizeStoredRun('shopee-post', value.runs['shopee-post']),
       'shopee-convert': normalizeStoredRun('shopee-convert', value.runs['shopee-convert']),
+      'tiktok-post': normalizeStoredRun('tiktok-post', value.runs['tiktok-post']),
     },
   };
 }
