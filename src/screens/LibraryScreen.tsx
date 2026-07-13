@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
   Image as ImageIcon,
@@ -60,12 +60,12 @@ export default function LibraryScreen({
   onSendVideosToSocial,
 }: LibraryScreenProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<LibraryTabId>('products');
+  const [handledRequestId, setHandledRequestId] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (initialTabRequest) {
-      setActiveTab(initialTabRequest.tab);
-    }
-  }, [initialTabRequest]);
+  if (initialTabRequest && initialTabRequest.requestId !== handledRequestId) {
+    setHandledRequestId(initialTabRequest.requestId);
+    setActiveTab(initialTabRequest.tab);
+  }
 
   return (
     <View className="flex-1 bg-kd-panel">

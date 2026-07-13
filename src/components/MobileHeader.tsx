@@ -12,7 +12,7 @@ import {
   UserCircle,
   Users,
 } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
@@ -73,6 +73,7 @@ export default function MobileHeader({
 }: MobileHeaderProps): React.JSX.Element {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profileSelectVisible, setProfileSelectVisible] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Date.now);
   const { logout, user } = useAuth();
   const displayName = user?.name || user?.email || 'Kubdee AI User';
   const expiryLabel = formatExpiryLabel(user?.expiryDate);
@@ -85,10 +86,17 @@ export default function MobileHeader({
   }, [profileGroups]);
   const planKey = (user?.plan || 'free').toLowerCase();
   const expiryDateValue = normalizeExpiryDate(user?.expiryDate ?? null);
-  const isPlanExpired = expiryDateValue ? expiryDateValue.getTime() < Date.now() : false;
+  const isPlanExpired = expiryDateValue ? expiryDateValue.getTime() < currentTime : false;
   const maxDevices = user?.maxDevices ?? 0;
   const devicesFull = maxDevices > 0 && (user?.activeDevices ?? 0) >= maxDevices;
   const planTone = getPlanTone(theme, planKey, isPlanExpired);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? profiles[0] ?? null;
   const duplicateProfileNames = useMemo(() => {
     const counts = new Map<string, number>();

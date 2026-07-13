@@ -83,7 +83,6 @@ export default function ImageWorkspaceLibraryStyleScreen({
   const startButtonScrollPadding = 12 + 44 + startButtonBottomPadding + 16;
   const { saveLibraryItem } = useCreativeLibrary();
   const accent = theme.amber;
-  const tone = getAccentTone(theme, accent);
   const [mode, setMode] = useState<CreativeImageKind>('characters');
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
   const [outputCount, setOutputCount] = useState<'1' | '2' | '3' | '4'>('1');

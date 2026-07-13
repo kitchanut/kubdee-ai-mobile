@@ -334,8 +334,12 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
         .map(creativeMediaToGeneratedAsset)
         .sort((first, second) => second.createdAt - first.createdAt)
     ).slice(0, MAX_GENERATED_MEDIA_ASSETS);
-    setAssets(nextAssets);
     void persistAssets(nextAssets);
+
+    const syncTimer = setTimeout(() => {
+      setAssets(nextAssets);
+    }, 0);
+    return () => clearTimeout(syncTimer);
   }, [mediaAssets]);
 
   // ลิงก์/ชื่อสินค้าใน asset ถูกแช่แข็งตอน gen — พอดึงสินค้าชุดใหม่ (ลิงก์ affiliate เปลี่ยน)

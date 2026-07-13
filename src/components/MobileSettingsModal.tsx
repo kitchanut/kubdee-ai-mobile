@@ -42,9 +42,14 @@ export default function MobileSettingsModal({
     }
 
     let active = true;
-    setIsLoading(true);
-    setSaveError(null);
-    getAiBrainSettings()
+    Promise.resolve()
+      .then(() => {
+        if (active) {
+          setIsLoading(true);
+          setSaveError(null);
+        }
+        return getAiBrainSettings();
+      })
       .then((stored) => {
         if (active) {
           setDraft(stored);

@@ -1348,9 +1348,18 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       return;
     }
 
-    setProducts([]);
-    setSyncError(null);
-    setLastSyncedAt(null);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) {
+        return;
+      }
+      setProducts([]);
+      setSyncError(null);
+      setLastSyncedAt(null);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   // Forward any automatic diagnostic the native side wrote to Sentry. Check once on mount too —
@@ -1406,7 +1415,15 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       return;
     }
 
-    void syncProducts();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        void syncProducts();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [hasAttemptedSync, isPlanValid, isSyncing, syncProducts, token]);
 
   const value = useMemo(

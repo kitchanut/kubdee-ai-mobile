@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Image, Modal, Pressable, ScrollView, View } from 'react-native';
 import { ChevronRight, Check, FolderOpen, Image as ImageIcon, Package, Save, Search, Trash2, X } from 'lucide-react-native';
 import { getAutoPilotProductId } from '@/autopilot/productAdapter';
@@ -242,12 +242,6 @@ function CatalogSelectRow({
     () => Array.from(new Set([product.imagePath, product.imageUrl].filter((uri): uri is string => isDisplayableProductImageUri(uri)))),
     [product.imagePath, product.imageUrl]
   );
-  const [failedImageUris, setFailedImageUris] = useState<string[]>([]);
-  const imageUri = imageCandidates.find((uri) => !failedImageUris.includes(uri)) ?? null;
-
-  useEffect(() => {
-    setFailedImageUris([]);
-  }, [product.localId, product.imagePath, product.imageUrl]);
 
   return (
     <Pressable
@@ -270,20 +264,11 @@ function CatalogSelectRow({
         />
       </View>
       <View className="h-12 w-12 overflow-hidden rounded-kd-md bg-kd-panel-muted dark:bg-kd-card-muted">
-        {imageUri ? (
-          <Image
-            source={{ uri: imageUri }}
-            className="h-full w-full"
-            resizeMode="cover"
-            onError={() => {
-              setFailedImageUris((current) => current.includes(imageUri) ? current : [...current, imageUri]);
-            }}
-          />
-        ) : (
-          <View className="h-full w-full items-center justify-center">
-            <ImageIcon size={16} color={theme.textSubtle} strokeWidth={1.8} />
-          </View>
-        )}
+        <CatalogProductImage
+          key={`${product.localId}\u0000${imageCandidates.join('\u0000')}`}
+          imageCandidates={imageCandidates}
+          theme={theme}
+        />
       </View>
       <View className="min-w-0 flex-1">
         <Text numberOfLines={1} className="text-kd-caption font-bold text-kd-text">
@@ -295,6 +280,38 @@ function CatalogSelectRow({
         </Text>
       </View>
     </Pressable>
+  );
+}
+
+function CatalogProductImage({
+  imageCandidates,
+  theme,
+}: {
+  imageCandidates: string[];
+  theme: KubdeeTheme;
+}): React.JSX.Element {
+  const [failedImageUris, setFailedImageUris] = useState<string[]>([]);
+  const imageUri = imageCandidates.find((uri) => !failedImageUris.includes(uri)) ?? null;
+
+  if (!imageUri) {
+    return (
+      <View className="h-full w-full items-center justify-center">
+        <ImageIcon size={16} color={theme.textSubtle} strokeWidth={1.8} />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: imageUri }}
+      className="h-full w-full"
+      resizeMode="cover"
+      onError={() => {
+        setFailedImageUris((current) =>
+          current.includes(imageUri) ? current : [...current, imageUri]
+        );
+      }}
+    />
   );
 }
 

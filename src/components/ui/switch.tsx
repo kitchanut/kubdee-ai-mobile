@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import * as SwitchPrimitives from '@rn-primitives/switch';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Platform } from 'react-native';
 
 type SwitchSize = 'md' | 'sm';
@@ -28,7 +28,9 @@ function Switch({
   ...props
 }: React.ComponentProps<typeof SwitchPrimitives.Root> & { size?: SwitchSize }) {
   const config = sizeConfig[size];
-  const translateX = useRef(new Animated.Value(props.checked ? config.onX : config.offX)).current;
+  const [translateX] = useState(
+    () => new Animated.Value(props.checked ? config.onX : config.offX)
+  );
 
   useEffect(() => {
     Animated.spring(translateX, {

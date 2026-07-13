@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import { Image as ImageIcon, Pencil, Trash2 } from 'lucide-react-native';
 
@@ -98,12 +98,13 @@ export function ProductCard({
     () => Array.from(new Set([product.imagePath, product.imageUrl].filter((uri): uri is string => isDisplayableProductImageUri(uri)))),
     [product.imagePath, product.imageUrl]
   );
-  const [failedImageUris, setFailedImageUris] = useState<string[]>([]);
+  const imageIdentity = `${product.localId}\u0000${product.imagePath ?? ''}\u0000${product.imageUrl ?? ''}`;
+  const [failedImages, setFailedImages] = useState<{ identity: string; uris: string[] }>({
+    identity: imageIdentity,
+    uris: [],
+  });
+  const failedImageUris = failedImages.identity === imageIdentity ? failedImages.uris : [];
   const imageUri = imageCandidates.find((uri) => !failedImageUris.includes(uri)) ?? null;
-
-  useEffect(() => {
-    setFailedImageUris([]);
-  }, [product.localId, product.imagePath, product.imageUrl]);
 
   return (
     <Pressable
@@ -130,7 +131,12 @@ export function ProductCard({
               accessibilityLabel={product.name}
               className="h-full w-full"
               onError={() => {
-                setFailedImageUris((current) => current.includes(imageUri) ? current : [...current, imageUri]);
+                setFailedImages((current) => {
+                  const currentUris = current.identity === imageIdentity ? current.uris : [];
+                  return currentUris.includes(imageUri)
+                    ? current
+                    : { identity: imageIdentity, uris: [...currentUris, imageUri] };
+                });
               }}
             />
           ) : (

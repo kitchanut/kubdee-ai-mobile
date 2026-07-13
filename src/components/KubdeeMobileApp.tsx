@@ -121,6 +121,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
   });
   const promptedMobileUpdateIdRef = useRef('');
   const auth = useAuth();
+  const syncProfileData = auth.syncProfileData;
   const { importShopeeProducts, refreshProducts } = useLibrary();
   const mobileVersionLabel = useMemo(() => getCurrentMobileVersionLabel(), []);
 
@@ -212,16 +213,24 @@ export default function KubdeeMobileApp(): React.JSX.Element {
     const userId = auth.user?.id?.trim() || '';
 
     if (!userId) {
-      setSelectedProfileId('');
-      setHasLoadedSelectedProfile(true);
+      queueMicrotask(() => {
+        if (active) {
+          setSelectedProfileId('');
+          setHasLoadedSelectedProfile(true);
+        }
+      });
       return () => {
         active = false;
       };
     }
 
-    setHasLoadedSelectedProfile(false);
-
-    AsyncStorage.getItem(selectedProfileStorageKey(userId))
+    Promise.resolve()
+      .then(() => {
+        if (active) {
+          setHasLoadedSelectedProfile(false);
+        }
+        return AsyncStorage.getItem(selectedProfileStorageKey(userId));
+      })
       .then((profileId) => {
         if (active && profileId?.trim()) {
           setSelectedProfileId(profileId.trim());
@@ -272,33 +281,46 @@ export default function KubdeeMobileApp(): React.JSX.Element {
       return;
     }
 
-    void auth.syncProfileData();
+    void syncProfileData();
   }, [
     auth.isPlanValid,
     auth.isSyncingProfiles,
     auth.lastProfilesSyncedAt,
     auth.profileDataError,
-    auth.syncProfileData,
     auth.syncedProfiles.length,
     auth.token,
     hasAttemptedProfileSync,
+    syncProfileData,
   ]);
 
   useEffect(() => {
+    let active = true;
     if (!hasLoadedSelectedProfile) {
-      return;
+      return () => {
+        active = false;
+      };
     }
 
     if (auth.syncedProfiles.length === 0 && (auth.isSyncingProfiles || !hasAttemptedProfileSync)) {
-      return;
+      return () => {
+        active = false;
+      };
     }
 
     const hasSelectedProfile = auth.syncedProfiles.some((profile) => profile.id === selectedProfileId);
     const nextProfileId = hasSelectedProfile ? selectedProfileId : auth.syncedProfiles[0]?.id ?? '';
 
     if (nextProfileId !== selectedProfileId) {
-      setSelectedProfileId(nextProfileId);
+      queueMicrotask(() => {
+        if (active) {
+          setSelectedProfileId(nextProfileId);
+        }
+      });
     }
+
+    return () => {
+      active = false;
+    };
   }, [
     auth.isSyncingProfiles,
     auth.syncedProfiles,

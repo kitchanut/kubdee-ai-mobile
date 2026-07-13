@@ -144,12 +144,6 @@ export default function ImageCreateScreen({
   );
 
   useEffect(() => {
-    if (!selectedProductId && profileProducts[0]?.localId) {
-      setSelectedProductId(profileProducts[0].localId);
-    }
-  }, [profileProducts, selectedProductId]);
-
-  useEffect(() => {
     const subscription = subscribeGoogleFlowRunnerLogs((entry) => {
       const activeRunId = activeRunIdRef.current;
       if (!activeRunId || entry.runId !== activeRunId || entry.event !== 'asset' || entry.step !== 'image') {

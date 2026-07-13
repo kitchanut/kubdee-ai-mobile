@@ -1,5 +1,5 @@
 import { cssInterop } from 'nativewind';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Easing, Image, Text as NativeText, View } from 'react-native';
 
 import KubdeeText from '@/components/ui/KubdeeText';
@@ -41,10 +41,10 @@ export default function AuthLoadingScreen({
   theme,
   useSystemText = false,
 }: AuthLoadingScreenProps): React.JSX.Element {
-  const entrance = useRef(new Animated.Value(0)).current;
-  const progress = useRef(new Animated.Value(0)).current;
-  const logoPulse = useRef(new Animated.Value(1)).current;
-  const stepOpacity = useRef(new Animated.Value(1)).current;
+  const [entrance] = useState(() => new Animated.Value(0));
+  const [progress] = useState(() => new Animated.Value(0));
+  const [logoPulse] = useState(() => new Animated.Value(1));
+  const [stepOpacity] = useState(() => new Animated.Value(1));
   const [stepIndex, setStepIndex] = useState(0);
 
   const progressTranslateX = progress.interpolate({

@@ -277,6 +277,15 @@ export default function ProfileScreen({
   const devicesLabel = `${user?.activeDevices ?? 0}/${user?.maxDevices ?? 0}`;
   const syncError = profileSyncError || profileDataError;
   const isSyncing = isCheckingPlan || isSyncingProfiles;
+  const selectedGroupIsValid =
+    selectedGroupId === GROUP_NONE ||
+    selectedGroupId === GROUP_NEW ||
+    syncedProfileGroups.some((group) => group.id === selectedGroupId);
+
+  if (!selectedGroupIsValid) {
+    setSelectedGroupId(GROUP_NONE);
+  }
+
   const createDisabled =
     isCreatingProfile ||
     !profileName.trim() ||
@@ -319,17 +328,6 @@ export default function ProfileScreen({
   useEffect(() => {
     void syncProfile();
   }, [syncProfile]);
-
-  useEffect(() => {
-    const validSelectedGroup =
-      selectedGroupId === GROUP_NONE ||
-      selectedGroupId === GROUP_NEW ||
-      syncedProfileGroups.some((group) => group.id === selectedGroupId);
-
-    if (!validSelectedGroup) {
-      setSelectedGroupId(GROUP_NONE);
-    }
-  }, [selectedGroupId, syncedProfileGroups]);
 
   const closeCreateModal = (): void => {
     if (isCreatingProfile) {

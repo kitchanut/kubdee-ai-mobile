@@ -168,8 +168,13 @@ export default function MediaPanel({
   const generatedAssets = getAssetsByKind(kind, selectedProfileId);
   useEffect(() => {
     let cancelled = false;
-    setIsLoadingProducts(true);
-    void getLocalProducts({ profileLocalId: selectedProfileId })
+    void Promise.resolve()
+      .then(() => {
+        if (!cancelled) {
+          setIsLoadingProducts(true);
+        }
+        return getLocalProducts({ profileLocalId: selectedProfileId });
+      })
       .then((products) => {
         if (!cancelled) {
           setProductOptions(products);

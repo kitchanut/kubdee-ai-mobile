@@ -77,7 +77,6 @@ function ActivityRunCard({
           ? Link2
           : ShoppingBag;
   const orderedLogs = useMemo(() => sortLogsByTime(run.logs), [run.logs]);
-  const latestLog = orderedLogs[orderedLogs.length - 1] ?? null;
   const logs = orderedLogs.slice(-MAX_AUTOMATION_LOGS_PER_RUN);
   const elapsedMs = getRunElapsedMs(run);
   const latestFlowStats = getLatestFlowStats(logs);

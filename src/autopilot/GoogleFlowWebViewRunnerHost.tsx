@@ -149,7 +149,8 @@ export default function GoogleFlowWebViewRunnerHost({
   const latestGeneratedImageDataUrlsRef = useRef<Map<string, string[]>>(new Map());
   const latestProductAssetsRef = useRef<Map<string, TrackedProductAsset[]>>(new Map());
   const [visible, setVisible] = useState(false);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isFlowReady, setIsFlowReady] = useState(false);
   const [flowWebViewKey, setFlowWebViewKey] = useState(0);
   const [overlayLogs, setOverlayLogs] = useState<OverlayLogLine[]>([]);
   const [overlayProgress, setOverlayProgress] = useState<OverlayProgressState | null>(null);
@@ -282,6 +283,11 @@ export default function GoogleFlowWebViewRunnerHost({
       await sleep(250);
     }
     throw new Error('WebView ยังไม่พร้อม');
+  }, []);
+
+  const setFlowHandle = useCallback((handle: FlowWebViewHandle | null): void => {
+    flowRef.current = handle;
+    setIsFlowReady(handle !== null);
   }, []);
 
   const runActionOrThrow = useCallback(
@@ -1266,95 +1272,6 @@ export default function GoogleFlowWebViewRunnerHost({
       }
     },
     [emit, runActionOrThrow]
-  );
-
-  const selectRecentImageOrThrow = useCallback(
-    async ({
-      handle,
-      indexOffset = 0,
-      payload,
-      product,
-      productIndex,
-      round,
-      stage,
-      step,
-    }: {
-      handle: FlowWebViewHandle;
-      indexOffset?: number;
-      payload: GoogleFlowRunnerPayload;
-      product: GoogleFlowRunnerProduct;
-      productIndex: number;
-      round: number;
-      stage: string;
-      step: AutoPilotStepType;
-    }): Promise<Record<string, unknown>> => {
-      const previousContext = actionLogContextRef.current;
-      const context: FlowActionLogContext = {
-        payload,
-        product,
-        productIndex,
-        round,
-        step,
-        stage,
-      };
-      actionLogContextRef.current = context;
-      try {
-        emit({
-          event: 'progress',
-          runId: payload.runId,
-          status: 'running',
-          step,
-          stage,
-          productId: product.id,
-          productName: product.name,
-          currentRound: round,
-          totalRounds: payload.settings.totalRounds,
-          currentProduct: productIndex + 1,
-          totalProducts: payload.products.length,
-          message: `เริ่มเปิด dialog เลือกรูปล่าสุดจาก Google Flow จะกดปุ่ม + และตรวจว่า dialog เปิดจริง`,
-        });
-        const result = await runActionOrThrow(handle, 'selectRecentImage', { indexOffset }, 45_000);
-        emit({
-          event: 'progress',
-          runId: payload.runId,
-          status: 'running',
-          level: 'success',
-          step,
-          stage,
-          productId: product.id,
-          productName: product.name,
-          currentRound: round,
-          totalRounds: payload.settings.totalRounds,
-          currentProduct: productIndex + 1,
-          totalProducts: payload.products.length,
-          message: 'เลือกรูปล่าสุดจาก dialog Google Flow สำเร็จ',
-        });
-        return result;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error || 'unknown');
-        emit({
-          event: 'progress',
-          runId: payload.runId,
-          status: 'running',
-          level: 'error',
-          step,
-          stage,
-          productId: product.id,
-          productName: product.name,
-          currentRound: round,
-          totalRounds: payload.settings.totalRounds,
-          currentProduct: productIndex + 1,
-          totalProducts: payload.products.length,
-          message: `เลือกรูปล่าสุดจาก Google Flow ไม่สำเร็จ: ${message}`,
-        });
-        throw error;
-      } finally {
-        if (actionLogContextRef.current === context) {
-          actionLogContextRef.current = previousContext;
-        }
-      }
-    },
-    [runActionOrThrow]
   );
 
   const runProductStep = useCallback(
@@ -3118,6 +3035,7 @@ export default function GoogleFlowWebViewRunnerHost({
     },
     [
       downloadLatestFlowImage,
+      checkStop,
       emit,
       ensureVideoReferenceAttached,
       fillPromptAndSubmit,
@@ -3398,7 +3316,7 @@ export default function GoogleFlowWebViewRunnerHost({
         stopRequestedRef.current = false;
         payloadRef.current = null;
         latestGeneratedImageDataUrlsRef.current.clear();
-        setActiveRunId(null);
+        setIsRunning(false);
       }
     },
     [checkStop, cleanupLatestFlowProjectForProduct, emit, runProductStep, waitForHandle]
@@ -3414,11 +3332,12 @@ export default function GoogleFlowWebViewRunnerHost({
         stopRequestedRef.current = false;
         payloadRef.current = payload;
         latestGeneratedImageDataUrlsRef.current.clear();
-        setActiveRunId(payload.runId);
+        setIsRunning(true);
         flowStatusRef.current = 'unknown';
         setOverlayLogs([]);
         setOverlayProgress(null);
         flowRef.current = null;
+        setIsFlowReady(false);
         setFlowWebViewKey((key) => key + 1);
         setVisible(true);
         flowUrlRef.current = '';
@@ -3486,7 +3405,7 @@ export default function GoogleFlowWebViewRunnerHost({
             onPress={requestStop}
             className="h-10 w-10 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-card"
           >
-            {runningRef.current ? (
+            {isRunning ? (
               <Square size={14} color={theme.red} fill={theme.red} strokeWidth={2.2} />
             ) : (
               <X size={18} color={theme.textSubtle} strokeWidth={2.4} />
@@ -3566,7 +3485,7 @@ export default function GoogleFlowWebViewRunnerHost({
         <View className="relative flex-1">
           <FlowWebView
             key={flowWebViewKey}
-            ref={flowRef}
+            ref={setFlowHandle}
             accountProbeEnabled={false}
             backgroundColor={theme.screen}
             onActionLog={emitFlowActionLog}
@@ -3609,7 +3528,7 @@ export default function GoogleFlowWebViewRunnerHost({
               })}
             </View>
           ) : null}
-          {!flowRef.current ? (
+          {!isFlowReady ? (
             <View className="absolute inset-0 items-center justify-center bg-kd-panel/70">
               <ActivityIndicator size="small" color={theme.orange} />
             </View>

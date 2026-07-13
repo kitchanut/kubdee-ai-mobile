@@ -210,10 +210,6 @@ function extensionFromUri(uri: string): string | null {
   return extension && /^[a-z0-9]+$/.test(extension) ? extension : null;
 }
 
-function mimeTypeFromExtension(extension: string): string {
-  return imageTypeFromExtension(extension)?.mimeType ?? 'image/jpeg';
-}
-
 function headerValue(headers: Record<string, string> | undefined, key: string): string | null {
   if (!headers) return null;
   const direct = headers[key] ?? headers[key.toLowerCase()] ?? headers[key.toUpperCase()];

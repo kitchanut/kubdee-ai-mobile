@@ -143,7 +143,7 @@ export default function ActivityLogCard<TLog extends ActivityLogEntry = Activity
       setCopiedLogs(false);
       copyResetTimerRef.current = null;
     }, 1600);
-  }, [formatTimestamp, latestLog?.ts, orderedLogs, runStartedAt, runUpdatedAt, title]);
+  }, [formatTimestamp, latestLog?.ts, logs.length, orderedLogs, runStartedAt, runUpdatedAt, title]);
 
   useEffect(() => {
     if (!drawerOpen) {
@@ -669,12 +669,15 @@ function useRunningNow(running: boolean): number {
       return;
     }
 
-    setNow(Date.now());
+    const initialTimer = setTimeout(() => {
+      setNow(Date.now());
+    }, 0);
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 1000);
 
     return () => {
+      clearTimeout(initialTimer);
       clearInterval(timer);
     };
   }, [running]);

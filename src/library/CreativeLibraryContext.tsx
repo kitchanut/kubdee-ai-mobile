@@ -61,7 +61,10 @@ export function CreativeLibraryProvider({ children }: { children: ReactNode }): 
   }, []);
 
   useEffect(() => {
-    void refreshCreativeLibrary();
+    const timer = setTimeout(() => {
+      void refreshCreativeLibrary();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [refreshCreativeLibrary]);
 
   const addMediaAsset = useCallback(async (input: UpsertCreativeMediaAssetInput): Promise<CreativeMediaAsset> => {

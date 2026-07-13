@@ -95,9 +95,13 @@ export default function MobileChangelogModal({
     }
 
     let active = true;
-    setIsLoading(true);
-
-    loadMobileChangelog(authToken)
+    Promise.resolve()
+      .then(() => {
+        if (active) {
+          setIsLoading(true);
+        }
+        return loadMobileChangelog(authToken);
+      })
       .then((result) => {
         if (active) {
           setReleases(result.releases);
@@ -139,7 +143,7 @@ export default function MobileChangelogModal({
               <View className="min-w-0 flex-1">
                 <View className="flex-row flex-wrap items-center gap-2.5">
                   <Text className="text-base font-semibold text-kd-text">
-                    Kubdee AI — What's New
+                    Kubdee AI — What&apos;s New
                   </Text>
                   <View className="rounded-full bg-[#111827] px-2 py-0.5 dark:bg-white">
                     <Text className="text-[10px] font-semibold text-white dark:text-[#111827]">

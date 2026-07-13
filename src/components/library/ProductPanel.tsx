@@ -513,15 +513,24 @@ export default function ProductPanel({
 
   // Drop selections that no longer exist after a re-sync.
   useEffect(() => {
-    setSelectedIds((current) => {
-      if (current.size === 0) {
-        return current;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) {
+        return;
       }
+      setSelectedIds((current) => {
+        if (current.size === 0) {
+          return current;
+        }
 
-      const valid = new Set(products.map(getProductKey));
-      const next = new Set([...current].filter((id) => valid.has(id)));
-      return next.size === current.size ? current : next;
+        const valid = new Set(products.map(getProductKey));
+        const next = new Set([...current].filter((id) => valid.has(id)));
+        return next.size === current.size ? current : next;
+      });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [products]);
 
   const visibleProducts = useMemo(() => {
@@ -1006,11 +1015,12 @@ export default function ProductPanel({
     [shopeeImportSource]
   );
 
-  useEffect(() => {
-    if (shopeeImportSource !== 'liked' && shopeeImportAmount === 'all') {
+  const selectShopeeImportSource = useCallback((source: ShopeeImportSource): void => {
+    setShopeeImportSource(source);
+    if (source !== 'liked' && shopeeImportAmount === 'all') {
       setShopeeImportAmount(50);
     }
-  }, [shopeeImportAmount, shopeeImportSource]);
+  }, [shopeeImportAmount]);
 
   const handlePullRefresh = (): void => {
     if (isSyncing) {
@@ -1514,12 +1524,12 @@ export default function ProductPanel({
                 <ShopeeImportOptionButton
                   active={shopeeImportSource === 'liked'}
                   label="ถูกใจ"
-                  onPress={() => setShopeeImportSource('liked')}
+                  onPress={() => selectShopeeImportSource('liked')}
                 />
                 <ShopeeImportOptionButton
                   active={shopeeImportSource === 'offers'}
                   label="ข้อเสนอ"
-                  onPress={() => setShopeeImportSource('offers')}
+                  onPress={() => selectShopeeImportSource('offers')}
                 />
               </View>
 

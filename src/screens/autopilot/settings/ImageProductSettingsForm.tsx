@@ -67,7 +67,7 @@ export function ImageProductSettingsForm({
   };
 
   // ชุดของตัวละคร — ใช้ทุก styleMode + AI ; ข้อความในภาพ — ใช้ใน AI mode (auto mode มี section แยกล่างสุด)
-  const OutfitBlock = (): React.JSX.Element => (
+  const renderOutfitBlock = (): React.JSX.Element => (
     <View className="gap-1.5">
       <FieldHeader label="ชุดของตัวละคร" />
       <CardOptionGrid
@@ -89,7 +89,7 @@ export function ImageProductSettingsForm({
     </View>
   );
 
-  const TextOverlayBlock = (): React.JSX.Element => (
+  const renderTextOverlayBlock = (): React.JSX.Element => (
     <View className="gap-1.5">
       <FieldHeader label="ข้อความในภาพ" />
       <CardOptionGrid
@@ -214,8 +214,8 @@ export function ImageProductSettingsForm({
       {/* 4. AI mode: ชุดของตัวละคร + ข้อความในภาพ */}
       {settings.promptMode === 'ai' ? (
         <View className="gap-4">
-          <OutfitBlock />
-          <TextOverlayBlock />
+          {renderOutfitBlock()}
+          {renderTextOverlayBlock()}
         </View>
       ) : null}
 
@@ -263,7 +263,7 @@ export function ImageProductSettingsForm({
                   onCustomChange={(value) => onChange('presetStyleCustom', value)}
                   customPlaceholder="พิมพ์สไตล์รูปภาพที่ต้องการ..."
                 />
-                <OutfitBlock />
+                {renderOutfitBlock()}
               </View>
             ) : null}
 
@@ -299,7 +299,7 @@ export function ImageProductSettingsForm({
                     onChange={(value) => onChange('productDisplayMode', value)}
                   />
                 </View>
-                <OutfitBlock />
+                {renderOutfitBlock()}
               </View>
             ) : null}
 
@@ -320,7 +320,7 @@ export function ImageProductSettingsForm({
                   value={settings.viralStyle}
                   onChange={(value) => onChange('viralStyle', value)}
                 />
-                <OutfitBlock />
+                {renderOutfitBlock()}
               </View>
             ) : null}
 
@@ -340,7 +340,7 @@ export function ImageProductSettingsForm({
                     (สถานที่ใช้ค่าจากหัวข้อ &quot;ฉาก&quot; ด้านล่าง)
                   </Text>
                 </View>
-                <OutfitBlock />
+                {renderOutfitBlock()}
               </View>
             ) : null}
           </View>

@@ -372,8 +372,6 @@ export function useAutoPilotController({
     return () => {
       subscription?.remove();
     };
-    // Intentionally subscribe once for the component's lifetime — see listenerDepsRef above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateSetting = useCallback(

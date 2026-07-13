@@ -38,7 +38,6 @@ const defaultReporter: TelemetryReporter = {
     if (recentEvents.length > RING_BUFFER_SIZE) recentEvents.shift();
     if (__DEV__flag) {
       const tag = `[telemetry:${event.severity}]`;
-      // eslint-disable-next-line no-console
       console[event.severity === 'error' ? 'error' : 'log'](tag, event.message, event.context ?? '', event.error ?? '');
     }
   },

@@ -99,6 +99,10 @@ export default function AutoPilotScreen({
   });
   const replaceSelectedProductIds = controller.replaceSelectedProductIds;
   const initialSelectedProductIdsKey = initialSelectedProductIds.join('\u0000');
+  const initialSelectedProductIdsSnapshot = useMemo(
+    () => (initialSelectedProductIdsKey ? initialSelectedProductIdsKey.split('\u0000') : []),
+    [initialSelectedProductIdsKey]
+  );
   const selectedProductIds = useMemo(
     () => Array.from(controller.selectedProductIds),
     [controller.selectedProductIds]
@@ -106,8 +110,8 @@ export default function AutoPilotScreen({
   const selectedProductIdsKey = selectedProductIds.join('\u0000');
 
   useEffect(() => {
-    replaceSelectedProductIds(initialSelectedProductIds);
-  }, [initialSelectedProductIdsKey, replaceSelectedProductIds, selectedProfileId]);
+    replaceSelectedProductIds(initialSelectedProductIdsSnapshot);
+  }, [initialSelectedProductIdsSnapshot, replaceSelectedProductIds, selectedProfileId]);
 
   useEffect(() => {
     onSelectedProductIdsChange?.(selectedProductIds, selectedProfileId);
@@ -190,17 +194,10 @@ export default function AutoPilotScreen({
     setProductPresets(presets);
   }, [selectedProfileId]);
 
-  useEffect(() => {
-    if (!productPresetSheetOpen) {
-      return;
-    }
-
-    void refreshProductPresets();
-  }, [productPresetSheetOpen, refreshProductPresets]);
-
   const openProductPresetSheet = (): void => {
     setProductPresetMode(controller.selectedProducts.length > 0 ? 'save' : 'load');
     setProductPresetName('');
+    void refreshProductPresets();
     setProductPresetSheetOpen(true);
   };
 
@@ -253,17 +250,10 @@ export default function AutoPilotScreen({
     setSettingsPresets(presets);
   }, []);
 
-  useEffect(() => {
-    if (!settingsPresetSheetOpen) {
-      return;
-    }
-
-    void refreshSettingsPresets();
-  }, [refreshSettingsPresets, settingsPresetSheetOpen]);
-
   const openSettingsPresetSheet = (mode: 'save' | 'load'): void => {
     setSettingsPresetMode(mode);
     setSettingsPresetName('');
+    void refreshSettingsPresets();
     setSettingsPresetSheetOpen(true);
   };
 

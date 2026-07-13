@@ -94,7 +94,9 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
   }, []);
 
   useEffect(() => {
-    void refreshStatus();
+    const initialRefreshTimer = setTimeout(() => {
+      void refreshStatus();
+    }, 0);
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void refreshStatus();
@@ -102,6 +104,7 @@ export default function MobileDevicesScreen({ theme }: MobileDevicesScreenProps)
     });
 
     return () => {
+      clearTimeout(initialRefreshTimer);
       subscription.remove();
     };
   }, [refreshStatus]);

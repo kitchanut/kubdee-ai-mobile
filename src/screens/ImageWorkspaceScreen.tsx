@@ -355,15 +355,15 @@ export default function ImageWorkspaceScreen({
   const [characterDrafts, setCharacterDrafts] = useState<DraftItem[]>(() => [createDraft('characters', 0)]);
   const [sceneDrafts, setSceneDrafts] = useState<DraftItem[]>(() => [createDraft('scenes', 0)]);
 
-  const [characterType, setCharacterType] = useState<SelectKey>('คนจริง (เหมือนจริง)');
+  const characterType: SelectKey = 'คนจริง (เหมือนจริง)';
   const [characterPreset, setCharacterPreset] = useState('ไม่มี');
-  const [gender, setGender] = useState<SelectKey>('ไม่ระบุ');
-  const [age, setAge] = useState<SelectKey>('ไม่ระบุ');
-  const [ethnicity, setEthnicity] = useState<SelectKey>('คนไทย');
-  const [skinTone, setSkinTone] = useState<SelectKey>('ไม่ระบุ');
-  const [expression, setExpression] = useState<SelectKey>('ไม่ระบุ');
-  const [outfit, setOutfit] = useState<SelectKey>('ไม่ระบุ');
-  const [pose, setPose] = useState<SelectKey>('ไม่ระบุ');
+  const gender: SelectKey = 'ไม่ระบุ';
+  const age: SelectKey = 'ไม่ระบุ';
+  const ethnicity: SelectKey = 'คนไทย';
+  const skinTone: SelectKey = 'ไม่ระบุ';
+  const expression: SelectKey = 'ไม่ระบุ';
+  const outfit: SelectKey = 'ไม่ระบุ';
+  const pose: SelectKey = 'ไม่ระบุ';
 
   const [sceneType, setSceneType] = useState('ออโต้');
   const [sceneMood, setSceneMood] = useState('ออโต้');
