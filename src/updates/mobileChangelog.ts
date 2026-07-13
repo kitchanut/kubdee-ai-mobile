@@ -44,6 +44,33 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.8.0',
+    date: '2026-07-13',
+    highlight: 'นำเข้าสินค้าจาก TikTok Showcase เข้าคลังได้แล้ว',
+    changes: [
+      {
+        type: 'feature',
+        text: 'เพิ่มการดึงสินค้าจาก TikTok Showcase เข้าคลังสินค้า พร้อมอัปเดตข้อมูลเดิมโดยไม่สร้างรายการซ้ำ'
+      },
+      {
+        type: 'improved',
+        text: 'ปรับหน้า TikTok สำหรับดึงสินค้าให้แสดงสัดส่วนแบบคอมพิวเตอร์ เห็นพื้นที่ทำงานครบและซูมได้สะดวกขึ้น'
+      },
+      {
+        type: 'improved',
+        text: 'เมื่อบันทึกสินค้าสำเร็จ ระบบจะปิดหน้า TikTok และกลับสู่คลังสินค้าเร็วขึ้น'
+      },
+      {
+        type: 'improved',
+        text: 'แสดงโลโก้ TikTok และ Shopee บนการ์ดสินค้า เพื่อให้แยกแหล่งที่มาของสินค้าได้ง่ายขึ้น'
+      },
+      {
+        type: 'fixed',
+        text: 'แก้ปัญหาเตรียม TikTok ไม่สำเร็จและล้างข้อมูลการเข้าสู่ระบบไม่ได้ในบางกรณี'
+      }
+    ]
+  },
+  {
     version: '0.7.0',
     date: '2026-07-12',
     highlight: 'AI คิด Caption/Hashtags อัตโนมัติตอนโพสต์',

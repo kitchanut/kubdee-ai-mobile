@@ -21,12 +21,28 @@ export const DESKTOP_ENV_SPOOF = `(function(){
   try { Object.defineProperty(navigator, 'userAgentData', { get: function(){ return undefined; }, configurable: true }); } catch(e){}
   try { delete window.ontouchstart; } catch(e){}
 
-  var WANT = 'width=1400, initial-scale=0.3, minimum-scale=0.2, maximum-scale=3, user-scalable=yes';
+  var DESKTOP_WIDTH = 1440;
+  var deviceWidth = Number(screen && screen.width) || 360;
+  var fitScale = Math.max(0.2, Math.min(1, deviceWidth / DESKTOP_WIDTH));
+  var WANT = 'width=' + DESKTOP_WIDTH + ', initial-scale=' + fitScale.toFixed(4) + ', minimum-scale=0.2, maximum-scale=3, user-scalable=yes';
   function apply(){
     var m = document.querySelector('meta[name="viewport"]');
     if (!m){ m = document.createElement('meta'); m.setAttribute('name','viewport'); (document.head||document.documentElement).appendChild(m); }
     if (m.getAttribute('content') !== WANT) m.setAttribute('content', WANT);
   }
   apply();
-  try { new MutationObserver(apply).observe(document.documentElement, { childList:true, subtree:true }); } catch(e){}
+  try {
+    if (window.__kubdeeDesktopViewportObserver) window.__kubdeeDesktopViewportObserver.disconnect();
+    window.__kubdeeDesktopViewportObserver = new MutationObserver(apply);
+    window.__kubdeeDesktopViewportObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['content', 'name']
+    });
+  } catch(e){}
+  try { document.addEventListener('DOMContentLoaded', apply, { once:true }); } catch(e){}
+  try { window.addEventListener('load', apply, { once:true }); } catch(e){}
+  setTimeout(apply, 250);
+  setTimeout(apply, 1000);
 })(); true;`;

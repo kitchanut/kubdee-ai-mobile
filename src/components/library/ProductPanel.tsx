@@ -24,6 +24,10 @@ import { useAuth } from '@/auth/AuthContext';
 import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import TikTokShowcaseModal from '@/tiktok/TikTokShowcaseModal';
+import type {
+  TikTokShowcaseImportSummary,
+  TikTokShowcaseProduct,
+} from '@/tiktok/TikTokShowcaseModal';
 import { useShopeeIncrementalProductSaver } from '@/hooks/useShopeeIncrementalProductSaver';
 import { useLibrary } from '@/library/LibraryContext';
 import { storePendingTab } from '@/navigation/pendingNavigation';
@@ -237,7 +241,7 @@ export default function ProductPanel({
 }): React.JSX.Element {
   const accent = getAccentTone(theme, theme.emerald);
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, syncedProfiles } = useAuth();
   const {
     products: allProducts,
     isSyncing,
@@ -245,6 +249,7 @@ export default function ProductPanel({
     syncError,
     refreshProducts,
     syncProducts,
+    importTikTokProducts,
     importShopeeProducts,
     updateProduct,
     deleteProducts,
@@ -279,6 +284,11 @@ export default function ProductPanel({
   const [editImageOverride, setEditImageOverride] = useState<ProductEditImageOverride | null>(null);
   const [isProductEditSaving, setIsProductEditSaving] = useState(false);
   const [isConvertingShopeeLinks, setIsConvertingShopeeLinks] = useState(false);
+
+  const selectedProfileName = useMemo(
+    () => syncedProfiles.find((profile) => profile.id === selectedProfileId)?.name,
+    [selectedProfileId, syncedProfiles]
+  );
 
   // สินค้า Shopee ของโปรไฟล์ที่เลือก ที่ลิงก์ยังเป็นลิงก์เต็ม (ไม่ใช่ s.shopee short link)
   // ช่องค้นหาสินค้าตอนโพสต์ Shopee ใช้ได้เฉพาะ short link เท่านั้น
@@ -587,8 +597,74 @@ export default function ProductPanel({
       Alert.alert('เลือกโปรไฟล์ก่อน', 'เลือกโปรไฟล์ที่ล็อกอิน TikTok ไว้ แล้วจึงดึงสินค้า Showcase');
       return;
     }
+    if (isShopeeImporting || isSyncing || showcaseOpen) {
+      return;
+    }
     setShowcaseOpen(true);
-  }, [selectedProfileId]);
+  }, [isShopeeImporting, isSyncing, selectedProfileId, showcaseOpen]);
+
+  const handleImportTikTokProducts = useCallback(async (
+    scrapedProducts: TikTokShowcaseProduct[],
+    onPhaseChange: (phase: 'saving' | 'syncing') => void
+  ) => {
+    if (!selectedProfileId) {
+      throw new Error('ไม่พบโปรไฟล์สำหรับบันทึกสินค้า TikTok');
+    }
+
+    onPhaseChange('saving');
+    const importResult = await importTikTokProducts(
+      selectedProfileId,
+      scrapedProducts.map((product) => ({
+        name: product.name,
+        productId: product.productId,
+        price: product.price,
+        stock: product.stock,
+        imageUrl: product.imageUrl,
+        status: product.status,
+        scrapedAt: Date.now(),
+      })),
+      {
+        debugLog: (message) => console.log('[SHOWCASE-IMPORT]', message),
+        sync: false,
+      }
+    );
+
+    if (!importResult?.success) {
+      throw new Error(importResult?.error || 'บันทึกสินค้า TikTok ลงคลังไม่สำเร็จ');
+    }
+
+    onPhaseChange('syncing');
+    const syncResult = await syncProducts({ profileLocalId: selectedProfileId, reconcile: false });
+    const syncWarning = !syncResult
+      ? 'บันทึกในเครื่องแล้ว รอซิงก์ Cloud'
+      : syncResult.success
+        ? null
+        : syncResult.error || 'บันทึกในเครื่องแล้ว แต่ยังซิงก์ Cloud ไม่สำเร็จ';
+
+    return {
+      imported: importResult.imported,
+      created: importResult.newCount,
+      syncWarning,
+      updated: importResult.updateCount,
+    };
+  }, [importTikTokProducts, selectedProfileId, syncProducts]);
+
+  const handleTikTokShowcaseComplete = useCallback(
+    (summary: TikTokShowcaseImportSummary): void => {
+      setShowcaseOpen(false);
+      const detail = `เพิ่มใหม่ ${summary.created ?? 0} · อัปเดต ${summary.updated ?? 0}`;
+      if (summary.syncWarning) {
+        toast.warning(`${summary.syncWarning} · ${detail}`);
+        return;
+      }
+      toast.success(`บันทึกสินค้า TikTok ${summary.imported} รายการ · ${detail}`);
+    },
+    []
+  );
+
+  const handleCloseTikTokShowcase = useCallback((): void => {
+    setShowcaseOpen(false);
+  }, []);
 
   const syncShopeeImportQueue = useCallback(async (): Promise<void> => {
     const result = await syncProducts(
@@ -1044,6 +1120,7 @@ export default function ProductPanel({
                     small
                     iconOnly
                     label="ShowCase"
+                    disabled={isShopeeImporting || isSyncing || showcaseOpen}
                     leading={<TikTokLogo size={12} color={darkButtonContentColor(theme)} />}
                     onPress={handleOpenShowcase}
                   />
@@ -1560,9 +1637,12 @@ export default function ProductPanel({
 
       <TikTokShowcaseModal
         profileId={selectedProfileId}
+        profileName={selectedProfileName}
         theme={theme}
         visible={showcaseOpen}
-        onClose={() => setShowcaseOpen(false)}
+        onClose={handleCloseTikTokShowcase}
+        onComplete={handleTikTokShowcaseComplete}
+        onImportProducts={handleImportTikTokProducts}
       />
     </View>
   );

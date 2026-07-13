@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import { Image as ImageIcon, Pencil, Trash2 } from 'lucide-react-native';
 
+import { ShopeeLogo, TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import { isDisplayableProductImageUri } from '@/library/productImageCache';
 import type { AffiliateProduct } from '@/library/types';
@@ -92,6 +93,7 @@ export function ProductCard({
   onDelete: () => void;
 }): React.JSX.Element {
   const platformLabel = getPlatformLabel(product.platform);
+  const normalizedPlatform = (product.platform ?? '').trim().toLowerCase();
   const imageCandidates = useMemo(
     () => Array.from(new Set([product.imagePath, product.imageUrl].filter((uri): uri is string => isDisplayableProductImageUri(uri)))),
     [product.imagePath, product.imageUrl]
@@ -141,8 +143,30 @@ export function ProductCard({
             <Text numberOfLines={1} className="min-w-0 flex-shrink text-kd-body font-semibold text-kd-text">
               {product.name}
             </Text>
-            {platformLabel ? (
-              <View className="shrink-0 rounded-full bg-kd-panel-muted px-1.5 py-px dark:bg-kd-card-muted">
+            {normalizedPlatform === 'tiktok' ? (
+              <View
+                accessible
+                accessibilityLabel="แพลตฟอร์ม TikTok"
+                accessibilityRole="image"
+                className="shrink-0"
+              >
+                <TikTokLogo size={15} isDark={theme.isDark} />
+              </View>
+            ) : normalizedPlatform === 'shopee' ? (
+              <View
+                accessible
+                accessibilityLabel="แพลตฟอร์ม Shopee"
+                accessibilityRole="image"
+                className="shrink-0"
+              >
+                <ShopeeLogo size={15} />
+              </View>
+            ) : platformLabel ? (
+              <View
+                accessible
+                accessibilityLabel={`แพลตฟอร์ม ${platformLabel}`}
+                className="shrink-0 rounded-full bg-kd-panel-muted px-1.5 py-px dark:bg-kd-card-muted"
+              >
                 <Text className="text-[8px] font-medium text-kd-text-muted">{platformLabel}</Text>
               </View>
             ) : null}

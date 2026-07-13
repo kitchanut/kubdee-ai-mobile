@@ -155,9 +155,34 @@ export function buildShowcaseScraperScript(): string {
 
   function clickShowcaseTab(){
     var labels = ['นำเสนอสินค้า','Showcase products'];
-    var tabs = document.querySelectorAll('.TUXTabBar-itemTitle, .TUXTabBar-item');
-    for (var i=0;i<tabs.length;i++){ var t = (tabs[i].textContent||'').trim(); for (var l=0;l<labels.length;l++){ if (t.indexOf(labels[l])>=0){ tabs[i].click(); return true; } } }
+    var tabs = document.querySelectorAll('.TUXTabBar-itemTitle, .TUXTabBar-item, [role="tab"]');
+    for (var i=0;i<tabs.length;i++){
+      var t = (tabs[i].textContent||'').trim();
+      for (var l=0;l<labels.length;l++){
+        if (t.indexOf(labels[l])>=0){
+          var target = tabs[i].closest('[role="tab"], .TUXTabBar-item') || tabs[i];
+          target.click();
+          return true;
+        }
+      }
+    }
     return false;
+  }
+
+  function showcaseArea(){
+    var candidates = document.querySelectorAll('[role="dialog"], [class*="common-modal"], [class*="TUXModal"]');
+    for (var i=0;i<candidates.length;i++){
+      var text = (candidates[i].textContent || '').replace(/\\s+/g, ' ');
+      var hasShowcase = text.indexOf('นำเสนอสินค้า') >= 0 || text.indexOf('Showcase products') >= 0;
+      var hasProductColumns = text.indexOf('ID สินค้า') >= 0 || text.indexOf('Product ID') >= 0;
+      if (hasShowcase && hasProductColumns) return candidates[i];
+    }
+    return document;
+  }
+
+  function showcaseListReady(){
+    var area = showcaseArea();
+    return !!area.querySelector('tr.product-tb-row, table tbody, [class*="product-table"] tbody, [data-e2e*="product-list"], [data-testid*="product-list"], [class*="product-list"], [data-e2e*="empty"], [class*="product"][class*="empty"]');
   }
 
   // Diagnostic for when 0 products scrape — dumps the real modal/list structure so we
@@ -180,39 +205,74 @@ export function buildShowcaseScraperScript(): string {
     };
   }
 
+  function firstIn(root, selectors){
+    for (var i=0;i<selectors.length;i++){ var found = root.querySelector(selectors[i]); if (found) return found; }
+    return null;
+  }
+
+  function cleanText(el){ return el ? (el.textContent || '').replace(/\\s+/g, ' ').trim() : ''; }
+
+  function productRows(){
+    var area = showcaseArea();
+    var selectors = ['tr.product-tb-row', 'table tbody tr', '[class*="product-table"] tbody tr', '[data-e2e*="product-list"] [data-e2e*="product-row"]', '[data-testid*="product-list"] [data-testid*="product-row"]', '[data-e2e*="product-item"]', '[data-testid*="product-item"]', '[class*="product-list"] [class*="product-item"]'];
+    for (var i=0;i<selectors.length;i++){ var rows = area.querySelectorAll(selectors[i]); if (rows.length) return rows; }
+    return [];
+  }
+
+  function getCurrentPage(){
+    var active = firstIn(document, ['.tiktok-pagination-item-is-active', '.tiktok-pagination-item[aria-current="page"]', '[class*="pagination"] [aria-current="page"]']);
+    var n = parseInt(cleanText(active), 10);
+    return isNaN(n) ? 1 : n;
+  }
+
+  function findNextPageButton(){
+    var selectors = ['.tiktok-pagination-item-right-arrow', 'button[aria-label="Next page"]', 'button[aria-label="ถัดไป"]', '[class*="pagination"] button[aria-label*="next" i]'];
+    for (var i=0;i<selectors.length;i++){
+      var el = qs(selectors[i]);
+      if (!el) continue;
+      var cls = ((el.className || '') + '').toLowerCase();
+      var disabledParent = el.closest('[aria-disabled="true"], [class*="disabled"]');
+      if (!el.disabled && el.getAttribute('aria-disabled') !== 'true' && cls.indexOf('disabled') < 0 && !disabledParent) return el;
+    }
+    return null;
+  }
+
   function scrapePage(){
     var products = [];
-    var rows = document.querySelectorAll('tr.product-tb-row');
+    var rows = productRows();
     for (var i=0;i<rows.length;i++){
       try {
         var row = rows[i];
-        var cells = row.querySelectorAll('td');
-        if (cells.length < 4) continue;
-        var nameEl = row.querySelector('span.product-name');
-        var name = nameEl ? nameEl.textContent.trim() : '';
-        var imgEl = row.querySelector('img.product-image');
-        var imageUrl = imgEl ? imgEl.src : '';
-        var productIdCell = cells[1] ? cells[1].querySelector('.product-tb-cell') : null;
-        var productId = productIdCell ? productIdCell.textContent.trim() : '';
-        var priceCell = cells[2] ? cells[2].querySelector('.product-tb-cell') : null;
-        var priceText = priceCell ? priceCell.textContent.trim() : '';
-        var price = priceText.replace(/[^\\d.]/g, '');
-        var stockCell = cells[3] ? cells[3].querySelector('.product-tb-cell') : null;
-        var stockText = stockCell ? stockCell.textContent.trim() : '';
-        var stock = parseInt(stockText.replace(/,/g, ''), 10) || 0;
-        var statusEl = row.querySelector('.product-status');
-        var status = statusEl ? statusEl.textContent.trim() : '';
-        var isActive = (status === 'ดำเนินอยู่' || status === 'Active');
+        var cells = row.querySelectorAll('td, [role="cell"]');
+        var nameEl = firstIn(row, ['span.product-name', '[data-e2e*="product-name"]', '[data-testid*="product-name"]', '[class*="product-name"]']);
+        var name = cleanText(nameEl);
+        if (!name && cells[0]) name = cleanText(cells[0]).replace(/(?:รหัสสินค้า|Product ID|ID)\\s*[:：]?\\s*\\d+/i, '').trim();
+        var imgEl = firstIn(row, ['img.product-image', '[data-e2e*="product-image"] img', '[data-testid*="product-image"] img', 'img[src]']);
+        var imageUrl = imgEl ? (imgEl.currentSrc || imgEl.src || '') : '';
+        var productIdEl = firstIn(row, ['[data-e2e*="product-id"]', '[data-testid*="product-id"]', '[class*="product-id"]']);
+        var productIdText = cleanText(productIdEl) || (row.getAttribute('data-product-id') || '') || (cells[1] ? cleanText(cells[1]) : '');
+        var productIdMatch = productIdText.match(/(?:รหัสสินค้า|Product ID|ID)?\\s*[:：]?\\s*(\\d{5,})/i);
+        var productId = productIdMatch ? productIdMatch[1] : '';
+        var priceEl = firstIn(row, ['[data-e2e*="price"]', '[data-testid*="price"]', '[class*="product-price"]']);
+        var priceText = cleanText(priceEl) || (cells[2] ? cleanText(cells[2]) : '');
+        var priceMatch = priceText.replace(/,/g, '').match(/\\d+(?:\\.\\d+)?/);
+        var price = priceMatch ? priceMatch[0] : '';
+        var stockEl = firstIn(row, ['[data-e2e*="stock"]', '[data-testid*="stock"]', '[class*="product-stock"]']);
+        var stockText = cleanText(stockEl) || (cells[3] ? cleanText(cells[3]) : '');
+        var stockMatch = stockText.replace(/,/g, '').match(/\\d+/);
+        var stock = stockMatch ? parseInt(stockMatch[0], 10) || 0 : 0;
+        var statusEl = firstIn(row, ['.product-status', '[data-e2e*="status"]', '[data-testid*="status"]', '[class*="product-status"]']);
+        var status = cleanText(statusEl);
+        if (!status){ var rowText = cleanText(row); if (/(?:^|\\s)ดำเนินอยู่(?:\\s|$)/.test(rowText)) status = 'ดำเนินอยู่'; else if (/(?:^|\\s)Active(?:\\s|$)/i.test(rowText)) status = 'Active'; }
+        var isActive = (status === 'ดำเนินอยู่' || status.toLowerCase() === 'active');
         if (name && productId && isActive){ products.push({ name:name, productId:productId, imageUrl:imageUrl, price:price, stock:stock, status:status }); }
       } catch(e){}
     }
-    var currentPage = 1, lastPage = 1;
-    var activePage = qs('.tiktok-pagination-item-is-active');
-    if (activePage){ var n = parseInt(activePage.textContent.trim(),10); if (!isNaN(n)) currentPage = n; }
-    var pageItems = document.querySelectorAll('.tiktok-pagination-item');
+    var currentPage = getCurrentPage(), lastPage = currentPage;
+    var pageItems = document.querySelectorAll('.tiktok-pagination-item, [class*="pagination"] [role="button"]');
     for (var p=0;p<pageItems.length;p++){
       if (pageItems[p].classList.contains('tiktok-pagination-item-left-arrow') || pageItems[p].classList.contains('tiktok-pagination-item-right-arrow') || pageItems[p].classList.contains('tiktok-pagination-item-no-border')) continue;
-      var pn = parseInt(pageItems[p].textContent.trim(),10); if (!isNaN(pn) && pn > lastPage) lastPage = pn;
+      var pn = parseInt(cleanText(pageItems[p]),10); if (!isNaN(pn) && pn > lastPage) lastPage = pn;
     }
     return { products: products, currentPage: currentPage, lastPage: lastPage, hasNextPage: currentPage < lastPage };
   }
@@ -247,19 +307,34 @@ export function buildShowcaseScraperScript(): string {
       if (!clickNext()){ done(false, [], 'ไม่พบปุ่มถัดไป'); return; }
       await sleep(1500);
       log('เลือกแท็บนำเสนอสินค้า...');
-      clickShowcaseTab();
-      await sleep(2500);
+      if (!clickShowcaseTab()){ done(false, [], 'ไม่พบแท็บนำเสนอสินค้า'); return; }
+      if (!(await waitFor(showcaseListReady, 30000, 500))){
+        log('DIAG ' + JSON.stringify(domDiag()));
+        done(false, [], 'รายการสินค้านำเสนอไม่พร้อม (30 วิ)');
+        return;
+      }
       log('ดึงข้อมูลสินค้า...');
       var all = [];
+      var seenProductIds = {};
       var guard = 0;
       while (guard < 100){
         guard++;
         var sc = scrapePage();
-        for (var i=0;i<sc.products.length;i++){ all.push(sc.products[i]); }
+        for (var i=0;i<sc.products.length;i++){
+          var product = sc.products[i];
+          if (!seenProductIds[product.productId]){ seenProductIds[product.productId] = true; all.push(product); }
+        }
         log('หน้า ' + sc.currentPage + '/' + sc.lastPage + ': ' + sc.products.length + ' ชิ้น (รวม ' + all.length + ')');
         if (!sc.hasNextPage) break;
-        if (!clickSel('.tiktok-pagination-item-right-arrow')) break;
-        await sleep(1500);
+        var previousPage = sc.currentPage;
+        var nextButton = findNextPageButton();
+        if (!nextButton) break;
+        nextButton.click();
+        if (!(await waitFor(function(){ return getCurrentPage() !== previousPage; }, 15000, 300))){
+          log('ปุ่มหน้าถัดไปไม่เปลี่ยนหน้า — บันทึกรายการที่ดึงได้ ' + all.length + ' ชิ้น');
+          break;
+        }
+        await waitFor(showcaseListReady, 10000, 300);
       }
       if (all.length === 0){
         done(false, [], 'SCRAPE-DIAG ' + JSON.stringify(scrapeDiag()));

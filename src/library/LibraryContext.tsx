@@ -82,10 +82,26 @@ export interface ShopeeImportProductInput {
   scrapedAt?: number | null;
 }
 
+export interface TikTokImportProductInput {
+  name: string;
+  productId: string;
+  price?: string | null;
+  stock?: number | null;
+  productUrl?: string | null;
+  imageMimeType?: string | null;
+  imagePath?: string | null;
+  imageSize?: number | null;
+  imageUrl?: string | null;
+  status?: string | null;
+  scrapedAt?: number | null;
+}
+
 export interface ProductImportResult {
   success: boolean;
   imported: number;
   queued: number;
+  newCount?: number;
+  updateCount?: number;
   skippedDeleted: number;
   skippedStale: number;
   restoredDeleted: number;
@@ -128,6 +144,12 @@ interface LibraryContextType {
   importShopeeProducts: (
     profileLocalId: string,
     products: ShopeeImportProductInput[],
+    options?: ProductImportOptions
+  ) => Promise<ProductImportResult | null>;
+  /** Import products scraped on-device from a TikTok Showcase and push them to Cloud. */
+  importTikTokProducts: (
+    profileLocalId: string,
+    products: TikTokImportProductInput[],
     options?: ProductImportOptions
   ) => Promise<ProductImportResult | null>;
   /** Update one product locally and enqueue an upsert to Cloud. */
@@ -393,6 +415,23 @@ function getExistingShopeeProduct(
   return externalKey ? existingByExternalKey.get(externalKey) ?? null : null;
 }
 
+function getExistingProduct(
+  localId: string,
+  profileLocalId: string,
+  platform: string,
+  externalProductId: string,
+  existingByLocalId: Map<string, AffiliateProduct>,
+  existingByExternalKey: Map<string, AffiliateProduct>
+): AffiliateProduct | null {
+  const byLocalId = existingByLocalId.get(localId);
+  if (byLocalId) {
+    return byLocalId;
+  }
+
+  const externalKey = productExternalKey(profileLocalId, platform, externalProductId);
+  return externalKey ? existingByExternalKey.get(externalKey) ?? null : null;
+}
+
 function preserveExistingProductFields(
   payload: SyncAffiliateProductInput,
   existing: AffiliateProduct | null,
@@ -496,6 +535,93 @@ function toShopeeSyncProducts(
   }
 
   return syncProducts;
+}
+
+function toTikTokSyncProducts(
+  profileLocalId: string,
+  products: TikTokImportProductInput[],
+  deviceId: string,
+  existingProducts: AffiliateProduct[] = []
+): { products: SyncAffiliateProductInput[]; newCount: number; updateCount: number } {
+  const now = Date.now();
+  const seen = new Set<string>();
+  const syncProducts: SyncAffiliateProductInput[] = [];
+  const existingByLocalId = new Map(existingProducts.map((product) => [product.localId, product]));
+  const existingByExternalKey = new Map<string, AffiliateProduct>();
+  let newCount = 0;
+  let updateCount = 0;
+
+  for (const product of existingProducts) {
+    const key = productExternalKey(product.profileLocalId, product.platform, product.externalProductId);
+    if (key && !existingByExternalKey.has(key)) {
+      existingByExternalKey.set(key, product);
+    }
+  }
+
+  for (const product of products) {
+    const name = cleanText(product.name);
+    const externalProductId = cleanText(product.productId);
+    if (!name || !externalProductId) {
+      continue;
+    }
+
+    const localId = `mobile-tiktok-${profileLocalId}-${hashString(externalProductId)}`;
+    if (seen.has(localId)) {
+      continue;
+    }
+    seen.add(localId);
+
+    const existingProduct = getExistingProduct(
+      localId,
+      profileLocalId,
+      'tiktok',
+      externalProductId,
+      existingByLocalId,
+      existingByExternalKey
+    );
+    if (existingProduct) {
+      updateCount += 1;
+    } else {
+      newCount += 1;
+    }
+
+    const payload: SyncAffiliateProductInput = {
+      localId: existingProduct?.localId || localId,
+      profileLocalId,
+      name: cleanText(existingProduct?.name) || name,
+      description: existingProduct?.description ?? null,
+      externalProductId,
+      productUrl: existingProduct ? existingProduct.productUrl : cleanText(product.productUrl),
+      price: normalizePrice(product.price),
+      stock: typeof product.stock === 'number' && Number.isFinite(product.stock) ? product.stock : null,
+      caption: existingProduct?.caption ?? null,
+      hashtags: existingProduct?.hashtags ?? null,
+      cta: existingProduct?.cta ?? null,
+      imagePath: existingProduct ? existingProduct.imagePath : cleanText(product.imagePath),
+      imageR2Key: existingProduct ? existingProduct.imageR2Key : null,
+      imageUrl: existingProduct ? existingProduct.imageUrl : cleanText(product.imageUrl),
+      imageHash: existingProduct ? existingProduct.imageHash : null,
+      imageMimeType: existingProduct ? existingProduct.imageMimeType : cleanText(product.imageMimeType),
+      imageSize: existingProduct
+        ? existingProduct.imageSize
+        : (typeof product.imageSize === 'number' && Number.isFinite(product.imageSize) ? product.imageSize : null),
+      imageUploadedAt: existingProduct ? toNumber(existingProduct.imageUploadedAt) : null,
+      platform: 'tiktok',
+      status: cleanText(product.status) || 'active',
+      scrapedAt: typeof product.scrapedAt === 'number' ? product.scrapedAt : now,
+      localCreatedAt: toNumber(existingProduct?.localCreatedAt) ?? toNumber(existingProduct?.createdAt) ?? now,
+      localUpdatedAt: now,
+      originApp: cleanText(existingProduct?.originApp) || 'mobile',
+      originDeviceId: deviceId,
+      createdByApp: cleanText(existingProduct?.createdByApp) || cleanText(existingProduct?.originApp) || 'mobile',
+      sourceDeviceId: deviceId,
+      updatedByApp: 'mobile',
+    };
+
+    syncProducts.push(payload);
+  }
+
+  return { products: syncProducts, newCount, updateCount };
 }
 
 function mergeProductsByLocalId(products: AffiliateProduct[]): AffiliateProduct[] {
@@ -924,6 +1050,126 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     [products, recheckPlan, refreshLocalProducts, token]
   );
 
+  const importTikTokProducts = useCallback(
+    async (
+      profileLocalId: string,
+      importedProducts: TikTokImportProductInput[],
+      options: ProductImportOptions = {}
+    ): Promise<ProductImportResult | null> => {
+      const cleanProfileLocalId = profileLocalId.trim();
+      if (!cleanProfileLocalId || importedProducts.length === 0) {
+        return null;
+      }
+
+      const existingProducts = options.existingProducts
+        ? mergeProductsByLocalId(options.existingProducts)
+        : mergeProductsByLocalId([
+          ...(await getLocalProducts({ profileLocalId: cleanProfileLocalId })),
+          ...products.filter((product) => product.profileLocalId === cleanProfileLocalId),
+        ]);
+      const deviceId = await getOrCreateSyncDeviceId();
+      const mapped = toTikTokSyncProducts(
+        cleanProfileLocalId,
+        importedProducts,
+        deviceId,
+        existingProducts
+      );
+      // Map identity first so existing products keep their edited image, while only new or
+      // missing local images need a network download before entering the sync queue.
+      const syncPayloadProducts = await cacheProductImages(mapped.products, {
+        debugLog: options.debugLog,
+      });
+
+      if (syncPayloadProducts.length === 0) {
+        return {
+          error: 'ไม่พบข้อมูลสินค้า TikTok ที่นำเข้าได้',
+          imported: 0,
+          newCount: 0,
+          queued: 0,
+          restoredDeleted: 0,
+          skippedDeleted: 0,
+          skippedStale: 0,
+          success: false,
+          updateCount: 0,
+        };
+      }
+
+      const localProducts = await upsertLocalProductsForSync(syncPayloadProducts);
+      if (options.refresh !== false) {
+        await refreshLocalProducts();
+      }
+
+      if (options.sync === false) {
+        return {
+          error: null,
+          imported: localProducts.length,
+          newCount: mapped.newCount,
+          queued: syncPayloadProducts.length,
+          restoredDeleted: 0,
+          skippedDeleted: 0,
+          skippedStale: 0,
+          success: true,
+          updateCount: mapped.updateCount,
+        };
+      }
+
+      if (!token || isSyncingRef.current) {
+        setSyncError(token ? 'บันทึกไว้ในเครื่องแล้ว รอซิงก์ขึ้น cloud' : 'บันทึกไว้ในเครื่องแล้ว รอเข้าสู่ระบบเพื่อซิงก์ cloud');
+        return {
+          error: null,
+          imported: localProducts.length,
+          newCount: mapped.newCount,
+          queued: syncPayloadProducts.length,
+          restoredDeleted: 0,
+          skippedDeleted: 0,
+          skippedStale: 0,
+          success: true,
+          updateCount: mapped.updateCount,
+        };
+      }
+
+      isSyncingRef.current = true;
+      setIsSyncing(true);
+      let queueResult: QueueSyncResult;
+      try {
+        let activeToken = token;
+        queueResult = await flushPendingProductSyncQueue(activeToken);
+        if (!queueResult.success && queueResult.status === 401) {
+          await recheckPlan();
+          const refreshedTokens = await getStoredAuthTokens();
+          if (refreshedTokens?.accessToken && refreshedTokens.accessToken !== token) {
+            activeToken = refreshedTokens.accessToken;
+            queueResult = await flushPendingProductSyncQueue(activeToken);
+          }
+        }
+
+        if (queueResult.success) {
+          setSyncError(null);
+          setLastSyncedAt(Date.now());
+          await refreshLocalProducts();
+        } else {
+          setSyncError(queueResult.error || 'บันทึกในเครื่องแล้ว แต่ซิงก์ cloud ยังไม่สำเร็จ');
+        }
+      } finally {
+        isSyncingRef.current = false;
+        setIsSyncing(false);
+      }
+
+      return {
+        error: null,
+        imported: localProducts.length,
+        newCount: mapped.newCount,
+        queued: queueResult.success ? 0 : syncPayloadProducts.length,
+        restoredDeleted: queueResult.restoredDeleted,
+        skippedDeleted: queueResult.skippedDeleted,
+        skippedStale: queueResult.skippedStale,
+        success: true,
+        updateCount: mapped.updateCount,
+      };
+    },
+    [products, recheckPlan, refreshLocalProducts, token]
+  );
+
   const updateProduct = useCallback(
     async (updates: ProductUpdateInput): Promise<ProductUpdateResult | null> => {
       const localId = cleanText(updates.localId);
@@ -1167,6 +1413,7 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
     () => ({
       deleteProducts,
       importShopeeProducts,
+      importTikTokProducts,
       products,
       refreshProducts: refreshLocalProducts,
       isSyncing,
@@ -1175,7 +1422,7 @@ export function LibraryProvider({ children }: { children: ReactNode }): React.JS
       syncProducts,
       updateProduct,
     }),
-    [deleteProducts, importShopeeProducts, isSyncing, lastSyncedAt, products, refreshLocalProducts, syncError, syncProducts, updateProduct]
+    [deleteProducts, importShopeeProducts, importTikTokProducts, isSyncing, lastSyncedAt, products, refreshLocalProducts, syncError, syncProducts, updateProduct]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;

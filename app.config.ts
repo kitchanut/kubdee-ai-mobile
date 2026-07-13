@@ -22,7 +22,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     ...config.android,
     package: 'ai.kubdee.mobile',
-    versionCode: 158,
+    versionCode: 159,
     predictiveBackGestureEnabled: false,
     permissions: [
       'android.permission.INTERNET',
@@ -64,6 +64,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-sqlite',
     'expo-splash-screen',
     '@sentry/react-native',
+    ['expo-secure-store', { configureAndroidBackup: false }],
+    './plugins/withTikTokCookieBackupExclusion',
     [
       './plugins/withKubdeeAccessibility',
       {
