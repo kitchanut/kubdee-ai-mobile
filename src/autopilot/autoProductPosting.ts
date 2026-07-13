@@ -71,6 +71,9 @@ export interface PostProductAfterGenerationParams {
   totalRounds: number;
   productIndex: number;
   totalProducts: number;
+  /** Called when the product's video(s) are successfully posted to a platform, so the
+   * library can flag which destinations each video has been published to. */
+  onProductPosted?: (platform: string, fileUris: string[]) => void;
 }
 
 // Runs after auto pilot finishes generating (image +) video for one product,
@@ -80,7 +83,7 @@ export interface PostProductAfterGenerationParams {
 // blocks the others or throws out to the caller (same "log and continue"
 // behavior the image/video generation steps already have).
 export async function postProductAfterGeneration(params: PostProductAfterGenerationParams): Promise<void> {
-  const { product, videoAssets, settings, emit, runId, round, totalRounds, productIndex, totalProducts } = params;
+  const { product, videoAssets, settings, emit, runId, round, totalRounds, productIndex, totalProducts, onProductPosted } = params;
 
   const emitStage = (stage: string, message: string, level: AutoPilotLogLevel = 'info'): void => {
     emit({
@@ -100,19 +103,19 @@ export async function postProductAfterGeneration(params: PostProductAfterGenerat
   };
 
   if (settings.autoPostShopee) {
-    await postProductToShopee(product, videoAssets, emitStage);
+    await postProductToShopee(product, videoAssets, emitStage, onProductPosted);
   }
 
   if (settings.autoPostFacebook && settings.facebookChannelId) {
-    await postProductToFacebook(product, videoAssets, settings.facebookChannelId, emitStage);
+    await postProductToFacebook(product, videoAssets, settings.facebookChannelId, emitStage, onProductPosted);
   }
 
   if (settings.autoPostInstagram && settings.instagramChannelId) {
-    await postProductToInstagram(product, videoAssets, settings.instagramChannelId, emitStage);
+    await postProductToInstagram(product, videoAssets, settings.instagramChannelId, emitStage, onProductPosted);
   }
 
   if (settings.autoPostYoutube && settings.youtubeChannelId) {
-    await postProductToYoutube(product, videoAssets, settings.youtubeChannelId, emitStage);
+    await postProductToYoutube(product, videoAssets, settings.youtubeChannelId, emitStage, onProductPosted);
   }
 }
 
@@ -138,7 +141,8 @@ const USE_FIRST_COMMENT = false;
 async function postProductToShopee(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
-  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void
+  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void,
+  onProductPosted?: (platform: string, fileUris: string[]) => void
 ): Promise<void> {
   if (videoAssets.length === 0) {
     emitStage('posting_shopee', 'ข้ามโพสต์ Shopee: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
@@ -208,6 +212,9 @@ async function postProductToShopee(
     const successCount =
       result.successCount ?? result.results?.filter((entry) => entry.success).length ?? result.postedCount ?? 0;
     emitStage('posted_shopee', `โพสต์ Shopee สำเร็จ ${successCount}/${videos.length} วิดีโอ`, 'success');
+    if (successCount > 0) {
+      onProductPosted?.('shopee', videoAssets.map((asset) => asset.fileUri));
+    }
   } catch (error) {
     reportWarning('postProductToShopee: caught error, emitting failed stage', {
       error: error instanceof Error ? error.message : String(error),
@@ -224,7 +231,8 @@ async function postProductToFacebook(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
   channelId: string,
-  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void
+  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void,
+  onProductPosted?: (platform: string, fileUris: string[]) => void
 ): Promise<void> {
   if (videoAssets.length === 0) {
     emitStage('posting_facebook', 'ข้ามโพสต์ Facebook: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
@@ -260,6 +268,7 @@ async function postProductToFacebook(
       });
     }
     emitStage('posted_facebook', `โพสต์ Facebook สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
+    onProductPosted?.('facebook', [video.fileUri]);
   } catch (error) {
     emitStage(
       'failed',
@@ -273,7 +282,8 @@ async function postProductToInstagram(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
   channelId: string,
-  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void
+  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void,
+  onProductPosted?: (platform: string, fileUris: string[]) => void
 ): Promise<void> {
   if (videoAssets.length === 0) {
     emitStage('posting_instagram', 'ข้ามโพสต์ Instagram: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
@@ -307,6 +317,7 @@ async function postProductToInstagram(
       });
     }
     emitStage('posted_instagram', `โพสต์ Instagram สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
+    onProductPosted?.('instagram', [video.fileUri]);
   } catch (error) {
     emitStage(
       'failed',
@@ -320,7 +331,8 @@ async function postProductToYoutube(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
   channelId: string,
-  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void
+  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void,
+  onProductPosted?: (platform: string, fileUris: string[]) => void
 ): Promise<void> {
   if (videoAssets.length === 0) {
     emitStage('posting_youtube', 'ข้ามโพสต์ YouTube: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
@@ -341,6 +353,7 @@ async function postProductToYoutube(
 
     await createYoutubeBufferPost({ channelId, text, assetUrl, title });
     emitStage('posted_youtube', `โพสต์ YouTube สำเร็จ: ${product.name || 'สินค้า'}`, 'success');
+    onProductPosted?.('youtube', [video.fileUri]);
   } catch (error) {
     emitStage(
       'failed',

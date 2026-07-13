@@ -69,7 +69,7 @@ export default function TikTokPostScreen({
   onOpenVideoLibrary,
   onRemovePendingVideo,
 }: TikTokPostScreenProps): React.JSX.Element {
-  const { getAssetsByKind } = useGeneratedMedia();
+  const { getAssetsByKind, markPosted } = useGeneratedMedia();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<TikTokPostSettings>(DEFAULT_TIKTOK_POST_SETTINGS);
   const [isPosting, setIsPosting] = useState(false);
@@ -188,6 +188,9 @@ export default function TikTokPostScreen({
     }
 
     appendLog(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'}สำเร็จ: ${videoLabel(activeVideo, 0)}`);
+    if (postAction === 'publish') {
+      void markPosted(activeVideo.id, 'tiktok');
+    }
     onRemovePendingVideo(activeVideo.id);
     if (stopRequestedRef.current || queuedVideos.length <= 1) {
       finishRun(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ครบแล้ว`);
@@ -195,7 +198,7 @@ export default function TikTokPostScreen({
     }
 
     completedRef.current = false;
-  }, [activeVideo, appendLog, finishRun, onRemovePendingVideo, postAction, queuedVideos.length]);
+  }, [activeVideo, appendLog, finishRun, markPosted, onRemovePendingVideo, postAction, queuedVideos.length]);
 
   const handleModalClose = useCallback((): void => {
     if (completedRef.current) return;

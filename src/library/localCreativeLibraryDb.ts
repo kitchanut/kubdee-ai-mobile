@@ -25,6 +25,8 @@ export interface CreativeMediaAsset {
   width: number | null;
   height: number | null;
   durationMs: number | null;
+  /** platform (facebook/instagram/youtube/tiktok/shopee) -> postedAt in ms, per destination this media was published to */
+  postedPlatforms?: Record<string, number> | null;
   source: string;
   createdAt: number;
   updatedAt: number;
@@ -54,7 +56,7 @@ export type UpsertCreativeLibraryItemInput = Omit<CreativeLibraryItem, 'enabled'
 };
 
 const DATABASE_NAME = 'kubdee-creative-library.db';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 let dbQueue: Promise<void> = Promise.resolve();
@@ -74,6 +76,29 @@ function boolToInt(value: boolean): number {
 
 function intToBool(value: number | null | undefined): boolean {
   return value === 1;
+}
+
+/** Parse the posted_platforms JSON column into a {platform: postedAtMs} map (null if empty/invalid). */
+function parsePostedPlatforms(raw: string | null | undefined): Record<string, number> | null {
+  const text = raw?.trim();
+  if (!text) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    const result: Record<string, number> = {};
+    for (const [platform, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        result[platform] = value;
+      }
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  } catch {
+    return null;
+  }
 }
 
 async function ensureColumn(
@@ -153,6 +178,7 @@ async function openDb(): Promise<SQLite.SQLiteDatabase> {
       `);
       await ensureColumn(db, 'creative_media_assets', 'thumbnail_uri', 'TEXT');
       await ensureColumn(db, 'creative_media_assets', 'cta', 'TEXT');
+      await ensureColumn(db, 'creative_media_assets', 'posted_platforms', 'TEXT');
       await db.runAsync(
         `INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)`,
         'schema_version',
@@ -198,6 +224,7 @@ function mapMediaRow(row: Record<string, unknown>): CreativeMediaAsset {
     width: typeof row.width === 'number' ? row.width : null,
     height: typeof row.height === 'number' ? row.height : null,
     durationMs: typeof row.duration_ms === 'number' ? row.duration_ms : null,
+    postedPlatforms: parsePostedPlatforms(row.posted_platforms as string | null),
     source: String(row.source || 'mobile'),
     createdAt: Number(row.created_at || 0),
     updatedAt: Number(row.updated_at || 0),
@@ -269,9 +296,10 @@ export async function upsertCreativeMediaAsset(
         INSERT INTO creative_media_assets (
           id, kind, run_id, profile_local_id, product_id, product_name, product_code,
           product_url, caption, hashtags, cta, platform, title, file_uri, file_name,
-          mime_type, thumbnail_uri, size_bytes, width, height, duration_ms, source, created_at, updated_at
+          mime_type, thumbnail_uri, size_bytes, width, height, duration_ms, source,
+          posted_platforms, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           run_id = excluded.run_id,
           profile_local_id = excluded.profile_local_id,
@@ -293,6 +321,7 @@ export async function upsertCreativeMediaAsset(
           height = excluded.height,
           duration_ms = excluded.duration_ms,
           source = excluded.source,
+          posted_platforms = COALESCE(excluded.posted_platforms, creative_media_assets.posted_platforms),
           updated_at = excluded.updated_at
       `,
       asset.id,
@@ -317,12 +346,86 @@ export async function upsertCreativeMediaAsset(
       asset.height,
       asset.durationMs,
       asset.source,
+      asset.postedPlatforms ? JSON.stringify(asset.postedPlatforms) : null,
       asset.createdAt,
       asset.updatedAt
     );
   });
 
   return asset;
+}
+
+/**
+ * Merge one social destination into a media asset's posted_platforms map.
+ * Accumulative — posting the same video to another platform later keeps the earlier
+ * ones, so a single video correctly shows every platform it has been published to.
+ * Returns the updated map, or null if the asset does not exist.
+ */
+export async function markCreativeMediaPosted(
+  id: string,
+  platform: string,
+  postedAt: number = nowMs()
+): Promise<Record<string, number> | null> {
+  const cleanId = id.trim();
+  const cleanPlatform = platform.trim().toLowerCase();
+  if (!cleanId || !cleanPlatform) {
+    return null;
+  }
+
+  return runDbTask(async (db) => {
+    const row = await db.getFirstAsync<{ posted_platforms: string | null }>(
+      `SELECT posted_platforms FROM creative_media_assets WHERE id = ?`,
+      cleanId
+    );
+    if (!row) {
+      return null;
+    }
+    const merged = parsePostedPlatforms(row.posted_platforms) ?? {};
+    merged[cleanPlatform] = postedAt;
+    await db.runAsync(
+      `UPDATE creative_media_assets SET posted_platforms = ?, updated_at = ? WHERE id = ?`,
+      JSON.stringify(merged),
+      nowMs(),
+      cleanId
+    );
+    return merged;
+  });
+}
+
+/**
+ * Same as markCreativeMediaPosted but keyed by fileUri — the Auto Pilot posting flow only
+ * carries the video's fileUri, not the media asset id. Returns the affected asset id and its
+ * updated posted map so callers can patch in-memory state, or null if no asset matches.
+ */
+export async function markCreativeMediaPostedByFileUri(
+  fileUri: string,
+  platform: string,
+  postedAt: number = nowMs()
+): Promise<{ id: string; postedPlatforms: Record<string, number> } | null> {
+  const cleanUri = fileUri.trim();
+  const cleanPlatform = platform.trim().toLowerCase();
+  if (!cleanUri || !cleanPlatform) {
+    return null;
+  }
+
+  return runDbTask(async (db) => {
+    const row = await db.getFirstAsync<{ id: string; posted_platforms: string | null }>(
+      `SELECT id, posted_platforms FROM creative_media_assets WHERE file_uri = ? ORDER BY created_at DESC LIMIT 1`,
+      cleanUri
+    );
+    if (!row) {
+      return null;
+    }
+    const merged = parsePostedPlatforms(row.posted_platforms) ?? {};
+    merged[cleanPlatform] = postedAt;
+    await db.runAsync(
+      `UPDATE creative_media_assets SET posted_platforms = ?, updated_at = ? WHERE id = ?`,
+      JSON.stringify(merged),
+      nowMs(),
+      row.id
+    );
+    return { id: row.id, postedPlatforms: merged };
+  });
 }
 
 export async function deleteCreativeMediaAssets(ids: string[]): Promise<void> {

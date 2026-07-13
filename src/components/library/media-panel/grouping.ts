@@ -1,6 +1,6 @@
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import type { MediaGroupRecord, MediaKind, MediaSubItem } from './types';
-import { formatAssetDate, formatAssetSize } from './utils';
+import { formatAssetDate, formatAssetSize, resolveMediaPlatform } from './utils';
 
 export function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]): { item: MediaGroupRecord; media: MediaSubItem[] }[] {
   const groupsByProduct = new Map<string, { item: MediaGroupRecord; media: MediaSubItem[] }>();
@@ -22,9 +22,14 @@ export function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]
           title: asset.productName,
           code: asset.productCode,
           subtitle,
+          platform: null,
         },
         media: [],
       };
+
+    if (!group.item.platform) {
+      group.item.platform = resolveMediaPlatform(asset.platform, asset.productUrl);
+    }
 
     group.media.push({
       id: asset.id,
@@ -44,6 +49,7 @@ export function toGeneratedGroups(kind: MediaKind, assets: GeneratedMediaAsset[]
       hashtags: asset.hashtags,
       cta: asset.cta,
       platform: asset.platform,
+      postedPlatforms: asset.postedPlatforms,
     });
 
     groupsByProduct.set(groupId, group);

@@ -158,7 +158,7 @@ export default function SocialPostScreen({
   onOpenVideoLibrary,
 }: SocialPostScreenProps): React.JSX.Element {
   const meta = SERVICE_META[service];
-  const { getAssetsByKind, updateGeneratedMediaAsset } = useGeneratedMedia();
+  const { getAssetsByKind, markPosted, updateGeneratedMediaAsset } = useGeneratedMedia();
   const insets = useSafeAreaInsets();
   const [channels, setChannels] = useState<LibrarySocialChannels>({ ...EMPTY_CHANNELS });
   const [isPosting, setIsPosting] = useState(false);
@@ -389,6 +389,7 @@ export default function SocialPostScreen({
             await createYoutubeBufferPost({ channelId: serviceChannelId, text, assetUrl, title });
           }
           postedIds.push(asset.id);
+          void markPosted(asset.id, service);
           recordResult(asset.id, { ok: true, message: 'โพสต์สำเร็จ' });
         } catch (error) {
           failureCount += 1;
@@ -427,6 +428,7 @@ export default function SocialPostScreen({
     channelId,
     isPosting,
     meta.label,
+    markPosted,
     onClearPendingVideos,
     onRemovePendingVideo,
     postQueueVideos,

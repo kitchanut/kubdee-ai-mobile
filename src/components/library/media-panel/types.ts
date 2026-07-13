@@ -5,6 +5,9 @@ export type MediaKind = 'images' | 'videos';
 
 export type MediaMode = 'product' | 'general';
 
+/** Source marketplace a media asset was generated for. */
+export type MediaPlatform = 'shopee' | 'tiktok';
+
 export interface MediaSubItem {
   id: string;
   parentId: string;
@@ -23,6 +26,8 @@ export interface MediaSubItem {
   hashtags?: string | null;
   cta?: string | null;
   platform?: string | null;
+  /** platform -> postedAt(ms) for each social destination this media was published to */
+  postedPlatforms?: Record<string, number> | null;
 }
 
 export interface MediaGroupRecord {
@@ -30,6 +35,8 @@ export interface MediaGroupRecord {
   title: string;
   code: string;
   subtitle: string;
+  /** Resolved source platform of the group's product, if known. */
+  platform?: MediaPlatform | null;
 }
 
 export interface UploadDraft {

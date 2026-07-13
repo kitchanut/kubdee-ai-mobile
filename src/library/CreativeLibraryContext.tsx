@@ -7,6 +7,8 @@ import {
   deleteCreativeMediaAssets,
   getCreativeLibraryItems,
   getCreativeMediaAssets,
+  markCreativeMediaPosted,
+  markCreativeMediaPostedByFileUri,
   upsertCreativeLibraryItem,
   upsertCreativeMediaAsset,
 } from '@/library/localCreativeLibraryDb';
@@ -25,6 +27,8 @@ interface CreativeLibraryContextType {
   isLoading: boolean;
   refreshCreativeLibrary: () => Promise<void>;
   addMediaAsset: (input: UpsertCreativeMediaAssetInput) => Promise<CreativeMediaAsset>;
+  markMediaPosted: (id: string, platform: string) => Promise<void>;
+  markMediaPostedByFileUri: (fileUri: string, platform: string) => Promise<void>;
   deleteMediaAssets: (ids: string[]) => Promise<void>;
   getMediaAssets: (kind: CreativeMediaKind, profileLocalId?: string | null) => CreativeMediaAsset[];
   saveLibraryItem: (input: UpsertCreativeLibraryItemInput) => Promise<CreativeLibraryItem>;
@@ -74,6 +78,28 @@ export function CreativeLibraryProvider({ children }: { children: ReactNode }): 
       return next.sort((first, second) => second.createdAt - first.createdAt);
     });
     return asset;
+  }, []);
+
+  const markMediaPosted = useCallback(async (id: string, platform: string): Promise<void> => {
+    const merged = await markCreativeMediaPosted(id, platform);
+    if (!merged) {
+      return;
+    }
+    setMediaAssets((current) =>
+      current.map((asset) => (asset.id === id ? { ...asset, postedPlatforms: merged } : asset))
+    );
+  }, []);
+
+  const markMediaPostedByFileUri = useCallback(async (fileUri: string, platform: string): Promise<void> => {
+    const result = await markCreativeMediaPostedByFileUri(fileUri, platform);
+    if (!result) {
+      return;
+    }
+    setMediaAssets((current) =>
+      current.map((asset) =>
+        asset.id === result.id ? { ...asset, postedPlatforms: result.postedPlatforms } : asset
+      )
+    );
   }, []);
 
   const deleteMediaAssets = useCallback(async (ids: string[]): Promise<void> => {
@@ -151,6 +177,8 @@ export function CreativeLibraryProvider({ children }: { children: ReactNode }): 
       getMediaAssets,
       isLoading,
       libraryItems,
+      markMediaPosted,
+      markMediaPostedByFileUri,
       mediaAssets,
       refreshCreativeLibrary,
       saveLibraryItem,
@@ -163,6 +191,8 @@ export function CreativeLibraryProvider({ children }: { children: ReactNode }): 
       getMediaAssets,
       isLoading,
       libraryItems,
+      markMediaPosted,
+      markMediaPostedByFileUri,
       mediaAssets,
       refreshCreativeLibrary,
       saveLibraryItem,

@@ -37,6 +37,8 @@ export interface GeneratedMediaAsset {
   width: number | null;
   height: number | null;
   durationMs: number | null;
+  /** platform -> postedAt(ms) for each social destination this media was published to */
+  postedPlatforms: Record<string, number> | null;
   createdAt: number;
   source: GeneratedMediaSource;
 }
@@ -93,6 +95,8 @@ type GeneratedMediaAssetPatch = Partial<
 interface GeneratedMediaContextType {
   assets: GeneratedMediaAsset[];
   addGeneratedMediaAsset: (input: AddGeneratedMediaAssetInput) => Promise<GeneratedMediaAsset>;
+  markPosted: (id: string, platform: string) => Promise<void>;
+  markPostedByFileUri: (fileUri: string, platform: string) => Promise<void>;
   deleteGeneratedMediaAssets: (ids: string[]) => Promise<void>;
   getAssetsByKind: (kind: GeneratedMediaKind, profileLocalId?: string) => GeneratedMediaAsset[];
   importGeneratedMediaAssets: (kind: GeneratedMediaKind, profileLocalId?: string | null) => Promise<number>;
@@ -166,6 +170,7 @@ function normalizeAsset(input: AddGeneratedMediaAssetInput): GeneratedMediaAsset
     width: typeof input.width === 'number' && Number.isFinite(input.width) && input.width > 0 ? input.width : null,
     height: typeof input.height === 'number' && Number.isFinite(input.height) && input.height > 0 ? input.height : null,
     durationMs: typeof input.durationMs === 'number' && Number.isFinite(input.durationMs) && input.durationMs > 0 ? input.durationMs : null,
+    postedPlatforms: null,
     createdAt,
     source: normalizeSource(input.source),
   };
@@ -194,6 +199,7 @@ function creativeMediaToGeneratedAsset(asset: CreativeMediaAsset): GeneratedMedi
     width: asset.width,
     height: asset.height,
     durationMs: asset.durationMs,
+    postedPlatforms: asset.postedPlatforms ?? null,
     createdAt: asset.createdAt,
     source: normalizeSource(asset.source),
   };
@@ -248,6 +254,10 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
         width: typeof asset.width === 'number' && Number.isFinite(asset.width) && asset.width > 0 ? asset.width : null,
         height: typeof asset.height === 'number' && Number.isFinite(asset.height) && asset.height > 0 ? asset.height : null,
         durationMs: typeof asset.durationMs === 'number' && Number.isFinite(asset.durationMs) && asset.durationMs > 0 ? asset.durationMs : null,
+        postedPlatforms:
+          asset.postedPlatforms && typeof asset.postedPlatforms === 'object' && !Array.isArray(asset.postedPlatforms)
+            ? asset.postedPlatforms
+            : null,
         source: normalizeSource(asset.source),
       }))
     ).slice(0, MAX_GENERATED_MEDIA_ASSETS);
@@ -282,6 +292,8 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
   const {
     addMediaAsset,
     deleteMediaAssets,
+    markMediaPosted,
+    markMediaPostedByFileUri,
     mediaAssets,
     refreshCreativeLibrary,
   } = useCreativeLibrary();
@@ -666,6 +678,23 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
     await refreshCreativeLibrary();
   }, [refreshCreativeLibrary]);
 
+  // มาร์กว่าวิดีโอ/รูปถูกโพสต์ไปแพลตฟอร์มปลายทางแล้ว (สะสมได้หลายแพลตฟอร์มต่อ 1 asset)
+  // อัปเดต mediaAssets ใน CreativeLibrary แล้ว effect ด้านบนจะ sync กลับเข้า assets + persist ให้เอง
+  const markPosted = useCallback(
+    async (id: string, platform: string): Promise<void> => {
+      await markMediaPosted(id, platform);
+    },
+    [markMediaPosted]
+  );
+
+  // Auto Pilot posting knows a video only by its fileUri (no asset id), so resolve+mark by that.
+  const markPostedByFileUri = useCallback(
+    async (fileUri: string, platform: string): Promise<void> => {
+      await markMediaPostedByFileUri(fileUri, platform);
+    },
+    [markMediaPostedByFileUri]
+  );
+
   const value = useMemo(
     () => ({
       addGeneratedMediaAsset,
@@ -674,6 +703,8 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       ensureGeneratedVideoThumbnails,
       getAssetsByKind,
       importGeneratedMediaAssets,
+      markPosted,
+      markPostedByFileUri,
       refreshGeneratedMediaAssets,
       updateGeneratedMediaAsset,
     }),
@@ -684,6 +715,8 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       ensureGeneratedVideoThumbnails,
       getAssetsByKind,
       importGeneratedMediaAssets,
+      markPosted,
+      markPostedByFileUri,
       refreshGeneratedMediaAssets,
       updateGeneratedMediaAsset,
     ]

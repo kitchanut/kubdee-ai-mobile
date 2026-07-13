@@ -12,13 +12,33 @@ import {
   type CloudTransferProgress,
   type CloudTransferVideoUploadItem,
 } from '@/services/cloudTransferService';
-import type { MediaKind, MediaGroupRecord, UploadDraft } from './types';
+import type { MediaKind, MediaGroupRecord, MediaPlatform, UploadDraft } from './types';
 
 export const ANDROID_VIEW_ACTION = 'android.intent.action.VIEW';
 export const FLAG_GRANT_READ_URI_PERMISSION = 1;
 
 export function getItemCode(item: MediaGroupRecord): string {
   return item.code || item.id;
+}
+
+/**
+ * Resolve which marketplace a media asset came from, so the library can badge it
+ * (tiktok vs shopee) the same way the product library does. Trusts the explicit
+ * `platform` field first, then falls back to the product URL host.
+ */
+export function resolveMediaPlatform(
+  platform: string | null | undefined,
+  productUrl: string | null | undefined,
+): MediaPlatform | null {
+  const flag = cleanText(platform).toLowerCase();
+  if (flag.includes('shopee')) return 'shopee';
+  if (flag.includes('tiktok')) return 'tiktok';
+
+  const url = cleanText(productUrl).toLowerCase();
+  if (url.includes('shopee') || url.includes('shp.ee')) return 'shopee';
+  if (url.includes('tiktok') || url.includes('tokopedia')) return 'tiktok';
+
+  return null;
 }
 
 export function cleanText(value: string | null | undefined): string {

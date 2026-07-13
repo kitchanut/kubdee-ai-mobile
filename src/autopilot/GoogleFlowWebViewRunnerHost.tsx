@@ -9,6 +9,7 @@ import {
 } from '@/autopilot/googleFlowRunnerBridge';
 import { postProductAfterGeneration } from '@/autopilot/autoProductPosting';
 import type { AutoPilotProductVideoAsset } from '@/autopilot/autoProductPosting';
+import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type {
   AutoPilotStepType,
   GoogleFlowRunnerLogEntry,
@@ -148,6 +149,13 @@ export default function GoogleFlowWebViewRunnerHost({
   const actionLogContextRef = useRef<FlowActionLogContext | null>(null);
   const latestGeneratedImageDataUrlsRef = useRef<Map<string, string[]>>(new Map());
   const latestProductAssetsRef = useRef<Map<string, TrackedProductAsset[]>>(new Map());
+  // Kept in a ref so the (stable) posting handler always calls the latest marker without
+  // needing it in its dependency list.
+  const { markMediaPostedByFileUri } = useCreativeLibrary();
+  const markPostedByFileUriRef = useRef(markMediaPostedByFileUri);
+  useEffect(() => {
+    markPostedByFileUriRef.current = markMediaPostedByFileUri;
+  }, [markMediaPostedByFileUri]);
   const [visible, setVisible] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isFlowReady, setIsFlowReady] = useState(false);
@@ -3237,6 +3245,11 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   productIndex,
                   totalProducts: payload.products.length,
+                  onProductPosted: (platform, fileUris) => {
+                    for (const uri of fileUris) {
+                      void markPostedByFileUriRef.current(uri, platform);
+                    }
+                  },
                 });
               } catch (postingError) {
                 // Posting failures must never stop the run — the remaining

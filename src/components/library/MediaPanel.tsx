@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Image as RNImage, Modal, Pressable, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ChevronRight,
@@ -277,6 +277,31 @@ export default function MediaPanel({
 
   const productMedia = useMemo(() => visibleGroups.flatMap((group) => group.media), [visibleGroups]);
   const totalMedia = useMemo(() => groups.reduce((sum, group) => sum + group.media.length, 0), [groups]);
+
+  // Resolve a media item's real product image from the affiliate product catalog (matched by
+  // external id / url / name) so both the group thumbnail and the ungrouped row can show the
+  // actual product instead of a placeholder. Memoized fn — reused by group + ungroup renders.
+  const findProductImage = useMemo(() => {
+    return (code?: string | null, url?: string | null, name?: string | null): string | null => {
+      const c = code?.trim();
+      const u = url?.trim();
+      const n = name?.trim();
+      if (!c && !u && !n) {
+        return null;
+      }
+      const product = productOptions.find((candidate) => {
+        const externalId = candidate.externalProductId?.trim();
+        const localId = candidate.localId?.trim();
+        return (
+          (!!c && (c === externalId || c === localId)) ||
+          (!!u && u === candidate.productUrl?.trim()) ||
+          (!!n && n === candidate.name?.trim())
+        );
+      });
+      return product?.imageUrl?.trim() || product?.imagePath?.trim() || null;
+    };
+  }, [productOptions]);
+  const [productImageModalUri, setProductImageModalUri] = useState<string | null>(null);
   const allSelected = productMedia.length > 0 && productMedia.every((media) => selectedIds.has(media.id));
   const allCloudTransfersSelected =
     cloudTransfers.length > 0 && cloudTransfers.every((transfer) => selectedCloudTransferIds.has(transfer.id));
@@ -1179,6 +1204,8 @@ export default function MediaPanel({
                       onEditMedia={openEdit}
                       onFavoriteMedia={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
                       onViewMedia={(media) => void openMedia(media)}
+                      productImageUrl={findProductImage(item.code, media[0]?.productUrl, media[0]?.productName)}
+                      onViewProductImage={(uri) => setProductImageModalUri(uri)}
                     />
                   ))
                 ) : kind === 'images' ? (
@@ -1199,36 +1226,45 @@ export default function MediaPanel({
                     ))}
                   </View>
                 ) : (
-                  productMedia.map((media) => (
-                    <View
-                      key={media.id}
-                      className="overflow-hidden rounded-[12px] border border-gray-100 bg-kd-panel dark:border-kd-border"
-                      style={{
-                        elevation: 1,
-                        shadowOffset: { height: 1, width: 0 },
-                        shadowOpacity: 0.05,
-                        shadowRadius: 2,
-                      }}
-                    >
-                      <CardBackdrop theme={theme} id="videos-flat" stops={libraryCardStops.videos} />
-                      <View className="px-1.5">
-                        <VideoRow
-                          theme={theme}
-                          accentColor={accentColor}
-                          media={media}
-                          selected={selectedIds.has(media.id)}
-                          showDivider={false}
-                          showProductInfo
-                          onDelete={() => confirmDelete([media.id])}
-                          onDownload={() => void downloadMedia(media)}
-                          onEdit={() => openEdit(media)}
-                          onFavorite={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
-                          onPlay={() => void openMedia(media)}
-                          onToggleSelect={() => toggleSelect(media.id)}
-                        />
+                  productMedia.map((media) => {
+                    const isSelected = selectedIds.has(media.id);
+                    return (
+                      <View
+                        key={media.id}
+                        className={`overflow-hidden rounded-[12px] bg-kd-panel border ${
+                          isSelected ? '' : 'border-gray-100 dark:border-kd-border'
+                        }`}
+                        style={{
+                          elevation: 1,
+                          shadowOffset: { height: 1, width: 0 },
+                          shadowOpacity: 0.05,
+                          shadowRadius: 2,
+                          ...(isSelected ? { borderColor: accentColor, borderWidth: 1.5 } : {}),
+                        }}
+                      >
+                        <CardBackdrop theme={theme} id="videos-flat" stops={libraryCardStops.videos} />
+                        <View className="px-1.5">
+                          <VideoRow
+                            theme={theme}
+                            accentColor={accentColor}
+                            media={media}
+                            selected={isSelected}
+                            selectionByParent
+                            showDivider={false}
+                            showProductInfo
+                            onDelete={() => confirmDelete([media.id])}
+                            onDownload={() => void downloadMedia(media)}
+                            onEdit={() => openEdit(media)}
+                            onFavorite={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
+                            onPlay={() => void openMedia(media)}
+                            onToggleSelect={() => toggleSelect(media.id)}
+                            productImageUrl={findProductImage(media.productCode, media.productUrl, media.productName)}
+                            onViewProductImage={(uri) => setProductImageModalUri(uri)}
+                          />
+                        </View>
                       </View>
-                    </View>
-                  ))
+                    );
+                  })
                 )}
               </>
             )
@@ -1405,6 +1441,28 @@ export default function MediaPanel({
         uploadModalOpen={uploadModalOpen}
         uploadDrafts={uploadDrafts}
       />
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={!!productImageModalUri}
+        onRequestClose={() => setProductImageModalUri(null)}
+      >
+        <Pressable
+          accessibilityLabel="ปิดรูปสินค้า"
+          accessibilityRole="button"
+          className="flex-1 items-center justify-center bg-black/85 px-6"
+          onPress={() => setProductImageModalUri(null)}
+        >
+          {productImageModalUri ? (
+            <RNImage
+              source={{ uri: productImageModalUri }}
+              className="h-[70%] w-full"
+              resizeMode="contain"
+            />
+          ) : null}
+        </Pressable>
+      </Modal>
     </View>
   );
 }

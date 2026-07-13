@@ -448,7 +448,6 @@ export function SelectionBar({
           <View className="h-5 w-5 items-center justify-center rounded-full bg-black dark:bg-white">
             <Text className="text-kd-caption font-bold text-white dark:text-black">{count}</Text>
           </View>
-          <Text className="text-kd-caption font-medium text-kd-text">รายการที่เลือก</Text>
           <View className="h-3 w-px bg-kd-border" />
           <Pressable accessibilityRole="button" onPress={onClear}>
             <Text className="text-kd-caption text-kd-text-subtle">ยกเลิก</Text>

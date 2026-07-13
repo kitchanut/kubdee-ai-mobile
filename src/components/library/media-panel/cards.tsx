@@ -1,12 +1,100 @@
+import type { ComponentType } from 'react';
 import { Image as NativeImage, Pressable, View } from 'react-native';
-import { ChevronDown, ChevronRight, Download, Heart, Image as ImageIcon, Pencil, Play, Trash2 } from 'lucide-react-native';
+import { Check, ChevronDown, ChevronRight, Download, Eye, Heart, Image as ImageIcon, Pencil, Play, Trash2 } from 'lucide-react-native';
 
 import Text from '@/components/ui/KubdeeText';
-import { alpha, type KubdeeTheme } from '@/theme/tokens';
-import { CardBackdrop, RowIconButton, SelectCircle, libraryCardStops } from '../shared';
+import { FacebookLogo, InstagramLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
+import type { KubdeeTheme } from '@/theme/tokens';
+import { CardBackdrop, RowIconButton, libraryCardStops } from '../shared';
 import type { MediaGroupRecord, MediaKind, MediaSubItem } from './types';
-import { getItemCode } from './utils';
+import { getItemCode, resolveMediaPlatform } from './utils';
 import { LocalVideoPlaceholder } from './video';
+
+/**
+ * Small source-platform logo shown after a product/media name — mirrors the
+ * product library (ProductCard) placement so the two libraries read the same.
+ */
+function PlatformBadge({
+  theme,
+  platform,
+  productUrl,
+}: {
+  theme: KubdeeTheme;
+  platform?: string | null;
+  productUrl?: string | null;
+}): React.JSX.Element | null {
+  const resolved = resolveMediaPlatform(platform, productUrl);
+  if (resolved === 'tiktok') {
+    return (
+      <View accessible accessibilityLabel="แพลตฟอร์ม TikTok" accessibilityRole="image" className="shrink-0">
+        <TikTokLogo size={15} isDark={theme.isDark} />
+      </View>
+    );
+  }
+  if (resolved === 'shopee') {
+    return (
+      <View accessible accessibilityLabel="แพลตฟอร์ม Shopee" accessibilityRole="image" className="shrink-0">
+        <ShopeeLogo size={15} />
+      </View>
+    );
+  }
+  return null;
+}
+
+type BrandLogoComponent = ComponentType<{ size?: number; isDark?: boolean; color?: string; cutoutColor?: string }>;
+
+/** Social destinations a video can be published to (order mirrors the Auto Pilot pipeline). */
+const POSTED_DESTINATIONS: { key: string; label: string; Logo: BrandLogoComponent }[] = [
+  { key: 'shopee', label: 'Shopee', Logo: ShopeeLogo },
+  { key: 'facebook', label: 'Facebook', Logo: FacebookLogo },
+  { key: 'instagram', label: 'Instagram', Logo: InstagramLogo },
+  { key: 'youtube', label: 'YouTube', Logo: YouTubeLogo },
+  { key: 'tiktok', label: 'TikTok', Logo: TikTokLogo },
+];
+
+/**
+ * Per-video posting status — one small destination logo per platform, lit + green-check
+ * where this video has been posted and dimmed elsewhere. A single video can be posted to
+ * several platforms, so every matching logo lights up.
+ */
+function PostedStatusRow({
+  theme,
+  postedPlatforms,
+}: {
+  theme: KubdeeTheme;
+  postedPlatforms?: Record<string, number> | null;
+}): React.JSX.Element {
+  const posted = postedPlatforms ?? {};
+  const anyPosted = POSTED_DESTINATIONS.some((dest) => Boolean(posted[dest.key]));
+  return (
+    <View className="min-w-0 shrink flex-row items-center gap-1.5">
+      {anyPosted ? (
+        <Text className="shrink-0 text-[9px] font-semibold text-kd-emerald">โพสต์แล้ว</Text>
+      ) : null}
+      <View className="flex-row items-center gap-[5px]">
+        {POSTED_DESTINATIONS.map(({ key, label, Logo }) => {
+          const isPosted = Boolean(posted[key]);
+          return (
+            <View
+              key={key}
+              accessibilityLabel={`${label} ${isPosted ? 'โพสต์แล้ว' : 'ยังไม่โพส'}`}
+              accessibilityRole="image"
+              className="relative"
+              style={{ opacity: isPosted ? 1 : 0.25 }}
+            >
+              <Logo size={14} isDark={theme.isDark} />
+              {isPosted ? (
+                <View className="absolute -right-1.5 -top-1.5 h-3 w-3 items-center justify-center rounded-full border border-kd-panel bg-kd-emerald">
+                  <Check size={7} color="#ffffff" strokeWidth={4} />
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 export function MediaGroupCard({
   theme,
@@ -24,6 +112,8 @@ export function MediaGroupCard({
   onEditMedia,
   onFavoriteMedia,
   onViewMedia,
+  productImageUrl,
+  onViewProductImage,
 }: {
   theme: KubdeeTheme;
   kind: MediaKind;
@@ -40,6 +130,9 @@ export function MediaGroupCard({
   onEditMedia: (media: MediaSubItem) => void;
   onFavoriteMedia: (media: MediaSubItem) => void;
   onViewMedia: (media: MediaSubItem) => void;
+  /** Real product image for the group thumbnail; falls back to a placeholder icon when absent. */
+  productImageUrl?: string | null;
+  onViewProductImage?: (uri: string) => void;
 }): React.JSX.Element {
   const ChevronIcon = expanded ? ChevronDown : ChevronRight;
 
@@ -65,14 +158,28 @@ export function MediaGroupCard({
           <ChevronIcon size={11} color={theme.textSubtle} strokeWidth={2.5} />
         </View>
 
-        <View className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
-          <ImageIcon size={14} color={theme.textSubtle} strokeWidth={1.5} />
-        </View>
+        {productImageUrl ? (
+          <Pressable
+            accessibilityLabel="ดูรูปสินค้า"
+            accessibilityRole="imagebutton"
+            onPress={() => onViewProductImage?.(productImageUrl)}
+            className="h-9 w-9 shrink-0 overflow-hidden rounded-kd-lg border border-kd-border active:opacity-70"
+          >
+            <NativeImage source={{ uri: productImageUrl }} className="h-full w-full" resizeMode="cover" />
+          </Pressable>
+        ) : (
+          <View className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
+            <ImageIcon size={14} color={theme.textSubtle} strokeWidth={1.5} />
+          </View>
+        )}
 
         <View className="min-w-0 flex-1">
-          <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">
-            {item.title}
-          </Text>
+          <View className="flex-row items-center gap-1.5">
+            <Text numberOfLines={1} className="min-w-0 flex-shrink text-kd-body font-semibold text-kd-text">
+              {item.title}
+            </Text>
+            <PlatformBadge theme={theme} platform={item.platform} />
+          </View>
           <View className="mt-[3px] flex-row items-center justify-between gap-2">
             <Text numberOfLines={1} className="shrink text-kd-micro text-kd-text-subtle">
               #{getItemCode(item)}
@@ -153,10 +260,10 @@ export function ImageTile({
 }): React.JSX.Element {
   return (
     <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onLongPress={onToggleSelect}
-      onPress={onView}
+      accessibilityLabel="เลือกรูป"
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selected }}
+      onPress={onToggleSelect}
       className="aspect-square w-[31.4%] overflow-hidden rounded-kd-lg border-2 bg-kd-border dark:bg-kd-card-muted"
       style={{ borderColor: selected ? accentColor : 'transparent' }}
     >
@@ -168,17 +275,15 @@ export function ImageTile({
         )}
       </View>
 
-      <Pressable
-        accessibilityLabel="เลือก"
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: selected }}
-        onPress={onToggleSelect}
-        className="absolute left-1.5 top-1.5"
-      >
-        <SelectCircle theme={theme} selected={selected} accent={accentColor} size={18} light />
-      </Pressable>
-
       <View className="absolute right-1.5 top-1.5 flex-row gap-1">
+        <Pressable
+          accessibilityLabel="ดูรูป"
+          accessibilityRole="button"
+          onPress={onView}
+          className="h-6 w-6 items-center justify-center rounded-kd-sm bg-black/55"
+        >
+          <Eye size={12} color={theme.white} strokeWidth={2.2} />
+        </Pressable>
         <Pressable
           accessibilityLabel="แก้ไข"
           accessibilityRole="button"
@@ -232,6 +337,9 @@ export function VideoRow({
   onFavorite,
   onPlay,
   onToggleSelect,
+  selectionByParent = false,
+  productImageUrl,
+  onViewProductImage,
 }: {
   theme: KubdeeTheme;
   accentColor: string;
@@ -245,28 +353,31 @@ export function VideoRow({
   onFavorite: () => void;
   onPlay: () => void;
   onToggleSelect: () => void;
+  /** When true the parent card draws the selected outline, so the row skips its own. */
+  selectionByParent?: boolean;
+  /** Small product image shown before the platform badge (ungrouped rows). */
+  productImageUrl?: string | null;
+  onViewProductImage?: (uri: string) => void;
 }): React.JSX.Element {
+  const showOwnBorder = selected && !selectionByParent;
   return (
-    <View
+    <Pressable
+      accessibilityLabel="เลือกวิดีโอ"
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selected }}
+      onPress={onToggleSelect}
       className={`flex-row items-center gap-2.5 px-1 py-2 ${
-        showDivider ? 'border-t border-kd-border' : ''
+        showDivider && !showOwnBorder ? 'border-t border-kd-border' : ''
       }`}
-      style={selected ? { backgroundColor: alpha(accentColor, theme.isDark ? 0.1 : 0.05) } : undefined}
+      style={showOwnBorder ? { borderWidth: 1.5, borderColor: accentColor, borderRadius: 10 } : undefined}
     >
       <View className="absolute right-2 top-2 z-[1] flex-row items-center gap-[3px]">
-        <View className="rounded-kd-sm bg-kd-blue/10 px-[5px] py-0.5 dark:bg-kd-blue/25">
-          <Text className="text-[8px] font-medium text-kd-blue">ระบบ</Text>
-        </View>
         {media.warnings.map((warning) => (
           <View key={warning} className="rounded-kd-sm bg-kd-amber/90 px-1 py-0.5">
             <Text className="text-[8px] font-bold text-white">{warning}</Text>
           </View>
         ))}
       </View>
-
-      <Pressable accessibilityLabel="เลือก" accessibilityRole="checkbox" accessibilityState={{ checked: selected }} onPress={onToggleSelect}>
-        <SelectCircle theme={theme} selected={selected} accent={accentColor} size={20} />
-      </Pressable>
 
       <Pressable
         accessibilityLabel="เล่นวิดีโอ"
@@ -281,14 +392,22 @@ export function VideoRow({
 
       <View className="min-w-0 flex-1">
         {showProductInfo ? (
-          <>
-            <Text numberOfLines={1} className="pr-14 text-kd-body font-medium text-kd-text">
+          <View className="flex-row items-center gap-1.5">
+            <Text numberOfLines={1} className="min-w-0 flex-1 text-kd-body font-medium text-kd-text">
               {media.productName}
             </Text>
-            <Text numberOfLines={1} className="mt-px text-kd-tiny text-kd-text-subtle">
-              #{media.productCode}
-            </Text>
-          </>
+            {productImageUrl ? (
+              <Pressable
+                accessibilityLabel="ดูรูปสินค้า"
+                accessibilityRole="imagebutton"
+                onPress={() => onViewProductImage?.(productImageUrl)}
+                className="h-[18px] w-[18px] shrink-0 overflow-hidden rounded-kd-sm border border-kd-border active:opacity-70"
+              >
+                <NativeImage source={{ uri: productImageUrl }} className="h-full w-full" resizeMode="cover" />
+              </Pressable>
+            ) : null}
+            <PlatformBadge theme={theme} platform={media.platform} productUrl={media.productUrl} />
+          </View>
         ) : (
           <Text numberOfLines={1} className="pr-14 text-kd-body font-medium text-kd-text">
             {media.title}
@@ -296,19 +415,30 @@ export function VideoRow({
         )}
 
         <View className="mt-[3px] flex-row items-center gap-1.5">
-          <Text className="text-kd-micro text-kd-text-subtle">{media.date}</Text>
-          <View className="h-[3px] w-[3px] rounded-full bg-kd-border-strong" />
-          <Text className="text-kd-micro text-kd-text-subtle">{media.size}</Text>
+          {showProductInfo ? (
+            <>
+              <Text numberOfLines={1} className="min-w-0 shrink text-kd-micro text-kd-text-subtle">
+                #{media.productCode}
+              </Text>
+              <View className="h-[3px] w-[3px] shrink-0 rounded-full bg-kd-border-strong" />
+            </>
+          ) : null}
+          <Text className="shrink-0 text-kd-micro text-kd-text-subtle">{media.date}</Text>
+          <View className="h-[3px] w-[3px] shrink-0 rounded-full bg-kd-border-strong" />
+          <Text className="shrink-0 text-kd-micro text-kd-text-subtle">{media.size}</Text>
         </View>
 
-        <View className="mt-0.5 flex-row items-center justify-end gap-0.5">
-          <RowIconButton theme={theme} icon={Pencil} label="แก้ไข" onPress={onEdit} />
-          <RowIconButton theme={theme} icon={Play} label="เล่น" onPress={onPlay} />
-          <RowIconButton theme={theme} icon={Download} label="ดาวน์โหลด" onPress={onDownload} />
-          <RowIconButton theme={theme} icon={Heart} label="กดถูกใจ" onPress={onFavorite} />
-          <RowIconButton theme={theme} icon={Trash2} label="ลบ" onPress={onDelete} />
+        <View className="mt-1 flex-row items-center justify-between gap-2">
+          <PostedStatusRow theme={theme} postedPlatforms={media.postedPlatforms} />
+          <View className="shrink-0 flex-row items-center gap-0.5">
+            <RowIconButton theme={theme} icon={Pencil} label="แก้ไข" onPress={onEdit} />
+            <RowIconButton theme={theme} icon={Play} label="เล่น" onPress={onPlay} />
+            <RowIconButton theme={theme} icon={Download} label="ดาวน์โหลด" onPress={onDownload} />
+            <RowIconButton theme={theme} icon={Heart} label="กดถูกใจ" onPress={onFavorite} />
+            <RowIconButton theme={theme} icon={Trash2} label="ลบ" onPress={onDelete} />
+          </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
