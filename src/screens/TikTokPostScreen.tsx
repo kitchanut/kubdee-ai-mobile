@@ -1,5 +1,5 @@
 import { ActivityIndicator, Image as NativeImage, Pressable, ScrollView, View } from 'react-native';
-import { FolderOpen, RotateCcw, Send, SlidersHorizontal, Video, X } from 'lucide-react-native';
+import { FolderOpen, RotateCcw, Send, SlidersHorizontal, TriangleAlert, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner-native';
 
@@ -13,6 +13,7 @@ import {
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { TikTokLogo } from '@/components/BrandLogos';
+import { PostContentChip, PostWarnChip, resolvePostCaptionState, resolvePostHashtagState } from '@/components/post/PostStatusChips';
 import Text from '@/components/ui/KubdeeText';
 import TikTokPostModal from '@/tiktok/TikTokPostModal';
 import type { TikTokPostVideoInput } from '@/tiktok/TikTokPostModal';
@@ -46,8 +47,12 @@ function videoLabel(asset: GeneratedMediaAsset, index: number): string {
   return asset.title?.trim() || asset.fileName?.trim() || `วิดีโอ ${index + 1}`;
 }
 
+function isTikTokProductVideo(asset: GeneratedMediaAsset): boolean {
+  return asset.platform?.trim().toLowerCase() === 'tiktok';
+}
+
 function toTikTokPostVideo(asset: GeneratedMediaAsset): TikTokPostVideoInput {
-  const isTikTokProduct = asset.platform?.trim().toLowerCase() === 'tiktok';
+  const isTikTokProduct = isTikTokProductVideo(asset);
   return {
     fileUri: asset.fileUri,
     fileName: asset.fileName,
@@ -59,6 +64,50 @@ function toTikTokPostVideo(asset: GeneratedMediaAsset): TikTokPostVideoInput {
     platform: asset.platform,
     galleryVideoId: asset.id,
   };
+}
+
+// แคปชั่นตอนโพสต์ = แคปชั่นที่มี หรือ fallback ชื่อสินค้า TikTok — ถ้าว่างทั้งคู่ native script
+// โยน CAPTION_REQUIRED ("ไม่มี Caption หรือชื่อสินค้า จึงไม่โพสต์") คือโพสต์ไม่ได้เลย
+function hasTikTokPostableText(asset: GeneratedMediaAsset): boolean {
+  if (asset.caption?.trim()) {
+    return true;
+  }
+  return isTikTokProductVideo(asset) && Boolean(asset.productName?.trim());
+}
+
+type TikTokPostBlock = 'ok' | 'no-file' | 'no-caption';
+
+function getTikTokPostBlock(asset: GeneratedMediaAsset): TikTokPostBlock {
+  if (!isLocalPostableVideo(asset)) {
+    return 'no-file';
+  }
+  if (!hasTikTokPostableText(asset)) {
+    return 'no-caption';
+  }
+  return 'ok';
+}
+
+function isTikTokPostable(asset: GeneratedMediaAsset): boolean {
+  return getTikTokPostBlock(asset) === 'ok';
+}
+
+function summarizeTikTokPostBlocks(videos: GeneratedMediaAsset[]): { noFile: number; noCaption: number } {
+  let noFile = 0;
+  let noCaption = 0;
+  for (const video of videos) {
+    const block = getTikTokPostBlock(video);
+    if (block === 'no-file') noFile += 1;
+    else if (block === 'no-caption') noCaption += 1;
+  }
+  return { noFile, noCaption };
+}
+
+function formatTikTokSkipBanner(breakdown: { noFile: number; noCaption: number }): string {
+  const total = breakdown.noFile + breakdown.noCaption;
+  const parts: string[] = [];
+  if (breakdown.noCaption > 0) parts.push(`ไม่มีแคปชั่น/ชื่อสินค้า ${breakdown.noCaption}`);
+  if (breakdown.noFile > 0) parts.push(`ไฟล์ไม่พร้อม ${breakdown.noFile}`);
+  return parts.length > 0 ? `ข้าม ${total} รายการที่โพสต์ไม่ได้ · ${parts.join(' · ')}` : '';
 }
 
 export default function TikTokPostScreen({
@@ -116,14 +165,15 @@ export default function TikTokPostScreen({
       .map((id) => byId.get(id))
       .filter((video): video is GeneratedMediaAsset => Boolean(video));
   }, [generatedVideos, pendingVideoIds]);
-  // ทำงานกับหัวคิวเสมอ เมื่อสำเร็จ App จะนำรายการนั้นออกและคลิปถัดไปเลื่อนขึ้นมา
-  // วิธีนี้ไม่พึ่ง index ที่เปลี่ยนหลัง array หด จึงไม่ข้ามคลิปกลางคิว
-  const activeVideo = isPosting ? queuedVideos[0] ?? null : null;
+  // โพสต์เฉพาะคลิปที่มีไฟล์ในเครื่อง + มีแคปชั่นหรือชื่อสินค้า TikTok — ที่เหลือถูกข้าม (แต่ยังโชว์ในลิสต์)
+  const postableVideos = useMemo(() => queuedVideos.filter(isTikTokPostable), [queuedVideos]);
+  const skipBreakdown = useMemo(() => summarizeTikTokPostBlocks(queuedVideos), [queuedVideos]);
+  const blockedCount = queuedVideos.length - postableVideos.length;
+  // ทำงานกับหัวคิวที่โพสต์ได้เสมอ เมื่อสำเร็จ App จะนำรายการนั้นออกและคลิปถัดไปเลื่อนขึ้นมา
+  // คลิปแดง (ข้าม) จะไม่ถูกหยิบขึ้นมาโพสต์ จึงค้างอยู่ในลิสต์ให้ผู้ใช้แก้/เอาออกเอง
+  const activeVideo = isPosting ? postableVideos[0] ?? null : null;
   const missingCount = pendingVideoIds.length - queuedVideos.length;
-  const readyCount = queuedVideos.filter(isLocalPostableVideo).length;
-  const canPost = Boolean(
-    selectedProfileId && queuedVideos.length > 0 && readyCount === queuedVideos.length && !isPosting
-  );
+  const canPost = Boolean(selectedProfileId && postableVideos.length > 0 && !isPosting);
 
   const appendLog = useCallback((message: string): void => {
     pushAutomationActivityLog('tiktok-post', message);
@@ -149,9 +199,18 @@ export default function TikTokPostScreen({
       toast.warning('เลือกวิดีโอก่อนโพสต์ TikTok');
       return;
     }
-    if (readyCount !== queuedVideos.length) {
-      toast.warning(`มีวิดีโอที่ไม่มีไฟล์ในเครื่อง ${queuedVideos.length - readyCount} รายการ`);
+    if (postableVideos.length === 0) {
+      toast.warning('ไม่มีวิดีโอที่โพสต์ได้ — ต้องมีไฟล์ในเครื่องและมีแคปชั่นหรือชื่อสินค้า TikTok');
       return;
+    }
+
+    // โพสต์เฉพาะคลิปที่พร้อม — คลิปที่ไม่มีแคปชั่น/ชื่อสินค้าหรือไฟล์ไม่พร้อม ข้ามไปพร้อมเตือน
+    const { noCaption, noFile } = skipBreakdown;
+    if (noCaption > 0) {
+      toast.warning(`ข้าม ${noCaption} รายการที่ไม่มีแคปชั่น/ชื่อสินค้า`);
+    }
+    if (noFile > 0) {
+      toast.warning(`ข้าม ${noFile} รายการที่ไฟล์ยังไม่พร้อม`);
     }
 
     stopRequestedRef.current = false;
@@ -159,9 +218,9 @@ export default function TikTokPostScreen({
     setLastError(null);
     setIsStopping(false);
     setIsPosting(true);
-    beginAutomationActivityRun('tiktok-post', `TikTok post · ${queuedVideos.length} วิดีโอ`);
-    appendLog(`เริ่ม${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ${queuedVideos.length} วิดีโอ`);
-  }, [appendLog, postAction, queuedVideos, readyCount, selectedProfileId]);
+    beginAutomationActivityRun('tiktok-post', `TikTok post · ${postableVideos.length} วิดีโอ`);
+    appendLog(`เริ่ม${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ${postableVideos.length} วิดีโอ`);
+  }, [appendLog, postAction, postableVideos, queuedVideos.length, selectedProfileId, skipBreakdown]);
 
   const stopPosting = useCallback((): void => {
     if (!isPosting || isStopping) return;
@@ -192,13 +251,16 @@ export default function TikTokPostScreen({
       void markPosted(activeVideo.id, 'tiktok');
     }
     onRemovePendingVideo(activeVideo.id);
-    if (stopRequestedRef.current || queuedVideos.length <= 1) {
+    const remainingPostable = queuedVideos.filter(
+      (video) => video.id !== activeVideo.id && isTikTokPostable(video)
+    ).length;
+    if (stopRequestedRef.current || remainingPostable === 0) {
       finishRun(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ครบแล้ว`);
       return;
     }
 
     completedRef.current = false;
-  }, [activeVideo, appendLog, finishRun, markPosted, onRemovePendingVideo, postAction, queuedVideos.length]);
+  }, [activeVideo, appendLog, finishRun, markPosted, onRemovePendingVideo, postAction, queuedVideos]);
 
   const handleModalClose = useCallback((): void => {
     if (completedRef.current) return;
@@ -260,10 +322,40 @@ export default function TikTokPostScreen({
                 </Pressable>
               </View>
             ) : null}
+            {blockedCount > 0 ? (
+              <View className="flex-row items-center gap-2 border-b border-kd-border bg-kd-red-soft px-3 py-2">
+                <TriangleAlert size={14} color={theme.red} strokeWidth={2.2} />
+                <Text numberOfLines={2} className="min-w-0 flex-1 text-kd-caption text-kd-red">
+                  {formatTikTokSkipBanner(skipBreakdown)}
+                </Text>
+              </View>
+            ) : null}
             {queuedVideos.map((video, index) => {
-              const hasTikTokProduct = video.platform?.trim().toLowerCase() === 'tiktok';
+              const block = getTikTokPostBlock(video);
+              const isBlockedRed = block === 'no-caption';
+              const isTikTokProduct = isTikTokProductVideo(video);
+              // TikTok fallback ใช้ชื่อสินค้าเป็นแคปชั่นได้เฉพาะเมื่อ product มาจาก TikTok (native ส่ง productName เฉพาะกรณีนั้น)
+              const captionState = resolvePostCaptionState(
+                video.caption,
+                false,
+                isTikTokProduct && Boolean(video.productName?.trim())
+              );
+              const hashtagState = resolvePostHashtagState(video.hashtags, false);
+              const productLineWarn = enableProductLink && !isTikTokProduct;
+              const productLine =
+                enableProductLink && isTikTokProduct
+                  ? `สินค้า TikTok · ${video.productName || video.productCode}`
+                  : productLineWarn
+                    ? 'ไม่แนบสินค้า — สินค้าไม่ได้มาจาก TikTok'
+                    : 'ไม่แนบสินค้า';
               return (
-                <View key={video.id} className="flex-row items-center gap-2 border-b border-kd-border px-3 py-2">
+                <View
+                  key={video.id}
+                  className={`flex-row items-center gap-2 border-b border-kd-border px-3 py-2 ${
+                    isBlockedRed ? 'bg-kd-red/5 dark:bg-kd-red/10' : ''
+                  }`}
+                  style={isBlockedRed ? { borderLeftWidth: 2, borderLeftColor: theme.red } : undefined}
+                >
                   <View className="h-14 w-10 overflow-hidden rounded-kd-md bg-kd-card-muted">
                     {video.thumbnailUri ? (
                       <NativeImage source={{ uri: video.thumbnailUri }} className="h-full w-full" resizeMode="cover" />
@@ -273,13 +365,14 @@ export default function TikTokPostScreen({
                   </View>
                   <View className="min-w-0 flex-1">
                     <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">{videoLabel(video, index)}</Text>
-                    <Text numberOfLines={1} className="text-kd-micro text-kd-text-subtle">
-                      {enableProductLink && hasTikTokProduct
-                        ? `สินค้า TikTok · ${video.productName || video.productCode}`
-                        : enableProductLink
-                          ? 'ไม่แนบสินค้า — สินค้าไม่ได้มาจาก TikTok'
-                          : 'ไม่แนบสินค้า'}
+                    <Text numberOfLines={1} className={`text-kd-micro ${productLineWarn ? 'text-kd-amber' : 'text-kd-text-subtle'}`}>
+                      {productLine}
                     </Text>
+                    <View className="mt-1 flex-row flex-wrap items-center gap-1.5">
+                      {block === 'no-file' ? <PostWarnChip text="ไฟล์ยังไม่พร้อม" theme={theme} /> : null}
+                      <PostContentChip label="แคปชั่น" state={captionState} theme={theme} />
+                      <PostContentChip label="แฮชแท็ก" state={hashtagState} theme={theme} />
+                    </View>
                   </View>
                   {!isPosting ? (
                     <Pressable accessibilityLabel="นำวิดีโอออกจากคิว" onPress={() => onRemovePendingVideo(video.id)}>
@@ -315,7 +408,7 @@ export default function TikTokPostScreen({
           >
             {isStopping ? <ActivityIndicator color={theme.white} /> : isPosting ? <X size={16} color={theme.white} /> : <Send size={16} color={theme.white} />}
             <Text className="text-kd-subtitle font-semibold text-white">
-              {isPosting ? (isStopping ? 'กำลังหยุด...' : 'หยุด TikTok post') : `${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ${queuedVideos.length} คลิป`}
+              {isPosting ? (isStopping ? 'กำลังหยุด...' : 'หยุด TikTok post') : `${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ${postableVideos.length} คลิป`}
             </Text>
           </Pressable>
         </View>

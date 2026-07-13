@@ -24,6 +24,7 @@ import type { ShopeeAiContentSettings } from '@/autopilot/shopeeAiContentSetting
 import { ExtensionToggleRow, HashtagCountSelector } from '@/screens/autopilot/blocks/SettingsBlocks';
 import { ShopeeLogo } from '@/components/BrandLogos';
 import PostSettingsModal from '@/components/post/PostSettingsModal';
+import { PostContentChip, resolvePostCaptionState, resolvePostHashtagState } from '@/components/post/PostStatusChips';
 import Text from '@/components/ui/KubdeeText';
 import {
   getAccessibilityStatus,
@@ -511,6 +512,8 @@ export default function ShopeeScreen({
                   index={index}
                   theme={theme}
                   video={video}
+                  aiCaption={aiContentSettings.aiGenerateCaption}
+                  aiHashtags={aiContentSettings.aiGenerateHashtags}
                   onRemove={() => onRemovePendingVideo?.(video.id)}
                 />
               ))
@@ -747,15 +750,22 @@ function PostVideoRow({
   index,
   theme,
   video,
+  aiCaption,
+  aiHashtags,
   onRemove,
 }: {
   index: number;
   theme: KubdeeTheme;
   video: GeneratedMediaAsset;
+  aiCaption: boolean;
+  aiHashtags: boolean;
   onRemove: () => void;
 }): React.JSX.Element {
   const block = getShopeePostBlock(video);
   const isBlockedRed = block === 'wrong-platform' || block === 'no-link';
+  // แคปชั่นว่างแต่มีชื่อสินค้า → Shopee fallback ใช้ชื่อสินค้าเป็นแคปชั่น (limitShopeePostTextParts)
+  const captionState = resolvePostCaptionState(video.caption, aiCaption, Boolean(getPostPayloadProductName(video)));
+  const hashtagState = resolvePostHashtagState(video.hashtags, aiHashtags);
   const productName = getPostPayloadProductName(video);
   const productCode = getPostPayloadProductCode(video);
   const productLabel = productName || getPostVideoFallbackLabel(video, index);
@@ -805,6 +815,10 @@ function PostVideoRow({
           <Text numberOfLines={1} className={`min-w-0 flex-1 text-kd-caption ${statusColorClass}`}>
             {statusText}
           </Text>
+        </View>
+        <View className="mt-1 flex-row items-center gap-1.5">
+          <PostContentChip label="แคปชั่น" state={captionState} theme={theme} />
+          <PostContentChip label="แฮชแท็ก" state={hashtagState} theme={theme} />
         </View>
       </View>
 
