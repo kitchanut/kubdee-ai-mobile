@@ -35,6 +35,12 @@
    rg -n "0.1.2|versionCode 3|versionCode: 3" package.json package-lock.json app.config.ts app.json android/app/build.gradle src/updates/mobileChangelog.ts
    ```
 
+   > ⚠️ **ต้องแก้ `android/app/build.gradle` ด้วยมือทุกครั้ง** (`versionCode` + `versionName`) —
+   > ไฟล์นี้ถูก gitignore และ generate จาก `expo prebuild` เท่านั้น การแก้ `app.config.ts`
+   > อย่างเดียว**ไม่**ทำให้ APK ที่ build ได้เวอร์ชันใหม่ (gradle อ่านค่าจาก build.gradle ตรงๆ)
+   > และอย่ารัน prebuild เพื่อ sync เวอร์ชัน (มี gotcha ทำ MainApplication.kt พัง — mobile issue #2)
+   > เช็คก่อน sign เสมอ: `aapt dump badging <apk> | head -1` ต้องเห็น versionCode/versionName ใหม่
+
 2. เพิ่ม changelog ใน `src/updates/mobileChangelog.ts`
 
    - ใช้ข้อความสั้น ชัดเจน สำหรับผู้ใช้
