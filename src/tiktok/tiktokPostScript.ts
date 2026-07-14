@@ -87,7 +87,7 @@ export function buildTikTokPostScript({
       poll();
     });
   }
-  function findButton(labels, root){
+  function findButton(labels, root, exactOnly){
     var scope = root || document;
     var buttons = scope.querySelectorAll('button, .TUXButton, [role="button"]');
     for (var i = 0; i < buttons.length; i++) {
@@ -95,17 +95,38 @@ export function buildTikTokPostScript({
       var text = normalized(buttons[i].textContent);
       for (var j = 0; j < labels.length; j++) {
         var label = normalized(labels[j]);
-        if (text === label || text.indexOf(label) >= 0) return buttons[i];
+        if (text === label || (!exactOnly && text.indexOf(label) >= 0)) return buttons[i];
       }
     }
     return null;
   }
+  // modal สินค้า = modal ที่มองเห็นตัวบนสุด (อันท้ายสุดใน DOM) — ใช้จำกัดขอบเขตการหาปุ่ม
+  function findProductModal(){
+    var candidates = document.querySelectorAll('.common-modal, .TUXModal, [role="dialog"]');
+    var topmost = null;
+    for (var i = 0; i < candidates.length; i++) {
+      if (visible(candidates[i])) topmost = candidates[i];
+    }
+    return topmost;
+  }
+  // หาปุ่ม action เฉพาะใน footer ของ modal สินค้า — ห้ามสแกน .button-group ทั้ง document
+  // เพราะหน้า editor ข้างใต้มี footer ของตัวเอง (ปุ่ม "โพสต์"/"บันทึกแบบร่าง") จะโดนกดผิดปุ่ม
+  // จับคู่แบบ exact ก่อนค่อย substring กันคำสั้นอย่าง "เพิ่ม" ไปโดน "เพิ่มเพลง" ฯลฯ
   function findModalAction(labels){
-    var scopes = document.querySelectorAll('.common-modal-footer, .button-group, [role="dialog"] footer');
-    for (var i = 0; i < scopes.length; i++) {
-      if (!visible(scopes[i])) continue;
-      var button = findButton(labels, scopes[i]);
-      if (button) return button;
+    var modal = findProductModal();
+    var containers = modal
+      ? modal.querySelectorAll('.common-modal-footer, .button-group, footer')
+      : document.querySelectorAll('.common-modal-footer');
+    var scopes = [];
+    for (var i = 0; i < containers.length; i++) {
+      if (visible(containers[i])) scopes.push(containers[i]);
+    }
+    if (!scopes.length && modal) scopes.push(modal);
+    for (var pass = 0; pass < 2; pass++) {
+      for (var s = 0; s < scopes.length; s++) {
+        var button = findButton(labels, scopes[s], pass === 0);
+        if (button) return button;
+      }
     }
     return null;
   }
@@ -161,6 +182,22 @@ export function buildTikTokPostScript({
     else input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  // แตะ element ด้วย gesture จริงผ่าน Accessibility Service (isTrusted) — คืน false ถ้าอยู่นอกจอ
+  async function nativeTapOn(element, label){
+    element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+    await sleep(350);
+    var rect = element.getBoundingClientRect();
+    var visualViewport = window.visualViewport;
+    var viewportLeft = visualViewport ? visualViewport.offsetLeft : 0;
+    var viewportTop = visualViewport ? visualViewport.offsetTop : 0;
+    var viewportWidth = Math.max(1, visualViewport ? visualViewport.width : window.innerWidth);
+    var viewportHeight = Math.max(1, visualViewport ? visualViewport.height : window.innerHeight);
+    var xRatio = (rect.left + rect.width / 2 - viewportLeft) / viewportWidth;
+    var yRatio = (rect.top + rect.height / 2 - viewportTop) / viewportHeight;
+    if (xRatio < 0 || xRatio > 1 || yRatio < 0 || yRatio > 1) return false;
+    send({ type: 'tiktok-post-native-tap', xRatio: xRatio, yRatio: yRatio, label: String(label || '') });
+    return true;
   }
   function expectedText(){
     var caption = normalized(INPUT.caption || INPUT.productName);
@@ -220,21 +257,11 @@ export function buildTikTokPostScript({
     if (!uploadTarget || !visible(uploadTarget)) {
       throw { code: 'UPLOAD_TAP_TARGET_NOT_FOUND', message: 'ไม่พบปุ่มอัปโหลดวิดีโอที่แตะได้', stage: 'upload-tap-target' };
     }
-    uploadTarget.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
-    await sleep(350);
-    var targetRect = uploadTarget.getBoundingClientRect();
-    var visualViewport = window.visualViewport;
-    var viewportLeft = visualViewport ? visualViewport.offsetLeft : 0;
-    var viewportTop = visualViewport ? visualViewport.offsetTop : 0;
-    var viewportWidth = Math.max(1, visualViewport ? visualViewport.width : window.innerWidth);
-    var viewportHeight = Math.max(1, visualViewport ? visualViewport.height : window.innerHeight);
-    var xRatio = (targetRect.left + targetRect.width / 2 - viewportLeft) / viewportWidth;
-    var yRatio = (targetRect.top + targetRect.height / 2 - viewportTop) / viewportHeight;
-    if (xRatio < 0 || xRatio > 1 || yRatio < 0 || yRatio > 1) {
+    log('UPLOAD_OPEN_PICKER', 'กำลังแตะปุ่มอัปโหลดวิดีโอ...');
+    var uploadTapped = await nativeTapOn(uploadTarget, 'ปุ่มอัปโหลดวิดีโอ');
+    if (!uploadTapped) {
       throw { code: 'UPLOAD_TAP_TARGET_OUTSIDE_VIEWPORT', message: 'ปุ่มอัปโหลดอยู่นอกพื้นที่หน้าจอ', stage: 'upload-tap-target' };
     }
-    log('UPLOAD_OPEN_PICKER', 'กำลังแตะปุ่มอัปโหลดวิดีโอ...');
-    send({ type: 'tiktok-post-native-tap', xRatio: xRatio, yRatio: yRatio });
 
     var selected = await waitFor(function(){
       var editor = document.querySelector('.public-DraftEditor-content');
@@ -307,7 +334,7 @@ export function buildTikTokPostScript({
     log('PRODUCT_OPEN', 'กำลังเปิดรายการสินค้า TikTok...');
     dismissBlockingDialogs();
     var anchor = document.querySelector('div[data-e2e="anchor_container"]');
-    var addButton = anchor && (anchor.querySelector('button, .TUXButton') || findButton(['เพิ่ม', 'Add'], anchor));
+    var addButton = anchor && (anchor.querySelector('.TUXButton') || findButton(['เพิ่ม', 'Add'], anchor));
     if (!addButton) throw { code: 'PRODUCT_ADD_NOT_FOUND', message: 'ไม่พบปุ่มเพิ่มสินค้า', stage: 'product-add' };
     addButton.click();
     await sleep(1200);
@@ -350,19 +377,17 @@ export function buildTikTokPostScript({
       return document.querySelector('input[placeholder="ค้นหาสินค้า"], input[placeholder="Search products"], input[placeholder*="Product ID" i]');
     }, 20000, 500);
     if (!search) throw { code: 'PRODUCT_SEARCH_NOT_FOUND', message: 'ไม่พบช่องค้นหาสินค้า', stage: 'product-search' };
-    // mobile injected JS ยิง trusted Enter ไม่ได้เหมือน desktop (CDP) — Enter สังเคราะห์กลับทำ
-    // search พัง (showcase ขึ้นว่าง) ใช้ setNativeValue (input/change) กระตุ้น live search แทน (ทดสอบแล้วเวิร์ก)
-    search.click();
+    // TikTok ยิงค้นหาเมื่อได้ Enter แบบ trusted เท่านั้น (desktop ใช้ CDP pressKey) —
+    // Enter สังเคราะห์จาก JS ทำ search พัง และ input/change เฉยๆ ไม่ trigger ค้นหา
+    // → แตะช่องค้นหาด้วย gesture จริงให้ focus ระดับ native แล้วยิง ACTION_IME_ENTER ผ่าน Accessibility
+    var searchTapped = await nativeTapOn(search, 'ช่องค้นหาสินค้า');
+    if (!searchTapped) search.click();
+    await sleep(800);
     setNativeValue(search, INPUT.productId);
-    await sleep(500);
-    // เผื่อบางรุ่นต้องกดปุ่มค้นหา/submit form
-    var searchScope = search.closest('form, [class*="search" i]') || search.parentElement || document;
-    var searchButton = findButton(['ค้นหา', 'Search'], searchScope);
-    if (searchButton) searchButton.click();
-    else {
-      var form = search.closest('form');
-      if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
-    }
+    await sleep(400);
+    log('PRODUCT_SEARCH_FILLED', 'กรอก Product ID: ' + String(search.value || '') + ' — กำลังยิง Enter ค้นหา');
+    send({ type: 'tiktok-post-native-enter' });
+    await sleep(3000); // ตาม desktop: รอผลค้นหาหลัง Enter 3 วิ
 
     var radio = await waitFor(function(){
       var rows = document.querySelectorAll('tbody tr, .product-tb-row, [data-e2e*="product-row"]');
@@ -373,9 +398,17 @@ export function buildTikTokPostScript({
       }
       return null;
     }, 20000, 500);
-    // ค้นหา (Enter) กรองเหลือสินค้าที่ตรงแล้ว — ถ้าจับคู่ด้วย ID ไม่เจอ ใช้ radio แถวแรก (อ้างอิง desktop)
-    if (!radio) radio = document.querySelector('.product-tb-row input[type="radio"], tbody tr input[type="radio"]');
+    if (!radio) {
+      // แถวผลลัพธ์มักโชว์ชื่อสินค้าไม่ใช่ ID — ใช้ radio แถวแรกเฉพาะเมื่อค้นหากรองเหลือแถวเดียว
+      // ถ้ามีหลายแถวแปลว่า search ไม่ได้กรอง ห้ามเดาแถวแรก (จะแนบสินค้าผิดตัว)
+      var radios = document.querySelectorAll('.product-tb-row input[type="radio"], tbody tr input[type="radio"]');
+      if (radios.length === 1) radio = radios[0];
+      else if (radios.length > 1) {
+        throw { code: 'PRODUCT_NOT_FOUND', message: 'ค้นหาแล้วเหลือ ' + radios.length + ' รายการ จับคู่ Product ID ไม่ได้', stage: 'product-result' };
+      }
+    }
     if (!radio) throw { code: 'PRODUCT_NOT_FOUND', message: 'ไม่พบ TikTok Product ID ที่เลือก', stage: 'product-result' };
+    log('PRODUCT_SELECTED', 'พบสินค้าแล้ว กำลังเลือก...');
     radio.click();
 
     nextButton = findModalAction(['ถัดไป', 'Next']);
@@ -384,32 +417,35 @@ export function buildTikTokPostScript({
     await sleep(800);
 
     if (INPUT.cta) {
-      var ctaInput = document.querySelector('input[placeholder*="ชื่อ"], input[placeholder*="Name" i], input[data-e2e*="cta"]');
+      var ctaScope = findProductModal() || document;
+      var ctaInput = ctaScope.querySelector('input.TUXTextInputCore-input, input[placeholder*="ชื่อ"], input[placeholder*="Name" i], input[data-e2e*="cta"]');
       if (ctaInput) { ctaInput.click(); setNativeValue(ctaInput, INPUT.cta); }
     }
     function productBound(){
       var anchorText = normalized(anchor && anchor.textContent);
       if (INPUT.productId && anchorText.indexOf(normalized(INPUT.productId)) >= 0) return true;
-      // หลังผูก anchor มักโชว์ "ชื่อสินค้า" ไม่ใช่ ID — เช็คชื่อ/รูป/element ด้วย กัน false-negative
+      // หลังผูก anchor มักโชว์ "ชื่อสินค้า" ไม่ใช่ ID — เช็คชื่อ/รูปสินค้าด้วย กัน false-negative
       var pname = normalized(INPUT.productName);
       if (pname && pname.length >= 6 && anchorText.indexOf(pname.slice(0, 12)) >= 0) return true;
-      return !!document.querySelector('[data-e2e="anchor_container"] img, [data-e2e="anchor_container"] [data-e2e*="product"], [data-e2e="anchor_container"] [class*="product" i]');
+      return !!document.querySelector('[data-e2e="anchor_container"] img, [data-e2e="anchor_container"] [data-e2e*="product"]');
     }
-    // บาง flow ผูกสินค้าเสร็จหลังกด "ถัดไป" เลย — เช็คก่อนว่าผูกแล้วยัง
-    var confirmed = await waitFor(function(){ return productBound() ? true : null; }, 2000, 500);
-    if (!confirmed) {
-      // ปุ่มยืนยัน = "เพิ่ม"/"Add" ใน footer (อ้างอิง desktop) หรือปุ่ม primary ใน footer ของ modal สินค้า
-      // ห้ามค้นทั้งหน้า เพราะจะไปโดนปุ่ม "บันทึกแบบร่าง"/"โพสต์" แล้วเซฟก่อน flow ตั้ง verify marker
+    // desktop กดปุ่ม "เพิ่ม" ใน modal footer เสมอ — mobile กดเมื่อ modal สินค้ายังเปิดอยู่
+    // (ถ้า modal ปิดไปเองแปลว่าผูกเสร็จตั้งแต่กด "ถัดไป" แล้ว)
+    var confirmModal = findProductModal();
+    if (confirmModal) {
       var confirmButton = findModalAction(['เพิ่ม', 'Add', 'ยืนยัน', 'Confirm', 'เสร็จสิ้น', 'Done']);
       if (!confirmButton) {
-        var footers = document.querySelectorAll('.common-modal-footer, .button-group, [role="dialog"] footer');
-        for (var fi = 0; fi < footers.length; fi++) {
-          if (!visible(footers[fi])) continue;
-          var prim = footers[fi].querySelector('.TUXButton--primary, button[class*="primary" i]');
-          if (prim && visible(prim)) { confirmButton = prim; break; }
-        }
+        // fallback ปุ่ม primary เฉพาะใน footer ของ modal สินค้าเท่านั้น —
+        // ห้ามค้นทั้งหน้า เพราะปุ่ม primary ของหน้า editor คือ "โพสต์"
+        var prim = confirmModal.querySelector('.common-modal-footer .TUXButton--primary, .button-group .TUXButton--primary, footer .TUXButton--primary');
+        if (prim && visible(prim)) confirmButton = prim;
       }
-      if (confirmButton) confirmButton.click();
+      if (confirmButton) {
+        log('PRODUCT_CONFIRM_CLICK', 'กดปุ่มยืนยันสินค้า: "' + normalized(confirmButton.textContent).slice(0, 40) + '"');
+        confirmButton.click();
+      } else {
+        log('PRODUCT_CONFIRM_NOT_FOUND', 'ไม่พบปุ่มยืนยันใน modal สินค้า — ข้าม (อาจผูกสำเร็จแล้ว)');
+      }
       await sleep(1200);
     }
 

@@ -10,6 +10,7 @@ import Text from '@/components/ui/KubdeeText';
 import {
   clearTikTokWebViewUpload,
   prepareTikTokWebViewUpload,
+  pressImeEnter,
   tapScreen,
 } from '@/native/AccessibilityBridge';
 import { DESKTOP_CHROME_UA, DESKTOP_ENV_SPOOF } from '@/tiktok/desktopSpoof';
@@ -231,6 +232,7 @@ function TikTokPostRunner({
       code?: string;
       xRatio?: number;
       yRatio?: number;
+      label?: string;
       diagnostics?: unknown;
     };
     try {
@@ -242,9 +244,22 @@ function TikTokPostRunner({
       onLog(data.message);
       return;
     }
+    if (data.type === 'tiktok-post-native-enter') {
+      // trusted Enter (ACTION_IME_ENTER) เข้า input ที่ focus อยู่ใน WebView —
+      // ใช้ trigger การค้นหาสินค้า TikTok แบบเดียวกับ CDP pressKey ของ desktop
+      void pressImeEnter()
+        .then((success) => {
+          onLog(success
+            ? 'Trusted Enter TikTok: สำเร็จ'
+            : 'Trusted Enter TikTok: native ปฏิเสธ (ต้องใช้ Android 11+ และเปิด Accessibility Service)');
+        })
+        .catch(() => onLog('Trusted Enter TikTok: เรียก native ไม่สำเร็จ'));
+      return;
+    }
     if (data.type === 'tiktok-post-native-tap') {
       const xRatio = Number(data.xRatio);
       const yRatio = Number(data.yRatio);
+      const tapLabel = data.label?.trim() || 'ปุ่ม TikTok';
       if (
         !Number.isFinite(xRatio) ||
         !Number.isFinite(yRatio) ||
@@ -254,7 +269,7 @@ function TikTokPostRunner({
         yRatio > 1 ||
         !webViewContainerRef.current
       ) {
-        fail('คำนวณตำแหน่งปุ่มอัปโหลด TikTok ไม่สำเร็จ');
+        fail(`คำนวณตำแหน่ง${tapLabel}ไม่สำเร็จ`);
         return;
       }
       webViewContainerRef.current.measureInWindow((x, y, width, height) => {
@@ -262,17 +277,17 @@ function TikTokPostRunner({
         const screenX = (x + width * xRatio) * density;
         const screenY = (y + height * yRatio) * density;
         onLog(
-          `Trusted tap TikTok: ${Math.round(screenX)},${Math.round(screenY)} ` +
+          `Trusted tap TikTok (${tapLabel}): ${Math.round(screenX)},${Math.round(screenY)} ` +
             `(ratio ${xRatio.toFixed(3)},${yRatio.toFixed(3)})`
         );
         void tapScreen(screenX, screenY)
           .then((success) => {
             if (!success) {
-              fail('แตะปุ่มอัปโหลด TikTok ไม่สำเร็จ กรุณาเปิด Accessibility Service');
+              fail(`แตะ${tapLabel}ไม่สำเร็จ กรุณาเปิด Accessibility Service`);
             }
           })
           .catch(() => {
-            fail('แตะปุ่มอัปโหลด TikTok ไม่สำเร็จ กรุณาเปิด Accessibility Service');
+            fail(`แตะ${tapLabel}ไม่สำเร็จ กรุณาเปิด Accessibility Service`);
           });
       });
       return;
