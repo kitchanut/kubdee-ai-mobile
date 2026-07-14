@@ -23,6 +23,10 @@ function sentryLevel(severity: 'error' | 'warning' | 'info'): Sentry.SeverityLev
 
 const sentryReporter: TelemetryReporter = {
   capture(event) {
+    // info = local diagnostics เท่านั้น ไม่ส่งขึ้น Sentry — ใช้กับเหตุการณ์ที่เป็นสภาพ
+    // แวดล้อมปกติ (เช่นเน็ตหลุดระหว่างใช้งาน — Sentry MOBILE-6) ยังดูได้จาก console
+    // และ getRecentTelemetry ตามเดิม
+    if (event.severity === 'info') return;
     const extra = { message: event.message, ...event.context };
     if (event.severity === 'error' && event.error !== undefined && event.error !== null) {
       Sentry.captureException(event.error, { extra });

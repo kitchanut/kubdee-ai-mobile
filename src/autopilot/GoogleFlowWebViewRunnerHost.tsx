@@ -2239,7 +2239,15 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalProducts: payload.products.length,
                 message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับวิดีโอฉาก ${sceneNumber}: ${product.name || 'สินค้า'}`,
               });
-              const dataUrl = await loadImageReferenceDataUrl(product.preview);
+              let productReferenceUri = product.preview;
+              let dataUrl = await loadImageReferenceDataUrl(productReferenceUri);
+              const scenePreviewFallbackUrl = product.previewFallbackUrl?.trim() || '';
+              if (!dataUrl && scenePreviewFallbackUrl && scenePreviewFallbackUrl !== productReferenceUri) {
+                // ไฟล์ preview ในเครื่องหาย/อ่านไม่ได้ — ใช้ imageUrl ต้นทางแทน
+                // (แบบเดียวกับ fallback ฝั่งสร้างรูป — Sentry MOBILE-Q/MOBILE-A)
+                dataUrl = await loadImageReferenceDataUrl(scenePreviewFallbackUrl);
+                productReferenceUri = scenePreviewFallbackUrl;
+              }
               await uploadReferenceImageOrThrow({
                 handle,
                 payload,
@@ -2248,7 +2256,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 round,
                 step,
                 args: {
-                  ...resolveReferenceTransportArgs(dataUrl, product.preview),
+                  ...resolveReferenceTransportArgs(dataUrl, productReferenceUri),
                   fileName: getProductReferenceFileName(product, productIndex, round, step),
                   referenceLabel: getProductReferenceLabel(product, productIndex),
                 },
@@ -2846,7 +2854,15 @@ export default function GoogleFlowWebViewRunnerHost({
               totalProducts: payload.products.length,
               message: `แนบ${getProductReferenceLabel(product, productIndex)}เป็น reference สำหรับ${label}: ${product.name || 'สินค้า'}`,
             });
-            const dataUrl = await loadImageReferenceDataUrl(product.preview);
+            let productReferenceUri = product.preview;
+            let dataUrl = await loadImageReferenceDataUrl(productReferenceUri);
+            const previewFallbackUrl = product.previewFallbackUrl?.trim() || '';
+            if (!dataUrl && previewFallbackUrl && previewFallbackUrl !== productReferenceUri) {
+              // ไฟล์ preview ในเครื่องหาย/อ่านไม่ได้ — ใช้ imageUrl ต้นทางแทน
+              // (แบบเดียวกับ fallback ฝั่งสร้างรูป — Sentry MOBILE-Q/MOBILE-A)
+              dataUrl = await loadImageReferenceDataUrl(previewFallbackUrl);
+              productReferenceUri = previewFallbackUrl;
+            }
             await uploadReferenceImageOrThrow({
               handle,
               payload,
@@ -2855,7 +2871,7 @@ export default function GoogleFlowWebViewRunnerHost({
               round,
               step,
               args: {
-                ...resolveReferenceTransportArgs(dataUrl, product.preview),
+                ...resolveReferenceTransportArgs(dataUrl, productReferenceUri),
                 fileName: getProductReferenceFileName(product, productIndex, round, step),
                 referenceLabel: getProductReferenceLabel(product, productIndex),
               },

@@ -12,7 +12,7 @@
  * data". Keeping it identical preserves behavior; the win here is that the real
  * error is now captured in telemetry instead of being swallowed.
  */
-import { reportError } from '@/lib/telemetry';
+import { reportError, reportInfo } from '@/lib/telemetry';
 
 /** Sentinel string checked by auth/plan.ts + auth/AuthContext.tsx. Do not reword. */
 export const OFFLINE_ERROR_MESSAGE = 'Online verification required. Please check your internet connection.';
@@ -35,7 +35,16 @@ function classify(error: unknown): ApiErrorKind {
   if (error instanceof TypeError) return 'network';
   if (error instanceof SyntaxError) return 'parse'; // JSON.parse of a bad body
   const message = error instanceof Error ? error.message : String(error);
-  if (/network request failed|network error|timeout|timed out|abort/i.test(message)) return 'network';
+  // expo/RN Android โยน CodedError (ไม่ใช่ TypeError) ข้อความเป็น exception ฝั่ง Java —
+  // ต้อง match ตรงๆ ไม่งั้นเน็ตหลุดธรรมดากลายเป็น kind='unknown' แล้วถูกรายงานเป็น
+  // exception ทุกครั้ง (Sentry MOBILE-6: 56 events / 23 users จาก UnknownHostException ฯลฯ)
+  if (
+    /network request failed|network error|timeout|timed out|abort|fetch failed|UnknownHostException|Unable to resolve host|Failed to connect|ConnectException|SocketException|SocketTimeoutException|ECONNREFUSED|ECONNRESET|ENETUNREACH|software caused connection abort/i.test(
+      message
+    )
+  ) {
+    return 'network';
+  }
   return 'unknown';
 }
 
@@ -46,9 +55,19 @@ function classify(error: unknown): ApiErrorKind {
  */
 export function toApiError(error: unknown, context?: Record<string, unknown>): ApiError {
   const kind = classify(error);
-  reportError(`api.${context?.op ?? 'request'} failed (${kind})`, {
-    error,
-    context: { kind, ...context },
-  });
+  if (kind === 'network') {
+    // เน็ตหลุด/DNS ล้มเป็นสภาพแวดล้อมปกติของมือถือ ไม่ใช่บั๊ก — เก็บเป็น local
+    // diagnostics พอ (เดิมถูกรายงานเป็น exception ทุกครั้ง = Sentry MOBILE-6
+    // เสียงดังสุดใน project: 56 events / 23 users)
+    reportInfo(`api.${context?.op ?? 'request'} failed (network)`, {
+      error: error instanceof Error ? error.message : String(error),
+      ...context,
+    });
+  } else {
+    reportError(`api.${context?.op ?? 'request'} failed (${kind})`, {
+      error,
+      context: { kind, ...context },
+    });
+  }
   return { kind, status: 0, userMessage: OFFLINE_ERROR_MESSAGE, cause: error };
 }

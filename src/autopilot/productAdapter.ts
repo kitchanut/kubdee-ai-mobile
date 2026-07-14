@@ -30,6 +30,33 @@ export function getAutoPilotProductId(product: AffiliateProduct): string {
   return product.localId || String(product.id);
 }
 
+// imagePath ของสินค้าที่ sync มาจากแอป desktop เป็น path ของเครื่องนั้น (Windows `C:\...`,
+// UNC `\\...` หรือ mac `/Users/...`) ซึ่งอ่านบนมือถือไม่ได้ — ถ้าเลือกมาเป็น preview
+// downloadAsync จะโยน "Expected URL scheme 'http'... but was 'C'" วนซ้ำจนกลายเป็นบั๊ก
+// "ยังไม่มีรูป reference แนบในช่องวิดีโอ" (Sentry MOBILE-Q) จึงรับเฉพาะ URI ที่เครื่องนี้
+// ใช้ได้จริง ไม่งั้นตกไปใช้ imageUrl (R2) แทน
+function isDeviceUsablePreviewUri(uri: string): boolean {
+  if (/^[a-zA-Z]:[\\/]/.test(uri) || uri.startsWith('\\\\')) return false;
+  if (uri.startsWith('/')) {
+    return uri.startsWith('/data/') || uri.startsWith('/storage/') || uri.startsWith('/sdcard/');
+  }
+  return (
+    uri.startsWith('content://') ||
+    uri.startsWith('file://') ||
+    uri.startsWith('data:image/') ||
+    uri.startsWith('http://') ||
+    uri.startsWith('https://')
+  );
+}
+
+function pickDevicePreview(product: AffiliateProduct): string | null {
+  const imagePath = cleanText(product.imagePath);
+  if (imagePath && isDeviceUsablePreviewUri(imagePath)) {
+    return imagePath;
+  }
+  return cleanText(product.imageUrl) || null;
+}
+
 export function toAutoPilotProduct(product: AffiliateProduct): AutoPilotProduct {
   const id = getAutoPilotProductId(product);
 
@@ -37,7 +64,7 @@ export function toAutoPilotProduct(product: AffiliateProduct): AutoPilotProduct 
     id,
     catalogId: id,
     source: product,
-    preview: product.imagePath || product.imageUrl || null,
+    preview: pickDevicePreview(product),
     name: product.name,
     description: cleanText(product.description),
     productId: cleanText(product.externalProductId) || product.localId,

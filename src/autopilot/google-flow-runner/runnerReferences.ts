@@ -195,6 +195,17 @@ async function downloadRemoteImageAsDataUrl(url: string): Promise<string | null>
   }
 }
 
+// path จากเครื่องอื่น (Windows drive/UNC หรือ absolute path ที่ไม่ใช่ของ Android) —
+// อ่านบนเครื่องนี้ไม่ได้และไม่ใช่ URL ให้ตัดจบทันที กัน downloadAsync โยน
+// "Expected URL scheme 'http' or 'https' but was 'C'" ซ้ำๆ (Sentry MOBILE-Q)
+export function isForeignDevicePath(uri: string): boolean {
+  if (/^[a-zA-Z]:[\\/]/.test(uri) || uri.startsWith('\\\\')) return true;
+  if (uri.startsWith('/')) {
+    return !uri.startsWith('/data/') && !uri.startsWith('/storage/') && !uri.startsWith('/sdcard/');
+  }
+  return false;
+}
+
 export async function loadImageReferenceDataUrl(uri: string): Promise<string | null> {
   const cleanUri = uri.trim();
   if (!cleanUri) {
@@ -202,6 +213,12 @@ export async function loadImageReferenceDataUrl(uri: string): Promise<string | n
   }
   if (cleanUri.startsWith('data:image/')) {
     return cleanUri;
+  }
+  if (isForeignDevicePath(cleanUri)) {
+    reportWarning('loadImageReferenceDataUrl: desktop-synced file path is not usable on this device', {
+      uri: cleanUri,
+    });
+    return null;
   }
   if (isLocalReferenceUri(cleanUri)) {
     try {
