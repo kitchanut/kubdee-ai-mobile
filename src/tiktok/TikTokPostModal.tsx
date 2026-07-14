@@ -247,13 +247,14 @@ function TikTokPostRunner({
     if (data.type === 'tiktok-post-native-enter') {
       // trusted Enter (ACTION_IME_ENTER) เข้า input ที่ focus อยู่ใน WebView —
       // ใช้ trigger การค้นหาสินค้า TikTok แบบเดียวกับ CDP pressKey ของ desktop
+      // native ส่งผ่าน IPC ไปยัง :automation process (fire-and-forget เหมือน trusted tap)
       void pressImeEnter()
         .then((success) => {
           onLog(success
-            ? 'Trusted Enter TikTok: สำเร็จ'
+            ? 'Trusted Enter TikTok: ส่งคำสั่งแล้ว'
             : 'Trusted Enter TikTok: native ปฏิเสธ (ต้องใช้ Android 11+ และเปิด Accessibility Service)');
         })
-        .catch(() => onLog('Trusted Enter TikTok: เรียก native ไม่สำเร็จ'));
+        .catch(() => onLog('Trusted Enter TikTok: เรียก native ไม่สำเร็จ (เปิด Accessibility Service หรือยัง?)'));
       return;
     }
     if (data.type === 'tiktok-post-native-tap') {

@@ -475,13 +475,15 @@ class KubdeeAccessibilityModule(
 
   @ReactMethod
   fun pressImeEnter(promise: Promise) {
-    val service = KubdeeAccessibilityService.getInstance()
-    if (service == null) {
-      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not running")
+    // Service runs in the :automation process — getInstance() is always null here.
+    // Route through the same IPC broadcast as tap(); fire-and-forget like screen taps.
+    val component = ComponentName(reactContext, KubdeeAccessibilityService::class.java)
+    if (!isAccessibilityServiceEnabled(reactContext, component)) {
+      promise.reject("ACCESSIBILITY_DISABLED", "Kubdee Accessibility service is not enabled")
       return
     }
-
-    promise.resolve(service.pressImeEnter())
+    sendAutomationCommand(KubdeeAutomationIpc.ACTION_PRESS_IME_ENTER)
+    promise.resolve(true)
   }
 
   @ReactMethod

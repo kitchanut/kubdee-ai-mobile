@@ -14,6 +14,7 @@ object KubdeeAutomationIpc {
   const val ACTION_START_SHOPEE_CONVERT = "ai.kubdee.mobile.automation.START_SHOPEE_CONVERT"
   const val ACTION_STOP_SHOPEE = "ai.kubdee.mobile.automation.STOP_SHOPEE"
   const val ACTION_TAP_SCREEN = "ai.kubdee.mobile.automation.TAP_SCREEN"
+  const val ACTION_PRESS_IME_ENTER = "ai.kubdee.mobile.automation.PRESS_IME_ENTER"
 
   const val ACTION_EVENT_SHOPEE_IMPORT_LOG = "ai.kubdee.mobile.automation.EVENT_SHOPEE_IMPORT_LOG"
   const val ACTION_EVENT_SHOPEE_IMPORT_PRODUCT = "ai.kubdee.mobile.automation.EVENT_SHOPEE_IMPORT_PRODUCT"

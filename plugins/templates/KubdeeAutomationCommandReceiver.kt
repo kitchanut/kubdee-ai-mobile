@@ -92,6 +92,17 @@ class KubdeeAutomationCommandReceiver : BroadcastReceiver() {
           if (!success) Log.w(TAG, "Screen tap gesture was cancelled")
         }
       }
+
+      KubdeeAutomationIpc.ACTION_PRESS_IME_ENTER -> {
+        val service = KubdeeAccessibilityService.getInstance()
+        if (service == null) {
+          Log.w(TAG, "Accessibility service is not connected; ignored IME enter")
+          return
+        }
+        if (!service.pressImeEnter()) {
+          Log.w(TAG, "IME enter action was not performed")
+        }
+      }
     }
   }
 

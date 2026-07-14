@@ -410,17 +410,8 @@ export function buildTikTokPostScript({
     if (!radio) throw { code: 'PRODUCT_NOT_FOUND', message: 'ไม่พบ TikTok Product ID ที่เลือก', stage: 'product-result' };
     log('PRODUCT_SELECTED', 'พบสินค้าแล้ว กำลังเลือก...');
     radio.click();
+    await sleep(1000); // ให้ TikTok enable ปุ่มถัดไปหลังเลือก radio (desktop ก็รอ 1 วิ)
 
-    nextButton = findModalAction(['ถัดไป', 'Next']);
-    if (!nextButton) throw { code: 'PRODUCT_SELECT_NEXT_NOT_FOUND', message: 'เลือกสินค้าแล้วแต่ไม่พบปุ่มถัดไป', stage: 'product-select' };
-    nextButton.click();
-    await sleep(800);
-
-    if (INPUT.cta) {
-      var ctaScope = findProductModal() || document;
-      var ctaInput = ctaScope.querySelector('input.TUXTextInputCore-input, input[placeholder*="ชื่อ"], input[placeholder*="Name" i], input[data-e2e*="cta"]');
-      if (ctaInput) { ctaInput.click(); setNativeValue(ctaInput, INPUT.cta); }
-    }
     function productBound(){
       var anchorText = normalized(anchor && anchor.textContent);
       if (INPUT.productId && anchorText.indexOf(normalized(INPUT.productId)) >= 0) return true;
@@ -429,24 +420,50 @@ export function buildTikTokPostScript({
       if (pname && pname.length >= 6 && anchorText.indexOf(pname.slice(0, 12)) >= 0) return true;
       return !!document.querySelector('[data-e2e="anchor_container"] img, [data-e2e="anchor_container"] [data-e2e*="product"]');
     }
-    // desktop กดปุ่ม "เพิ่ม" ใน modal footer เสมอ — mobile กดเมื่อ modal สินค้ายังเปิดอยู่
-    // (ถ้า modal ปิดไปเองแปลว่าผูกเสร็จตั้งแต่กด "ถัดไป" แล้ว)
-    var confirmModal = findProductModal();
-    if (confirmModal) {
-      var confirmButton = findModalAction(['เพิ่ม', 'Add', 'ยืนยัน', 'Confirm', 'เสร็จสิ้น', 'Done']);
-      if (!confirmButton) {
-        // fallback ปุ่ม primary เฉพาะใน footer ของ modal สินค้าเท่านั้น —
-        // ห้ามค้นทั้งหน้า เพราะปุ่ม primary ของหน้า editor คือ "โพสต์"
-        var prim = confirmModal.querySelector('.common-modal-footer .TUXButton--primary, .button-group .TUXButton--primary, footer .TUXButton--primary');
-        if (prim && visible(prim)) confirmButton = prim;
+
+    // เดินหน้าใน modal ทีละหน้า: กด "ถัดไป" ไปเรื่อยๆ จนเจอปุ่ม "เพิ่ม" (ยืนยัน) แล้วกดจบ
+    // — บางรุ่นมีหน้า CTA คั่นกลาง และปุ่มอาจ enable ช้า loop นี้กดซ้ำได้เองจนกว่า modal จะเปลี่ยน
+    var confirmClicked = false;
+    for (var stepIndex = 0; stepIndex < 4; stepIndex++) {
+      var modalNow = findProductModal();
+      if (!modalNow) {
+        log('PRODUCT_MODAL_CLOSED', 'modal สินค้าปิดแล้ว (step ' + stepIndex + ')');
+        break;
       }
+      if (INPUT.cta) {
+        var ctaInput = modalNow.querySelector('input.TUXTextInputCore-input, input[placeholder*="ชื่อ"], input[placeholder*="Name" i], input[data-e2e*="cta"]');
+        if (ctaInput && visible(ctaInput) && ctaInput.value !== INPUT.cta) {
+          ctaInput.click();
+          setNativeValue(ctaInput, INPUT.cta);
+          await sleep(300);
+        }
+      }
+      var confirmButton = findModalAction(['เพิ่ม', 'Add', 'ยืนยัน', 'Confirm', 'เสร็จสิ้น', 'Done']);
       if (confirmButton) {
         log('PRODUCT_CONFIRM_CLICK', 'กดปุ่มยืนยันสินค้า: "' + normalized(confirmButton.textContent).slice(0, 40) + '"');
         confirmButton.click();
-      } else {
-        log('PRODUCT_CONFIRM_NOT_FOUND', 'ไม่พบปุ่มยืนยันใน modal สินค้า — ข้าม (อาจผูกสำเร็จแล้ว)');
+        confirmClicked = true;
+        await sleep(1200);
+        break;
       }
+      var nextButton2 = findModalAction(['ถัดไป', 'Next']);
+      if (!nextButton2) {
+        // fallback ปุ่ม primary เฉพาะใน footer ของ modal สินค้าเท่านั้น —
+        // ห้ามค้นทั้งหน้า เพราะปุ่ม primary ของหน้า editor คือ "โพสต์"
+        var prim = modalNow.querySelector('.common-modal-footer .TUXButton--primary, .button-group .TUXButton--primary, footer .TUXButton--primary');
+        if (prim && visible(prim)) nextButton2 = prim;
+      }
+      if (!nextButton2) {
+        if (stepIndex === 0) throw { code: 'PRODUCT_SELECT_NEXT_NOT_FOUND', message: 'เลือกสินค้าแล้วแต่ไม่พบปุ่มถัดไป', stage: 'product-select' };
+        log('PRODUCT_CONFIRM_NOT_FOUND', 'ไม่พบปุ่มยืนยัน/ถัดไปใน modal สินค้า (step ' + stepIndex + ')');
+        break;
+      }
+      log('PRODUCT_STEP_NEXT', 'กดปุ่ม "' + normalized(nextButton2.textContent).slice(0, 40) + '" ใน modal สินค้า (step ' + stepIndex + ')');
+      nextButton2.click();
       await sleep(1200);
+    }
+    if (!confirmClicked) {
+      log('PRODUCT_CONFIRM_SOFT', 'ไม่ได้กดปุ่ม "เพิ่ม" โดยตรง — ตรวจผลจาก DOM ต่อ');
     }
 
     // ไม่ verify แบบ hard เหมือน desktop — ถ้า DOM ยืนยันไม่ชัดก็ดำเนินต่อ (กัน false-negative
