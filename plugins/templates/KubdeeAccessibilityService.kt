@@ -474,8 +474,16 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   private fun tapImeActionKey(): Boolean {
-    val window = imeWindow() ?: return false
-    val root = window.root ?: return false
+    val window = imeWindow()
+    if (window == null) {
+      Log.d(TAG, "tapImeActionKey: ไม่พบหน้าต่างคีย์บอร์ด (IME window)")
+      return false
+    }
+    val root = window.root
+    if (root == null) {
+      Log.d(TAG, "tapImeActionKey: IME window ไม่มี root node")
+      return false
+    }
 
     val matches = mutableListOf<AccessibilityNodeInfo>()
     findImeActionKey(root, matches)
@@ -490,6 +498,8 @@ class KubdeeAccessibilityService : AccessibilityService() {
       val bounds = Rect()
       actionNode.getBoundsInScreen(bounds)
       if (bounds.width() > 0 && bounds.height() > 0) {
+        val label = (actionNode.text?.toString().orEmpty() + " " + actionNode.contentDescription?.toString().orEmpty()).trim()
+        Log.d(TAG, "tapImeActionKey: แตะปุ่ม \"$label\" ที่ ${bounds.exactCenterX()},${bounds.exactCenterY()}")
         dispatchLineGesture(bounds.exactCenterX(), bounds.exactCenterY(), bounds.exactCenterX(), bounds.exactCenterY(), 60) {}
         return true
       }
@@ -498,9 +508,13 @@ class KubdeeAccessibilityService : AccessibilityService() {
     // fallback: แตะมุมขวาล่างของคีย์บอร์ด (ตำแหน่งปุ่ม Enter/action มาตรฐาน)
     val windowBounds = Rect()
     window.getBoundsInScreen(windowBounds)
-    if (windowBounds.width() <= 0 || windowBounds.height() <= 0) return false
+    if (windowBounds.width() <= 0 || windowBounds.height() <= 0) {
+      Log.d(TAG, "tapImeActionKey: IME window bounds ไม่ถูกต้อง")
+      return false
+    }
     val x = windowBounds.right - windowBounds.width() * 0.09f
     val y = windowBounds.bottom - windowBounds.height() * 0.11f
+    Log.d(TAG, "tapImeActionKey: ไม่พบ node ปุ่ม action (matches=${matches.size}) — fallback แตะมุมขวาล่าง $x,$y")
     dispatchLineGesture(x, y, x, y, 60) {}
     return true
   }

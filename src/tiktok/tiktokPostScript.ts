@@ -401,11 +401,22 @@ export function buildTikTokPostScript({
     for (var searchAttempt = 1; searchAttempt <= 3 && !radio; searchAttempt++) {
       log('PRODUCT_SEARCH_FILLED', 'ค้นหา Product ID: ' + String(search.value || '') + ' — กดปุ่มค้นหาบนคีย์บอร์ด (ครั้ง ' + searchAttempt + '/3)');
       send({ type: 'tiktok-post-native-enter' });
-      radio = await waitFor(findMatchRadio, searchAttempt === 1 ? 8000 : 6000, 500);
+      // สำคัญ: ห้ามหา/เลือก radio ทันที — รายการ showcase โชว์สินค้าทั้งหมดอยู่แล้ว
+      // ถ้าหาเลยจะเจอ radio ที่ t=0 แล้วกดเลือกก่อนที่ native Go (async มี latency) จะลงจริง
+      // → Go ลงทีหลังโดนที่ผิด คีย์บอร์ดค้าง สินค้าไม่ถูกเลือก
+      // จึงรอให้ Go ลง + search กรอง ก่อน แล้วบังคับปิดคีย์บอร์ด (blur) ค่อยเลือก
+      await sleep(2800);
+      try {
+        if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
+      } catch (e) {}
+      await sleep(700);
+      radio = await waitFor(findMatchRadio, 4000, 500);
       if (!radio && searchAttempt < 3) {
-        // โฟกัสช่องค้นหาใหม่ก่อนลองยิง Enter อีกครั้ง
+        // ยังไม่เจอผล — โฟกัสช่องค้นหาใหม่ (คีย์บอร์ดเด้ง) แล้วเติมค่าใหม่ก่อนลองยิงอีกครั้ง
         await nativeTapOn(search, 'ช่องค้นหาสินค้า');
-        await sleep(700);
+        await sleep(800);
+        setNativeValue(search, INPUT.productId);
+        await sleep(400);
       }
     }
     if (!radio) {
