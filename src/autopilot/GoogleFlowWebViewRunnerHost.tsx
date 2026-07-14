@@ -2073,6 +2073,49 @@ export default function GoogleFlowWebViewRunnerHost({
             : sceneImageDataUrls[sceneIndex];
           const attachSceneReference = async (): Promise<boolean> => {
             if (useSameAngle && sceneReferenceDataUrl) {
+              // แบบ desktop/extension: รูปมุมเดียว = รูปที่ generate ใหม่สุดในโปรเจกต์เสมอ
+              // (tile วิดีโอถูกกรองออกใน dialog แล้ว) — เลือกจากรายการทั้งเร็วกว่าและติดช่อง
+              // Start ชัวร์กว่า re-upload (เหตุผลเดียวกับเส้น single-scene) fail ค่อย fallback upload
+              emit({
+                event: 'progress',
+                runId: payload.runId,
+                status: 'running',
+                step,
+                stage: 'multi_scene_attach_same_angle_reference',
+                productId: product.id,
+                productName: product.name,
+                currentRound: round,
+                totalRounds: payload.settings.totalRounds,
+                currentProduct: productIndex + 1,
+                totalProducts: payload.products.length,
+                message: `เลือกรูปฉากมุมเดียวจากรายการล่าสุด (กดช่อง Start) สำหรับวิดีโอฉาก ${sceneNumber}`,
+              });
+              try {
+                await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 120_000);
+                return true;
+              } catch (selectError) {
+                if (
+                  selectError instanceof GoogleFlowWebViewRunnerStopped ||
+                  isWebViewRendererGoneError(selectError)
+                ) {
+                  throw selectError;
+                }
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'warning',
+                  step,
+                  stage: 'multi_scene_attach_same_angle_reference',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: `เลือกรูปล่าสุดไม่สำเร็จ (${selectError instanceof Error ? selectError.message : String(selectError)}) — จะอัปโหลดรูปฉากมุมเดียวจาก cache แทน`,
+                });
+              }
               emit({
                 event: 'progress',
                 runId: payload.runId,
