@@ -39,6 +39,7 @@ import {
   GoogleFlowCountedStepFailure,
   GoogleFlowWebViewRunnerStopped,
   OverlayStatChip,
+  STRUCTURAL_FLOW_FAILURE_LIMIT,
   VOICEOVER_END_BUFFER_SECONDS,
   autoMultiSceneMode,
   buildFlowFailedError,
@@ -71,6 +72,7 @@ import {
   isAudioGenerationFailure,
   isAutoMultiSceneVideo,
   isRetryableFlowError,
+  isStructuralFlowError,
   loadImageReferenceDataUrl,
   multiSceneImagePrompt,
   multiSceneVideoPrompt,
@@ -3066,6 +3068,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 baselineVideoUrls,
                 baselineImageUrls,
                 baselineFailedCount,
+                // ไม่นับ failure ที่นี่ — เส้น Reuse ไม่ใช่ attempt สุดท้าย (ยังมี retry รอบ 2-3 ต่อ)
                 countFailure: false,
                 count,
                 handle,
@@ -3074,6 +3077,17 @@ export default function GoogleFlowWebViewRunnerHost({
                 productIndex,
                 round,
                 step,
+                refreshProject: () =>
+                  refreshGoogleFlowProject({
+                    handle,
+                    payload,
+                    product,
+                    productIndex,
+                    round,
+                    step,
+                    stage: 'waiting_result_refresh',
+                    message: `รีเฟรชหน้า Flow ระหว่างรอผล${label} หลัง Reuse Prompt (DOM ไม่อัปเดต)`,
+                  }),
               });
               break;
             } catch (reuseError) {
@@ -3300,6 +3314,12 @@ export default function GoogleFlowWebViewRunnerHost({
 
         const totalRoundLoopCount = getRoundLoopCount(payload.settings);
 
+        // Circuit breaker: error เชิงโครงสร้าง (ยังไม่ login/ผิดภาษา/ตั้งค่า Flow ไม่ครบ)
+        // retry เองไม่มีทางหาย — ถ้าเจอติดกันครบ limit ให้หยุดทั้ง run แจ้งผู้ใช้แก้ก่อน
+        // ไม่งั้นโหมด infinite rounds จะ fail ซ้ำแบบเดิมไปเรื่อยๆ ไม่มีวันจบ
+        let consecutiveStructuralFailures = 0;
+        let lastStructuralErrorMessage = '';
+
         for (let round = 1; round <= totalRoundLoopCount; round += 1) {
           checkStop();
           emit({
@@ -3359,6 +3379,7 @@ export default function GoogleFlowWebViewRunnerHost({
 
             let imageStepFailed = false;
             let imageStepError = '';
+            let productHadStructuralFailure = false;
 
             const emitStepFailure = (
               step: AutoPilotStepType,
@@ -3440,6 +3461,11 @@ export default function GoogleFlowWebViewRunnerHost({
                   imageStepError = stepError instanceof Error ? stepError.message : String(stepError);
                 }
 
+                if (isStructuralFlowError(stepError)) {
+                  productHadStructuralFailure = true;
+                  lastStructuralErrorMessage = stepError instanceof Error ? stepError.message : String(stepError);
+                }
+
                 if (!(stepError instanceof GoogleFlowCountedStepFailure)) {
                   const failedOutputs = step === 'video'
                     ? getAutoVideoResultCount(product)
@@ -3447,6 +3473,18 @@ export default function GoogleFlowWebViewRunnerHost({
                   emitStepFailure(step, stepError, failedOutputs);
                 }
               }
+            }
+
+            if (productHadStructuralFailure) {
+              consecutiveStructuralFailures += 1;
+              if (consecutiveStructuralFailures >= STRUCTURAL_FLOW_FAILURE_LIMIT) {
+                throw new Error(
+                  `หยุด Auto Pilot: เจอปัญหาที่ระบบแก้เองไม่ได้ติดกัน ${consecutiveStructuralFailures} สินค้า ` +
+                    `(${lastStructuralErrorMessage}) — กรุณาแก้ที่หน้า Google Flow ก่อน แล้วเริ่มรันใหม่`
+                );
+              }
+            } else {
+              consecutiveStructuralFailures = 0;
             }
 
             // ครบทั้ง 5 platform — postProductAfterGeneration เช็ค flag+channel

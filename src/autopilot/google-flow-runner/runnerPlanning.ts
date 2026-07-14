@@ -63,6 +63,17 @@ export function isRetryableFlowError(error: unknown): boolean {
   return !/ยังไม่ได้เชื่อมต่อ|Google Flow เปิดเป็น|ตั้งค่า Flow ไม่ครบ|prompt .*ว่าง|ไม่มีรูป reference/i.test(message);
 }
 
+// error เชิงโครงสร้าง = แก้เองระหว่างรันไม่ได้ (ยังไม่ login / Flow เปิดผิดภาษา /
+// ตั้งค่า Flow ไม่ครบเพราะ UI เปลี่ยน) — จะ fail แบบเดิมซ้ำทุกสินค้าทุกรอบ
+// ต่างจาก prompt ว่าง/ไม่มีรูป reference ที่เป็นปัญหา data รายสินค้า (สินค้าถัดไปอาจปกติ)
+export const STRUCTURAL_FLOW_FAILURE_LIMIT = 3;
+
+export function isStructuralFlowError(error: unknown): boolean {
+  if (error instanceof GoogleFlowWebViewRunnerStopped) return false;
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /ยังไม่ได้เชื่อมต่อ|Google Flow เปิดเป็น|ตั้งค่า Flow ไม่ครบ/i.test(message);
+}
+
 export function randomAutoRunDelayMs(settings: AutoPilotSettings): number {
   const preset = AUTO_RUN_DELAY_PRESETS[settings.delayPreset] ?? AUTO_RUN_DELAY_PRESETS.normal;
   return Math.round((preset.min + Math.random() * (preset.max - preset.min)) * 1000);
