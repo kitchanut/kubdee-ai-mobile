@@ -333,7 +333,7 @@ export const PREPARE_PROJECT_UI_BODY = `
     // ถูกเรียกซ้ำทุก reload ถ้าเช็คทุกรอบจะเปิดเมนูรัวและ log เตือนถี่โดยไม่จำเป็น
     var gridDoneKey = 'kb_grid_view_done';
     try {
-      var pm = ((window.location.pathname || '') + '').match(/\/project\/([0-9a-f-]+)/i);
+      var pm = ((window.location.pathname || '') + '').match(/\\/project\\/([0-9a-f-]+)/i);
       if (pm && pm[1]) gridDoneKey = 'kb_grid_view_done_' + pm[1];
     } catch (e) {}
     try {
@@ -352,7 +352,7 @@ export const PREPARE_PROJECT_UI_BODY = `
     var gridBtn = null;
     var candidates = Array.prototype.slice.call(content.querySelectorAll('button, [role="menuitem"], [role="menuitemradio"], [role="radio"], [role="tab"]'));
     for (var c = 0; c < candidates.length; c += 1) {
-      var text = ((candidates[c].textContent || '') + '').replace(/\s+/g, ' ').trim().toLowerCase();
+      var text = ((candidates[c].textContent || '') + '').replace(/\\s+/g, ' ').trim().toLowerCase();
       if (text === 'grid' || text === 'dashboardgrid' || text === 'dashboard grid') {
         gridBtn = candidates[c];
         break;

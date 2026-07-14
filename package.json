@@ -94,7 +94,8 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "check:native-drift": "node scripts/check-native-drift.mjs",
     "check:release": "node scripts/check-release.mjs",
-    "verify": "npm run typecheck && npm run lint && npm run check:native-drift && npm run check:release"
+    "check:action-bodies": "node scripts/check-action-bodies.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run check:native-drift && npm run check:release && npm run check:action-bodies"
   },
   "private": true
 }
