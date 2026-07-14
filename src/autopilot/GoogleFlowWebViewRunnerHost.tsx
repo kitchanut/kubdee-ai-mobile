@@ -73,6 +73,7 @@ import {
   isAutoMultiSceneVideo,
   isRetryableFlowError,
   isStructuralFlowError,
+  isWebViewRendererGoneError,
   loadImageReferenceDataUrl,
   multiSceneImagePrompt,
   multiSceneVideoPrompt,
@@ -320,7 +321,12 @@ export default function GoogleFlowWebViewRunnerHost({
   );
 
   const downloadLatestFlowImage = useCallback(
-    async (handle: FlowWebViewHandle, count = 1, baselineImageUrls: string[] = []): Promise<FlowImageDownloadItem | null> => {
+    async (
+      handle: FlowWebViewHandle,
+      count = 1,
+      baselineImageUrls: string[] = []
+    ): Promise<{ image: FlowImageDownloadItem | null; lastError: string }> => {
+      let lastError = '';
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         checkStop();
         try {
@@ -332,17 +338,23 @@ export default function GoogleFlowWebViewRunnerHost({
           )) as FlowImageDownloadPayload;
           const image = imagePayload.images?.find((item) => item.dataUrl);
           if (image?.dataUrl) {
-            return image;
+            return { image, lastError: '' };
           }
-        } catch {
-          // Retry below. Flow sometimes exposes the completed tile before its image URL is fetchable.
+          lastError = 'action สำเร็จแต่ไม่มีรูปที่ดาวน์โหลดได้ (dataUrl ว่าง)';
+        } catch (error) {
+          // Retry below. Flow sometimes exposes the completed tile before its image URL is
+          // fetchable — but keep the real cause so the final failure message isn't generic.
+          lastError = error instanceof Error ? error.message : String(error);
+          if (isWebViewRendererGoneError(error)) {
+            return { image: null, lastError };
+          }
         }
 
         if (attempt < 3) {
           await sleep(1500);
         }
       }
-      return null;
+      return { image: null, lastError };
     },
     [checkStop, runActionOrThrow]
   );
@@ -470,6 +482,10 @@ export default function GoogleFlowWebViewRunnerHost({
             }
           }
         } catch (error) {
+          if (isWebViewRendererGoneError(error)) {
+            // handle นี้ตายถาวร — วนต่อจนครบ 120 วิ ก็ fail เหมือนเดิมทุกรอบ
+            throw error;
+          }
           lastError = error instanceof Error ? error.message : String(error);
           emit({
             event: 'progress',
@@ -1591,11 +1607,13 @@ export default function GoogleFlowWebViewRunnerHost({
           if (cachedPriorImage) {
             sceneImageDataUrls.push(cachedPriorImage);
           } else {
-            const priorImage = await downloadLatestFlowImage(handle, 1);
-            if (!priorImage?.dataUrl) {
-              throw new Error('ดึงรูปที่เพิ่งสร้างจากหน้า Flow ไม่สำเร็จ');
+            const priorDownload = await downloadLatestFlowImage(handle, 1);
+            if (!priorDownload.image?.dataUrl) {
+              throw new Error(
+                `ดึงรูปที่เพิ่งสร้างจากหน้า Flow ไม่สำเร็จ${priorDownload.lastError ? `: ${priorDownload.lastError}` : ''}`
+              );
             }
-            sceneImageDataUrls.push(priorImage.dataUrl);
+            sceneImageDataUrls.push(priorDownload.image.dataUrl);
           }
         }
 
@@ -1861,11 +1879,13 @@ export default function GoogleFlowWebViewRunnerHost({
                   }),
               });
               const imageCount = Math.max(1, Number(imageResult.images ?? 1) || 1);
-              const firstImage = await downloadLatestFlowImage(handle, imageCount, baselineImageUrls);
-              if (!firstImage?.dataUrl) {
-                throw new Error(`ดึงรูปฉาก ${sceneNumber} จากหน้า Flow ไม่สำเร็จ`);
+              const sceneDownload = await downloadLatestFlowImage(handle, imageCount, baselineImageUrls);
+              if (!sceneDownload.image?.dataUrl) {
+                throw new Error(
+                  `ดึงรูปฉาก ${sceneNumber} จากหน้า Flow ไม่สำเร็จ${sceneDownload.lastError ? `: ${sceneDownload.lastError}` : ''}`
+                );
               }
-              sceneImage = firstImage;
+              sceneImage = sceneDownload.image;
               knownProjectTileCount += imageCount;
               break;
             } catch (error) {
@@ -2665,11 +2685,13 @@ export default function GoogleFlowWebViewRunnerHost({
               emitAttach('อัปโหลดรูปที่เพิ่งสร้างจาก cache เป็น reference สำหรับวิดีโอ');
             } else {
               emitAttach('ไม่พบรูป cache ในแอป จะดึงรูปที่เพิ่งสร้างจากหน้า Flow แล้วอัปโหลดเป็น reference สำหรับวิดีโอ');
-              const latestImage = await downloadLatestFlowImage(handle, 1, latestBaselineImageUrls);
-              if (!latestImage?.dataUrl) {
-                throw new Error('ไม่พบรูปที่เพิ่งสร้างจากหน้า Flow สำหรับใช้เป็น reference วิดีโอ');
+              const latestDownload = await downloadLatestFlowImage(handle, 1, latestBaselineImageUrls);
+              if (!latestDownload.image?.dataUrl) {
+                throw new Error(
+                  `ไม่พบรูปที่เพิ่งสร้างจากหน้า Flow สำหรับใช้เป็น reference วิดีโอ${latestDownload.lastError ? `: ${latestDownload.lastError}` : ''}`
+                );
               }
-              uploadDataUrl = latestImage.dataUrl;
+              uploadDataUrl = latestDownload.image.dataUrl;
             }
             await uploadReferenceImageOrThrow({
               handle,
@@ -3455,6 +3477,10 @@ export default function GoogleFlowWebViewRunnerHost({
                 if (stepError instanceof GoogleFlowWebViewRunnerStopped) {
                   throw stepError;
                 }
+                if (isWebViewRendererGoneError(stepError)) {
+                  // WebView ตายถาวรทั้ง run — เดินต่อก็ fail ทุกสินค้า abort เลยดีกว่า
+                  throw stepError;
+                }
 
                 if (step === 'image') {
                   imageStepFailed = true;
@@ -3769,6 +3795,26 @@ export default function GoogleFlowWebViewRunnerHost({
             accountProbeEnabled={false}
             backgroundColor={theme.screen}
             onActionLog={emitFlowActionLog}
+            onRendererGone={(didCrash) => {
+              // instance เดิมใช้ต่อไม่ได้แล้ว — action ที่ค้างถูก fail ไปแล้วใน FlowWebView
+              // remount ด้วย key ใหม่เพื่อให้ run ถัดไปใช้งานได้ (run ปัจจุบัน abort ผ่าน
+              // isWebViewRendererGoneError ใน step loop)
+              const payload = payloadRef.current;
+              if (payload && runningRef.current) {
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'error',
+                  stage: 'webview_renderer_gone',
+                  totalRounds: payload.settings.totalRounds,
+                  totalProducts: payload.products.length,
+                  message: `WebView renderer ${didCrash ? 'crash' : 'ถูกระบบปิด (หน่วยความจำไม่พอ)'} — กำลังรีสตาร์ทหน้า Flow ใหม่`,
+                });
+              }
+              setFlowHandle(null);
+              setFlowWebViewKey((key) => key + 1);
+            }}
             onNavigationChange={(href) => {
               flowUrlRef.current = href;
             }}

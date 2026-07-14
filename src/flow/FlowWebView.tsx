@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useRef } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
+import type { WebViewRenderProcessGoneEvent, WebViewTerminatedEvent } from 'react-native-webview/lib/WebViewTypes';
 
 import { buildActionScript } from '@kubdee/flow-core';
 import type { FlowActionName, FlowActionResult } from '@kubdee/flow-core';
@@ -13,6 +14,24 @@ import type { FlowActionName, FlowActionResult } from '@kubdee/flow-core';
 const FLOW_WEBVIEW_DEBUG_ENABLED = true;
 
 export type FlowConnectionState = 'unknown' | 'signin' | 'loggedout' | 'connected';
+
+// Renderer (process แยกของ Chromium) crash/ถูกระบบฆ่าแล้ว native WebView ตัวนี้ตายถาวร
+// (RNCWebViewClient คืน true กันแอป crash แต่ inject อะไรต่อก็เงียบหมด) — ทางฟื้นเดียวคือ
+// parent remount ด้วย key ใหม่ ระหว่างนั้นทุก action ต้อง fail ทันทีด้วยข้อความนี้
+// แทนที่จะปล่อยให้รอ timeout เต็มทีละ 20-120 วิ แบบแยกไม่ออกว่าเกิดอะไร
+// (runnerPlanning จับคำว่า "WebView renderer gone" เพื่อ abort run — ห้ามเปลี่ยนข้อความโดยไม่แก้คู่กัน)
+export const FLOW_RENDERER_GONE_ERROR =
+  'หน้า Google Flow crash (WebView renderer gone) — รีสตาร์ทหน้า Flow ใหม่แล้ว กรุณาเริ่มรันใหม่';
+
+type PendingFlowAction = { resolve: (r: FlowActionResult) => void; timer: ReturnType<typeof setTimeout> };
+
+function failAllPendingActions(pending: Map<string, PendingFlowAction>, error: string): void {
+  for (const entry of pending.values()) {
+    clearTimeout(entry.timer);
+    entry.resolve({ ok: false, error });
+  }
+  pending.clear();
+}
 
 export interface FlowAccount {
   email?: string;
@@ -242,6 +261,8 @@ interface FlowWebViewProps {
   onAccount?: (account: FlowAccount) => void;
   onNavigationChange?: (href: string) => void;
   onActionLog?: (entry: FlowActionLogEntry) => void;
+  /** Renderer ตาย (crash/ถูกระบบฆ่า) — instance นี้ใช้ต่อไม่ได้ parent ต้อง remount ด้วย key ใหม่ */
+  onRendererGone?: (didCrash: boolean) => void;
   style?: StyleProp<ViewStyle>;
   backgroundColor?: string;
   accountProbeEnabled?: boolean;
@@ -272,6 +293,7 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
     onAccount,
     onNavigationChange,
     onActionLog,
+    onRendererGone,
     style,
     backgroundColor = '#000000',
     accountProbeEnabled = true,
@@ -279,15 +301,17 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
   ref
 ) {
   const innerRef = useRef<WebView>(null);
-  const pendingRef = useRef<
-    Map<string, { resolve: (r: FlowActionResult) => void; timer: ReturnType<typeof setTimeout> }>
-  >(new Map());
+  const pendingRef = useRef<Map<string, PendingFlowAction>>(new Map());
   const idRef = useRef(0);
+  const rendererGoneRef = useRef(false);
 
   useImperativeHandle(
     ref,
     () => ({
       runAction(action, args = {}, timeoutMs = 30000) {
+        if (rendererGoneRef.current) {
+          return Promise.resolve<FlowActionResult>({ ok: false, error: FLOW_RENDERER_GONE_ERROR });
+        }
         return new Promise<FlowActionResult>((resolve) => {
           const id = `act_${(idRef.current += 1)}`;
           const timer = setTimeout(() => {
@@ -321,6 +345,16 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
       webviewDebuggingEnabled={FLOW_WEBVIEW_DEBUG_ENABLED}
       originWhitelist={['https://*', 'http://*']}
       setSupportMultipleWindows={false}
+      onRenderProcessGone={(event: WebViewRenderProcessGoneEvent) => {
+        rendererGoneRef.current = true;
+        failAllPendingActions(pendingRef.current, FLOW_RENDERER_GONE_ERROR);
+        onRendererGone?.(event.nativeEvent?.didCrash === true);
+      }}
+      onContentProcessDidTerminate={(_event: WebViewTerminatedEvent) => {
+        rendererGoneRef.current = true;
+        failAllPendingActions(pendingRef.current, FLOW_RENDERER_GONE_ERROR);
+        onRendererGone?.(true);
+      }}
       injectedJavaScriptBeforeContentLoaded={FORCE_DESKTOP_VIEWPORT_JS}
       injectedJavaScript={`${FORCE_DESKTOP_VIEWPORT_JS}\nwindow.__kbFlowAccountProbeEnabled = ${accountProbeEnabled ? 'true' : 'false'};\n${STATUS_JS}`}
       onNavigationStateChange={(navState) => onNavigationChange?.(navState.url)}

@@ -60,7 +60,17 @@ export function isRetryableFlowError(error: unknown): boolean {
   if (error instanceof GoogleFlowWebViewRunnerStopped) return false;
   const message = error instanceof Error ? error.message : String(error || '');
   if (!message.trim()) return false;
-  return !/ยังไม่ได้เชื่อมต่อ|Google Flow เปิดเป็น|ตั้งค่า Flow ไม่ครบ|prompt .*ว่าง|ไม่มีรูป reference/i.test(message);
+  return !/ยังไม่ได้เชื่อมต่อ|Google Flow เปิดเป็น|ตั้งค่า Flow ไม่ครบ|prompt .*ว่าง|ไม่มีรูป reference|WebView renderer gone/i.test(
+    message
+  );
+}
+
+// WebView renderer ตาย = handle เดิมใช้ต่อไม่ได้ทั้ง run (ทุก action fail ทันที) —
+// ต้อง abort run เดี๋ยวนั้น ไม่ต้องรอ circuit breaker นับครบ 3 สินค้า
+// ข้อความ marker มาจาก FLOW_RENDERER_GONE_ERROR ใน FlowWebView.tsx (แก้ต้องแก้คู่กัน)
+export function isWebViewRendererGoneError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return message.includes('WebView renderer gone');
 }
 
 // error เชิงโครงสร้าง = แก้เองระหว่างรันไม่ได้ (ยังไม่ login / Flow เปิดผิดภาษา /

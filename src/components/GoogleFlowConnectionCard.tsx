@@ -319,6 +319,10 @@ export default function GoogleFlowConnectionCard({ theme }: GoogleFlowConnection
               backgroundColor={theme.screen}
               onStatusChange={handleFlowStatus}
               onAccount={handleFlowAccount}
+              onRendererGone={(didCrash) => {
+                appendFlowLog(`WebView renderer ${didCrash ? 'crash' : 'ถูกระบบปิด'} — รีโหลดหน้า Flow ใหม่`);
+                setFlowReloadKey((key) => key + 1);
+              }}
             />
             {flowLogs.length > 0 ? (
               <View
