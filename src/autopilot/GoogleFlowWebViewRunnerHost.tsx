@@ -1694,6 +1694,9 @@ export default function GoogleFlowWebViewRunnerHost({
 
               const previousSceneImageDataUrl = sceneImageDataUrls[sceneImageDataUrls.length - 1];
               if ((sceneNumber > 1 || hasPriorImageStep) && previousSceneImageDataUrl) {
+                // แบบ desktop/extension: รูปฉากก่อนหน้าเพิ่ง generate เสร็จ = tile ใหม่สุดใน
+                // โปรเจกต์ ณ จังหวะนี้เสมอ (upload อื่นๆ ของรอบก่อนเกิดก่อน generate) —
+                // เลือกจากรายการเร็วกว่า re-upload; fail ค่อย fallback upload dataUrl จาก cache
                 emit({
                   event: 'progress',
                   runId: payload.runId,
@@ -1706,21 +1709,64 @@ export default function GoogleFlowWebViewRunnerHost({
                   totalRounds: payload.settings.totalRounds,
                   currentProduct: productIndex + 1,
                   totalProducts: payload.products.length,
-                  message: `อัปโหลดรูปฉากก่อนหน้าจาก cache เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
+                  message: `เลือกรูปฉากก่อนหน้าจากรายการล่าสุดเป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
                 });
-                await uploadReferenceImageOrThrow({
-                  handle,
-                  payload,
-                  product,
-                  productIndex,
-                  round,
-                  step: 'image',
-                  args: {
-                    dataUrl: previousSceneImageDataUrl,
-                    fileName: `kubdee-scene-reference-${sceneNumber}.png`,
-                    referenceLabel: 'รูปฉากก่อนหน้า',
-                  },
-                });
+                let previousSceneAttached = false;
+                try {
+                  await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 120_000);
+                  previousSceneAttached = true;
+                } catch (selectError) {
+                  if (
+                    selectError instanceof GoogleFlowWebViewRunnerStopped ||
+                    isWebViewRendererGoneError(selectError)
+                  ) {
+                    throw selectError;
+                  }
+                  emit({
+                    event: 'progress',
+                    runId: payload.runId,
+                    status: 'running',
+                    level: 'warning',
+                    step: 'image',
+                    stage: 'multi_scene_attach_previous_image',
+                    productId: product.id,
+                    productName: product.name,
+                    currentRound: round,
+                    totalRounds: payload.settings.totalRounds,
+                    currentProduct: productIndex + 1,
+                    totalProducts: payload.products.length,
+                    message: `เลือกรูปล่าสุดไม่สำเร็จ (${selectError instanceof Error ? selectError.message : String(selectError)}) — จะอัปโหลดรูปฉากก่อนหน้าจาก cache แทน`,
+                  });
+                }
+                if (!previousSceneAttached) {
+                  emit({
+                    event: 'progress',
+                    runId: payload.runId,
+                    status: 'running',
+                    step: 'image',
+                    stage: 'multi_scene_attach_previous_image',
+                    productId: product.id,
+                    productName: product.name,
+                    currentRound: round,
+                    totalRounds: payload.settings.totalRounds,
+                    currentProduct: productIndex + 1,
+                    totalProducts: payload.products.length,
+                    message: `อัปโหลดรูปฉากก่อนหน้าจาก cache เป็น reference สำหรับสร้างรูปฉาก ${sceneNumber}`,
+                  });
+                  await uploadReferenceImageOrThrow({
+                    handle,
+                    payload,
+                    product,
+                    productIndex,
+                    round,
+                    step: 'image',
+                    args: {
+                      dataUrl: previousSceneImageDataUrl,
+                      fileName: `kubdee-scene-reference-${sceneNumber}.png`,
+                      referenceLabel: 'รูปฉากก่อนหน้า',
+                    },
+                  });
+                }
               } else if (sceneNumber > 1 || hasPriorImageStep) {
                 throw new Error(`ไม่มีรูป reference ของฉากก่อนหน้า สำหรับสร้างรูปฉาก ${sceneNumber}`);
               }
