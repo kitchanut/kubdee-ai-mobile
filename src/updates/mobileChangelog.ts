@@ -44,6 +44,33 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.8.1',
+    date: '2026-07-14',
+    highlight: 'โหมดออโต้เร็วและเสถียรขึ้น',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'แก้ปัญหาโหมดออโต้ค้างที่ขั้นเตรียมหน้า Google Flow จนงานวิดีโอไม่เดินต่อ'
+      },
+      {
+        type: 'improved',
+        text: 'วิดีโอหลายฉากแนบรูปอ้างอิงเร็วขึ้นมาก โดยเลือกรูปจากรายการล่าสุดแทนการอัปโหลดซ้ำทุกฉาก'
+      },
+      {
+        type: 'improved',
+        text: 'ลดเวลารีเฟรชหน้า Flow ระหว่างสร้างงานหลายฉาก'
+      },
+      {
+        type: 'improved',
+        text: 'หยุดการทำงานอัตโนมัติพร้อมแจ้งสาเหตุทันที เมื่อพบปัญหาที่ต้องแก้ก่อน เช่น ยังไม่ได้เชื่อมต่อ Google Flow'
+      },
+      {
+        type: 'fixed',
+        text: 'กู้คืนหน้า Flow อัตโนมัติเมื่อหน้าเว็บภายในแอปมีปัญหา และแสดงสาเหตุความผิดพลาดชัดเจนขึ้น'
+      }
+    ]
+  },
+  {
     version: '0.8.0',
     date: '2026-07-13',
     highlight: 'นำเข้าสินค้าจาก TikTok Showcase เข้าคลังได้แล้ว',
