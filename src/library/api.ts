@@ -1,5 +1,6 @@
-import { readError } from '@/auth/api';
+import { readError, refreshAuthToken } from '@/auth/api';
 import { APP_TYPE, BACKEND_URL, CLIENT_APP } from '@/auth/constants';
+import { getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
 import { OFFLINE_ERROR_MESSAGE, toApiError } from '@/lib/apiError';
 import { reportError } from '@/lib/telemetry';
 import type { AuthApiResult } from '@/auth/types';
@@ -436,7 +437,23 @@ export async function deleteAffiliateProducts(
   }
 }
 
-export async function syncAffiliateProducts(
+// token หมดอายุกลาง sync (Sentry MOBILE-7) — refresh หนึ่งครั้งตาม pattern เดียวกับ
+// bufferPosting.getAccessToken แล้วให้ caller retry ด้วย token ใหม่
+async function refreshSyncAccessToken(currentToken: string): Promise<string | null> {
+  const tokens = await getStoredAuthTokens();
+  if (!tokens?.refreshToken) return null;
+  const refreshed = await refreshAuthToken(tokens.refreshToken);
+  if (!refreshed.ok || !refreshed.data?.accessToken || refreshed.data.accessToken === currentToken) {
+    return null;
+  }
+  await saveStoredAuthTokens({
+    accessToken: refreshed.data.accessToken,
+    refreshToken: tokens.refreshToken,
+  });
+  return refreshed.data.accessToken;
+}
+
+async function runAffiliateProductSync(
   token: string,
   payload: {
     deviceId: string;
@@ -444,7 +461,7 @@ export async function syncAffiliateProducts(
     restoreDeleted?: boolean;
   }
 ): Promise<AuthApiResult<SyncAffiliateProductsResult>> {
-  try {
+  {
     const cacheReadyProducts = await cacheProductImages(payload.products);
     const uploaded = await uploadAffiliateProductImages(token, cacheReadyProducts);
     const syncProducts = stripLocalImagePathsForCloudSync(uploaded.products);
@@ -467,6 +484,10 @@ export async function syncAffiliateProducts(
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        // โยนเป็น ApiRequestError ให้เส้น refresh-แล้ว-retry ข้างบนจัดการรวมกับ 401 จากขั้น upload
+        throw new ApiRequestError(await readError(response), 401);
+      }
       return {
         ok: false,
         status: response.status,
@@ -490,13 +511,50 @@ export async function syncAffiliateProducts(
       },
       error: null,
     };
-  } catch (error) {
-    reportError('api.uploadAffiliateProducts failed', { error });
-    return {
-      ok: false,
-      status: error instanceof ApiRequestError ? error.status : 0,
-      data: null,
-      error: error instanceof Error ? error.message : OFFLINE_ERROR_MESSAGE,
-    };
   }
+}
+
+export async function syncAffiliateProducts(
+  token: string,
+  payload: {
+    deviceId: string;
+    products: SyncAffiliateProductInput[];
+    restoreDeleted?: boolean;
+  }
+): Promise<AuthApiResult<SyncAffiliateProductsResult>> {
+  let activeError: unknown;
+  try {
+    return await runAffiliateProductSync(token, payload);
+  } catch (error) {
+    activeError = error;
+  }
+
+  if (activeError instanceof ApiRequestError && activeError.status === 401) {
+    const freshToken = await refreshSyncAccessToken(token).catch(() => null);
+    if (freshToken) {
+      try {
+        return await runAffiliateProductSync(freshToken, payload);
+      } catch (retryError) {
+        activeError = retryError;
+      }
+    }
+    if (activeError instanceof ApiRequestError && activeError.status === 401) {
+      // token ใช้ไม่ได้แม้ refresh แล้ว = ผู้ใช้ต้อง login ใหม่ ไม่ใช่บั๊กแอป —
+      // ไม่ report เป็น error (Sentry MOBILE-7) แค่ส่งข้อความให้หน้าจอแสดง
+      return {
+        ok: false,
+        status: 401,
+        data: null,
+        error: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่แล้วซิงก์อีกครั้ง',
+      };
+    }
+  }
+
+  reportError('api.uploadAffiliateProducts failed', { error: activeError });
+  return {
+    ok: false,
+    status: activeError instanceof ApiRequestError ? activeError.status : 0,
+    data: null,
+    error: activeError instanceof Error ? activeError.message : OFFLINE_ERROR_MESSAGE,
+  };
 }
