@@ -101,6 +101,9 @@ object KubdeeAutomationIpc {
     error: String? = null,
     stopped: Boolean = false
   ) {
+    // persist ผลลง disk ก่อนยิง broadcast เสมอ — broadcast ข้าม process หายได้
+    // ถ้าแอปหลักโดน freeze (Sentry MOBILE-G) JS จะ poll ไฟล์นี้เป็นช่องทางสำรอง
+    KubdeeShopeePostResults.appendResult(context, runId, result.toString(), error, stopped)
     sendEvent(context, ACTION_EVENT_SHOPEE_POST_FINISHED) {
       putExtra(EXTRA_RUN_ID, runId)
       putExtra(EXTRA_RESULT_JSON, result.toString())

@@ -733,6 +733,22 @@ class KubdeeAccessibilityModule(
     promise.resolve(KubdeeShopeeConvertResults.clear(reactContext))
   }
 
+  // ผลโพสต์ Shopee ที่ :automation persist ไว้บน disk — ช่องทางสำรองเมื่อ broadcast
+  // ACTION_EVENT_SHOPEE_POST_FINISHED หายเพราะแอปหลักโดน freeze (Sentry MOBILE-G)
+  @ReactMethod
+  fun getPendingShopeePostResults(promise: Promise) {
+    try {
+      promise.resolve(KubdeeShopeePostResults.readResults(reactContext).toString())
+    } catch (error: Exception) {
+      promise.reject("SHOPEE_POST_PENDING", error.message ?: "อ่านผลโพสต์ Shopee ค้างไม่สำเร็จ", error)
+    }
+  }
+
+  @ReactMethod
+  fun clearPendingShopeePostResults(promise: Promise) {
+    promise.resolve(KubdeeShopeePostResults.clear(reactContext))
+  }
+
   @ReactMethod
   fun stopShopeeAutomation(promise: Promise) {
     val service = KubdeeAccessibilityService.getInstance()

@@ -16,12 +16,16 @@ import { postTikTokVideoViaHost } from '@/autopilot/tiktokAutoPost';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
 import { reportWarning } from '@/lib/telemetry';
 import { getTikTokPostSettings } from '@/tiktok/tiktokPostSettingsStore';
+import { AppState } from 'react-native';
+
 import {
+  clearPendingShopeePostResults,
   getAccessibilityStatus,
+  getPendingShopeePostResults,
   postShopeeVideos,
   requestAndroidVideoPermission,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeePostingVideoInput } from '@/native/AccessibilityBridge';
+import type { NativeShopeePostingResult, NativeShopeePostingVideoInput } from '@/native/AccessibilityBridge';
 
 export interface AutoPilotProductVideoAsset {
   fileUri: string;
@@ -42,6 +46,98 @@ export const SHOPEE_POST_TIMEOUT_MS = 5 * 60_000;
 export const TIKTOK_POST_TIMEOUT_MS = 12 * 60_000;
 
 export class ShopeePostTimeoutError extends Error {}
+
+// ช่องทางสำรองของผลโพสต์ Shopee (Sentry MOBILE-G): broadcast จาก :automation หายได้
+// ถ้าแอปหลักโดน freeze — native จึง persist ผลลง disk ณ วินาทีเดียวกับที่ยิง broadcast
+// (KubdeeShopeePostResults) ฝั่งนี้ poll ไฟล์ควบคู่กับการรอ broadcast + poll ทันทีเมื่อ
+// แอปกลับ foreground แล้วใช้ผลจากช่องทางที่มาถึงก่อน (settle ครั้งเดียว)
+// สมมติฐาน: auto pilot โพสต์ Shopee ทีละสินค้า (single in-flight) จึง correlate ด้วย
+// ts >= startedAt ได้โดยไม่ต้องส่ง runId ข้าม bridge
+const SHOPEE_POST_RESULT_POLL_MS = 5_000;
+
+function awaitShopeePostResult(
+  broadcastPromise: Promise<NativeShopeePostingResult>,
+  startedAt: number
+): Promise<NativeShopeePostingResult> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutTimer);
+      if (pollTimer) clearTimeout(pollTimer);
+      appStateSub.remove();
+      fn();
+    };
+
+    const poll = async (): Promise<void> => {
+      if (settled) return;
+      try {
+        const pending = await getPendingShopeePostResults();
+        const record = pending
+          .filter((row) => row.ts >= startedAt)
+          .sort((a, b) => b.ts - a.ts)[0];
+        if (record) {
+          const parsed = JSON.parse(record.resultJson) as NativeShopeePostingResult;
+          settle(() => {
+            reportWarning('postProductToShopee: reconciled result from disk (broadcast missed)', {
+              runId: record.runId,
+            });
+            void clearPendingShopeePostResults().catch(() => {});
+            resolve(parsed);
+          });
+          return;
+        }
+      } catch {
+        // poll เป็น best-effort — รอบถัดไปลองใหม่
+      }
+      if (!settled) {
+        pollTimer = setTimeout(() => {
+          void poll();
+        }, SHOPEE_POST_RESULT_POLL_MS);
+      }
+    };
+
+    const timeoutTimer = setTimeout(() => {
+      // เช็คไฟล์รอบสุดท้ายก่อนตัดสิน timeout — เผื่อผลเพิ่งถูกเขียนพอดี
+      void poll().finally(() => {
+        settle(() => {
+          reportWarning('postProductToShopee: withTimeout fired', { timeoutMs: SHOPEE_POST_TIMEOUT_MS });
+          reject(
+            new ShopeePostTimeoutError('โพสต์ Shopee หมดเวลา (นานเกิน 5 นาที ไม่ได้รับผลลัพธ์จากระบบอัตโนมัติ)')
+          );
+        });
+      });
+    }, SHOPEE_POST_TIMEOUT_MS);
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void poll();
+      }
+    });
+
+    broadcastPromise.then(
+      (value) =>
+        settle(() => {
+          void clearPendingShopeePostResults().catch(() => {});
+          resolve(value);
+        }),
+      (error) =>
+        settle(() => {
+          reportWarning('postProductToShopee: postShopeeVideos rejected', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          reject(error);
+        })
+    );
+
+    pollTimer = setTimeout(() => {
+      void poll();
+    }, SHOPEE_POST_RESULT_POLL_MS);
+  });
+}
 
 export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -333,10 +429,12 @@ async function postProductToShopee(
       };
     });
 
-    const result = await withTimeout(
+    // เคลียร์ผลค้างของรอบก่อนออกก่อนเริ่ม (ts filter กันข้ามรอบอยู่แล้ว — นี่กันไฟล์โต)
+    await clearPendingShopeePostResults().catch(() => {});
+    const postStartedAt = Date.now();
+    const result = await awaitShopeePostResult(
       postShopeeVideos(videos, { skipReturnNavigation: true }),
-      SHOPEE_POST_TIMEOUT_MS,
-      'โพสต์ Shopee หมดเวลา (นานเกิน 5 นาที ไม่ได้รับผลลัพธ์จากระบบอัตโนมัติ)'
+      postStartedAt
     );
 
     if (result.stopped) {

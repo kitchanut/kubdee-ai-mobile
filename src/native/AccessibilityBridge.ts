@@ -96,6 +96,16 @@ export interface NativeShopeePendingConvertResult {
   ts: number;
 }
 
+// ผลโพสต์ Shopee ที่ :automation persist ไว้บน disk ณ วินาทีเดียวกับที่ยิง broadcast —
+// ช่องทางสำรองเมื่อ broadcast หายเพราะแอปหลักโดน freeze (Sentry MOBILE-G)
+export interface NativeShopeePendingPostResult {
+  runId: string;
+  resultJson: string;
+  error?: string;
+  stopped?: boolean;
+  ts: number;
+}
+
 export interface NativeGoogleFlowDownloadedAsset {
   uri: string;
   fileName: string;
@@ -150,6 +160,8 @@ type NativeAccessibilityModule = {
   convertShopeeLinks?: (payloadJson: string) => Promise<string>;
   getPendingShopeeConvertResults?: () => Promise<string>;
   clearPendingShopeeConvertResults?: () => Promise<boolean>;
+  getPendingShopeePostResults?: () => Promise<string>;
+  clearPendingShopeePostResults?: () => Promise<boolean>;
   stopShopeeAutomation?: () => Promise<boolean>;
   waitForGoogleFlowDownload?: (
     step: 'image' | 'video',
@@ -425,6 +437,41 @@ export async function getPendingShopeeConvertResults(): Promise<NativeShopeePend
 export async function clearPendingShopeeConvertResults(): Promise<boolean> {
   if (Platform.OS === 'android' && nativeModule?.clearPendingShopeeConvertResults) {
     return nativeModule.clearPendingShopeeConvertResults();
+  }
+
+  return false;
+}
+
+export async function getPendingShopeePostResults(): Promise<NativeShopeePendingPostResult[]> {
+  if (Platform.OS !== 'android' || !nativeModule?.getPendingShopeePostResults) {
+    return [];
+  }
+
+  try {
+    const raw = await nativeModule.getPendingShopeePostResults();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((row): row is NativeShopeePendingPostResult => {
+      if (!row || typeof row !== 'object') {
+        return false;
+      }
+
+      const item = row as Partial<NativeShopeePendingPostResult>;
+      return typeof item.runId === 'string' && item.runId.trim().length > 0
+        && typeof item.resultJson === 'string' && item.resultJson.trim().length > 0
+        && typeof item.ts === 'number';
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function clearPendingShopeePostResults(): Promise<boolean> {
+  if (Platform.OS === 'android' && nativeModule?.clearPendingShopeePostResults) {
+    return nativeModule.clearPendingShopeePostResults();
   }
 
   return false;
