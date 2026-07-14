@@ -592,7 +592,7 @@ export const TikTokWebView = forwardRef<
         sharedCookiesEnabled
         cacheEnabled
         scalesPageToFit
-        injectedJavaScriptBeforeContentLoaded={DESKTOP_ENV_SPOOF}
+        injectedJavaScriptBeforeContentLoaded={`window.__kubdeeAllowZoom=true;\n${DESKTOP_ENV_SPOOF}`}
         originWhitelist={['https://*', 'about:blank']}
         setSupportMultipleWindows={false}
         onShouldStartLoadWithRequest={(request) => allowNavigation(request.url)}

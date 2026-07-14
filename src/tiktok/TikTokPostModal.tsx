@@ -305,7 +305,7 @@ function TikTokPostRunner({
           thirdPartyCookiesEnabled
           sharedCookiesEnabled
           scalesPageToFit
-          setBuiltInZoomControls
+          setBuiltInZoomControls={false}
           setDisplayZoomControls={false}
           injectedJavaScriptBeforeContentLoaded={TIKTOK_STUDIO_DESKTOP_SPOOF}
           injectedJavaScript={`${TIKTOK_STUDIO_DESKTOP_SPOOF}\n${script}`}

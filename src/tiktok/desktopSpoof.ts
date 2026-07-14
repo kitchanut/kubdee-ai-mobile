@@ -24,7 +24,13 @@ export const DESKTOP_ENV_SPOOF = `(function(){
   var DESKTOP_WIDTH = Math.max(1024, Number(window.__kubdeeDesktopWidth) || 1440);
   var deviceWidth = Number(window.__kubdeeDesktopDeviceWidth) || Number(screen && screen.width) || 360;
   var fitScale = Math.max(0.1, Math.min(1, deviceWidth / DESKTOP_WIDTH));
-  var WANT = 'width=' + DESKTOP_WIDTH + ', initial-scale=' + fitScale.toFixed(4) + ', minimum-scale=0.1, maximum-scale=3, user-scalable=yes';
+  var s = fitScale.toFixed(4);
+  // ล็อก zoom ที่ระดับ fit เป็นค่า default ทุกหน้าอัตโนมัติ — กัน mobile WebView auto-zoom ตอน focus
+  // ช่อง caption/ค้นหา (ทำให้ปุ่ม/เลย์เอาต์เพี้ยนกลางการทำงาน) เฉพาะหน้า login ตั้ง __kubdeeAllowZoom
+  // เพื่อให้ผู้ใช้ pinch-zoom กรอกรหัสได้
+  var WANT = window.__kubdeeAllowZoom
+    ? 'width=' + DESKTOP_WIDTH + ', initial-scale=' + s + ', minimum-scale=0.1, maximum-scale=3, user-scalable=yes'
+    : 'width=' + DESKTOP_WIDTH + ', initial-scale=' + s + ', minimum-scale=' + s + ', maximum-scale=' + s + ', user-scalable=no';
   function apply(){
     var m = document.querySelector('meta[name="viewport"]');
     if (!m){ m = document.createElement('meta'); m.setAttribute('name','viewport'); (document.head||document.documentElement).appendChild(m); }

@@ -51,13 +51,25 @@ function isTikTokProductVideo(asset: GeneratedMediaAsset): boolean {
   return asset.platform?.trim().toLowerCase() === 'tiktok';
 }
 
+// TikTok Showcase product ID เป็นตัวเลขล้วนยาว (เช่น 1730056701093775397) เก็บใน productId เป็นหลัก
+// (บาง asset productId เป็น UUID ภายใน) — เลือกเฉพาะค่าที่เป็นตัวเลขล้วนไปค้นหา/จับคู่สินค้าใน TikTok
+function tiktokProductId(asset: GeneratedMediaAsset): string | null {
+  for (const candidate of [asset.productId, asset.productCode]) {
+    const value = candidate?.trim();
+    if (value && /^\d{6,}$/.test(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function toTikTokPostVideo(asset: GeneratedMediaAsset): TikTokPostVideoInput {
   const isTikTokProduct = isTikTokProductVideo(asset);
   return {
     fileUri: asset.fileUri,
     fileName: asset.fileName,
     productName: isTikTokProduct ? asset.productName : null,
-    productId: isTikTokProduct ? asset.productId || asset.productCode : null,
+    productId: isTikTokProduct ? tiktokProductId(asset) : null,
     caption: asset.caption,
     hashtags: asset.hashtags,
     cta: asset.cta,
@@ -75,11 +87,35 @@ function hasTikTokPostableText(asset: GeneratedMediaAsset): boolean {
   return isTikTokProductVideo(asset) && Boolean(asset.productName?.trim());
 }
 
-type TikTokPostBlock = 'ok' | 'no-file' | 'no-caption';
+// เมื่อเปิด "แนบสินค้า" native flow จะ fail ทั้งโพสต์ถ้าแนบไม่ได้ (ไม่ใช่สินค้า TikTok / ไม่มี
+// Product ID) จึงต้องเช็คตั้งแต่ post list แล้วข้ามรายการที่แนบไม่ได้แทนที่จะไป fail ลึกใน WebView
+export type TikTokProductAttachIssue = 'not-tiktok' | 'no-id' | null;
 
-function getTikTokPostBlock(asset: GeneratedMediaAsset): TikTokPostBlock {
+function getTikTokProductAttachIssue(asset: GeneratedMediaAsset, enableProductLink: boolean): TikTokProductAttachIssue {
+  if (!enableProductLink) {
+    return null;
+  }
+  if (!isTikTokProductVideo(asset)) {
+    return 'not-tiktok';
+  }
+  if (!tiktokProductId(asset)) {
+    return 'no-id';
+  }
+  return null;
+}
+
+type TikTokPostBlock = 'ok' | 'no-file' | 'no-caption' | 'product-not-tiktok' | 'product-no-id';
+
+function getTikTokPostBlock(asset: GeneratedMediaAsset, enableProductLink: boolean): TikTokPostBlock {
   if (!isLocalPostableVideo(asset)) {
     return 'no-file';
+  }
+  const attachIssue = getTikTokProductAttachIssue(asset, enableProductLink);
+  if (attachIssue === 'not-tiktok') {
+    return 'product-not-tiktok';
+  }
+  if (attachIssue === 'no-id') {
+    return 'product-no-id';
   }
   if (!hasTikTokPostableText(asset)) {
     return 'no-caption';
@@ -87,24 +123,34 @@ function getTikTokPostBlock(asset: GeneratedMediaAsset): TikTokPostBlock {
   return 'ok';
 }
 
-function isTikTokPostable(asset: GeneratedMediaAsset): boolean {
-  return getTikTokPostBlock(asset) === 'ok';
+function isTikTokPostable(asset: GeneratedMediaAsset, enableProductLink: boolean): boolean {
+  return getTikTokPostBlock(asset, enableProductLink) === 'ok';
 }
 
-function summarizeTikTokPostBlocks(videos: GeneratedMediaAsset[]): { noFile: number; noCaption: number } {
-  let noFile = 0;
-  let noCaption = 0;
+interface TikTokSkipBreakdown {
+  noFile: number;
+  noCaption: number;
+  productNotTiktok: number;
+  productNoId: number;
+}
+
+function summarizeTikTokPostBlocks(videos: GeneratedMediaAsset[], enableProductLink: boolean): TikTokSkipBreakdown {
+  const breakdown: TikTokSkipBreakdown = { noFile: 0, noCaption: 0, productNotTiktok: 0, productNoId: 0 };
   for (const video of videos) {
-    const block = getTikTokPostBlock(video);
-    if (block === 'no-file') noFile += 1;
-    else if (block === 'no-caption') noCaption += 1;
+    const block = getTikTokPostBlock(video, enableProductLink);
+    if (block === 'no-file') breakdown.noFile += 1;
+    else if (block === 'no-caption') breakdown.noCaption += 1;
+    else if (block === 'product-not-tiktok') breakdown.productNotTiktok += 1;
+    else if (block === 'product-no-id') breakdown.productNoId += 1;
   }
-  return { noFile, noCaption };
+  return breakdown;
 }
 
-function formatTikTokSkipBanner(breakdown: { noFile: number; noCaption: number }): string {
-  const total = breakdown.noFile + breakdown.noCaption;
+function formatTikTokSkipBanner(breakdown: TikTokSkipBreakdown): string {
+  const total = breakdown.noFile + breakdown.noCaption + breakdown.productNotTiktok + breakdown.productNoId;
   const parts: string[] = [];
+  if (breakdown.productNotTiktok > 0) parts.push(`ไม่ใช่สินค้า TikTok ${breakdown.productNotTiktok}`);
+  if (breakdown.productNoId > 0) parts.push(`ไม่มี Product ID ${breakdown.productNoId}`);
   if (breakdown.noCaption > 0) parts.push(`ไม่มีแคปชั่น/ชื่อสินค้า ${breakdown.noCaption}`);
   if (breakdown.noFile > 0) parts.push(`ไฟล์ไม่พร้อม ${breakdown.noFile}`);
   return parts.length > 0 ? `ข้าม ${total} รายการที่โพสต์ไม่ได้ · ${parts.join(' · ')}` : '';
@@ -165,9 +211,15 @@ export default function TikTokPostScreen({
       .map((id) => byId.get(id))
       .filter((video): video is GeneratedMediaAsset => Boolean(video));
   }, [generatedVideos, pendingVideoIds]);
-  // โพสต์เฉพาะคลิปที่มีไฟล์ในเครื่อง + มีแคปชั่นหรือชื่อสินค้า TikTok — ที่เหลือถูกข้าม (แต่ยังโชว์ในลิสต์)
-  const postableVideos = useMemo(() => queuedVideos.filter(isTikTokPostable), [queuedVideos]);
-  const skipBreakdown = useMemo(() => summarizeTikTokPostBlocks(queuedVideos), [queuedVideos]);
+  // โพสต์เฉพาะคลิปที่มีไฟล์ + แคปชั่น/ชื่อสินค้า และ (ถ้าเปิดแนบสินค้า) แนบสินค้า TikTok ได้จริง
+  const postableVideos = useMemo(
+    () => queuedVideos.filter((video) => isTikTokPostable(video, enableProductLink)),
+    [queuedVideos, enableProductLink]
+  );
+  const skipBreakdown = useMemo(
+    () => summarizeTikTokPostBlocks(queuedVideos, enableProductLink),
+    [queuedVideos, enableProductLink]
+  );
   const blockedCount = queuedVideos.length - postableVideos.length;
   // ทำงานกับหัวคิวที่โพสต์ได้เสมอ เมื่อสำเร็จ App จะนำรายการนั้นออกและคลิปถัดไปเลื่อนขึ้นมา
   // คลิปแดง (ข้าม) จะไม่ถูกหยิบขึ้นมาโพสต์ จึงค้างอยู่ในลิสต์ให้ผู้ใช้แก้/เอาออกเอง
@@ -204,8 +256,14 @@ export default function TikTokPostScreen({
       return;
     }
 
-    // โพสต์เฉพาะคลิปที่พร้อม — คลิปที่ไม่มีแคปชั่น/ชื่อสินค้าหรือไฟล์ไม่พร้อม ข้ามไปพร้อมเตือน
-    const { noCaption, noFile } = skipBreakdown;
+    // โพสต์เฉพาะคลิปที่พร้อม — คลิปที่แนบสินค้าไม่ได้/ไม่มีแคปชั่น/ไฟล์ไม่พร้อม ข้ามไปพร้อมเตือน
+    const { noCaption, noFile, productNotTiktok, productNoId } = skipBreakdown;
+    if (productNotTiktok > 0) {
+      toast.warning(`ข้าม ${productNotTiktok} รายการที่แนบสินค้าไม่ได้ (ไม่ใช่สินค้า TikTok)`);
+    }
+    if (productNoId > 0) {
+      toast.warning(`ข้าม ${productNoId} รายการที่แนบสินค้าไม่ได้ (ไม่พบ TikTok Product ID)`);
+    }
     if (noCaption > 0) {
       toast.warning(`ข้าม ${noCaption} รายการที่ไม่มีแคปชั่น/ชื่อสินค้า`);
     }
@@ -252,7 +310,7 @@ export default function TikTokPostScreen({
     }
     onRemovePendingVideo(activeVideo.id);
     const remainingPostable = queuedVideos.filter(
-      (video) => video.id !== activeVideo.id && isTikTokPostable(video)
+      (video) => video.id !== activeVideo.id && isTikTokPostable(video, enableProductLink)
     ).length;
     if (stopRequestedRef.current || remainingPostable === 0) {
       finishRun(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ครบแล้ว`);
@@ -260,7 +318,7 @@ export default function TikTokPostScreen({
     }
 
     completedRef.current = false;
-  }, [activeVideo, appendLog, finishRun, markPosted, onRemovePendingVideo, postAction, queuedVideos]);
+  }, [activeVideo, appendLog, enableProductLink, finishRun, markPosted, onRemovePendingVideo, postAction, queuedVideos]);
 
   const handleModalClose = useCallback((): void => {
     if (completedRef.current) return;
@@ -331,8 +389,8 @@ export default function TikTokPostScreen({
               </View>
             ) : null}
             {queuedVideos.map((video, index) => {
-              const block = getTikTokPostBlock(video);
-              const isBlockedRed = block === 'no-caption';
+              const block = getTikTokPostBlock(video, enableProductLink);
+              const isBlockedRed = block === 'no-caption' || block === 'product-not-tiktok' || block === 'product-no-id';
               const isTikTokProduct = isTikTokProductVideo(video);
               // TikTok fallback ใช้ชื่อสินค้าเป็นแคปชั่นได้เฉพาะเมื่อ product มาจาก TikTok (native ส่ง productName เฉพาะกรณีนั้น)
               const captionState = resolvePostCaptionState(
@@ -341,13 +399,16 @@ export default function TikTokPostScreen({
                 isTikTokProduct && Boolean(video.productName?.trim())
               );
               const hashtagState = resolvePostHashtagState(video.hashtags, false);
-              const productLineWarn = enableProductLink && !isTikTokProduct;
-              const productLine =
-                enableProductLink && isTikTokProduct
-                  ? `สินค้า TikTok · ${video.productName || video.productCode}`
-                  : productLineWarn
-                    ? 'ไม่แนบสินค้า — สินค้าไม่ได้มาจาก TikTok'
-                    : 'ไม่แนบสินค้า';
+              // เช็คการแนบสินค้าตั้งแต่หน้า list — ถ้าแนบไม่ได้ native flow จะ fail ทั้งโพสต์
+              const attachIssue = getTikTokProductAttachIssue(video, enableProductLink);
+              const productLine = !enableProductLink
+                ? 'ไม่แนบสินค้า'
+                : attachIssue === 'not-tiktok'
+                  ? 'แนบสินค้าไม่ได้ — ไม่ใช่สินค้าจาก TikTok'
+                  : attachIssue === 'no-id'
+                    ? 'แนบสินค้าไม่ได้ — ไม่พบ TikTok Product ID'
+                    : `แนบสินค้า TikTok · #${tiktokProductId(video)}`;
+              const productLineDanger = attachIssue !== null;
               return (
                 <View
                   key={video.id}
@@ -365,7 +426,7 @@ export default function TikTokPostScreen({
                   </View>
                   <View className="min-w-0 flex-1">
                     <Text numberOfLines={1} className="text-kd-body font-semibold text-kd-text">{videoLabel(video, index)}</Text>
-                    <Text numberOfLines={1} className={`text-kd-micro ${productLineWarn ? 'text-kd-amber' : 'text-kd-text-subtle'}`}>
+                    <Text numberOfLines={1} className={`text-kd-micro ${productLineDanger ? 'text-kd-red' : 'text-kd-text-subtle'}`}>
                       {productLine}
                     </Text>
                     <View className="mt-1 flex-row flex-wrap items-center gap-1.5">
