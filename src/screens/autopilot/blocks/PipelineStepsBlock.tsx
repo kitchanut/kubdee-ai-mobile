@@ -3,7 +3,7 @@ import { Pressable, View } from 'react-native';
 import { ChevronRight, Check, Image as ImageIcon, Sparkles, Video } from 'lucide-react-native';
 import { AUTO_PILOT_STEPS } from '@/autopilot/defaults';
 import { FacebookLogo, InstagramLogo, ShopeeLogo, TikTokLogo, YouTubeLogo } from '@/components/BrandLogos';
-import { FACEBOOK_BLUE, INSTAGRAM_PINK, SHOPEE_ORANGE, YOUTUBE_RED } from '@/theme/brandColors';
+import { FACEBOOK_BLUE, INSTAGRAM_PINK, SHOPEE_ORANGE, TIKTOK_PINK, YOUTUBE_RED } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
 import { alpha } from '@/theme/tokens';
 import type { AutoPilotStepType } from '@/autopilot/types';
@@ -13,6 +13,7 @@ export type BufferChannelTab = 'facebook' | 'instagram' | 'youtube';
 
 export function PipelineStepsBlock({
   enabledSteps,
+  tiktokEnabled,
   shopeeEnabled,
   facebookChecked,
   instagramChecked,
@@ -20,12 +21,14 @@ export function PipelineStepsBlock({
   channelTab,
   theme,
   onToggle,
+  onToggleTiktok,
   onToggleShopee,
   onPressFacebook,
   onPressInstagram,
   onPressYoutube,
 }: {
   enabledSteps: AutoPilotStepType[];
+  tiktokEnabled: boolean;
   shopeeEnabled: boolean;
   // Facebook/Instagram/YouTube behave as tabs, not toggles: tapping opens
   // that service's channel picker below, and the check badge only appears
@@ -36,6 +39,7 @@ export function PipelineStepsBlock({
   channelTab: BufferChannelTab | null;
   theme: KubdeeTheme;
   onToggle: (value: AutoPilotStepType) => void;
+  onToggleTiktok: () => void;
   onToggleShopee: () => void;
   onPressFacebook: () => void;
   onPressInstagram: () => void;
@@ -63,6 +67,19 @@ export function PipelineStepsBlock({
             </View>
           </Fragment>
         ))}
+        <PipelineToggleButton
+          active={tiktokEnabled}
+          label="โพสต์ TikTok"
+          accentColor={TIKTOK_PINK}
+          renderIcon={(color) => (
+            <TikTokLogo size={16} color={color} cutoutColor={theme.input} isDark={theme.isDark} />
+          )}
+          theme={theme}
+          onPress={onToggleTiktok}
+        />
+        <View className="flex-1 items-center">
+          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
+        </View>
         <PipelineToggleButton
           active={shopeeEnabled}
           label="โพสต์ Shopee"
@@ -107,27 +124,7 @@ export function PipelineStepsBlock({
           theme={theme}
           onPress={onPressYoutube}
         />
-        <View className="flex-1 items-center">
-          <ChevronRight size={12} color={theme.border} strokeWidth={2} />
-        </View>
-        <DisabledPipelineIcon icon="tiktok" theme={theme} />
       </View>
-    </View>
-  );
-}
-
-function DisabledPipelineIcon({
-  icon,
-  theme,
-}: {
-  icon: 'tiktok' | 'youtube';
-  theme: KubdeeTheme;
-}): React.JSX.Element {
-  const Icon = icon === 'tiktok' ? TikTokLogo : YouTubeLogo;
-
-  return (
-    <View className="h-8 w-8 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-input opacity-40">
-      <Icon size={16} color={theme.textSubtle} cutoutColor={theme.input} isDark={theme.isDark} />
     </View>
   );
 }

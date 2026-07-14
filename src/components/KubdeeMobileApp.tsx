@@ -10,6 +10,7 @@ import {
   useAutomationActivityNativeBridge,
 } from '@/activity/automationActivityLogStore';
 import GoogleFlowWebViewRunnerHost from '@/autopilot/GoogleFlowWebViewRunnerHost';
+import TikTokAutoPostHost from '@/autopilot/TikTokAutoPostHost';
 import { useAuth } from '@/auth/AuthContext';
 import MobileChangelogModal from '@/components/MobileChangelogModal';
 import MobileHeader from '@/components/MobileHeader';
@@ -811,6 +812,7 @@ export default function KubdeeMobileApp(): React.JSX.Element {
               <TopIconTabs activeTab={activeTab} theme={theme} onTabChange={setActiveTab} />
               <View className="min-h-0 flex-1">{renderScreen()}</View>
               <GoogleFlowWebViewRunnerHost theme={theme} />
+              <TikTokAutoPostHost />
             </>
           )}
         </View>

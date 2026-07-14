@@ -321,6 +321,7 @@ export default function AutoPilotScreen({
 
           <PipelineStepsBlock
             enabledSteps={controller.enabledSteps}
+            tiktokEnabled={controller.settings.autoPostTiktok}
             shopeeEnabled={controller.settings.autoPostShopee}
             facebookChecked={controller.settings.autoPostFacebook && !!controller.settings.facebookChannelId}
             instagramChecked={controller.settings.autoPostInstagram && !!controller.settings.instagramChannelId}
@@ -328,6 +329,7 @@ export default function AutoPilotScreen({
             channelTab={channelTab}
             theme={theme}
             onToggle={(value) => controller.toggleStep(value)}
+            onToggleTiktok={() => controller.updateSetting('autoPostTiktok', !controller.settings.autoPostTiktok)}
             onToggleShopee={() => controller.updateSetting('autoPostShopee', !controller.settings.autoPostShopee)}
             onPressFacebook={() => setChannelTab((tab) => (tab === 'facebook' ? null : 'facebook'))}
             onPressInstagram={() => setChannelTab((tab) => (tab === 'instagram' ? null : 'instagram'))}

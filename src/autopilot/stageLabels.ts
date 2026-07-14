@@ -111,6 +111,8 @@ export const AUTO_PILOT_STAGE_LABELS: Record<string, string> = {
   failed: 'สร้างไม่สำเร็จ',
   download_missing: 'ยังไม่พบไฟล์ดาวน์โหลด',
   cleanup_latest_project: 'ลบโปรเจกต์ล่าสุด',
+  posting_tiktok: 'กำลังโพสต์ TikTok',
+  posted_tiktok: 'โพสต์ TikTok แล้ว',
   posting_shopee: 'กำลังโพสต์ Shopee',
   posted_shopee: 'โพสต์ Shopee แล้ว',
   uploading_facebook_asset: 'กำลังอัปโหลดไฟล์ไป Facebook',

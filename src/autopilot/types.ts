@@ -111,6 +111,7 @@ export interface AutoPilotSettings {
   startNewFlowProjectPerProduct: boolean;
   deleteLatestFlowProjectBeforeNewProject: boolean;
   aiHashtagCount: number;
+  autoPostTiktok: boolean;
   autoPostShopee: boolean;
   autoPostFacebook: boolean;
   facebookChannelId: string | null;

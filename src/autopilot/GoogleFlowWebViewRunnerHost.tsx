@@ -3222,10 +3222,11 @@ export default function GoogleFlowWebViewRunnerHost({
               }
             }
 
-            // ครบทั้ง 4 platform — postProductAfterGeneration เช็ค flag+channel
+            // ครบทั้ง 5 platform — postProductAfterGeneration เช็ค flag+channel
             // รายตัวข้างในอีกชั้น (เคย gate แค่ Shopee/Facebook ทำให้เปิดเฉพาะ
             // Instagram/YouTube แล้วไม่โพสต์เงียบๆ — issue #16)
             const shouldPostAfterGeneration =
+              payload.settings.autoPostTiktok ||
               payload.settings.autoPostShopee ||
               payload.settings.autoPostFacebook ||
               payload.settings.autoPostInstagram ||
@@ -3239,6 +3240,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   product,
                   videoAssets,
                   settings: payload.settings,
+                  profileLocalId: payload.profileLocalId,
                   emit,
                   runId: payload.runId,
                   round,

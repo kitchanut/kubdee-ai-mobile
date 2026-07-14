@@ -12,8 +12,10 @@ import {
 } from '@/autopilot/bufferPostText';
 import type { AutoPilotLogLevel, AutoPilotSettings, GoogleFlowRunnerLogEntry, GoogleFlowRunnerProduct } from '@/autopilot/types';
 import { limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
+import { postTikTokVideoViaHost } from '@/autopilot/tiktokAutoPost';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
 import { reportWarning } from '@/lib/telemetry';
+import { getTikTokPostSettings } from '@/tiktok/tiktokPostSettingsStore';
 import {
   getAccessibilityStatus,
   postShopeeVideos,
@@ -34,6 +36,10 @@ export interface AutoPilotProductVideoAsset {
 // hang this one product — and the whole remaining auto pilot run behind it — for the full 20
 // minutes. 5 minutes is well above the ~2 minutes a real Shopee post takes end to end.
 export const SHOPEE_POST_TIMEOUT_MS = 5 * 60_000;
+
+// TikTokPostModal มี timeout 10 นาทีในตัวเอง — เผื่ออีก 2 นาทีกันเคส promise จาก host
+// ไม่ resolve (เช่น host โดน unmount กลางคัน) แล้วทั้ง run ค้าง
+export const TIKTOK_POST_TIMEOUT_MS = 12 * 60_000;
 
 export class ShopeePostTimeoutError extends Error {}
 
@@ -65,6 +71,8 @@ export interface PostProductAfterGenerationParams {
   product: GoogleFlowRunnerProduct;
   videoAssets: AutoPilotProductVideoAsset[];
   settings: AutoPilotSettings;
+  /** โปรไฟล์ที่ auto pilot รันอยู่ — TikTokPostModal ใช้เลือก session/cookie ของ TikTok */
+  profileLocalId: string;
   emit: EmitFn;
   runId: string;
   round: number;
@@ -76,14 +84,35 @@ export interface PostProductAfterGenerationParams {
   onProductPosted?: (platform: string, fileUris: string[]) => void;
 }
 
+// เดาว่าสินค้ามาจากตลาดไหน (Shopee/TikTok) จาก platform flag ก่อน แล้ว fallback ที่
+// host ของลิงก์ — พอร์ตจาก resolveVideoMarketplace ของหน้าโพสต์ Shopee manual
+function resolveProductMarketplace(product: GoogleFlowRunnerProduct): 'shopee' | 'tiktok' | null {
+  const flag = product.platform?.trim().toLowerCase() ?? '';
+  if (flag.includes('shopee')) return 'shopee';
+  if (flag.includes('tiktok')) return 'tiktok';
+
+  const url = product.productUrl?.trim().toLowerCase() ?? '';
+  if (url.includes('shopee') || url.includes('shp.ee')) return 'shopee';
+  if (url.includes('tiktok') || url.includes('tokopedia')) return 'tiktok';
+
+  return null;
+}
+
+// TikTok Studio ค้นหาสินค้าใน showcase ด้วยเลข TikTok จริง (เลขล้วน ≥6 หลัก) เท่านั้น —
+// กติกาเดียวกับ tiktokProductId ของหน้าโพสต์ manual
+function tiktokNumericProductId(product: GoogleFlowRunnerProduct): string | null {
+  const value = product.productId?.trim();
+  return value && /^\d{6,}$/.test(value) ? value : null;
+}
+
 // Runs after auto pilot finishes generating (image +) video for one product,
 // before the loop advances to the next one — deliberately awaited by the
-// caller so posting always finishes before the next product starts. Shopee,
-// Facebook and YouTube are independent: one failing is logged but never
+// caller so posting always finishes before the next product starts. TikTok,
+// Shopee, Facebook and YouTube are independent: one failing is logged but never
 // blocks the others or throws out to the caller (same "log and continue"
 // behavior the image/video generation steps already have).
 export async function postProductAfterGeneration(params: PostProductAfterGenerationParams): Promise<void> {
-  const { product, videoAssets, settings, emit, runId, round, totalRounds, productIndex, totalProducts, onProductPosted } = params;
+  const { product, videoAssets, settings, profileLocalId, emit, runId, round, totalRounds, productIndex, totalProducts, onProductPosted } = params;
 
   const emitStage = (stage: string, message: string, level: AutoPilotLogLevel = 'info'): void => {
     emit({
@@ -101,6 +130,11 @@ export async function postProductAfterGeneration(params: PostProductAfterGenerat
       message,
     });
   };
+
+  // ลำดับตามแถบ workflow: TikTok มาก่อน Shopee
+  if (settings.autoPostTiktok) {
+    await postProductToTikTok(product, videoAssets, profileLocalId, emitStage, onProductPosted);
+  }
 
   if (settings.autoPostShopee) {
     await postProductToShopee(product, videoAssets, emitStage, onProductPosted);
@@ -138,6 +172,104 @@ function isFirstCommentNotAllowedError(error: unknown): boolean {
 // flipping this back on is all it takes.
 const USE_FIRST_COMMENT = false;
 
+// โพสต์วิดีโอของสินค้าขึ้น TikTok ผ่าน TikTokAutoPostHost (WebView modal เดียวกับ
+// หน้าโพสต์ manual) ทีละคลิป — ใช้ค่าตั้ง publish/draft + แนบสินค้า จากหน้าโพสต์ TikTok
+async function postProductToTikTok(
+  product: GoogleFlowRunnerProduct,
+  videoAssets: AutoPilotProductVideoAsset[],
+  profileLocalId: string,
+  emitStage: (stage: string, message: string, level?: AutoPilotLogLevel) => void,
+  onProductPosted?: (platform: string, fileUris: string[]) => void
+): Promise<void> {
+  if (videoAssets.length === 0) {
+    emitStage('posting_tiktok', 'ข้ามโพสต์ TikTok: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
+    return;
+  }
+
+  // gate แพลตฟอร์ม: ขั้น TikTok โพสต์เฉพาะสินค้าที่มาจาก TikTok — สินค้าแพลตฟอร์มอื่น
+  // ข้ามแล้วไปขั้นถัดไป (Shopee/Facebook/...) ตาม workflow
+  const marketplace = resolveProductMarketplace(product);
+  if (marketplace !== 'tiktok') {
+    emitStage(
+      'posting_tiktok',
+      `ข้ามโพสต์ TikTok: ${product.name || 'สินค้า'} ${marketplace === 'shopee' ? 'เป็นสินค้า Shopee' : 'ไม่ทราบแพลตฟอร์มสินค้า'}`,
+      'warning'
+    );
+    return;
+  }
+
+  if (!profileLocalId) {
+    emitStage('posting_tiktok', 'ข้ามโพสต์ TikTok: ยังไม่ได้เลือกโปรไฟล์', 'warning');
+    return;
+  }
+
+  try {
+    const tiktokSettings = await getTikTokPostSettings();
+    const numericProductId = tiktokNumericProductId(product);
+    if (tiktokSettings.enableProductLink && !numericProductId) {
+      emitStage('posting_tiktok', 'ข้ามโพสต์ TikTok: เปิดแนบสินค้าแต่ไม่พบ TikTok Product ID (เลขล้วน)', 'warning');
+      return;
+    }
+
+    const postedUris: string[] = [];
+    for (const [index, video] of videoAssets.entries()) {
+      emitStage(
+        'posting_tiktok',
+        `กำลังโพสต์ TikTok (${index + 1}/${videoAssets.length}): ${product.name || 'สินค้า'}`
+      );
+
+      const result = await withTimeout(
+        postTikTokVideoViaHost({
+          profileLocalId,
+          postAction: tiktokSettings.postAction,
+          enableProductLink: tiktokSettings.enableProductLink,
+          onLog: (message) => emitStage('posting_tiktok', `TikTok: ${message}`),
+          video: {
+            fileUri: video.fileUri,
+            fileName: video.fileName ?? null,
+            productName: product.name?.trim() || null,
+            productId: numericProductId,
+            caption: product.caption?.trim() || null,
+            hashtags: product.hashtags?.trim() || null,
+            cta: product.cta?.trim() || null,
+            platform: product.platform || 'tiktok',
+            galleryVideoId: null,
+          },
+        }),
+        TIKTOK_POST_TIMEOUT_MS,
+        'โพสต์ TikTok หมดเวลา (นานเกิน 12 นาที ไม่ได้รับผลลัพธ์)'
+      );
+
+      if (!result.success) {
+        emitStage('failed', `โพสต์ TikTok ไม่สำเร็จ: ${result.error || 'ไม่ทราบสาเหตุ'}`, 'error');
+        continue;
+      }
+      postedUris.push(video.fileUri);
+    }
+
+    if (postedUris.length > 0) {
+      emitStage(
+        'posted_tiktok',
+        `${tiktokSettings.postAction === 'draft' ? 'บันทึกร่าง' : 'โพสต์'} TikTok สำเร็จ ${postedUris.length}/${videoAssets.length} วิดีโอ`,
+        'success'
+      );
+      // draft ยังไม่ถือว่า "โพสต์แล้ว" — mark เฉพาะโหมด publish (ตามหน้า manual)
+      if (tiktokSettings.postAction === 'publish') {
+        onProductPosted?.('tiktok', postedUris);
+      }
+    }
+  } catch (error) {
+    reportWarning('postProductToTikTok: caught error, emitting failed stage', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    emitStage(
+      'failed',
+      `โพสต์ TikTok ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
+      'error'
+    );
+  }
+}
+
 async function postProductToShopee(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
@@ -146,6 +278,18 @@ async function postProductToShopee(
 ): Promise<void> {
   if (videoAssets.length === 0) {
     emitStage('posting_shopee', 'ข้ามโพสต์ Shopee: ยังไม่มีวิดีโอสำหรับสินค้านี้', 'warning');
+    return;
+  }
+
+  // gate แพลตฟอร์ม: ขั้น Shopee โพสต์เฉพาะสินค้าที่มาจาก Shopee — สินค้า TikTok/อื่น
+  // ข้ามแล้วไปขั้นถัดไปตาม workflow (กติกาเดียวกับ getShopeePostBlock ของหน้า manual)
+  const shopeeMarketplace = resolveProductMarketplace(product);
+  if (shopeeMarketplace !== 'shopee') {
+    emitStage(
+      'posting_shopee',
+      `ข้ามโพสต์ Shopee: ${product.name || 'สินค้า'} ${shopeeMarketplace === 'tiktok' ? 'เป็นสินค้า TikTok' : 'ไม่ทราบแพลตฟอร์มสินค้า'}`,
+      'warning'
+    );
     return;
   }
 
