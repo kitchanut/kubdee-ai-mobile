@@ -379,17 +379,16 @@ export function buildTikTokPostScript({
     if (!search) throw { code: 'PRODUCT_SEARCH_NOT_FOUND', message: 'ไม่พบช่องค้นหาสินค้า', stage: 'product-search' };
     // TikTok ยิงค้นหาเมื่อได้ Enter แบบ trusted เท่านั้น (desktop ใช้ CDP pressKey) —
     // Enter สังเคราะห์จาก JS ทำ search พัง และ input/change เฉยๆ ไม่ trigger ค้นหา
-    // → แตะช่องค้นหาด้วย gesture จริงให้ focus ระดับ native แล้วยิง ACTION_IME_ENTER ผ่าน Accessibility
+    // → แตะช่องค้นหาด้วย gesture จริงให้ focus + คีย์บอร์ดเด้ง แล้วให้ native แตะปุ่ม Go/ค้นหา
+    // บนคีย์บอร์ด (ACTION_IME_ENTER บน WebView ไม่ทำงาน จึงกดปุ่มคีย์บอร์ดโดยตรงแทน)
     var searchTapped = await nativeTapOn(search, 'ช่องค้นหาสินค้า');
     if (!searchTapped) search.click();
-    await sleep(800);
+    await sleep(900); // รอคีย์บอร์ดเด้งขึ้นก่อน
     setNativeValue(search, INPUT.productId);
-    await sleep(400);
-    log('PRODUCT_SEARCH_FILLED', 'กรอก Product ID: ' + String(search.value || '') + ' — กำลังยิง Enter ค้นหา');
-    send({ type: 'tiktok-post-native-enter' });
-    await sleep(3000); // ตาม desktop: รอผลค้นหาหลัง Enter 3 วิ
+    await sleep(500);
 
-    var radio = await waitFor(function(){
+    // หา radio ของสินค้าที่ตรง — ยิง Enter/กดปุ่มค้นหาซ้ำได้ถ้ายังไม่มีผล (กันคีย์บอร์ด/โฟกัสไม่พร้อมรอบแรก)
+    var findMatchRadio = function(){
       var rows = document.querySelectorAll('tbody tr, .product-tb-row, [data-e2e*="product-row"]');
       for (var i = 0; i < rows.length; i++) {
         if (normalized(rows[i].textContent).indexOf(normalized(INPUT.productId)) < 0) continue;
@@ -397,7 +396,18 @@ export function buildTikTokPostScript({
         if (candidate) return candidate;
       }
       return null;
-    }, 20000, 500);
+    };
+    var radio = null;
+    for (var searchAttempt = 1; searchAttempt <= 3 && !radio; searchAttempt++) {
+      log('PRODUCT_SEARCH_FILLED', 'ค้นหา Product ID: ' + String(search.value || '') + ' — กดปุ่มค้นหาบนคีย์บอร์ด (ครั้ง ' + searchAttempt + '/3)');
+      send({ type: 'tiktok-post-native-enter' });
+      radio = await waitFor(findMatchRadio, searchAttempt === 1 ? 8000 : 6000, 500);
+      if (!radio && searchAttempt < 3) {
+        // โฟกัสช่องค้นหาใหม่ก่อนลองยิง Enter อีกครั้ง
+        await nativeTapOn(search, 'ช่องค้นหาสินค้า');
+        await sleep(700);
+      }
+    }
     if (!radio) {
       // แถวผลลัพธ์มักโชว์ชื่อสินค้าไม่ใช่ ID — ใช้ radio แถวแรกเฉพาะเมื่อค้นหากรองเหลือแถวเดียว
       // ถ้ามีหลายแถวแปลว่า search ไม่ได้กรอง ห้ามเดาแถวแรก (จะแนบสินค้าผิดตัว)

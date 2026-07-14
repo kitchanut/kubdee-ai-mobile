@@ -32,6 +32,7 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.webkit.CookieManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -117,6 +118,12 @@ class KubdeeAccessibilityService : AccessibilityService() {
     private const val AUTOMATION_NOTIFICATION_ID = 2401
     private const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
     private const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = true
+    // ป้ายกำกับปุ่ม action บนคีย์บอร์ด (Enter/Go/Search) หลายภาษา/หลายคีย์บอร์ด
+    // ใช้จับปุ่มยืนยันเพื่อ trigger ค้นหาสินค้า TikTok (แทน ACTION_IME_ENTER ที่ WebView ไม่รับ)
+    private val IME_ACTION_LABELS = listOf(
+      "go", "search", "enter", "done", "next", "send", "return", "search key", "enter key",
+      "ค้นหา", "ไป", "ตกลง", "ถัดไป", "ป้อน", "ส่ง", "เสร็จ", "เสร็จสิ้น"
+    )
     private val SHOPEE_LIKED_TEXTS = listOf(
       "สิ่งที่ฉันถูกใจ",
       "รายการถูกใจ",
@@ -423,16 +430,79 @@ class KubdeeAccessibilityService : AccessibilityService() {
   }
 
   fun pressImeEnter(): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+    var performed = false
 
-    val root = rootInActiveWindow ?: return false
-    val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-    val target = when {
-      focused != null -> focused
-      else -> findEditableNode(root)
-    } ?: return false
+    // 1) ลอง ACTION_IME_ENTER บน input ที่ focus — บน WebView virtual node มักไม่ trigger
+    //    search จริง (TikTok showcase) แต่ลองไว้ก่อนเพราะบางหน้า/บาง input ใช้ได้
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      val root = rootInActiveWindow
+      val target = root?.let { it.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: findEditableNode(it) }
+      if (target != null && target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)) {
+        performed = true
+      }
+    }
 
-    return target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+    // 2) แตะปุ่ม action ("Go"/"ไป"/"ค้นหา"/Enter) ในหน้าต่างคีย์บอร์ด (IME) ด้วย gesture —
+    //    เทียบเท่าการที่ผู้ใช้กดปุ่มยืนยันบนคีย์บอร์ดเอง เชื่อถือได้กว่า ACTION_IME_ENTER
+    //    บน WebView (ต้องมีคีย์บอร์ดเด้งอยู่ = ช่องค้นหา focus แล้ว)
+    if (tapImeActionKey()) performed = true
+
+    return performed
+  }
+
+  private fun imeWindow(): AccessibilityWindowInfo? {
+    return try {
+      windows.orEmpty().firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  // หา node ปุ่ม action ในคีย์บอร์ดจาก text/contentDescription แล้วเลือกตัวที่อยู่ขวา-ล่างสุด
+  // (ปุ่ม Enter/Go/ค้นหา อยู่มุมขวาล่างของคีย์บอร์ดเสมอ) เพื่อเลี่ยงชนปุ่มแนะนำคำอื่น
+  private fun findImeActionKey(node: AccessibilityNodeInfo?, out: MutableList<AccessibilityNodeInfo>) {
+    if (node == null) return
+    val label = (
+      (node.text?.toString().orEmpty()) + " " + (node.contentDescription?.toString().orEmpty())
+    ).lowercase(Locale.ROOT).trim()
+    if (label.isNotEmpty() && node.isVisibleToUser && IME_ACTION_LABELS.any { label == it || label.contains(it) }) {
+      out += node
+    }
+    for (index in 0 until node.childCount) {
+      findImeActionKey(node.getChild(index), out)
+    }
+  }
+
+  private fun tapImeActionKey(): Boolean {
+    val window = imeWindow() ?: return false
+    val root = window.root ?: return false
+
+    val matches = mutableListOf<AccessibilityNodeInfo>()
+    findImeActionKey(root, matches)
+    val actionNode = matches.maxByOrNull {
+      val bounds = Rect()
+      it.getBoundsInScreen(bounds)
+      // ให้น้ำหนักตำแหน่งขวา-ล่างสุด
+      bounds.exactCenterX() + bounds.exactCenterY() * 2f
+    }
+
+    if (actionNode != null) {
+      val bounds = Rect()
+      actionNode.getBoundsInScreen(bounds)
+      if (bounds.width() > 0 && bounds.height() > 0) {
+        dispatchLineGesture(bounds.exactCenterX(), bounds.exactCenterY(), bounds.exactCenterX(), bounds.exactCenterY(), 60) {}
+        return true
+      }
+    }
+
+    // fallback: แตะมุมขวาล่างของคีย์บอร์ด (ตำแหน่งปุ่ม Enter/action มาตรฐาน)
+    val windowBounds = Rect()
+    window.getBoundsInScreen(windowBounds)
+    if (windowBounds.width() <= 0 || windowBounds.height() <= 0) return false
+    val x = windowBounds.right - windowBounds.width() * 0.09f
+    val y = windowBounds.bottom - windowBounds.height() * 0.11f
+    dispatchLineGesture(x, y, x, y, 60) {}
+    return true
   }
 
   internal fun pressImeEnterOn(target: AccessibilityNodeInfo): Boolean {
