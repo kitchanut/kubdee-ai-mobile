@@ -141,6 +141,13 @@ function getRunnerVersionLabel(): string {
   return buildCode != null ? `v${version} (${buildCode})` : `v${version}`;
 }
 
+// 2026-07-14: ปิด verify tile หลัง reload ชั่วคราว (คำสั่ง user) เพื่อให้ refresh
+// เร็ว/เรียบง่ายเท่า desktop+extension ที่ reload ครั้งเดียวไม่เช็ค tile
+// ความเสี่ยงที่แลกมา: ถ้า WebView reload เจอหน้า stale (พิสูจน์แล้ว 2026-07-14 ว่า
+// รูปที่เพิ่งสร้างหายจากรายการได้) เส้น selectRecentImage อาจหยิบรูปเก่า
+// — ถ้าอาการ "เลือกรูปผิด" กลับมา ให้เปลี่ยนเป็น true (logic verify ยังอยู่ครบ)
+const VERIFY_EXPECTED_MIN_TILES_ENABLED = false;
+
 export default function GoogleFlowWebViewRunnerHost({
   theme,
 }: GoogleFlowWebViewRunnerHostProps): React.JSX.Element {
@@ -535,7 +542,10 @@ export default function GoogleFlowWebViewRunnerHost({
       // หน้า Flow ที่เพิ่งถูก reload อาจโหลดข้อมูลโปรเจกต์เก่า (stale) — media ที่เพิ่งสร้าง
       // หายจากรายการ ถ้า caller บอกจำนวน tile ขั้นต่ำที่ต้องเห็น ให้เช็คหลัง reload
       // แล้ว reload ซ้ำจนกว่าจะครบ (สูงสุด 3 รอบ) ก่อนปล่อยงานต่อ
-      const expectedTiles = Math.max(0, Math.floor(expectedMinTiles ?? 0));
+      // (ตอนนี้ถูกปิดด้วย VERIFY_EXPECTED_MIN_TILES_ENABLED — reload ครั้งเดียวเสมอ)
+      const expectedTiles = VERIFY_EXPECTED_MIN_TILES_ENABLED
+        ? Math.max(0, Math.floor(expectedMinTiles ?? 0))
+        : 0;
       const maxLoadAttempts = expectedTiles > 0 ? 3 : 1;
       let projectResult: OpenGoogleFlowProjectResult | null = null;
       for (let loadAttempt = 1; loadAttempt <= maxLoadAttempts; loadAttempt += 1) {
