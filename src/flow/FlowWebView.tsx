@@ -6,6 +6,12 @@ import type { WebViewMessageEvent } from 'react-native-webview';
 import { buildActionScript } from '@kubdee/flow-core';
 import type { FlowActionName, FlowActionResult } from '@kubdee/flow-core';
 
+// เปิด Chrome DevTools/CDP inspect หน้า Google Flow ผ่าน adb/USB (localhost เท่านั้น
+// remote ต่อไม่ได้) — ช่วย debug ตอน Google Flow เปลี่ยน UI (เช่น การแนบรูปช่อง Start
+// ของโหมดวิดีโอ). ไม่กระทบการทำงาน/perf. ความเสี่ยง = คนที่ต่อ USB+adb เข้าเครื่องดู
+// session ในหน้า Flow ได้ — ตั้ง false ก่อน distribute ให้คนนอกทีมถ้ากังวล
+const FLOW_WEBVIEW_DEBUG_ENABLED = true;
+
 export type FlowConnectionState = 'unknown' | 'signin' | 'loggedout' | 'connected';
 
 export interface FlowAccount {
@@ -271,6 +277,7 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
       thirdPartyCookiesEnabled
       sharedCookiesEnabled
       cacheEnabled
+      webviewDebuggingEnabled={FLOW_WEBVIEW_DEBUG_ENABLED}
       originWhitelist={['https://*', 'http://*']}
       setSupportMultipleWindows={false}
       injectedJavaScript={`window.__kbFlowAccountProbeEnabled = ${accountProbeEnabled ? 'true' : 'false'};\n${STATUS_JS}`}

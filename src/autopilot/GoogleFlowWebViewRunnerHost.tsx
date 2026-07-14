@@ -11,6 +11,7 @@ import { postProductAfterGeneration } from '@/autopilot/autoProductPosting';
 import type { AutoPilotProductVideoAsset } from '@/autopilot/autoProductPosting';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type {
+  AutoPilotLogLevel,
   AutoPilotStepType,
   GoogleFlowRunnerLogEntry,
   GoogleFlowRunnerPayload,
@@ -2400,15 +2401,12 @@ export default function GoogleFlowWebViewRunnerHost({
         let videoReferenceAttached = false;
         const shouldUsePreviousImage = step === 'video' && payload.enabledSteps.includes('image');
         if (shouldUsePreviousImage) {
-          const cachedImages = latestGeneratedImageDataUrlsRef.current.get(
-            getGeneratedImageCacheKey(product, round)
-          );
-          const cachedImageDataUrl = cachedImages?.[0];
-          if (cachedImageDataUrl) {
+          const emitAttach = (message: string, level?: AutoPilotLogLevel): void => {
             emit({
               event: 'progress',
               runId: payload.runId,
               status: 'running',
+              level,
               step,
               stage: 'attach_generated_image_reference',
               productId: product.id,
@@ -2417,42 +2415,40 @@ export default function GoogleFlowWebViewRunnerHost({
               totalRounds: payload.settings.totalRounds,
               currentProduct: productIndex + 1,
               totalProducts: payload.products.length,
-              message: 'อัปโหลดรูปที่เพิ่งสร้างจาก cache เป็น reference สำหรับวิดีโอ',
+              message,
             });
-            await uploadReferenceImageOrThrow({
-              handle,
-              payload,
-              product,
-              productIndex,
-              round,
-              step,
-              args: {
-                dataUrl: cachedImageDataUrl,
-                fileName: getGeneratedImageReferenceFileName(product, round),
-                referenceLabel: 'รูปที่สร้างไว้',
-              },
-            });
-          } else {
-            emit({
-              event: 'progress',
-              runId: payload.runId,
-              status: 'running',
-              step,
-              stage: 'attach_generated_image_reference',
-              productId: product.id,
-              productName: product.name,
-              currentRound: round,
-              totalRounds: payload.settings.totalRounds,
-              currentProduct: productIndex + 1,
-              totalProducts: payload.products.length,
-              message: 'ไม่พบรูป cache ในแอป จะดึงรูปที่เพิ่งสร้างจากหน้า Flow แล้วอัปโหลดเป็น reference สำหรับวิดีโอ',
-            });
+          };
 
-            const latestImage = await downloadLatestFlowImage(handle, 1, latestBaselineImageUrls);
-            if (!latestImage?.dataUrl) {
-              throw new Error('ไม่พบรูปที่เพิ่งสร้างจากหน้า Flow สำหรับใช้เป็น reference วิดีโอ');
+          // วิธีหลัก (แบบ desktop auto mode): กดช่อง Start แล้วเลือกรูปที่เพิ่งสร้างจากรายการล่าสุด
+          // ของ Flow (data-index 0) — บนมือถือการ re-upload ไฟล์ไม่ติดช่อง Start (dialog/ปุ่มกดพลาด)
+          // ทำให้ขึ้น "ยังไม่มีรูป reference แนบในช่องวิดีโอ" การเลือกรูปที่มีอยู่แล้วจึงเชื่อถือได้กว่า
+          let attached = false;
+          try {
+            emitAttach('เลือกรูปที่เพิ่งสร้างจากรายการล่าสุดเป็น reference (กดช่อง Start)');
+            await runActionOrThrow(handle, 'selectRecentImage', { indexOffset: 0 }, 120_000);
+            attached = true;
+          } catch (selectError) {
+            emitAttach(
+              `เลือกรูปล่าสุดไม่สำเร็จ (${selectError instanceof Error ? selectError.message : String(selectError)}) — จะลองอัปโหลดรูปแทน`,
+              'warning'
+            );
+          }
+
+          if (!attached) {
+            const cachedImages = latestGeneratedImageDataUrlsRef.current.get(
+              getGeneratedImageCacheKey(product, round)
+            );
+            let uploadDataUrl = cachedImages?.[0] ?? null;
+            if (uploadDataUrl) {
+              emitAttach('อัปโหลดรูปที่เพิ่งสร้างจาก cache เป็น reference สำหรับวิดีโอ');
+            } else {
+              emitAttach('ไม่พบรูป cache ในแอป จะดึงรูปที่เพิ่งสร้างจากหน้า Flow แล้วอัปโหลดเป็น reference สำหรับวิดีโอ');
+              const latestImage = await downloadLatestFlowImage(handle, 1, latestBaselineImageUrls);
+              if (!latestImage?.dataUrl) {
+                throw new Error('ไม่พบรูปที่เพิ่งสร้างจากหน้า Flow สำหรับใช้เป็น reference วิดีโอ');
+              }
+              uploadDataUrl = latestImage.dataUrl;
             }
-
             await uploadReferenceImageOrThrow({
               handle,
               payload,
@@ -2461,7 +2457,7 @@ export default function GoogleFlowWebViewRunnerHost({
               round,
               step,
               args: {
-                dataUrl: latestImage.dataUrl,
+                dataUrl: uploadDataUrl,
                 fileName: getGeneratedImageReferenceFileName(product, round),
                 referenceLabel: 'รูปที่สร้างไว้',
               },

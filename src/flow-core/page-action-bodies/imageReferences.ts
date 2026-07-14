@@ -639,6 +639,35 @@ export const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
     };
   }
 
+  // dump สภาพ DOM ตอนหาไม่เจอ เพื่อวินิจฉัยว่า "รูปไม่ติดจริง" หรือ "detector ตาบอด"
+  function diagnose(){
+    try {
+      var createButton = findCreateButton();
+      var composer = findComposer(createButton);
+      if (!composer) return 'composer=NONE, createBtn=' + (createButton ? 'yes' : 'no');
+      var frameScope = findFrameScope(composer);
+      function tally(scope){
+        var imgs = scope.querySelectorAll('img');
+        var imgWithSrc = 0;
+        for (var i = 0; i < imgs.length; i++) {
+          var src = imgs[i].currentSrc || imgs[i].src || imgs[i].getAttribute('src') || '';
+          if (String(src).trim()) imgWithSrc++;
+        }
+        return 'img=' + imgs.length + '(src ' + imgWithSrc + ')' +
+          ' canvas=' + scope.querySelectorAll('canvas').length +
+          ' video=' + scope.querySelectorAll('video').length +
+          ' cardOpen=' + scope.querySelectorAll('[data-card-open]').length +
+          ' dialogBtn=' + scope.querySelectorAll('[aria-haspopup="dialog"]').length +
+          ' fileInput=' + scope.querySelectorAll('input[type="file"]').length;
+      }
+      var sameScope = frameScope === composer;
+      var frameTag = frameScope.tagName + '.' + String(frameScope.className || '').slice(0, 40);
+      return 'composer[' + tally(composer) + '] frameScope=' + (sameScope ? '(=composer)' : frameTag + '[' + tally(frameScope) + ']');
+    } catch (e) {
+      return 'diagnose error: ' + (e && e.message ? e.message : String(e));
+    }
+  }
+
   var result = checkOnce();
   if (!result.ok) {
     setStatus('กำลังเช็ค reference ใน composer ก่อนสร้างวิดีโอ — ยังไม่เจอรูปที่แนบ: ' + (result.detail || result.error || 'ไม่พบ media card'), 'info');
@@ -649,11 +678,11 @@ export const ENSURE_VIDEO_REFERENCE_ATTACHED_BODY = `
     if (result.ok) {
       setStatus('เจอรูป reference ใน composer แล้ว พร้อมกดสร้างวิดีโอ (' + (result.attachedCount || 1) + ' รูป)', 'success');
     } else if (attempt === 1 || attempt % 4 === 0 || attempt >= 20) {
-      setStatus('กำลังเช็ค reference ใน composer รอบ ' + (attempt + 1) + '/24 — ยังไม่เจอรูปที่แนบ: ' + (result.detail || result.error || 'ไม่พบ media card'), 'warning');
+      setStatus('กำลังเช็ค reference ใน composer รอบ ' + (attempt + 1) + '/24 — ยังไม่เจอรูปที่แนบ: ' + (result.detail || result.error || 'ไม่พบ media card') + ' | DOM: ' + diagnose(), 'warning');
     }
   }
   if (!result.ok) {
-    setStatus('เช็ค reference ครบแล้วแต่ยังไม่เจอรูปใน composer: ' + (result.detail || result.error || 'ไม่พบ media card'), 'error');
+    setStatus('เช็ค reference ครบแล้วแต่ยังไม่เจอรูปใน composer: ' + (result.detail || result.error || 'ไม่พบ media card') + ' | DOM: ' + diagnose(), 'error');
     throw new Error(result.error || 'ยังไม่มีรูป reference แนบในช่องวิดีโอ');
   }
   return { success: true, attachedCount: result.attachedCount || 1 };

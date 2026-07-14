@@ -223,13 +223,34 @@ export const IMAGE_DIALOG_HELPERS_BODY = `
     }
     return null;
   }
+  // video Frames mode: ปุ่มช่อง Start (aria-haspopup=dialog + ข้อความ "start"/"เริ่ม" หรือ icon add_2)
+  // ต้องกดช่องนี้ตรงๆ ถึงจะเปิด dialog แนบรูปเฟรมแรกได้ — desktop กดด้วย textContent==='start'
+  // ตรงๆ ส่วน heuristic collectImageDialogTriggers เดิมเรียงตามตำแหน่งแล้วกดพลาด (ripple เด้งกลางจอ)
+  function findFrameSlotTriggers(){
+    var result = [];
+    var slots = Array.prototype.slice.call(document.querySelectorAll('[aria-haspopup="dialog"]'));
+    for (var i = 0; i < slots.length; i++) {
+      var el = slots[i];
+      if (!isVisible(el) || isDisabled(el)) continue;
+      if (el.closest('[role="menu"]') || el.closest('nav') || el.closest('aside')) continue;
+      var t = (el.textContent || '').trim().toLowerCase();
+      var iconEl = el.querySelector('i');
+      var iconText = iconEl ? (iconEl.textContent || '').trim().toLowerCase() : '';
+      if (t === 'start' || t === 'เริ่ม' || iconText === 'add_2') {
+        result.push(el);
+        break;
+      }
+    }
+    return result;
+  }
   async function openImageDialog(){
     var existing = getOpenDialog();
     if (existing) return existing;
     var totalCandidates = 0;
     var clickedCandidates = 0;
     for (var attempt = 1; attempt <= 8; attempt++) {
-      var triggers = collectImageDialogTriggers();
+      // กดช่อง Start ก่อน (ถ้าอยู่ในโหมด Frames) แล้วค่อย fallback heuristic
+      var triggers = dedupeElements(findFrameSlotTriggers().concat(collectImageDialogTriggers()));
       totalCandidates = Math.max(totalCandidates, triggers.length);
       if (!triggers.length) {
         if (attempt === 1 || attempt === 4 || attempt === 8) {
