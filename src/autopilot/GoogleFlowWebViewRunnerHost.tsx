@@ -502,6 +502,7 @@ export default function GoogleFlowWebViewRunnerHost({
       step,
       stage,
       message,
+      expectedMinTiles,
     }: {
       handle: FlowWebViewHandle;
       payload: GoogleFlowRunnerPayload;
@@ -511,35 +512,73 @@ export default function GoogleFlowWebViewRunnerHost({
       step: AutoPilotStepType;
       stage: string;
       message: string;
+      expectedMinTiles?: number;
     }): Promise<OpenGoogleFlowProjectResult> => {
-      checkStop();
-      emit({
-        event: 'progress',
-        runId: payload.runId,
-        status: 'running',
-        step,
-        stage,
-        productId: product.id,
-        productName: product.name,
-        currentRound: round,
-        totalRounds: payload.settings.totalRounds,
-        currentProduct: productIndex + 1,
-        totalProducts: payload.products.length,
-        message,
-      });
-      handle.reload();
-      await sleep(3500);
-      checkStop();
-      return openGoogleFlowProject({
-        handle,
-        payload,
-        product,
-        productIndex,
-        round,
-        step,
-      });
+      // หน้า Flow ที่เพิ่งถูก reload อาจโหลดข้อมูลโปรเจกต์เก่า (stale) — media ที่เพิ่งสร้าง
+      // หายจากรายการ ถ้า caller บอกจำนวน tile ขั้นต่ำที่ต้องเห็น ให้เช็คหลัง reload
+      // แล้ว reload ซ้ำจนกว่าจะครบ (สูงสุด 3 รอบ) ก่อนปล่อยงานต่อ
+      const expectedTiles = Math.max(0, Math.floor(expectedMinTiles ?? 0));
+      const maxLoadAttempts = expectedTiles > 0 ? 3 : 1;
+      let projectResult: OpenGoogleFlowProjectResult | null = null;
+      for (let loadAttempt = 1; loadAttempt <= maxLoadAttempts; loadAttempt += 1) {
+        checkStop();
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          step,
+          stage,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: loadAttempt === 1 ? message : `${message} (reload ซ้ำรอบ ${loadAttempt} — tile ยังไม่ครบ)`,
+        });
+        handle.reload();
+        await sleep(3500);
+        checkStop();
+        projectResult = await openGoogleFlowProject({
+          handle,
+          payload,
+          product,
+          productIndex,
+          round,
+          step,
+        });
+        if (expectedTiles <= 0) return projectResult;
+
+        let tilesFound = 0;
+        for (let tileCheck = 0; tileCheck < 3; tileCheck += 1) {
+          checkStop();
+          const poll = (await runActionOrThrow(handle, 'videoResults', { count: expectedTiles }, 20_000)) as FlowResultPoll;
+          tilesFound = poll.tilesFound ?? 0;
+          if (tilesFound >= expectedTiles) return projectResult;
+          await sleep(3000);
+        }
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: loadAttempt >= maxLoadAttempts ? 'warning' : 'info',
+          step,
+          stage: `${stage}_stale`,
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message:
+            loadAttempt >= maxLoadAttempts
+              ? `หลัง reload ${maxLoadAttempts} รอบยังเห็น tile ${tilesFound}/${expectedTiles} — ทำงานต่อด้วยข้อมูลที่มี`
+              : `หลัง reload เห็น tile ${tilesFound}/${expectedTiles} (หน้า stale) — จะ reload อีกรอบ`,
+        });
+      }
+      return projectResult as OpenGoogleFlowProjectResult;
     },
-    [checkStop, emit, openGoogleFlowProject]
+    [checkStop, emit, openGoogleFlowProject, runActionOrThrow]
   );
 
   const cleanupLatestFlowProjectForProduct = useCallback(
@@ -624,6 +663,7 @@ export default function GoogleFlowWebViewRunnerHost({
       round,
       step,
       countFailure = true,
+      refreshProject,
     }: {
       baselineVideoUrls: string[];
       baselineImageUrls?: string[];
@@ -636,11 +676,21 @@ export default function GoogleFlowWebViewRunnerHost({
       round: number;
       step: AutoPilotStepType;
       countFailure?: boolean;
+      refreshProject?: () => Promise<unknown>;
     }): Promise<FlowResultPoll> => {
       const startedAt = Date.now();
-      const timeoutMs = step === 'video' ? 300_000 : 180_000;
+      const timeoutMs = step === 'video' ? 420_000 : 240_000;
       const resultReadyTimeoutMs = step === 'video' ? 30_000 : 20_000;
       const noStartTimeoutMs = step === 'video' ? 55_000 : 40_000;
+      // หน้า Flow ใน WebView อาจไม่อัปเดต job ใหม่เลยใน session เดิม (stale) — ถ้าสถานะบน
+      // DOM ไม่ขยับนานเกินกำหนด (ว่างเปล่านิ่งๆ หรือ % แช่แข็ง) ให้ reload+เปิดโปรเจกต์ใหม่
+      // แล้วเช็คต่อ (ข้อมูลจะตามมาใน load รอบถัดไปเสมอ) แทนที่จะรอ live update ที่ไม่มีวันมา
+      const stallRefreshMs = step === 'video' ? 45_000 : 30_000;
+      const frozenActiveMs = step === 'video' ? 75_000 : 50_000;
+      const maxStallRefreshes = 4;
+      let stallRefreshCount = 0;
+      let lastStateFingerprint = '';
+      let lastStateChangeAt = startedAt;
       let failConfirm = 0;
       let doneConfirm = 0;
       let hasSeenProgress = false;
@@ -681,6 +731,11 @@ export default function GoogleFlowWebViewRunnerHost({
         if (isActive || hasOutput || failed > 0 || tilesFound > 0) {
           hasSeenActiveWork = true;
         }
+        const stateFingerprint = [generating, queued, failed, readyCount, tilesFound, progress ?? 'x'].join('|');
+        if (stateFingerprint !== lastStateFingerprint) {
+          lastStateFingerprint = stateFingerprint;
+          lastStateChangeAt = Date.now();
+        }
         emit({
           event: 'progress',
           runId: payload.runId,
@@ -706,6 +761,42 @@ export default function GoogleFlowWebViewRunnerHost({
           } (${resolvedCount}/${expectedCount})`,
         });
 
+        const stateIdleMs = Date.now() - lastStateChangeAt;
+        const domIdleTooLong = !isActive && stateIdleMs > stallRefreshMs;
+        const domFrozenTooLong = isActive && stateIdleMs > frozenActiveMs;
+        if (
+          refreshProject &&
+          !hasOutput &&
+          failed === 0 &&
+          stallRefreshCount < maxStallRefreshes &&
+          (domIdleTooLong || domFrozenTooLong)
+        ) {
+          stallRefreshCount += 1;
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'waiting_result_refresh',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: `สถานะบนหน้า Flow ไม่ขยับนาน ${Math.round(stateIdleMs / 1000)} วิ${
+              isActive ? ' (progress แช่แข็ง)' : ''
+            } — reload หน้าเพื่อเช็คผลจริง (รอบ ${stallRefreshCount}/${maxStallRefreshes})`,
+          });
+          await refreshProject();
+          lastStateFingerprint = '';
+          lastStateChangeAt = Date.now();
+          failConfirm = 0;
+          doneConfirm = 0;
+          resultReadyWaitStart = null;
+          continue;
+        }
+
         if (tilesFound === 0 && !isActive && !hasOutput && failed === 0) {
           failConfirm = 0;
           doneConfirm = 0;
@@ -728,8 +819,11 @@ export default function GoogleFlowWebViewRunnerHost({
               message: `ยังไม่พบ tile หรือ progress ของ${stepLabel(step)}หลัง submit กำลังรออีกสักครู่`,
             });
           }
-          if (!hasSeenActiveWork && elapsedMs > noStartTimeoutMs) {
-            throw new Error(`ไม่พบการเริ่มสร้าง${stepLabel(step)}ภายใน ${Math.round(noStartTimeoutMs / 1000)} วินาที`);
+          // เมื่อมี refreshProject ให้ยืดการตัดสิน "ไม่เริ่มสร้าง" ออกไปจนกว่าจะ reload
+          // ตรวจจริงครบทุกรอบก่อน — DOM stale ทำให้หน้าว่างทั้งที่หลังบ้านกำลังสร้าง
+          const noStartConfirmed = !refreshProject || stallRefreshCount >= maxStallRefreshes;
+          if (!hasSeenActiveWork && elapsedMs > noStartTimeoutMs && noStartConfirmed) {
+            throw new Error(`ไม่พบการเริ่มสร้าง${stepLabel(step)}ภายใน ${Math.round(elapsedMs / 1000)} วินาที`);
           }
           continue;
         }
@@ -1053,11 +1147,97 @@ export default function GoogleFlowWebViewRunnerHost({
 
       const fillPromptResult = await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'fill_prompt');
       emitPromptFillVerification(fillPromptResult, 'fill_prompt_verified');
-      await runActionWithLogContext('submit', {}, 45_000, 'submitted');
+      const submitResult = await runActionWithLogContext('submit', {}, 45_000, 'submitted');
+      const promptAutoCleared = submitResult.clearedPrompt === true;
       await sleep(step === 'video' ? 10_000 : 8_000);
 
       if (await checkFlowStarted(startChecks, 'submit_start_check')) {
         return;
+      }
+
+      // prompt ถูก Flow auto-clear = submit ลงหลังบ้านแล้วแน่นอน (ยืนยันจากการดัก network:
+      // POST video:batchAsyncGenerateVideoStartImage ออกทั้งที่ DOM ไม่มี tile) — DOM แค่ stale
+      // ห้าม retype+submit ซ้ำเด็ดขาด ไม่งั้นได้วิดีโอเบิ้ล ปล่อยให้ waitForStepResult
+      // ตรวจผลผ่านการ reload หน้าแทน
+      if (promptAutoCleared) {
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'warning',
+          step,
+          stage: 'submit_confirmed_dom_stale',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: `ยังไม่เห็น tile ${stepLabel(step)}ใน DOM แต่ prompt ถูก auto-clear = submit ลงแล้ว จะไม่กดสร้างซ้ำ และรอผลผ่านการ reload หน้าแทน`,
+        });
+        return;
+      }
+
+      // retype วิดีโอได้ แต่ต้องมีรูปแนบในช่อง Start เสมอ (ดีไซน์จาก user 2026-07-14):
+      // หลัง submit Flow จะเคลียร์รูปออกจาก composer — ถ้ารูปหาย ให้เลือกรูปแรกจากรายการ
+      // ล่าสุดกลับเข้าช่อง Start ก่อน retype เหมือน flow ปกติ ถ้าแนบกลับไม่สำเร็จจริงๆ
+      // ค่อยงด retype (กันสร้างวิดีโอแบบไม่มีรูปแนบ) แล้วปล่อยให้รอบ retry ใหญ่จัดการ
+      if (step === 'video') {
+        const checkReferenceAttached = async (stage: string): Promise<number> => {
+          try {
+            const refCheck = (await runActionWithLogContext(
+              'ensureVideoReferenceAttached',
+              {},
+              30_000,
+              stage
+            )) as { attachedCount?: number };
+            return refCheck.attachedCount ?? 0;
+          } catch {
+            return 0;
+          }
+        };
+        let attachedCount = await checkReferenceAttached('retype_reference_check');
+        if (attachedCount < 1) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            step,
+            stage: 'retype_reattach_reference',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message: 'รูปหายจากช่อง Start — เลือกรูปแรกจากรายการล่าสุดกลับเข้า Start ก่อน retype',
+          });
+          try {
+            await runActionWithLogContext('selectRecentImage', { indexOffset: 0 }, 120_000, 'retype_reattach_reference');
+          } catch {
+            // ตรวจซ้ำด้านล่างเป็นตัวตัดสิน
+          }
+          attachedCount = await checkReferenceAttached('retype_reference_recheck');
+        }
+        if (attachedCount < 1) {
+          emit({
+            event: 'progress',
+            runId: payload.runId,
+            status: 'running',
+            level: 'warning',
+            step,
+            stage: 'retype_skipped_no_reference',
+            productId: product.id,
+            productName: product.name,
+            currentRound: round,
+            totalRounds: payload.settings.totalRounds,
+            currentProduct: productIndex + 1,
+            totalProducts: payload.products.length,
+            message:
+              'แนบรูปกลับเข้าช่อง Start ไม่สำเร็จ จะไม่ retype+submit (กันสร้างวิดีโอแบบไม่มีรูปแนบ) — รอผลต่อ ถ้าไม่เริ่มจริงรอบ retry ใหญ่จะตั้งค่า+แนบรูปใหม่ทั้งชุด',
+          });
+          return;
+        }
       }
 
       emit({
@@ -1380,6 +1560,10 @@ export default function GoogleFlowWebViewRunnerHost({
         const neededSceneImages = useSameAngle ? (hasPriorImageStep ? 0 : 1) : hasPriorImageStep ? sceneCount - 1 : sceneCount;
         const firstGeneratedSceneNumber = !useSameAngle && hasPriorImageStep ? 2 : 1;
         const sceneImageDataUrls: string[] = [];
+        // media ที่เราสร้างสำเร็จในโปรเจกต์นี้ — ใช้เป็นจำนวน tile ขั้นต่ำที่ต้องเห็นหลัง reload
+        // (จับหน้า stale ได้ทันที) และเก็บ Flow URL ของวิดีโอฉากก่อนหน้าไว้กันนับซ้ำหลัง reload
+        let knownProjectTileCount = 0;
+        const knownFlowVideoUrls: string[] = [];
 
         if (hasPriorImageStep) {
           const cachedPriorImages = latestGeneratedImageDataUrlsRef.current.get(
@@ -1458,6 +1642,7 @@ export default function GoogleFlowWebViewRunnerHost({
                     imageAttempt === 1
                       ? `รีเฟรชหน้า Flow ก่อนสร้างรูปฉาก ${sceneNumber}/${sceneCount}`
                       : `รีเฟรชหน้า Flow ก่อน retry รูปฉาก ${sceneNumber}/${sceneCount}`,
+                  expectedMinTiles: knownProjectTileCount,
                 });
               }
 
@@ -1660,6 +1845,18 @@ export default function GoogleFlowWebViewRunnerHost({
                 productIndex,
                 round,
                 step: 'image',
+                refreshProject: () =>
+                  refreshGoogleFlowProject({
+                    handle,
+                    payload,
+                    product,
+                    productIndex,
+                    round,
+                    step: 'image',
+                    stage: 'waiting_result_refresh',
+                    message: `รีเฟรชหน้า Flow ระหว่างรอผลรูปฉาก ${sceneNumber} (DOM ไม่อัปเดต)`,
+                    expectedMinTiles: knownProjectTileCount,
+                  }),
               });
               const imageCount = Math.max(1, Number(imageResult.images ?? 1) || 1);
               const firstImage = await downloadLatestFlowImage(handle, imageCount, baselineImageUrls);
@@ -1667,6 +1864,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 throw new Error(`ดึงรูปฉาก ${sceneNumber} จากหน้า Flow ไม่สำเร็จ`);
               }
               sceneImage = firstImage;
+              knownProjectTileCount += imageCount;
               break;
             } catch (error) {
               if (!isRetryableFlowError(error) || finalImageAttempt) {
@@ -1818,6 +2016,7 @@ export default function GoogleFlowWebViewRunnerHost({
               step,
               stage: 'multi_scene_refresh_video',
               message: `รีเฟรชหน้า Flow ก่อนสร้างวิดีโอฉาก ${sceneNumber}/${sceneCount}`,
+              expectedMinTiles: knownProjectTileCount,
             });
           }
 
@@ -1955,7 +2154,9 @@ export default function GoogleFlowWebViewRunnerHost({
           const scenePrompt = promptResult.prompts[sceneIndex] || multiSceneVideoPrompt(product, prompt, sceneNumber, sceneCount, useVoiceover);
           const runSceneVideo = async (nextPrompt: string, countFailure = true): Promise<FlowResultPoll> => {
             const snapshot = (await runActionOrThrow(handle, 'videoSnapshot', {}, 15_000)) as FlowSnapshot;
-            const baselineVideoUrls = snapshot.videoUrls ?? [];
+            // รวม URL วิดีโอฉากก่อนหน้าที่รู้จักเข้า baseline ด้วย — snapshot จากหน้า stale
+            // อาจมองไม่เห็นวิดีโอเก่า พอ reload กลับมาเจอจะถูกนับผิดเป็นวิดีโอใหม่ของฉากนี้
+            const baselineVideoUrls = [...new Set([...(snapshot.videoUrls ?? []), ...knownFlowVideoUrls])];
             const baselineImageUrls = snapshot.imageUrls ?? [];
             const baselineFailedCount = snapshot.failedCount ?? 0;
             await fillPromptAndSubmit({
@@ -1983,6 +2184,18 @@ export default function GoogleFlowWebViewRunnerHost({
               productIndex,
               round,
               step,
+              refreshProject: () =>
+                refreshGoogleFlowProject({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  step,
+                  stage: 'waiting_result_refresh',
+                  message: `รีเฟรชหน้า Flow ระหว่างรอผลวิดีโอฉาก ${sceneNumber} (DOM ไม่อัปเดต)`,
+                  expectedMinTiles: knownProjectTileCount,
+                }),
             });
           };
 
@@ -2093,6 +2306,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 message: retryAsSilentVoiceover
                   ? `รีเฟรชหน้า Flow ก่อน retry วิดีโอฉาก ${sceneNumber}/${sceneCount} แบบไม่มีเสียง`
                   : `รีเฟรชหน้า Flow ก่อน retry วิดีโอฉาก ${sceneNumber}/${sceneCount}`,
+                expectedMinTiles: knownProjectTileCount,
               });
 
               const retryConfig = (await runActionWithProductContext(
@@ -2133,6 +2347,8 @@ export default function GoogleFlowWebViewRunnerHost({
           if (!url) {
             throw new Error(`สร้างวิดีโอฉาก ${sceneNumber} แล้วแต่ไม่พบ URL สำหรับดาวน์โหลด`);
           }
+          knownFlowVideoUrls.push(url);
+          knownProjectTileCount += 1;
           const downloadStartedAt = Date.now();
           const downloadPayload = (await runActionOrThrow(
             handle,
@@ -2360,6 +2576,10 @@ export default function GoogleFlowWebViewRunnerHost({
               attempt === 1
                 ? `รีเฟรชหน้า Flow ก่อนตั้งค่า${label}`
                 : `รีเฟรชหน้า Flow ก่อน retry ${label} รอบ ${retryAttempt}`,
+            // ขั้นวิดีโอหลังสร้างรูปในโปรเจกต์เดียวกัน: หลัง reload ต้องเห็นรูปอย่างน้อย 1 tile
+            // ไม่งั้นแปลว่าหน้า stale (รูปที่เพิ่งสร้างยังไม่โผล่ → จะเลือกรูปผิด) ให้ reload ซ้ำ
+            expectedMinTiles:
+              step === 'video' && payload.enabledSteps.includes('image') ? 1 : undefined,
           });
         }
 
@@ -2696,6 +2916,17 @@ export default function GoogleFlowWebViewRunnerHost({
           productIndex,
           round,
           step,
+          refreshProject: () =>
+            refreshGoogleFlowProject({
+              handle,
+              payload,
+              product,
+              productIndex,
+              round,
+              step,
+              stage: 'waiting_result_refresh',
+              message: `รีเฟรชหน้า Flow ระหว่างรอผล${label} (DOM ไม่อัปเดต)`,
+            }),
         });
       };
 

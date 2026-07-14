@@ -33,6 +33,35 @@ export const VIDEO_RESULTS_BODY = `
   var ignoreFailedCount = Math.max(0, Number(args.ignoreFailedCount || args.baselineFailedCount || 0) || 0);
   var itemList = document.querySelector('[data-testid="virtuoso-item-list"]');
 
+  // Flow media URLs are signed (?Expires=...&Signature=...) and the signature
+  // changes across page reloads. Strip ONLY the volatile signing params when
+  // comparing baselines — the identifying part may live in the query itself
+  // (e.g. getMediaUrlRedirect?name=<uuid>), so dropping the whole query would
+  // collapse every image to one key and make new results invisible.
+  function stableMediaKey(value){
+    var u = (value || '').trim();
+    if (u.indexOf('http') !== 0) return u;
+    var q = u.indexOf('?');
+    if (q === -1) return u;
+    var base = u.slice(0, q);
+    var parts = u.slice(q + 1).split('&');
+    var keep = [];
+    for (var p = 0; p < parts.length; p++) {
+      var pname = parts[p].split('=')[0].toLowerCase();
+      if (pname === 'expires' || pname === 'signature' || pname === 'keyname' || pname === 'googleaccessid' || pname === 'token' || pname.indexOf('x-goog') === 0) continue;
+      keep.push(parts[p]);
+    }
+    keep.sort();
+    return keep.length ? base + '?' + keep.join('&') : base;
+  }
+  function buildKeySet(list){
+    var set = {};
+    for (var k = 0; k < list.length; k++) { var key = stableMediaKey(list[k]); if (key) set[key] = true; }
+    return set;
+  }
+  var ignoreKeySet = buildKeySet(ignore);
+  var ignoreImageKeySet = buildKeySet(ignoreImages);
+
   function normalizeMediaUrl(value){
     var src = (value || '').trim();
     if (!src || src.indexOf('data:') === 0) return '';
@@ -96,7 +125,7 @@ export const VIDEO_RESULTS_BODY = `
       for (var i = 0; i < list.length; i++) {
         if (!looksReadyImage(list[i])) continue;
         var src = getImageUrl(list[i]);
-        if (!src || ignoreImages.indexOf(src) !== -1 || seen[src]) continue;
+        if (!src || ignoreImageKeySet[stableMediaKey(src)] || seen[src]) continue;
         seen[src] = true;
         images.push(src);
       }
@@ -262,7 +291,7 @@ export const VIDEO_RESULTS_BODY = `
     // A tile with a resolved video URL that is neither generating nor failed is done.
     if (url) {
       // Skip videos that already existed before this generation (snapshot).
-      if (ignore.indexOf(url) !== -1) continue;
+      if (ignoreKeySet[stableMediaKey(url)]) continue;
       if (result.videos.indexOf(url) === -1) result.videos.push(url);
       result.successCount++;
       continue;
@@ -274,7 +303,7 @@ export const VIDEO_RESULTS_BODY = `
     }
     if (img) {
       var imageUrl = getImageUrl(img);
-      if (imageUrl && ignoreImages.indexOf(imageUrl) === -1) {
+      if (imageUrl && !ignoreImageKeySet[stableMediaKey(imageUrl)]) {
         result.images++;
         result.successCount++;
         continue;

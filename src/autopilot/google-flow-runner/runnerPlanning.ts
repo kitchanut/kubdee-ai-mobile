@@ -50,6 +50,9 @@ export function shouldSkipRefreshAfterFreshProjectOpen({
   projectResult: OpenGoogleFlowProjectResult;
   round: number;
 }): boolean {
+  // ห้ามข้าม refresh ก่อนขั้นเลือกรูปทำวิดีโอ — ถ้าไม่ reload รูปที่เพิ่งสร้างจะไม่ขึ้นเป็น
+  // ตัวเลือกแรกแล้วระบบจะหยิบรูปผิด (ยืนยันโดย user 2026-07-14) ส่วนปัญหา reload
+  // เจอข้อมูล stale ให้แก้ที่ expectedMinTiles ใน refreshGoogleFlowProject (reload ซ้ำจนรูปโผล่)
   return round === 1 && productIndex === 0 && projectResult.entered === true && projectResult.already !== true;
 }
 

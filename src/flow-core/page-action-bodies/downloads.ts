@@ -1,6 +1,26 @@
 export const DOWNLOAD_IMAGES_BODY = `
   var n = Math.max(1, Number(args.count || 1) || 1);
   var ignore = args.ignoreImageUrls || args.ignoreUrls || [];
+  // Signed URL (?Expires/Signature) เปลี่ยนได้หลัง reload — ตัดเฉพาะ param ลายเซ็นตอนเทียบ baseline
+  // ห้ามตัด query ทั้งก้อน เพราะตัวระบุรูปอาจอยู่ใน query เอง (getMediaUrlRedirect?name=<uuid>)
+  function stableMediaKey(value){
+    var u = (value || '').trim();
+    if (u.indexOf('http') !== 0) return u;
+    var q = u.indexOf('?');
+    if (q === -1) return u;
+    var base = u.slice(0, q);
+    var parts = u.slice(q + 1).split('&');
+    var keep = [];
+    for (var p = 0; p < parts.length; p++) {
+      var pname = parts[p].split('=')[0].toLowerCase();
+      if (pname === 'expires' || pname === 'signature' || pname === 'keyname' || pname === 'googleaccessid' || pname === 'token' || pname.indexOf('x-goog') === 0) continue;
+      keep.push(parts[p]);
+    }
+    keep.sort();
+    return keep.length ? base + '?' + keep.join('&') : base;
+  }
+  var ignoreKeySet = {};
+  for (var ig = 0; ig < ignore.length; ig++) { var igKey = stableMediaKey(ignore[ig]); if (igKey) ignoreKeySet[igKey] = true; }
   function normalizeMediaUrl(value){
     var src = (value || '').trim();
     if (!src) return '';
@@ -40,7 +60,7 @@ export const DOWNLOAD_IMAGES_BODY = `
       for (var i = 0; i < images.length; i++) {
         if (!looksGeneratedImage(images[i])) continue;
         var src = normalizeMediaUrl(images[i].currentSrc || images[i].src || images[i].getAttribute('src') || '');
-        if (!src || ignore.indexOf(src) !== -1 || seen[src]) continue;
+        if (!src || ignoreKeySet[stableMediaKey(src)] || seen[src]) continue;
         seen[src] = true;
         urls.push(src);
       }

@@ -405,7 +405,20 @@ export const SUBMIT_BODY = `
   function getPromptText() {
     var el = getPromptElement();
     if (!el) return '';
-    return ((el.value || el.textContent || '') + '').trim();
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return ((el.value || '') + '').trim();
+    // Slate composer: textContent เปล่าๆ จะนับ placeholder ("What do you want to create?")
+    // กับ zero-width char ติดมาด้วย ทำให้ prompt ที่ถูกเคลียร์แล้วอ่านได้ไม่เป็น 0
+    // → clearedPrompt ไม่ทำงาน จึงอ่านเฉพาะ text node จริงของ Slate เท่านั้น
+    var slateStrings = el.querySelectorAll('[data-slate-string]');
+    if (slateStrings.length > 0 || el.querySelector('[data-slate-node]')) {
+      var out = '';
+      for (var s = 0; s < slateStrings.length; s++) out += slateStrings[s].textContent || '';
+      return out.replace(/\\uFEFF/g, '').trim();
+    }
+    var text = ((el.value || el.textContent || '') + '');
+    var placeholder = el.querySelector('[data-slate-placeholder]');
+    if (placeholder && placeholder.textContent) text = text.split(placeholder.textContent).join('');
+    return text.replace(/\\uFEFF/g, '').trim();
   }
   function isDisabled(b) {
     return b.disabled || b.getAttribute('aria-disabled') === 'true' ||
@@ -502,42 +515,29 @@ export const SUBMIT_BODY = `
   }
   if (!method) { btn.click(); method = 'native.click'; }
 
-  await wait(2500);
+  // blur ช่อง prompt หลังกดสร้าง — ซ่อนคีย์บอร์ด Android ที่เด้งขึ้นตอนกรอก
+  // (คีย์บอร์ดค้างทำให้ innerHeight เพี้ยนและบังผลงานบนจอ)
+  try {
+    if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
+  } catch (e) {}
+
+  // รอ Flow auto-clear prompt เอง = สัญญาณว่า submit ลงจริง — poll แทน fixed wait เพื่อจับได้เร็ว
+  // และเผื่อ submit ช้า. **ไม่กดปุ่ม "Clear prompt" เอง** เพราะเสี่ยง race: ถ้า submit ยังไม่ลง
+  // การล้าง prompt จะทำข้อมูลหายก่อน submit จริง — ถ้า submit ไม่ลง caller จะ retype+submit ซ้ำเอง
+  // (fillPrompt ล้าง prompt เก่าก่อนกรอกใหม่อยู่แล้ว จึงไม่ต้องล้างเองที่นี่)
   var lenAfter = getPromptText().length;
-  var clearedPrompt = lenBefore > 0 && lenAfter === 0;
-  if (!clearedPrompt && lenAfter > 0) {
-    setStatus('prompt ยังไม่ถูก clear หลัง submit กำลังลองกด Clear prompt...', 'info');
-    var clearBtn = null;
-    var clearButtons = Array.prototype.slice.call(document.querySelectorAll('button'));
-    for (var cb = 0; cb < clearButtons.length; cb++) {
-      var clearCandidate = clearButtons[cb];
-      if (clearCandidate.closest('[role="menu"]') || clearCandidate.closest('nav')) continue;
-      var clearSpan = clearCandidate.querySelector('span');
-      var clearIcon = clearCandidate.querySelector('i');
-      var spanText = ((clearSpan && clearSpan.textContent) || '').trim().toLowerCase();
-      var iconText = ((clearIcon && clearIcon.textContent) || '').trim().toLowerCase();
-      var buttonText = (clearCandidate.textContent || '').trim().toLowerCase();
-      var isClearPrompt =
-        iconText === 'close' &&
-        (spanText.indexOf('clear prompt') !== -1 ||
-          buttonText.indexOf('clear prompt') !== -1 ||
-          buttonText.indexOf('ล้าง prompt') !== -1 ||
-          buttonText.indexOf('ล้างพรอมป์') !== -1);
-      if (isClearPrompt && !isDisabled(clearCandidate)) {
-        clearBtn = clearCandidate;
-        break;
-      }
-    }
-    if (clearBtn) {
-      await wait(3000);
-      clearBtn.click();
-      await wait(500);
-      lenAfter = getPromptText().length;
-      clearedPrompt = lenAfter === 0;
-      setStatus(clearedPrompt ? 'Clear prompt หลัง submit สำเร็จ' : 'กด Clear prompt แล้ว แต่ยังมีข้อความค้างอยู่', clearedPrompt ? 'success' : 'warning');
-    }
+  var clearedPrompt = false;
+  for (var clearWait = 0; clearWait < 7; clearWait++) {
+    await wait(500);
+    lenAfter = getPromptText().length;
+    if (lenBefore > 0 && lenAfter === 0) { clearedPrompt = true; break; }
   }
-  setStatus('กดปุ่มสร้างแล้ว (' + method + ')', 'success');
+  setStatus(
+    clearedPrompt
+      ? ('กดปุ่มสร้างแล้ว (' + method + ') — prompt auto-clear = submit ลงแล้ว')
+      : ('กดปุ่มสร้างแล้ว (' + method + ') — prompt ยังไม่ auto-clear ปล่อยให้ caller ตรวจ/ลองซ้ำ'),
+    clearedPrompt ? 'success' : 'info'
+  );
   return { method: method, clearedPrompt: clearedPrompt, lenBefore: lenBefore, lenAfter: lenAfter };
 `;
 

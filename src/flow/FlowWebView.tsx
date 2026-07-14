@@ -53,10 +53,51 @@ export function getFlowLanguageIssue(url: string | null | undefined): FlowLangua
   }
 }
 
-// Pretend to be real mobile Chrome (NO "; wv" token) so Google's WebView sign-in
+// Pretend to be real DESKTOP Chrome (NO "; wv" token) so Google's WebView sign-in
 // block ("this browser may not be secure") does not trigger.
-const CHROME_MOBILE_UA =
-  'Mozilla/5.0 (Linux; Android 14; SM-A075F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36';
+// ตั้งแต่ 2026-07-14 Flow เวอร์ชันใหม่ของ Google crash ทั้งหน้าเมื่อเสิร์ฟ mobile
+// experience (TypeError: reading 'service' ในหน้า project) — ยืนยันด้วย CDP บนเครื่องจริง:
+// UA mobile = Application error ทุกครั้ง, UA desktop = render ปกติใน WebView เดียวกัน
+// จึงต้องใช้ desktop UA เพื่อให้ Google เสิร์ฟ desktop experience ที่ไม่พัง
+const CHROME_DESKTOP_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
+
+// บังคับ viewport เป็นความกว้างจอคอม (1280px) ให้ Flow เรนเดอร์เหมือนเปิดบน desktop จริง
+// ทุกมิติ ไม่ใช่แค่ UA — layout/พฤติกรรม refresh ของ Flow จะตรงกับที่ desktop app ใช้แล้วเวิร์ค
+// (Next.js อาจเขียน meta viewport ทับหลัง hydrate จึงต้องคอยบังคับซ้ำช่วงแรกของทุก page load)
+const FORCE_DESKTOP_VIEWPORT_JS = `
+(function () {
+  try {
+    if (window.__kbDesktopViewportLocked) return;
+    window.__kbDesktopViewportLocked = true;
+    // บังคับเฉพาะหน้า labs.google — หน้า login (accounts.google.com) คง viewport มือถือปกติ
+    if (window.location.hostname !== 'labs.google') return;
+    // user-scalable=no กัน Android auto-zoom ตอน focus ช่อง prompt (zoom แล้วไม่คืน)
+    var content = 'width=1280, user-scalable=no';
+    function applyViewport() {
+      var meta = document.querySelector('meta[name="viewport"]');
+      if (!meta) {
+        if (!document.head) return;
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'viewport');
+        document.head.appendChild(meta);
+      }
+      if (meta.getAttribute('content') !== content) meta.setAttribute('content', content);
+    }
+    applyViewport();
+    // ทับทันทีที่ Next.js เขียน meta viewport กลับ — ห้ามใช้ interval เพราะจอจะ
+    // กระพริบสลับขนาดคอม/มือถือ (observer ทับก่อน paint จึงไม่เห็นการกระพริบ)
+    var observer = new MutationObserver(applyViewport);
+    function observeHead() {
+      if (!document.head) return false;
+      observer.observe(document.head, { childList: true, subtree: true, attributes: true, attributeFilter: ['content', 'name'] });
+      return true;
+    }
+    if (!observeHead()) document.addEventListener('DOMContentLoaded', observeHead);
+  } catch (e) {}
+})();
+true;
+`;
 
 // Runs in the page after each document load. Detects whether Google Flow is
 // signed in (dashboard has a "New project" button), logged out (marketing CTA),
@@ -271,7 +312,7 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
     <WebView
       ref={innerRef}
       source={{ uri: FLOW_URL }}
-      userAgent={CHROME_MOBILE_UA}
+      userAgent={CHROME_DESKTOP_UA}
       javaScriptEnabled
       domStorageEnabled
       thirdPartyCookiesEnabled
@@ -280,7 +321,8 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
       webviewDebuggingEnabled={FLOW_WEBVIEW_DEBUG_ENABLED}
       originWhitelist={['https://*', 'http://*']}
       setSupportMultipleWindows={false}
-      injectedJavaScript={`window.__kbFlowAccountProbeEnabled = ${accountProbeEnabled ? 'true' : 'false'};\n${STATUS_JS}`}
+      injectedJavaScriptBeforeContentLoaded={FORCE_DESKTOP_VIEWPORT_JS}
+      injectedJavaScript={`${FORCE_DESKTOP_VIEWPORT_JS}\nwindow.__kbFlowAccountProbeEnabled = ${accountProbeEnabled ? 'true' : 'false'};\n${STATUS_JS}`}
       onNavigationStateChange={(navState) => onNavigationChange?.(navState.url)}
       onMessage={(event: WebViewMessageEvent) => {
         try {

@@ -273,6 +273,106 @@ export const PREPARE_PROJECT_UI_BODY = `
     }
     return null;
   }
+  // เมนู View Settings (ฟันเฟืองขวาบน) เป็น Radix dropdown menu — ยิง event ต้องใส่
+  // pointerId/isPrimary ไม่งั้น Radix ไม่รับ และตัดสินเปิด/ปิดจาก aria-expanded ของปุ่ม
+  // (deterministic — พิสูจน์ด้วย CDP บนเครื่องจริง 2026-07-14)
+  function firePointerClick(el){
+    try {
+      var rect = el.getBoundingClientRect();
+      var opts = { bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0, pointerId: 1, isPrimary: true };
+      try { el.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch (e) {}
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      try { el.dispatchEvent(new PointerEvent('pointerup', opts)); } catch (e) {}
+      el.dispatchEvent(new MouseEvent('mouseup', opts));
+      el.dispatchEvent(new MouseEvent('click', opts));
+    } catch (e) {
+      try { el.click(); } catch (e2) {}
+    }
+  }
+  function findViewSettingsGear(){
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('button'));
+    for (var i = 0; i < buttons.length; i += 1) {
+      var icon = buttons[i].querySelector('i');
+      if (icon && (icon.textContent || '').trim() === 'settings_2' && isVisible(buttons[i])) return buttons[i];
+    }
+    return null;
+  }
+  function findViewModeContent(gear){
+    var controlsId = gear ? gear.getAttribute('aria-controls') : '';
+    if (controlsId) {
+      var byId = document.getElementById(controlsId);
+      if (byId && ((byId.innerText || '') + '').indexOf('View Mode') !== -1) return byId;
+    }
+    var containers = Array.prototype.slice.call(document.querySelectorAll('[role="menu"], [role="dialog"]'));
+    for (var i = 0; i < containers.length; i += 1) {
+      if (((containers[i].innerText || '') + '').indexOf('View Mode') !== -1) return containers[i];
+    }
+    return null;
+  }
+  function gearExpanded(gear){
+    return gear && gear.getAttribute('aria-expanded') === 'true';
+  }
+  async function setGearExpanded(targetOpen){
+    for (var attempt = 0; attempt < 3; attempt += 1) {
+      var gear = findViewSettingsGear();
+      if (!gear) return null;
+      if (gearExpanded(gear) === targetOpen) return gear;
+      firePointerClick(gear);
+      for (var w = 0; w < 4; w += 1) {
+        await waitLocal(350);
+        gear = findViewSettingsGear();
+        if (gear && gearExpanded(gear) === targetOpen) return gear;
+      }
+    }
+    return findViewSettingsGear();
+  }
+  async function ensureGridViewMode(){
+    // Flow UI ใหม่ (2026-07) มี View Mode: Grid | Batch — automation ต้องใช้ Grid
+    // ไม่งั้น tile ผลงานไม่แสดงแบบที่ selector คาดหวัง (user ยืนยัน 2026-07-14)
+    // ทำครั้งเดียวตอนเข้าโปรเจกต์ครั้งแรกพอ (จำใน localStorage) — prepareProjectUi
+    // ถูกเรียกซ้ำทุก reload ถ้าเช็คทุกรอบจะเปิดเมนูรัวและ log เตือนถี่โดยไม่จำเป็น
+    var gridDoneKey = 'kb_grid_view_done';
+    try {
+      var pm = ((window.location.pathname || '') + '').match(/\/project\/([0-9a-f-]+)/i);
+      if (pm && pm[1]) gridDoneKey = 'kb_grid_view_done_' + pm[1];
+    } catch (e) {}
+    try {
+      if (window.localStorage && window.localStorage.getItem(gridDoneKey) === '1') {
+        return { success: true, skipped: true, alreadyDone: true };
+      }
+    } catch (e) {}
+    if (!findViewSettingsGear()) return { success: true, skipped: true };
+    var gear = await setGearExpanded(true);
+    var content = gear && gearExpanded(gear) ? findViewModeContent(gear) : null;
+    if (!content) {
+      setStatus('เปิดเมนู View Settings ไม่สำเร็จ ข้ามการตั้ง Grid view', 'warning');
+      await setGearExpanded(false);
+      return { success: true, skipped: true, error: 'view_settings_menu_not_opened' };
+    }
+    var gridBtn = null;
+    var candidates = Array.prototype.slice.call(content.querySelectorAll('button, [role="menuitem"], [role="menuitemradio"], [role="radio"], [role="tab"]'));
+    for (var c = 0; c < candidates.length; c += 1) {
+      var text = ((candidates[c].textContent || '') + '').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (text === 'grid' || text === 'dashboardgrid' || text === 'dashboard grid') {
+        gridBtn = candidates[c];
+        break;
+      }
+    }
+    if (gridBtn) {
+      firePointerClick(gridBtn);
+      await waitLocal(600);
+      setStatus('ตั้งมุมมองผลงานเป็น Grid แล้ว', 'success');
+    } else {
+      setStatus('ไม่พบปุ่ม Grid ในเมนู View Settings', 'warning');
+    }
+    // เปิดเมนูเห็นสถานะจริงแล้ว บันทึกว่าจัดการโปรเจกต์นี้แล้ว ไม่ต้องเช็คซ้ำอีก
+    try {
+      if (window.localStorage) window.localStorage.setItem(gridDoneKey, '1');
+    } catch (e) {}
+    await setGearExpanded(false);
+    return { success: true, gridClicked: !!gridBtn };
+  }
+
   async function ensureAgentOff(){
     var btn = findAgentButton();
     if (!btn) return { success: true, changed: false };
@@ -302,11 +402,17 @@ export const PREPARE_PROJECT_UI_BODY = `
   }
   var closeResult = await closeAgentPanelIfOpen();
   var agentResult = await ensureAgentOff();
+  var gridResult = { success: true };
+  if (isFlowProjectPage()) {
+    gridResult = await ensureGridViewMode();
+  }
   return {
-    success: closeResult.success && agentResult.success,
+    success: closeResult.success && agentResult.success && gridResult.success,
     closedPanel: closeResult.closed,
     disabledAgent: agentResult.changed,
+    gridClicked: gridResult.gridClicked,
     closeError: closeResult.error,
-    agentError: agentResult.error
+    agentError: agentResult.error,
+    gridError: gridResult.error
   };
 `;
