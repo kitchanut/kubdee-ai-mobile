@@ -317,16 +317,36 @@ internal fun KubdeeAccessibilityService.waitForShopeeShareSheetVisible(timeoutMs
     return false
   }
 
+// รอจนแผงแชร์ "หายจริง" — Shopee ปิดแผงแบบมีอนิเมชัน ระยะเวลาไม่คงที่ตามเครื่อง/โหลด
+internal fun KubdeeAccessibilityService.waitForShopeeShareSheetGone(timeoutMs: Long): Boolean {
+    val start = System.currentTimeMillis()
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      checkStopRequested()
+      if (!isShopeeShareSheetVisible()) return true
+      sleepStep(250L)
+    }
+    return false
+  }
+
 internal fun KubdeeAccessibilityService.closeShopeeShareSheet(): Boolean {
     if (!isShopeeShareSheetVisible()) return true
-    if (tapShopeeShareDrawerClose()) {
-      sleepStep(650L)
-      return true
+
+    // ⚠️ tapShopeeShareDrawerClose() = "กดปุ่มติด" ไม่ใช่ "แผงปิดแล้ว" ต้องรอจนหายจริง
+    // และบางครั้งกดครั้งเดียวไม่ปิด (ยืนยันด้วยตาบนเครื่องจริง) -> กดปุ่ม X ซ้ำก่อน อย่ารีบไป back
+    // เพราะ X ปิดได้เฉพาะชั้นแผงแชร์ ส่วน back ปิดอะไรก็ได้ที่อยู่บนสุด ถ้าแผงปิดไปแล้ว back จะไป
+    // กินหน้ารายการถูกใจแทน ทำให้หลุดออกไปถึงหน้า "ฉัน" แล้ววิ่งไปหาเมนูถูกใจใหม่ทั้งรอบ
+    repeat(3) { attempt ->
+      if (!tapShopeeShareDrawerClose()) return@repeat
+      if (waitForShopeeShareSheetGone(timeoutMs = 1_800L)) return true
+      logStep("กดปิดแผ่นแชร์ครั้งที่ ${attempt + 1}/3 แล้วยังไม่หาย")
     }
-    logStep("ปิดแผ่นแชร์ด้วยปุ่ม back")
-    val closed = performBack()
-    sleepStep(850L)
-    return closed || !isShopeeShareSheetVisible()
+
+    // ทางสุดท้ายจริงๆ: หาปุ่ม X ไม่เจอ หรือกดครบ 3 ครั้งแล้วยังปิดไม่ได้
+    logStep("ปิดแผ่นแชร์ด้วยปุ่ม back (ทางสุดท้าย)")
+    performBack()
+    if (waitForShopeeShareSheetGone(timeoutMs = 2_000L)) return true
+    logStep("ปิดแผ่นแชร์ไม่สำเร็จ แผงยังค้างอยู่")
+    return false
   }
 
 internal fun KubdeeAccessibilityService.tapShopeeShareDrawerClose(): Boolean {

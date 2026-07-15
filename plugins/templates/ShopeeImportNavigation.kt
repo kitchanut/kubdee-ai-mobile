@@ -708,6 +708,18 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
 
     for (round in 1..maxRounds) {
       checkStopRequested()
+      // การปิดแผงแชร์/แกลเลอรีรูปกด back ได้ถึง 4 ครั้งต่อสินค้า ถ้าเกินไปหนึ่งครั้งจะหลุดจาก
+      // มุมมองพาร์ทเนอร์ไปโผล่หน้าถูกใจแบบผู้ซื้อ ซึ่ง isShopeeImportListVisible() นับว่า "อยู่หน้า
+      // รายการ" เหมือนกัน (มันเป็น OR ของทั้ง 3 มุมมอง) จึงไม่มีอะไรจับได้ แล้วรอบถัดไปจะสแกน
+      // การ์ดจากมุมมองผิด -> ยืนยันมุมมองก่อนสแกนทุกรอบ เหมือนที่ฝั่งผู้ซื้อมี lostLikedList กันไว้
+      if (!isShopeePartnerLikedViewVisible()) {
+        logStep("หลุดจากมุมมองพาร์ทเนอร์ (รอบ $round) กำลังสลับกลับ")
+        if (!switchToShopeePartnerLikedView()) {
+          logStep("สลับกลับมุมมองพาร์ทเนอร์ไม่สำเร็จ หยุดเพื่อไม่ดึงสินค้าจากหน้าผิด")
+          break
+        }
+        sleepStep(1_200L)
+      }
       val visibleProducts = scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED)
 
       // Stop at the "คุณอาจจะชอบสิ่งนี้" recommendation section — those are suggestions, not the

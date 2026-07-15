@@ -843,6 +843,17 @@ class KubdeeAccessibilityService : AccessibilityService() {
 
         for (round in 1..maxRounds) {
           checkStopRequested()
+          // เหมือนฝั่งพาร์ทเนอร์: ปิดแผงแชร์/แกลเลอรีกด back ได้ถึง 4 ครั้งต่อสินค้า เกินมาหนึ่งครั้ง
+          // ก็หลุดจากหน้าข้อเสนอแล้ว แต่ isShopeeImportListVisible() เป็น OR ของทั้ง 3 มุมมองจึงไม่จับ
+          // ถ้าหลุดต้องเปิดหน้าข้อเสนอ + เลือกหมวดเดิมใหม่ ไม่งั้นจะดึงจากหมวด default โดยไม่รู้ตัว
+          if (!isShopeeAffiliateOfferPageVisible()) {
+            logStep("หลุดจากหน้าข้อเสนอ (รอบ $round) กำลังกลับเข้าหมวด $normalizedOfferCategory")
+            if (!openShopeeAffiliateOfferPage() || !selectShopeeAffiliateOfferCategory(normalizedOfferCategory)) {
+              logStep("กลับเข้าหน้าข้อเสนอไม่สำเร็จ หยุดเพื่อไม่ดึงสินค้าจากหน้าผิด")
+              break
+            }
+            sleepStep(1_200L)
+          }
           val visibleProducts = scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_OFFERS)
           var added = 0
           for (candidate in visibleProducts) {
