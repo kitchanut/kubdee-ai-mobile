@@ -308,7 +308,7 @@ internal fun KubdeeAccessibilityService.buildProductCandidateFromPriceNode(
   val price = normalizePrice(priceNode.text) ?: return null
   val columnWidth = shopeeLikedColumnWidth(screen)
   val nameMatches = productTextNodes.mapNotNull { nameNode ->
-    val name = cleanNodeText(nameNode.text)
+    val name = cleanShopeeProductName(nameNode.text)
     val gap = priceNode.bounds.top - nameNode.bounds.bottom
     if (gap < -20 || gap > 340) return@mapNotNull null
     if (!isSameShopeeLikedProductColumn(nameNode.bounds, priceNode.bounds, columnWidth)) {

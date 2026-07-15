@@ -1244,7 +1244,7 @@ internal fun KubdeeAccessibilityService.buildShopeePartnerOfferCandidate(
       }
       .minWithOrNull(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
       ?: return null
-    val name = cleanShopeePartnerProductName(nameNode.text).take(180)
+    val name = cleanShopeeProductName(nameNode.text).take(180)
     if (name.length < 5) return null
 
     val price = findPriceNodes(rowTexts).minByOrNull { it.bounds.top }?.text?.let { normalizePrice(it) }
@@ -1324,7 +1324,7 @@ internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidate(
       }
       .minWithOrNull(compareBy<TextNode> { it.bounds.top }.thenBy { it.bounds.left })
       ?: return null
-    val name = cleanShopeePartnerProductName(nameNode.text).take(180)
+    val name = cleanShopeeProductName(nameNode.text).take(180)
     if (name.length < 5) return null
 
     val price = findPriceNodes(rowTexts).minByOrNull { it.bounds.top }?.text?.let { normalizePrice(it) }
@@ -1503,7 +1503,7 @@ internal fun KubdeeAccessibilityService.buildShopeeAffiliateOfferGridCandidateFr
       priceBounds = priceNode.bounds,
       screen = screen
     ) ?: return null
-    val name = cleanShopeePartnerProductName(nameNode.text).take(180)
+    val name = cleanShopeeProductName(nameNode.text).take(180)
     if (name.length < 5) return null
 
     val productUrl = cardTexts.firstNotNullOfOrNull { extractUrl(it.text) }
@@ -1667,7 +1667,7 @@ internal fun KubdeeAccessibilityService.buildShopeePartnerLikedRowCandidate(
       priceBounds = priceNode.bounds,
       screen = screen
     ) ?: return null
-    val name = cleanShopeePartnerProductName(nameNode.text).take(180)
+    val name = cleanShopeeProductName(nameNode.text).take(180)
     if (name.length < 5) return null
 
     val shareBounds = findShopeePartnerLikedRowShareBounds(
@@ -1798,7 +1798,7 @@ internal fun KubdeeAccessibilityService.findShopeeAffiliateOfferGridNameNode(
   ): TextNode? =
     cardTexts
       .mapNotNull { node ->
-        val text = cleanShopeePartnerProductName(node.text)
+        val text = cleanShopeeProductName(node.text)
         val gap = priceBounds.top - node.bounds.bottom
         if (
           gap < -24 ||
@@ -2035,7 +2035,7 @@ internal fun KubdeeAccessibilityService.findShopeePartnerDetailTapBounds(
     )
   }
 internal fun KubdeeAccessibilityService.isShopeePartnerProductNameCandidate(text: String): Boolean {
-    val clean = cleanShopeePartnerProductName(text)
+    val clean = cleanShopeeProductName(text)
     if (!isProductNameCandidate(clean)) return false
     val compact = clean.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)
     val blocked = listOf(
@@ -2061,5 +2061,7 @@ internal fun KubdeeAccessibilityService.isShopeePartnerProductNameCandidate(text
     )
     return blocked.none { compact.contains(it.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT)) }
   }
-internal fun KubdeeAccessibilityService.cleanShopeePartnerProductName(text: String): String =
-    cleanNodeText(text).replace(Regex("""^0(?=\p{L})"""), "").trim()
+// การ์ดสินค้าของ Shopee มี badge ตัวเลข (เช่น "0") วางทับหน้าชื่อสินค้า ทั้งมุมมองพาร์ทเนอร์
+// และมุมมองผู้ซื้อ — ตัดทิ้งทั้งแบบติดกัน ("0CIVAGO") และแบบมีช่องว่างคั่น ("0 CIVAGO")
+internal fun KubdeeAccessibilityService.cleanShopeeProductName(text: String): String =
+    cleanNodeText(text).replace(Regex("""^0[\s ]*(?=\p{L})"""), "").trim()

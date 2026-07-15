@@ -1320,10 +1320,13 @@ internal fun KubdeeAccessibilityService.containsShopeeProductLinkText(
   shouldContinue: () -> Boolean
 ): Boolean {
   if (node == null || !shouldContinue()) return false
+  // เช็ค text/contentDescription แยกกัน — งานนี้คือ "ค้นหา" ลิงก์ในโหนด ไม่ใช่ "อ่านค่า" มาใช้
+  // readNodeText เลือกฝั่งที่ยาวกว่า ซึ่งอาจเป็นคำอธิบายยาวๆ ที่ไม่มีลิงก์ ทำให้การ์ดสินค้าหลุด
+  val linkTexts = listOfNotNull(node.text?.toString(), node.contentDescription?.toString())
   if (
     node.isVisibleToUser &&
     isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE) &&
-    looksLikeShopeeProductLinkText(readNodeText(node), productUrl)
+    linkTexts.any { looksLikeShopeeProductLinkText(it, productUrl) }
   ) {
     return true
   }

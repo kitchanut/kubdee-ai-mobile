@@ -94,6 +94,12 @@ function isLikelyShopeeProduct(product: ProfileAwareShopeeProduct): boolean {
     return false;
   }
 
+  // แบนเนอร์โปรโมชั่น เช่น "โปรโมชั่นลูกค้าที่คิดถึง ลด 92%" ไม่ใช่สินค้า
+  // ห้ามใช้แค่ 'ลด' เพราะชื่อสินค้าจริงมีคำนี้ได้ (ลดราคา, ครีมลดสิว)
+  if (/^โปรโมชั่น/.test(name)) return false;
+  // "ลด NN%" ในข้อความสั้นๆ = badge ส่วนลด ส่วนชื่อสินค้าจริงที่มีส่วนลดจะยาวกว่านี้เสมอ
+  if (/(^|\s)ลด\s*\d{1,3}\s*%/.test(name) && name.length < 40) return false;
+
   return /[ก-๙A-Za-z]/.test(name);
 }
 

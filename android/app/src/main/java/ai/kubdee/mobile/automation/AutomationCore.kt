@@ -594,14 +594,18 @@ internal fun KubdeeAccessibilityService.isBlockedEditableNode(node: Accessibilit
     return true
   }
 
-  val text = cleanNodeText(readNodeText(node))
+  // อ่าน text/contentDescription แยกกันตรงๆ — readNodeText เลือกฝั่งที่ยาวกว่า ซึ่งอาจเป็นป้าย
+  // อย่าง "Address and search bar" แทน URL สั้นๆ ใน text ทำให้ช่อง URL หลุดการบล็อก
+  val texts = listOfNotNull(node.text?.toString(), node.contentDescription?.toString())
+    .map { cleanNodeText(it) }
   val bounds = Rect()
   node.getBoundsInScreen(bounds)
   val screen = screenBounds(rootInActiveWindow)
   return bounds.top <= screen.top + (screen.height() * 0.24f).toInt() &&
     (
-      text.startsWith("http://", ignoreCase = true) ||
-        text.startsWith("https://", ignoreCase = true) ||
+      texts.any { text ->
+        text.startsWith("http://", ignoreCase = true) || text.startsWith("https://", ignoreCase = true)
+      } ||
         resourceId.contains("location")
     )
 }

@@ -1010,14 +1010,25 @@ export default function ProductPanel({
     );
   }, [customShopeeImportAmount, runShopeeImport, shopeeImportAmount, shopeeImportSource, shopeeLikedViewMode, shopeeOfferCategory]);
 
+  // "ทั้งหมด" รองรับเฉพาะ "ถูกใจ" + มุมมองผู้ซื้อ เท่านั้น
+  // มุมมองพาร์ทเนอร์ใช้ native source 'partner_liked' ซึ่งไม่รองรับ sentinel ทั้งหมด (maxRounds 240)
+  const supportsShopeeImportAll = shopeeImportSource === 'liked' && shopeeLikedViewMode === 'buyer';
+
   const shopeeImportAmountOptions = useMemo(
-    () => SHOPEE_IMPORT_AMOUNT_OPTIONS.filter((option) => shopeeImportSource === 'liked' || option.value !== 'all'),
-    [shopeeImportSource]
+    () => SHOPEE_IMPORT_AMOUNT_OPTIONS.filter((option) => supportsShopeeImportAll || option.value !== 'all'),
+    [supportsShopeeImportAll]
   );
 
   const selectShopeeImportSource = useCallback((source: ShopeeImportSource): void => {
     setShopeeImportSource(source);
-    if (source !== 'liked' && shopeeImportAmount === 'all') {
+    if (!(source === 'liked' && shopeeLikedViewMode === 'buyer') && shopeeImportAmount === 'all') {
+      setShopeeImportAmount(50);
+    }
+  }, [shopeeImportAmount, shopeeLikedViewMode]);
+
+  const selectShopeeLikedViewMode = useCallback((viewMode: ShopeeLikedViewMode): void => {
+    setShopeeLikedViewMode(viewMode);
+    if (viewMode !== 'buyer' && shopeeImportAmount === 'all') {
       setShopeeImportAmount(50);
     }
   }, [shopeeImportAmount]);
@@ -1563,13 +1574,13 @@ export default function ProductPanel({
                       active={shopeeLikedViewMode === 'buyer'}
                       fitContent
                       label="มุมมองผู้ซื้อ"
-                      onPress={() => setShopeeLikedViewMode('buyer')}
+                      onPress={() => selectShopeeLikedViewMode('buyer')}
                     />
                     <ShopeeImportOptionButton
                       active={shopeeLikedViewMode === 'partner'}
                       fitContent
                       label="มุมมองพาร์ทเนอร์"
-                      onPress={() => setShopeeLikedViewMode('partner')}
+                      onPress={() => selectShopeeLikedViewMode('partner')}
                     />
                   </View>
                   <Text className="text-kd-caption text-kd-text-subtle">

@@ -156,6 +156,11 @@ internal val SHOPEE_PRODUCT_DETAIL_MARKERS = listOf(
 )
 
 internal val PRICE_REGEX = Regex("""(?:฿|B)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)""")
+// ราคาบนหน้า detail ของ Shopee มีหลายก้อน — ราคาผ่อนต่อเดือน ราคาต่อชิ้นของเซ็ต ฯลฯ
+// ก้อนพวกนี้ไม่ใช่ราคาสินค้าจริง ใช้ข้อความรอบๆ คัดออก
+internal val SHOPEE_UNIT_PRICE_TEXT_REGEX = Regex("""ผ่อน|เดือน|/ชิ้น|ต่อชิ้น|x\s*\d+""", RegexOption.IGNORE_CASE)
+// ระยะแนวตั้ง (px) ที่ถือว่าข้อความอย่าง "ผ่อน"/"x10 เดือน" เป็นป้ายกำกับของราคาก้อนนั้น
+internal const val SHOPEE_UNIT_PRICE_LABEL_GAP_PX = 40
 internal val PRICE_NUMBER_REGEX = Regex("""^[0-9][0-9,]*(?:\.[0-9]{1,2})?$""")
 internal val STOCK_REGEX = Regex("""(?:ขายแล้ว|stock|สต็อก|คงเหลือ)\s*([0-9,]+)|([0-9,]+)\s*(?:ชิ้น|sold)""", RegexOption.IGNORE_CASE)
 internal val URL_REGEX = Regex("""https?://[^\s]+""", RegexOption.IGNORE_CASE)

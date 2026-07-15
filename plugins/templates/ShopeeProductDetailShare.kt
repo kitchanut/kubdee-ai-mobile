@@ -424,15 +424,86 @@ internal fun KubdeeAccessibilityService.dismissShopeeNoProductDialog(): Boolean 
   return backed
 }
 
+// หน้า detail มีราคาหลายก้อน (ราคาผ่อนต่อเดือน ราคาชุด ราคาสินค้าที่คล้ายกัน) การกวาดทั้งหน้าแล้ว
+// หยิบก้อนแรกตามลำดับ DFS จึงได้ราคามั่ว — ยึด resource id ของบล็อกราคาจริง (sectionProductPrice)
+// เป็นหลัก แล้วค่อยถอยไปกวาดช่วงกลางหน้าเมื่อไม่มี anchor
 internal fun KubdeeAccessibilityService.findShopeeDetailPrice(): String? {
   val root = rootInActiveWindow ?: return null
   val textNodes = mutableListOf<TextNode>()
   collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
   val screen = screenBounds(root)
-  val candidates = textNodes.filter { node ->
+
+  val priceSection = findShopeeDetailPriceSectionNode(root)
+  if (priceSection != null) {
+    val sectionNodes = mutableListOf<TextNode>()
+    collectTextNodes(priceSection, sectionNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    if (sectionNodes.isEmpty()) {
+      // บางบิลด์ sectionProductPrice เป็นกล่องเปล่า ตัวเลขราคาถูกวาดโดยโหนดที่ไม่ใช่ลูกโดยตรง
+      val sectionBounds = Rect()
+      priceSection.getBoundsInScreen(sectionBounds)
+      if (sectionBounds.width() > 0 && sectionBounds.height() > 0) {
+        sectionNodes += textNodes.filter { node -> sectionBounds.contains(node.bounds.centerX(), node.bounds.centerY()) }
+      }
+    }
+    val sectionPrice = pickShopeeDetailPriceNode(sectionNodes, textNodes)
+    if (sectionPrice != null) {
+      val price = normalizePrice(sectionPrice.text)
+      if (price != null) {
+        logStep("ราคาสินค้า: อ่านจากบล็อกราคา sectionProductPrice ได้ ฿$price")
+        return price
+      }
+    }
+    logStep("ราคาสินค้า: เจอบล็อกราคา sectionProductPrice แต่อ่านตัวเลขไม่ได้ -> กวาดช่วงกลางหน้าแทน")
+  } else {
+    logStep("ราคาสินค้า: ไม่พบบล็อกราคา sectionProductPrice -> กวาดช่วงกลางหน้าแทน")
+  }
+
+  val bandNodes = textNodes.filter { node ->
     node.bounds.top in (screen.top + (screen.height() * 0.25f).toInt())..(screen.top + (screen.height() * 0.78f).toInt())
   }
-  return findPriceNodes(candidates).firstOrNull()?.text?.let { normalizePrice(it) }
+  val bandPrice = pickShopeeDetailPriceNode(bandNodes, textNodes)?.text?.let { normalizePrice(it) }
+  if (bandPrice != null) {
+    logStep("ราคาสินค้า: อ่านจากช่วงกลางหน้า detail ได้ ฿$bandPrice")
+  } else {
+    logStep("ราคาสินค้า: อ่านจากหน้า detail ไม่ได้ -> ใช้ราคาจากการ์ดสินค้า")
+  }
+  return bandPrice
+}
+
+// เลือกราคาบนสุดของขอบเขตที่ให้มา หลังคัดก้อนราคาผ่อน/ราคาต่อชิ้นออกแล้ว
+// (ราคาจริงของ Shopee อยู่บนสุดของบล็อกเสมอ ส่วนราคาผ่อน/ต่อชิ้นห้อยอยู่ใต้หรือข้างๆ)
+internal fun KubdeeAccessibilityService.pickShopeeDetailPriceNode(
+  scopedNodes: List<TextNode>,
+  allTextNodes: List<TextNode>
+): TextNode? {
+  val prices = findPriceNodes(scopedNodes)
+  if (prices.isEmpty()) return null
+  val withoutUnitPrices = prices.filterNot { priceNode -> isShopeeUnitPriceNode(priceNode, allTextNodes) }
+  // ถ้าตัวกรองคัดออกหมด (เช่น แบนเนอร์ "ผ่อน 0%" แปะชิดราคาจริง) อย่าทิ้งราคาไปเฉยๆ —
+  // ราคาบนสุดของขอบเขตยังเป็นคำตอบที่ดีที่สุดเท่าที่มี
+  return (withoutUnitPrices.ifEmpty { prices }).minByOrNull { it.bounds.top }
+}
+
+// ราคาผ่อน/ราคาต่อชิ้นมีป้ายกำกับ ("ผ่อน", "x10 เดือน", "/ชิ้น") อยู่ในตัวเองหรือชิดกันในแนวตั้ง
+internal fun KubdeeAccessibilityService.isShopeeUnitPriceNode(
+  priceNode: TextNode,
+  allTextNodes: List<TextNode>
+): Boolean {
+  if (SHOPEE_UNIT_PRICE_TEXT_REGEX.containsMatchIn(priceNode.text)) return true
+  return allTextNodes.any { node ->
+    node.bounds != priceNode.bounds &&
+      SHOPEE_UNIT_PRICE_TEXT_REGEX.containsMatchIn(node.text) &&
+      verticalGap(priceNode.bounds, node.bounds) <= SHOPEE_UNIT_PRICE_LABEL_GAP_PX
+  }
+}
+
+internal fun KubdeeAccessibilityService.findShopeeDetailPriceSectionNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+  if (node == null) return null
+  if (node.viewIdResourceName.orEmpty().endsWith("sectionProductPrice", ignoreCase = true)) return node
+  for (index in 0 until node.childCount) {
+    findShopeeDetailPriceSectionNode(node.getChild(index))?.let { return it }
+  }
+  return null
 }
 
 internal fun KubdeeAccessibilityService.findShopeeDetailImageUrl(): String? {
@@ -485,12 +556,7 @@ internal fun KubdeeAccessibilityService.findShopeeDetailImageResourceUrl(root: A
 
 internal fun KubdeeAccessibilityService.findDetailImageCoverId(node: AccessibilityNodeInfo?): String? {
   if (node == null) return null
-  val resourceName = node.viewIdResourceName.orEmpty()
-  val markerIndex = resourceName.indexOf("imageCover_")
-  if (markerIndex >= 0) {
-    val imageId = resourceName.substring(markerIndex + "imageCover_".length).trim()
-    if (imageId.length >= 12) return imageId
-  }
+  extractShopeeImageIdFromResourceName(node.viewIdResourceName)?.let { return it }
   for (index in 0 until node.childCount) {
     val found = findDetailImageCoverId(node.getChild(index))
     if (found != null) return found

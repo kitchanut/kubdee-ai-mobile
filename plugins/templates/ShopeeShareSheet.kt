@@ -363,7 +363,7 @@ internal fun KubdeeAccessibilityService.findShopeeShareDrawerImageUrl(): String?
     val screen = screenBounds(root)
     val imageNodes = mutableListOf<ShopeeImageNode>()
     collectShopeeImageNodes(root, imageNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
-    return imageNodes
+    val imageUrl = imageNodes
       .filter { image ->
         image.bounds.top >= screen.top + (screen.height() * 0.08f).toInt() &&
           image.bounds.bottom <= screen.top + (screen.height() * 0.55f).toInt() &&
@@ -372,6 +372,12 @@ internal fun KubdeeAccessibilityService.findShopeeShareDrawerImageUrl(): String?
       }
       .minByOrNull { image -> image.bounds.top + kotlin.math.abs(image.bounds.centerX() - screen.centerX()) }
       ?.imageUrl
+    if (imageUrl != null) {
+      logStep("รูปสินค้า: อ่าน URL รูปจาก resource id ในแผงแชร์ได้ (รูปในแผง=${imageNodes.size})")
+    } else {
+      logStep("รูปสินค้า: แผงแชร์ไม่มี URL รูปให้อ่าน (รูปในแผง=${imageNodes.size})")
+    }
+    return imageUrl
   }
 
 internal fun KubdeeAccessibilityService.downloadFirstShopeeShareImage(startedAtMs: Long): String? {

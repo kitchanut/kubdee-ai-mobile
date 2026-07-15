@@ -94,6 +94,10 @@ internal fun KubdeeAccessibilityService.findPriceNodes(textNodes: List<TextNode>
 internal fun KubdeeAccessibilityService.verticalOverlap(first: Rect, second: Rect): Int =
   (minOf(first.bottom, second.bottom) - maxOf(first.top, second.top)).coerceAtLeast(0)
 
+// ระยะห่างแนวตั้งระหว่างสองกล่อง — 0 เมื่อซ้อนทับกัน (อยู่บรรทัดเดียวกัน)
+internal fun KubdeeAccessibilityService.verticalGap(first: Rect, second: Rect): Int =
+  maxOf(first.top - second.bottom, second.top - first.bottom).coerceAtLeast(0)
+
 internal fun KubdeeAccessibilityService.extractStock(text: String): Int? {
   val match = STOCK_REGEX.find(text) ?: return null
   val value = (match.groupValues.getOrNull(1).orEmpty().ifBlank { match.groupValues.getOrNull(2).orEmpty() })
@@ -140,6 +144,22 @@ internal fun KubdeeAccessibilityService.extractShopeeImageUrl(value: String?): S
 
   return "https://$imageHost/file/$imageId"
 }
+
+// Shopee ไม่ได้ใส่ URL รูปไว้ใน accessibility node แต่ฝัง "ไอดีรูป" ไว้ใน resource id แทน
+// (com.shopee.th:id/imageCover_<id>) — resource id เป็น [a-zA-Z0-9_] เท่านั้น จึงไม่มีทางเป็น URL
+// ต้องแกะไอดีออกมาแล้วประกอบ URL เอง ใช้ร่วมกันทั้งหน้า detail การ์ดสินค้า และแผงแชร์
+internal fun KubdeeAccessibilityService.extractShopeeImageIdFromResourceName(value: String?): String? {
+  val resourceName = value.orEmpty()
+  val markerIndex = resourceName.indexOf("imageCover_")
+  if (markerIndex < 0) return null
+  val imageId = resourceName.substring(markerIndex + "imageCover_".length)
+    .trim()
+    .replace(Regex("""(_tn(?:_[A-Za-z0-9]+)?|_resize[^/?#]*)$"""), "")
+  return imageId.takeIf { it.length >= 12 }
+}
+
+internal fun KubdeeAccessibilityService.shopeeImageUrlFromResourceName(value: String?): String? =
+  extractShopeeImageIdFromResourceName(value)?.let { imageId -> "https://down-th.img.susercontent.com/file/$imageId" }
 
 internal fun KubdeeAccessibilityService.findShopeeLikedProductImageUrl(
   imageNodes: List<ShopeeImageNode>,
@@ -192,6 +212,10 @@ internal fun KubdeeAccessibilityService.extractShopeeProductIdFromUrl(url: Strin
   return extractShopeeProductIdFromResolvedUrl(resolvedUrl)
 }
 
+// ⚠️ hash ของ "ชื่อ" ไม่ใช่ identity ของสินค้าที่ถูกต้อง — ชื่อเพี้ยนตัวเดียวก็ได้ id ใหม่ = สินค้าซ้ำ
+// identity จริงต้องมาจาก URL (shopee:shopId:itemId) แต่ resolveShopeeUrl ฝั่ง mobile ยังทำไม่ได้
+// (prod D1: shopee จาก mobile 6,724 แถว = hash ชื่อ 100% ส่วน desktop resolve ได้ 2,093/2,443)
+// เลิกใช้ hash ไม่ได้จนกว่าจะแก้ resolver + migrate แถวเก่าพร้อมกัน -> mobile issue #19
 internal fun KubdeeAccessibilityService.fallbackShopeeProductIdFromName(name: String): String? {
   val normalized = name.trim().lowercase(Locale.ROOT)
   if (normalized.isBlank()) return null
@@ -389,7 +413,9 @@ internal fun KubdeeAccessibilityService.collectShopeeImageNodes(
 ) {
   if (node == null) return
   if (isAllowedPackageNode(node, allowedPackageName) && node.isVisibleToUser) {
-    val imageUrl = extractShopeeImageUrl(node.viewIdResourceName)
+    // resource id มาก่อน — เป็นทางเดียวที่ Shopee บอกไอดีรูปบนการ์ด/แผงแชร์
+    // (เดิมส่ง resource id เข้า extractShopeeImageUrl ซึ่งต้องการ http(s) จึงคืน null เสมอ)
+    val imageUrl = shopeeImageUrlFromResourceName(node.viewIdResourceName)
       ?: extractShopeeImageUrl(node.text?.toString())
       ?: extractShopeeImageUrl(node.contentDescription?.toString())
     if (imageUrl != null) {

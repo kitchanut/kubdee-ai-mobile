@@ -90,12 +90,19 @@ internal fun KubdeeAccessibilityService.collectVisibleImageViewNodes(
   }
 }
 
+// Android ตั้ง contentDescription เป็น "คำอธิบายทั้งก้อน" ของโหนด ไม่ใช่ข้อความส่วนต่อจาก text
+// การเอามาต่อกันจึงทำให้ badge ตัวเลขบนการ์ด (text="0") ไปเกาะหน้าชื่อสินค้าที่อยู่ใน
+// contentDescription กลายเป็น "0 CIVAGO..." ตั้งแต่ต้นทาง และป้ายที่ตั้งซ้ำสองฝั่งกลายเป็น
+// "ถัดไป ถัดไป" จนตัวกรองแบบเทียบเป๊ะพลาด — เลือกฝั่งที่ยาวกว่า (ฝั่งสั้นมักเป็น badge/ป้ายย่อ)
 internal fun KubdeeAccessibilityService.readNodeText(node: AccessibilityNodeInfo): String {
-  val parts = listOfNotNull(
-    node.text?.toString(),
-    node.contentDescription?.toString()
-  )
-  return parts.joinToString(" ").trim()
+  val text = node.text?.toString()?.trim().orEmpty()
+  val description = node.contentDescription?.toString()?.trim().orEmpty()
+  return when {
+    text.isBlank() -> description
+    description.isBlank() -> text
+    description.length > text.length -> description
+    else -> text
+  }
 }
 
 internal fun KubdeeAccessibilityService.cleanNodeText(value: String): String =
