@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
@@ -72,14 +72,26 @@ export function getFlowLanguageIssue(url: string | null | undefined): FlowLangua
   }
 }
 
-// Pretend to be real DESKTOP Chrome (NO "; wv" token) so Google's WebView sign-in
-// block ("this browser may not be secure") does not trigger.
-// ตั้งแต่ 2026-07-14 Flow เวอร์ชันใหม่ของ Google crash ทั้งหน้าเมื่อเสิร์ฟ mobile
-// experience (TypeError: reading 'service' ในหน้า project) — ยืนยันด้วย CDP บนเครื่องจริง:
-// UA mobile = Application error ทุกครั้ง, UA desktop = render ปกติใน WebView เดียวกัน
-// จึงต้องใช้ desktop UA เพื่อให้ Google เสิร์ฟ desktop experience ที่ไม่พัง
+// UA สลับตามโฮสต์ (per-host) ภายใน WebView เดียวกัน:
+// - labs.google ต้องเป็น DESKTOP Chrome — ตั้งแต่ 2026-07-14 Flow เวอร์ชันใหม่ crash
+//   ทั้งหน้าเมื่อเสิร์ฟ mobile experience (TypeError: reading 'service' ในหน้า project)
+//   ยืนยันด้วย CDP บนเครื่องจริง: UA mobile = Application error ทุกครั้ง
+// - accounts.google.com (และโฮสต์อื่น) ต้องเป็น MOBILE Chrome (NO "; wv" token) —
+//   ใช้ desktop Mac UA บนเครื่อง Android จริง Google จับ mismatch ได้แล้วบล็อก sign-in
+//   ("เบราว์เซอร์หรือแอปนี้อาจไม่ปลอดภัย") ส่วน mobile UA ตัวนี้ login ผ่านมาตลอด
+//   ก่อน e6b7f46 — ห้ามใช้ desktop UA กับหน้า login เด็ดขาด
 const CHROME_DESKTOP_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
+const CHROME_MOBILE_UA =
+  'Mozilla/5.0 (Linux; Android 14; SM-A075F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36';
+
+function userAgentForUrl(url: string): string {
+  try {
+    return new URL(url).hostname === 'labs.google' ? CHROME_DESKTOP_UA : CHROME_MOBILE_UA;
+  } catch {
+    return CHROME_DESKTOP_UA;
+  }
+}
 
 // บังคับ viewport เป็นความกว้างจอคอม (1280px) ให้ Flow เรนเดอร์เหมือนเปิดบน desktop จริง
 // ทุกมิติ ไม่ใช่แค่ UA — layout/พฤติกรรม refresh ของ Flow จะตรงกับที่ desktop app ใช้แล้วเวิร์ค
@@ -305,6 +317,27 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
   const idRef = useRef(0);
   const rendererGoneRef = useRef(false);
 
+  // UA per-host: เปลี่ยน prop userAgent กลางคันได้ (native แค่ set settings.userAgentString
+  // ไม่ reload เอง) — พอ navigation ข้ามโฮสต์ที่ต้องการ UA คนละตัว ให้ block ไว้ก่อน
+  // อัปเดต UA แล้วค่อยนำทางต่อเอง (onShouldStartLoadWithRequest ฝั่ง Android เป็น
+  // blocking synchronous จึงกันหน้า login โหลดด้วย UA ผิดได้จริง)
+  // ใช้ object ใหม่ทุกครั้ง (seq) แทนสตริง UA ตรงๆ — กันเคส navigation ข้ามโฮสต์ 2 ครั้ง
+  // ใน batch เดียวทำให้ค่า UA วนกลับมาเท่าเดิมแล้ว effect ไม่ยิง (navigation ค้างถาวร)
+  const [uaState, setUaState] = useState({ ua: CHROME_DESKTOP_UA, seq: 0 });
+  const userAgentRef = useRef(CHROME_DESKTOP_UA);
+  const pendingNavUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const url = pendingNavUrlRef.current;
+    if (!url) return;
+    pendingNavUrlRef.current = null;
+    // หน่วงสั้นๆ ให้ prop userAgent ลงถึง native WebView ก่อนค่อยนำทางต่อ
+    const timer = setTimeout(() => {
+      innerRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(url)}; true;`);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [uaState]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -336,7 +369,18 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
     <WebView
       ref={innerRef}
       source={{ uri: FLOW_URL }}
-      userAgent={CHROME_DESKTOP_UA}
+      userAgent={uaState.ua}
+      onShouldStartLoadWithRequest={(request) => {
+        // สนใจเฉพาะ http(s) main-frame navigation — scheme อื่น (intent:, about:blank)
+        // ปล่อยผ่านตามเดิม; iframe https ไม่เข้า callback นี้อยู่แล้ว
+        if (!/^https?:\/\//i.test(request.url)) return true;
+        const desired = userAgentForUrl(request.url);
+        if (desired === userAgentRef.current) return true;
+        userAgentRef.current = desired;
+        pendingNavUrlRef.current = request.url;
+        setUaState((prev) => ({ ua: desired, seq: prev.seq + 1 }));
+        return false;
+      }}
       javaScriptEnabled
       domStorageEnabled
       thirdPartyCookiesEnabled
