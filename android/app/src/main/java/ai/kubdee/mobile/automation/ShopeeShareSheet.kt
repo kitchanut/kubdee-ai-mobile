@@ -95,7 +95,10 @@ internal fun KubdeeAccessibilityService.copyShopeeProductUrlFromShareSheet(openI
     )
     if (sharedUrl != null) {
       logStep("ได้ลิงก์จากการเปิดแชร์ ไม่ต้องกดคัดลอก")
-      return resolveShopeeUrl(sharedUrl).ifBlank { sharedUrl }
+      // คืน short link ดิบ ห้าม resolve ตรงนี้ — ค่านี้ไปเป็น productUrl ที่เก็บลงคลัง
+      // ซึ่งต้องเป็น short link เท่านั้น (ช่องค้นหาตอนโพสต์ Shopee รับแค่ short link)
+      // การแปลงเป็นลิงก์เต็มเพื่อแกะไอดีทำที่ extractShopeeProductIdFromUrl แยกต่างหาก
+      return sharedUrl
     }
     logStep("ยังไม่เจอลิงก์จากแผงแชร์ จะกดคัดลอกลิงก์")
 
@@ -131,7 +134,8 @@ internal fun KubdeeAccessibilityService.copyShopeeProductUrlFromShareSheet(openI
         timeoutMs = 7_000L
       )
       if (url != null) {
-        return resolveShopeeUrl(url).ifBlank { url }
+        // คืน short link ดิบเช่นกัน — ดูเหตุผลที่ทางแรกด้านบน
+        return url
       }
 
       if (attempt == 0) {

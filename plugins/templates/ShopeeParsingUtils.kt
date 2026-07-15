@@ -226,11 +226,15 @@ internal fun KubdeeAccessibilityService.fallbackShopeeProductIdFromName(name: St
   return "shopee:$hash"
 }
 
+// แปลง short link (s.shopee.co.th/xxx) เป็นลิงก์เต็มที่มี shopId/itemId เพื่อเอาไปทำ id สินค้า
+// ⚠️ ลิงก์ที่คืนไปใช้ "แกะไอดี" เท่านั้น — productUrl ที่เก็บลงคลังต้องเป็น short link เสมอ
+// (ช่องค้นหาสินค้าตอนโพสต์ Shopee รับแค่ short link) ดู pickPreferredShopeeUrl ฝั่ง JS
+// ⏳ short link มีอายุ ลิงก์เก่าจะเด้ง shope.ee/error_page — ต้อง resolve ตอน import เท่านั้น
 internal fun KubdeeAccessibilityService.resolveShopeeUrl(rawUrl: String): String {
   var current = rawUrl.trim()
   if (current.isBlank()) return ""
 
-  repeat(5) {
+  repeat(5) { hop ->
     checkStopRequested()
     try {
       val connection = (URL(current).openConnection() as HttpURLConnection).apply {
@@ -238,7 +242,8 @@ internal fun KubdeeAccessibilityService.resolveShopeeUrl(rawUrl: String): String
         connectTimeout = 5000
         readTimeout = 5000
         requestMethod = "GET"
-        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+        setRequestProperty("User-Agent", SHOPEE_WEB_USER_AGENT)
+        setRequestProperty("Referer", SHOPEE_WEB_REFERER)
         setRequestProperty("Accept-Language", "th-TH,th;q=0.9,en;q=0.8")
       }
       val status = connection.responseCode
@@ -246,14 +251,21 @@ internal fun KubdeeAccessibilityService.resolveShopeeUrl(rawUrl: String): String
       connection.disconnect()
       if (status in 300..399 && !location.isNullOrBlank()) {
         current = URL(URL(current), location).toString()
-        if (extractShopeeProductIdFromResolvedUrl(current) != null) return current
+        if (extractShopeeProductIdFromResolvedUrl(current) != null) {
+          logStep("ลิงก์สินค้า: แปลง short link เป็นลิงก์เต็มสำเร็จ (ตาม redirect ${hop + 1} ครั้ง)")
+          return current
+        }
         return@repeat
       }
+      // ไม่ใช่ redirect = ไปต่อไม่ได้ (เจอบ่อยตอนใช้ UA มือถือ Shopee จะตอบ 200 ทิ้งไว้เฉยๆ)
+      logStep("ลิงก์สินค้า: short link ตอบ HTTP $status ไม่มีทางไปต่อ -> ยังไม่ได้ไอดีสินค้า")
       return connection.url?.toString() ?: current
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+      logStep("ลิงก์สินค้า: แปลง short link ไม่สำเร็จ (${e.javaClass.simpleName}) -> ยังไม่ได้ไอดีสินค้า")
       return current
     }
   }
+  logStep("ลิงก์สินค้า: ตาม redirect ครบ 5 ต่อแล้วยังไม่เจอไอดีสินค้า")
   return current
 }
 

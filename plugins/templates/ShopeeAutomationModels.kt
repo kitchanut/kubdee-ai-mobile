@@ -13,6 +13,13 @@ internal const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
 // a mismatch (Shopee changed its UI) is obvious. Bump when we test/support a newer Shopee build.
 internal const val SHOPEE_TESTED_VERSION = "3.77.25"
 internal const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = true
+// ⚠️ ต้องเป็น UA เดสก์ท็อป — Shopee ตอบ s.shopee.co.th ต่างกันตาม User-Agent (วัดจริง 2026-07-15):
+//   UA มือถือ  -> HTTP 200 ไม่มี Location เลย (หน้า JS ที่พยายาม deep link เข้าแอป) = ตามต่อไม่ได้
+//   UA เดสก์ท็อป -> 30x ไปหน้าเว็บจริง shopee.co.th/<slug>/<shopId>/<itemId> = แกะไอดีได้
+// เดสก์ท็อป (kubdee-ai-desktop/tiktok-bot/bridge.py:110) ใช้ UA นี้ จึง resolve ได้ 86% ส่วนมือถือ 0%
+internal const val SHOPEE_WEB_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+internal const val SHOPEE_WEB_REFERER = "https://shopee.co.th/"
 internal const val SHOPEE_IMPORT_SOURCE_LIKED = "liked"
 internal const val SHOPEE_IMPORT_SOURCE_OFFERS = "offers"
 // Liked import using the affiliate "partner" view — cards carry a share button whose share sheet

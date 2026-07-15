@@ -385,6 +385,14 @@ function getShopeeProductId(productUrl: string | null, name: string): string | n
   return extractShopeeProductIdFromUrl(productUrl) || fallbackShopeeProductIdFromName(name);
 }
 
+// id ที่มาจาก URL = "shopee:<shopId>:<itemId>" ส่วน id สำรองจากชื่อ = "shopee:<sha1 16 ตัว>"
+// ใช้แยกว่าแถวไหนได้ id จริงแล้ว แถวไหนยังใช้ hash ชื่ออยู่ (ของก่อน mobile resolve ลิงก์ได้)
+const SHOPEE_URL_DERIVED_ID_PATTERN = /^shopee:\d+:\d+$/;
+
+function isUrlDerivedShopeeId(externalProductId: string | null | undefined): boolean {
+  return SHOPEE_URL_DERIVED_ID_PATTERN.test(cleanText(externalProductId) ?? '');
+}
+
 function productExternalKey(
   profileLocalId: string | null | undefined,
   platform: string | null | undefined,
@@ -403,6 +411,7 @@ function getExistingShopeeProduct(
   localId: string,
   profileLocalId: string,
   externalProductId: string | null,
+  name: string,
   existingByLocalId: Map<string, AffiliateProduct>,
   existingByExternalKey: Map<string, AffiliateProduct>
 ): AffiliateProduct | null {
@@ -412,7 +421,24 @@ function getExistingShopeeProduct(
   }
 
   const externalKey = productExternalKey(profileLocalId, 'shopee', externalProductId);
-  return externalKey ? existingByExternalKey.get(externalKey) ?? null : null;
+  const byExternalKey = externalKey ? existingByExternalKey.get(externalKey) : null;
+  if (byExternalKey) {
+    return byExternalKey;
+  }
+
+  // heal: สินค้าที่ดึงมาก่อนหน้านี้ถูกบันทึกด้วย id ที่ hash จากชื่อ เพราะตอนนั้น mobile แปลง
+  // short link ไม่ได้ (ส่ง UA มือถือไป Shopee เลยไม่ redirect ให้ — mobile issue #19)
+  // พอแปลงได้แล้ว id จะเปลี่ยนเป็น shopee:<shopId>:<itemId> ซึ่งไม่ตรงกับของเก่า
+  // ถ้าไม่หาแถวเก่าด้วย hash ชื่อตรงนี้ สินค้าเดิมทุกตัวจะเข้าคลังซ้ำเป็นแถวใหม่
+  // เจอแล้ว -> preserveExistingProductFields จะคง localId เดิมไว้ ส่วน externalProductId
+  // ถูกทับด้วยตัวใหม่ = แถวเก่าได้ id จริงไปเลย (heal ทีละตัวตอนดึงซ้ำ)
+  if (!isUrlDerivedShopeeId(externalProductId)) {
+    return null;
+  }
+
+  const legacyNameId = fallbackShopeeProductIdFromName(name);
+  const legacyKey = productExternalKey(profileLocalId, 'shopee', legacyNameId);
+  return legacyKey ? existingByExternalKey.get(legacyKey) ?? null : null;
 }
 
 function getExistingProduct(
@@ -504,6 +530,7 @@ function toShopeeSyncProducts(
       localId,
       profileLocalId,
       externalProductId,
+      name,
       existingByLocalId,
       existingByExternalKey
     );
