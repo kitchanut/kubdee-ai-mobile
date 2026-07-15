@@ -397,7 +397,9 @@ internal fun KubdeeAccessibilityService.downloadFirstShopeeShareImage(startedAtM
       setAutomationFloatingUiSuppressedBlocking(false)
     }
     if (!tappedDownload) {
-      logStep("รูปสินค้า: หา resource id ปุ่มดาวน์โหลดไม่เจอ -> ใช้ URL จากแผงแชร์/การ์ดแทน")
+      // ครอบคลุมทั้ง "หาปุ่มไม่เจอ" (มี log แยกจาก tapShopeeShareFirstImageDownloadButton) และ
+      // "เจอปุ่มแต่กดไม่ติด" — เดิมข้อความบอกว่าหา resource id ไม่เจอ ซึ่งไม่ตรงทั้งสองกรณี
+      logStep("รูปสินค้า: กดปุ่มดาวน์โหลดรูปแรกไม่สำเร็จ (ลองครบทั้ง resource id และตำแหน่งแล้ว) -> ใช้ URL จากแผงแชร์/การ์ดแทน")
       return null
     }
 
@@ -414,7 +416,9 @@ internal fun KubdeeAccessibilityService.downloadFirstShopeeShareImage(startedAtM
 internal fun KubdeeAccessibilityService.tapShopeeShareFirstImageDownloadButton(): Boolean {
     val root = rootInActiveWindow ?: return false
     val screen = screenBounds(root)
-    val candidates = mutableListOf<Rect>()
+    // เก็บที่มาของแต่ละจุดไว้ด้วย เพื่อให้ log บอกได้ว่ากดจาก id ตรงๆ หรือจาก id กว้าง+เดาตำแหน่ง
+    // (ถ้า Shopee เปลี่ยน id แล้วเราตกไปใช้ทางสำรองเงียบๆ จะไม่รู้ตัวจนกว่าทางสำรองจะพังตาม)
+    val candidates = mutableListOf<Pair<Rect, String>>()
 
     fun visit(node: AccessibilityNodeInfo?, depth: Int = 0) {
       if (node == null || depth > 56) return
@@ -422,20 +426,21 @@ internal fun KubdeeAccessibilityService.tapShopeeShareFirstImageDownloadButton()
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
         val resourceId = node.viewIdResourceName.orEmpty().lowercase(Locale.ROOT)
-        val isFirstImageDownload = resourceId.contains("sharedrawer_downloadpng_img_1") ||
-          (
-            resourceId.contains("sharedrawer_download") &&
-              bounds.top <= screen.top + (screen.height() * 0.24f).toInt() &&
-              bounds.centerX() >= screen.centerX()
-          )
+        val source = when {
+          resourceId.contains("sharedrawer_downloadpng_img_1") -> "resource id ปุ่มดาวน์โหลดรูปแรก"
+          resourceId.contains("sharedrawer_download") &&
+            bounds.top <= screen.top + (screen.height() * 0.24f).toInt() &&
+            bounds.centerX() >= screen.centerX() -> "resource id ดาวน์โหลดแบบกว้าง + ตำแหน่งขวาบน"
+          else -> null
+        }
         if (
-          isFirstImageDownload &&
+          source != null &&
           bounds.width() > 0 &&
           bounds.height() > 0 &&
           bounds.top >= screen.top + (screen.height() * 0.08f).toInt() &&
           bounds.bottom <= screen.top + (screen.height() * 0.40f).toInt()
         ) {
-          candidates += findSmallClickableAncestorBounds(node, bounds, screen)
+          candidates += findSmallClickableAncestorBounds(node, bounds, screen) to source
         }
       }
       for (index in 0 until node.childCount) {
@@ -444,9 +449,12 @@ internal fun KubdeeAccessibilityService.tapShopeeShareFirstImageDownloadButton()
     }
 
     visit(root)
-    val bounds = candidates.sortedWith(compareBy<Rect> { it.top }.thenByDescending { it.left }).firstOrNull()
-    if (bounds != null) {
-      logStep("กดดาวน์โหลดรูปแรกที่ ${bounds.centerX()},${bounds.centerY()}")
+    val candidate = candidates
+      .sortedWith(compareBy<Pair<Rect, String>> { it.first.top }.thenByDescending { it.first.left })
+      .firstOrNull()
+    if (candidate != null) {
+      val (bounds, source) = candidate
+      logStep("กดดาวน์โหลดรูปแรกที่ ${bounds.centerX()},${bounds.centerY()} ($source)")
       return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 2200L, durationMs = 90L)
     }
 
