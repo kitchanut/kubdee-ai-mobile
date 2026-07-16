@@ -688,11 +688,20 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
     val readyStart = System.currentTimeMillis()
     var lastReadyLog = 0L
     var likedListReady = false
+    var partnerListEmpty = false
     while (System.currentTimeMillis() - readyStart < 20_000L) {
       checkStopRequested()
       if (scrapeVisibleShopeePartnerOfferCandidates(status = SHOPEE_IMPORT_SOURCE_LIKED, logResult = false).isNotEmpty()) {
         logStep("มุมมองพาร์ทเนอร์โหลดสินค้าแล้ว เริ่มดึง")
         likedListReady = true
+        break
+      }
+      // Shopee ขึ้น "ไม่มีสินค้าที่ฉันถูกใจ" = ลิสต์พาร์ทเนอร์ว่างจริง (สินค้าที่ถูกใจไม่เข้า
+      // เงื่อนไขโปรโมตของ Affiliate) ไม่ใช่โหลดช้า — user-report 2026-07-15 ผู้ใช้รอจนต้อง
+      // กดรายงาน; แจ้งทางแก้ (สลับมุมมองผู้ซื้อ) แล้วเลิกรอทันที
+      if (containsAnyText(listOf("ไม่มีสินค้าที่ฉันถูกใจ"), contains = true, allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
+        logStep("มุมมองพาร์ทเนอร์ไม่มีสินค้าให้ดึง — ลองเปลี่ยนเป็นมุมมองผู้ซื้อในการตั้งค่าดึงสินค้า แล้วเริ่มใหม่")
+        partnerListEmpty = true
         break
       }
       val now = System.currentTimeMillis()
@@ -701,6 +710,9 @@ internal fun KubdeeAccessibilityService.importShopeePartnerLikedProducts(
         lastReadyLog = now
       }
       sleepStep(500L)
+    }
+    if (partnerListEmpty) {
+      return 0
     }
     if (!likedListReady) {
       // Cards never became scrapeable (a device/Shopee-version layout we don't match, e.g. the share

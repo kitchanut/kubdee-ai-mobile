@@ -63,7 +63,16 @@ internal fun KubdeeAccessibilityService.enrichShopeeProductFromDetail(
   }
 
   try {
-    val detailState = waitForShopeeProductDetailReady(12_000L)
+    var detailState = waitForShopeeProductDetailReady(12_000L)
+    // Shopee 3.78+ บางจังหวะแตะสินค้าแล้วหน้า detail ไม่เปิด (ลิสต์เพิ่งวาดใหม่/กินการแตะแรก
+    // หลังกลับจาก detail ตัวก่อน) — เจอจาก user-report 2026-07-16 (สินค้า 2 โดนข้ามทั้งที่
+    // ตัวอื่นเปิดได้ปกติ); แตะซ้ำอีกครั้งก่อนตัดสินข้ามสินค้า
+    if (detailState == ShopeeDetailScreenState.LIST) {
+      logStep("ยังอยู่หน้ารายการ — ลองแตะสินค้าซ้ำอีกครั้ง")
+      if (openShopeeProductDetail(candidate)) {
+        detailState = waitForShopeeProductDetailReady(12_000L)
+      }
+    }
     when (detailState) {
       ShopeeDetailScreenState.READY -> Unit
       ShopeeDetailScreenState.NO_PRODUCT -> {
