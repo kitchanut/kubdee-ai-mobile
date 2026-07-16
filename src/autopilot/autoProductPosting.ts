@@ -51,11 +51,12 @@ export class ShopeePostTimeoutError extends Error {}
 // ถ้าแอปหลักโดน freeze — native จึง persist ผลลง disk ณ วินาทีเดียวกับที่ยิง broadcast
 // (KubdeeShopeePostResults) ฝั่งนี้ poll ไฟล์ควบคู่กับการรอ broadcast + poll ทันทีเมื่อ
 // แอปกลับ foreground แล้วใช้ผลจากช่องทางที่มาถึงก่อน (settle ครั้งเดียว)
-// สมมติฐาน: auto pilot โพสต์ Shopee ทีละสินค้า (single in-flight) จึง correlate ด้วย
-// ts >= startedAt ได้โดยไม่ต้องส่ง runId ข้าม bridge
+// สมมติฐาน: ผู้เรียกโพสต์ Shopee ทีละงาน (single in-flight) จึง correlate ด้วย
+// ts >= startedAt ได้โดยไม่ต้องส่ง runId ข้าม bridge — ทั้ง auto pilot และหน้า Shopee
+// (โพสต์ทีละคลิปตามลำดับ) เข้าเงื่อนไขนี้
 const SHOPEE_POST_RESULT_POLL_MS = 5_000;
 
-function awaitShopeePostResult(
+export function awaitShopeePostResult(
   broadcastPromise: Promise<NativeShopeePostingResult>,
   startedAt: number
 ): Promise<NativeShopeePostingResult> {

@@ -14,7 +14,7 @@ import {
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { generateAutoPilotProductContent, getAutoPilotAiContentLabels } from '@/autopilot/aiCaption';
-import { SHOPEE_POST_TIMEOUT_MS, withTimeout } from '@/autopilot/autoProductPosting';
+import { awaitShopeePostResult } from '@/autopilot/autoProductPosting';
 import {
   DEFAULT_SHOPEE_AI_CONTENT_SETTINGS,
   getShopeeAiContentSettings,
@@ -276,6 +276,8 @@ export default function ShopeeScreen({
       let failedCount = 0;
       let stoppedEarly = false;
       let abortedOnError = false;
+      // นับเฉพาะ error ที่ throw (bridge พัง/timeout) ติดต่อกัน — ใช้ตัดสินว่าระบบล่มจริง
+      let consecutiveThrownErrors = 0;
       // คิด caption ของคลิปแรกทันที ให้ overlap กับตอนแอป Shopee กำลังเปิดด้านบน
       let nextAiContentPromise = generateClipAiContent(postableVideos[0], 0);
 
@@ -328,21 +330,30 @@ export default function ShopeeScreen({
         let result: NativeShopeePostingResult;
         try {
           // skipReturnNavigation ทุกคลิปยกเว้นคลิปสุดท้าย — จะได้ค้างอยู่ใน Shopee ต่อเนื่องไม่กระโดดกลับแอปเรากลางคัน
-          // withTimeout กัน native broadcast หายเงียบๆ (เกิดได้ง่ายขึ้นเพราะสลับ background/foreground ทุกคลิปแล้ว)
-          result = await withTimeout(
+          // awaitShopeePostResult รอ broadcast ควบคู่กับ poll ผลจาก disk แบบเดียวกับ auto pilot —
+          // broadcast หล่นง่ายเพราะแอปสลับ background/foreground ทุกคลิป ถ้ารอเปล่าๆ จะค้างจน
+          // timeout ทั้งที่ native โพสต์เสร็จแล้ว (อาการ "โพสต์ได้แค่คลิปแรกแล้วหยุด")
+          result = await awaitShopeePostResult(
             postShopeeVideos([payload], { skipReturnNavigation: index < total - 1 }),
-            SHOPEE_POST_TIMEOUT_MS,
-            `คลิปที่ ${index + 1} หมดเวลา (native ไม่ตอบสนอง)`
+            Date.now()
           );
         } catch (error) {
           failedCount += 1;
+          consecutiveThrownErrors += 1;
           const message = error instanceof Error ? error.message : String(error);
-          appendPostLog(`คลิปที่ ${index + 1} ล้มเหลว: ${message} — หยุดที่เหลือเพราะน่าจะเป็นปัญหาระบบ`);
-          // error ที่ throw ออกมา (ไม่ใช่แค่ result.success===false ต่อคลิป) มักเป็นปัญหาระบบ
-          // (bridge/accessibility service พัง) ลองต่อคลิปที่เหลือไปก็รอเสียเวลาแล้วพังซ้ำเหมือนกัน
-          abortedOnError = true;
-          break;
+          // error ที่ throw (ไม่ใช่ result.success===false ต่อคลิป) มักเป็นปัญหาระบบ แต่คลิปเดียว
+          // flake ไม่ควรทิ้งทั้งชุด — ให้โอกาสคลิปถัดไปก่อน ถ้าพังติดกัน 2 คลิปค่อยถือว่าระบบล่มจริง
+          if (consecutiveThrownErrors >= 2) {
+            appendPostLog(`คลิปที่ ${index + 1} ล้มเหลว: ${message} — ล้มเหลวติดกัน 2 คลิป หยุดที่เหลือเพราะน่าจะเป็นปัญหาระบบ`);
+            abortedOnError = true;
+            break;
+          }
+          appendPostLog(
+            `คลิปที่ ${index + 1} ล้มเหลว: ${message}${index < total - 1 ? ' — ลองคลิปถัดไปต่อ' : ''}`
+          );
+          continue;
         }
+        consecutiveThrownErrors = 0;
 
         if (result.stopped) {
           stoppedEarly = true;

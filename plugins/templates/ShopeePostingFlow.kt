@@ -197,6 +197,12 @@ internal fun JSONObject.optCleanString(key: String): String? {
 
 internal fun KubdeeAccessibilityService.runShopeeVideoPostingFlow(video: ShopeePostingVideo, preparedVideo: PreparedShopeeVideo) {
   logShopeePostStep("รีเซ็ต Shopee เพื่อโพสต์วิดีโอ")
+  // ปิด process Shopee เดิมก่อนเปิดใหม่ (แบบเดียวกับ import flow) — CLEAR_TASK อย่างเดียว
+  // ไม่รีเซ็ต route ในหน่วยความจำ: หลังโพสต์คลิปก่อนหน้า Shopee ค้างหน้าอัปโหลด/โพสต์สำเร็จ
+  // แล้ว restore หน้าเดิมตอน launch ทำให้คลิปถัดไป navigateShopeeVideoAccount หาไม่เจอ
+  // (อาการ "โพสต์ได้แค่คลิปแรก") — killBackgroundProcesses ฆ่าเฉพาะ process ที่อยู่
+  // background จึงไม่ตัดอัปโหลดของคลิปก่อนหน้าที่ยังวิ่งผ่าน foreground service
+  closeShopeeBeforeFreshLaunch(TARGET_PACKAGE_SHOPEE)
   if (!launchPackage(TARGET_PACKAGE_SHOPEE, resetTask = true)) {
     logShopeePostStep("เปิด Shopee จาก service ไม่สำเร็จ จะรอหน้าที่เปิดจากแอป")
   }
