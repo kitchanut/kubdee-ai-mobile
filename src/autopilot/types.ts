@@ -258,4 +258,6 @@ export interface GoogleFlowRunnerLogEntry {
   creativeItemName?: string;
   creativeItemDescription?: string | null;
   creativeItemTags?: string | null;
+  /** JIT AI content จาก runner (stage 'product_ai_content') — controller ใช้ sync เข้า field สินค้า */
+  productFieldUpdates?: Partial<Pick<GoogleFlowRunnerProduct, 'caption' | 'hashtags' | 'cta'>>;
 }

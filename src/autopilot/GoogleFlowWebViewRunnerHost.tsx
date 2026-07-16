@@ -9,6 +9,7 @@ import {
 } from '@/autopilot/googleFlowRunnerBridge';
 import { postProductAfterGeneration } from '@/autopilot/autoProductPosting';
 import type { AutoPilotProductVideoAsset } from '@/autopilot/autoProductPosting';
+import { generateAutoPilotProductContent, getAutoPilotAiContentLabels } from '@/autopilot/aiCaption';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import type {
   AutoPilotLogLevel,
@@ -3457,6 +3458,72 @@ export default function GoogleFlowWebViewRunnerHost({
         let consecutiveStructuralFailures = 0;
         let lastStructuralErrorMessage = '';
 
+        // คิด AI caption/hashtags/CTA "ทีละสินค้า" ตอนเริ่มสินค้านั้นๆ (JIT แบบ desktop/extension)
+        // ไม่คิดรวบทุกสินค้าก่อนเริ่ม run — หลายสิบสินค้าจะนั่งรอหลายนาทีกว่าคลิปแรกจะได้เริ่มทำ
+        // cache ต่อ product id: รอบถัดไป (multi-round) ใช้ผลเดิม ไม่คิดซ้ำ
+        const aiContentLabels = getAutoPilotAiContentLabels(payload.settings);
+        const aiContentUpdatesByProductId = new Map<
+          string,
+          Partial<Pick<GoogleFlowRunnerProduct, 'caption' | 'hashtags' | 'cta'>>
+        >();
+        const ensureProductAiContent = async (
+          product: GoogleFlowRunnerProduct
+        ): Promise<GoogleFlowRunnerProduct> => {
+          if (!aiContentLabels) {
+            return product;
+          }
+          const cached = aiContentUpdatesByProductId.get(product.id);
+          if (cached) {
+            return { ...product, ...cached };
+          }
+          const emitAiProgress = (
+            message: string,
+            productFieldUpdates?: GoogleFlowRunnerLogEntry['productFieldUpdates']
+          ): void => {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              stage: 'product_ai_content',
+              productId: product.id,
+              productName: product.name,
+              message,
+              ...(productFieldUpdates ? { productFieldUpdates } : {}),
+            });
+          };
+          emitAiProgress(`AI กำลังคิด ${aiContentLabels}: ${product.name || 'สินค้า'}...`);
+          const result = await generateAutoPilotProductContent({ product, settings: payload.settings });
+          if (!result.success) {
+            emitAiProgress(
+              `AI ${aiContentLabels} ไม่สำเร็จ (${product.name || 'สินค้า'}): ${result.error || 'unknown'} — ใช้ค่าเดิม`
+            );
+            aiContentUpdatesByProductId.set(product.id, {});
+            return product;
+          }
+          const updates: Partial<Pick<GoogleFlowRunnerProduct, 'caption' | 'hashtags' | 'cta'>> = {};
+          if (payload.settings.aiGenerateCaption && result.caption) {
+            updates.caption = result.caption;
+          }
+          if (payload.settings.aiGenerateHashtags && result.hashtags) {
+            updates.hashtags = result.hashtags;
+          }
+          if (payload.settings.aiGenerateCta && result.cta) {
+            updates.cta = result.cta;
+          }
+          aiContentUpdatesByProductId.set(product.id, updates);
+          emitAiProgress(`AI ${aiContentLabels} สำเร็จ: ${product.name || 'สินค้า'}`, updates);
+          if (updates.caption) {
+            emitAiProgress(`AI Caption: ${updates.caption.slice(0, 120)}`);
+          }
+          if (updates.hashtags) {
+            emitAiProgress(`AI Hashtags: ${updates.hashtags}`);
+          }
+          if (updates.cta) {
+            emitAiProgress(`AI CTA: ${updates.cta}`);
+          }
+          return { ...product, ...updates };
+        };
+
         for (let round = 1; round <= totalRoundLoopCount; round += 1) {
           checkStop();
           emit({
@@ -3472,7 +3539,7 @@ export default function GoogleFlowWebViewRunnerHost({
           });
 
           for (let productIndex = 0; productIndex < payload.products.length; productIndex += 1) {
-            const product = payload.products[productIndex];
+            let product = payload.products[productIndex];
             checkStop();
             // Multi-round runs revisit the same product id — drop any assets
             // tracked from a prior round before this round's steps run.
@@ -3490,6 +3557,10 @@ export default function GoogleFlowWebViewRunnerHost({
               totalProducts: payload.products.length,
               message: `เริ่มสินค้า ${productIndex + 1}/${payload.products.length}: ${product.name || 'สินค้า'}`,
             });
+
+            // JIT AI content ของสินค้านี้ (ทีละสินค้า ไม่คิดรวบก่อนเริ่ม run)
+            product = await ensureProductAiContent(product);
+            checkStop();
 
             const shouldOpenFlowHomeBeforeProduct =
               payload.settings.startNewFlowProjectPerProduct !== false &&

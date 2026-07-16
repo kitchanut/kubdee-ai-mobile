@@ -16,11 +16,6 @@ import {
   stopGoogleFlowRunner,
   subscribeGoogleFlowRunnerLogs,
 } from '@/autopilot/googleFlowRunnerBridge';
-import {
-  generateAutoPilotProductContent,
-  getAutoPilotAiContentLabels,
-} from '@/autopilot/aiCaption';
-import { SHOPEE_POST_SAFE_CHARACTER_LIMIT } from '@/autopilot/shopeePostTextLimit';
 import { loadPromptCatalog } from '@/autopilot/promptCatalog/api';
 import {
   getAutoPilotProductId,
@@ -294,6 +289,31 @@ export function useAutoPilotController({
                 : current.progress.failedVideos,
           },
         }));
+
+        // JIT AI content จาก runner (stage 'product_ai_content') — sync ค่าเข้า field
+        // ของสินค้าให้เหมือนพฤติกรรมเดิมตอนคิดล่วงหน้าก่อนเริ่ม run
+        const fieldUpdates = entry.productFieldUpdates;
+        if (entry.productId && fieldUpdates && Object.keys(fieldUpdates).length > 0) {
+          const productId = entry.productId;
+          setProductFieldsById((current) => ({
+            ...current,
+            [productId]: {
+              ...current[productId],
+              ...fieldUpdates,
+            },
+          }));
+          // อัปเดต map สินค้าที่เตรียมแล้วด้วย — ตัวนี้ถูกใช้เติม caption/hashtags/cta
+          // ตอนเซฟ asset (รูป/วิดีโอ) เข้าคลัง ถ้าไม่อัปเดต คลิปในคลังจะไม่มี AI caption
+          const prepared = preparedProductByKeyRef.current.get(productId);
+          if (prepared) {
+            const merged = { ...prepared, ...fieldUpdates };
+            for (const key of [merged.id, merged.productId, merged.catalogId]) {
+              if (key) {
+                preparedProductByKeyRef.current.set(key, merged);
+              }
+            }
+          }
+        }
       }
 
       if (entry.event === 'asset' && entry.step && (entry.fileUri || entry.fileName)) {
@@ -745,74 +765,10 @@ export function useAutoPilotController({
             : 'fallback ในแอป';
       appendLog('info', `ใช้ชุด prompt จาก${catalogSourceLabel} v${catalogResult.version ?? '-'}`);
 
-      const aiContentLabels = getAutoPilotAiContentLabels(settings);
-      let preparedProducts = selectedProducts;
-      if (aiContentLabels) {
-        appendLog('action', `AI กำลังคิด ${aiContentLabels} สำหรับ ${selectedProducts.length} สินค้า...`);
-        const preparedResults = await Promise.all(
-          selectedProducts.map(async (product) => {
-            const result = await generateAutoPilotProductContent({ product, settings });
-            if (!result.success) {
-              appendLog(
-                'warning',
-                `AI ${aiContentLabels} ไม่สำเร็จ (${product.name || 'สินค้า'}): ${result.error || 'unknown'} — ใช้ค่าเดิม`
-              );
-              return {
-                product,
-                updates: {} as Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>,
-              };
-            }
-
-            const updates: Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>> = {};
-            if (settings.aiGenerateCaption && result.caption) {
-              updates.caption = result.caption;
-            }
-            if (settings.aiGenerateHashtags && result.hashtags) {
-              updates.hashtags = result.hashtags;
-            }
-            if (settings.aiGenerateCta && result.cta) {
-              updates.cta = result.cta;
-            }
-            appendLog('success', `AI ${aiContentLabels} สำเร็จ: ${product.name || 'สินค้า'}`);
-            if (updates.caption) {
-              appendLog('info', `AI Caption: ${updates.caption.slice(0, 120)}`);
-            }
-            if (updates.hashtags) {
-              appendLog('info', `AI Hashtags: ${updates.hashtags}`);
-            }
-            if (updates.cta) {
-              appendLog('info', `AI CTA: ${updates.cta}`);
-            }
-            if (result.wasLimited) {
-              appendLog('info', `AI rewrite ข้อความ Shopee ให้อยู่ใน ${result.characterCount ?? 0}/${SHOPEE_POST_SAFE_CHARACTER_LIMIT} ตัวอักษร`);
-            }
-            return { product, updates };
-          })
-        );
-
-        preparedProducts = preparedResults.map(({ product, updates }) => ({ ...product, ...updates }));
-        const fieldUpdates = preparedResults.reduce<
-          Record<string, Partial<Pick<AutoPilotProduct, 'caption' | 'hashtags' | 'cta'>>>
-        >((acc, { product, updates }) => {
-          if (Object.keys(updates).length > 0) {
-            acc[product.id] = updates;
-          }
-          return acc;
-        }, {});
-
-        if (Object.keys(fieldUpdates).length > 0) {
-          setProductFieldsById((current) => {
-            const next = { ...current };
-            for (const [productId, updates] of Object.entries(fieldUpdates)) {
-              next[productId] = {
-                ...next[productId],
-                ...updates,
-              };
-            }
-            return next;
-          });
-        }
-      }
+      // AI caption/hashtags/CTA คิด "ทีละสินค้า" ตอนเริ่มสินค้านั้นๆ ใน runner
+      // (GoogleFlowWebViewRunnerHost.ensureProductAiContent) — ไม่คิดรวบที่นี่ก่อนเริ่ม
+      // เพราะหลายสิบสินค้าจะนั่งรอหลายนาทีกว่าคลิปแรกจะได้เริ่มทำ; ค่า AI ที่คิดได้
+      // sync กลับเข้า field สินค้าผ่าน entry.productFieldUpdates ใน handler ด้านบน
 
       if (preflightStopRequestedRef.current) {
         finishRunAsStopped();
@@ -824,13 +780,13 @@ export function useAutoPilotController({
         promptCatalog: catalogResult.catalog,
         promptCatalogSource: catalogResult.source,
         promptCatalogVersion: catalogResult.version,
-        products: preparedProducts,
+        products: selectedProducts,
         profileLocalId,
         runId,
         settings,
       });
       preparedProductByKeyRef.current = new Map();
-      for (const product of preparedProducts) {
+      for (const product of selectedProducts) {
         for (const key of [product.id, product.productId, product.catalogId]) {
           if (key) {
             preparedProductByKeyRef.current.set(key, product);
@@ -843,7 +799,7 @@ export function useAutoPilotController({
         return;
       }
 
-      appendLog('action', `ส่งงานไป Google Flow WebView: ${preparedProducts.length} สินค้า`);
+      appendLog('action', `ส่งงานไป Google Flow WebView: ${selectedProducts.length} สินค้า`);
       runnerStartingRef.current = true;
       const result = await startGoogleFlowRunner(payload);
       runnerStartingRef.current = false;
