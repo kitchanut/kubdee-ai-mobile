@@ -14,7 +14,7 @@ import {
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { generateAutoPilotProductContent, getAutoPilotAiContentLabels } from '@/autopilot/aiCaption';
-import { awaitShopeePostResult } from '@/autopilot/autoProductPosting';
+import { SHOPEE_POST_TIMEOUT_MS, awaitShopeePostResult } from '@/autopilot/autoProductPosting';
 import {
   DEFAULT_SHOPEE_AI_CONTENT_SETTINGS,
   getShopeeAiContentSettings,
@@ -35,7 +35,7 @@ import {
   stopShopeeAutomation,
   subscribeShopeePostLogs,
 } from '@/native/AccessibilityBridge';
-import type { NativeShopeePostLog, NativeShopeePostingResult, NativeShopeePostingVideoInput } from '@/native/AccessibilityBridge';
+import type { NativeShopeePostLog, NativeShopeePostingVideoInput } from '@/native/AccessibilityBridge';
 import { SHOPEE_POST_SAFE_WORD_LIMIT, limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
 import { SHOPEE_ORANGE, SHOPEE_ORANGE_SOFT } from '@/theme/brandColors';
@@ -276,97 +276,110 @@ export default function ShopeeScreen({
       let failedCount = 0;
       let stoppedEarly = false;
       let abortedOnError = false;
-      // นับเฉพาะ error ที่ throw (bridge พัง/timeout) ติดต่อกัน — ใช้ตัดสินว่าระบบล่มจริง
-      let consecutiveThrownErrors = 0;
-      // คิด caption ของคลิปแรกทันที ให้ overlap กับตอนแอป Shopee กำลังเปิดด้านบน
-      let nextAiContentPromise = generateClipAiContent(postableVideos[0], 0);
 
-      for (let index = 0; index < total; index += 1) {
-        // เช็คก่อนเริ่มคลิปใหม่ทุกครั้ง — native เคลียร์ stop-flag ของตัวเองใหม่ทุกครั้งที่เรียก
-        // postShopeeVideos ต่อคลิป เลยต้องกันเองฝั่ง JS ไม่งั้นคลิปถัดไปจะโพสต์ต่อทั้งที่กดหยุดแล้ว
-        if (stopRequestedRef.current) {
-          stoppedEarly = true;
-          appendPostLog(`หยุดโพสต์ Shopee แล้ว (${successCount}/${total})`);
-          break;
-        }
-
-        const video = postableVideos[index];
-        appendPostLog(`กำลังทำคลิปที่ ${index + 1}/${total}: ${getPostVideoFallbackLabel(video, index)}`);
-
-        const aiPatch = await nextAiContentPromise;
-        const effectiveVideo = { ...video, ...aiPatch };
-
-        // คิด caption คลิปถัดไปตอนนี้เลย ให้ทำงานคู่ขนานกับตอนคลิปนี้กำลังโพสต์ผ่าน native automation
-        // (ไม่คิดต่อถ้ากดหยุดแล้ว กันคิด caption เสียเปล่าเพิ่มสำหรับคลิปที่ไม่มีทางได้โพสต์รอบนี้)
-        const nextVideo = postableVideos[index + 1];
-        nextAiContentPromise = nextVideo && !stopRequestedRef.current
-          ? generateClipAiContent(nextVideo, index + 1)
-          : Promise.resolve({});
-
-        const productName = getPostPayloadProductName(effectiveVideo);
-        const productCode = getPostPayloadProductCode(effectiveVideo);
-        const limitedText = limitShopeePostTextParts({
-          caption: effectiveVideo.caption,
-          cta: effectiveVideo.cta,
-          fallbackCaption: productName,
-          hashtags: effectiveVideo.hashtags,
-        });
-        if (limitedText.wasLimited) {
-          appendPostLog(`ปรับแคปชั่น/แฮชแท็กคลิปที่ ${index + 1} ให้อยู่ไม่เกิน ${SHOPEE_POST_SAFE_WORD_LIMIT} คำ`);
-        }
-
-        const payload: NativeShopeePostingVideoInput = {
-          fileUri: effectiveVideo.fileUri || '',
-          productName,
-          productId: productCode,
-          productUrl: isShopeeShortLink(effectiveVideo.productUrl) ? effectiveVideo.productUrl : null,
-          caption: limitedText.caption || null,
-          hashtags: limitedText.hashtags || null,
-          cta: limitedText.cta || null,
-          galleryVideoId: effectiveVideo.id,
-          platform: effectiveVideo.platform || 'shopee',
-        };
-
-        let result: NativeShopeePostingResult;
-        try {
-          // skipReturnNavigation ทุกคลิปยกเว้นคลิปสุดท้าย — จะได้ค้างอยู่ใน Shopee ต่อเนื่องไม่กระโดดกลับแอปเรากลางคัน
-          // awaitShopeePostResult รอ broadcast ควบคู่กับ poll ผลจาก disk แบบเดียวกับ auto pilot —
-          // broadcast หล่นง่ายเพราะแอปสลับ background/foreground ทุกคลิป ถ้ารอเปล่าๆ จะค้างจน
-          // timeout ทั้งที่ native โพสต์เสร็จแล้ว (อาการ "โพสต์ได้แค่คลิปแรกแล้วหยุด")
-          result = await awaitShopeePostResult(
-            postShopeeVideos([payload], { skipReturnNavigation: index < total - 1 }),
-            Date.now()
-          );
-        } catch (error) {
-          failedCount += 1;
-          consecutiveThrownErrors += 1;
-          const message = error instanceof Error ? error.message : String(error);
-          // error ที่ throw (ไม่ใช่ result.success===false ต่อคลิป) มักเป็นปัญหาระบบ แต่คลิปเดียว
-          // flake ไม่ควรทิ้งทั้งชุด — ให้โอกาสคลิปถัดไปก่อน ถ้าพังติดกัน 2 คลิปค่อยถือว่าระบบล่มจริง
-          if (consecutiveThrownErrors >= 2) {
-            appendPostLog(`คลิปที่ ${index + 1} ล้มเหลว: ${message} — ล้มเหลวติดกัน 2 คลิป หยุดที่เหลือเพราะน่าจะเป็นปัญหาระบบ`);
-            abortedOnError = true;
-            break;
+      // คิด AI caption/hashtags ให้ครบทุกคลิปก่อน แล้วส่งให้ native โพสต์ทั้งชุดใน call เดียว —
+      // ห้ามวนสั่งทีละคลิปจาก JS: ระหว่าง Shopee อยู่ foreground แอปหลักโดนระบบฆ่าได้
+      // (เกิดจริงบนเครื่อง RAM น้อย: คลิปแรกโพสต์เสร็จแต่แอปหลักตายไปแล้ว คลิปที่เหลือ
+      // เลยไม่มีใครสั่ง = อาการ "โพสต์ได้อันเดียว") — process automation เป็น accessibility
+      // service อยู่รอดและวนโพสต์ทุกคลิปในชุดต่อจนจบเองได้โดยไม่พึ่งแอปหลัก
+      // คิดขนานทีละ 4 คลิป — คิวใหญ่ (50 คลิป) ใช้เวลาไม่ถึงนาที และคลิปที่มี caption
+      // อยู่แล้ว (เช่นมาจาก auto pilot) ข้ามทันทีไม่เรียก AI ซ้ำ
+      const AI_PREP_CONCURRENCY = 4;
+      appendPostLog(`คิดแคปชั่น/แฮชแท็ก ${total} คลิป (เฉพาะคลิปที่ยังไม่มี)...`);
+      const aiPatches: Partial<Pick<GeneratedMediaAsset, 'caption' | 'hashtags'>>[] = new Array(total).fill({});
+      let preparedCount = 0;
+      let nextPrepIndex = 0;
+      const prepWorker = async (): Promise<void> => {
+        while (!stopRequestedRef.current) {
+          const index = nextPrepIndex;
+          if (index >= total) return;
+          nextPrepIndex += 1;
+          const video = postableVideos[index];
+          const patch = await generateClipAiContent(video, index);
+          aiPatches[index] = patch;
+          preparedCount += 1;
+          if (Object.keys(patch).length > 0) {
+            appendPostLog(`คิดแคปชั่น/แฮชแท็กคลิปที่ ${index + 1} แล้ว (${preparedCount}/${total})`);
           }
-          appendPostLog(
-            `คลิปที่ ${index + 1} ล้มเหลว: ${message}${index < total - 1 ? ' — ลองคลิปถัดไปต่อ' : ''}`
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(AI_PREP_CONCURRENCY, total) }, () => prepWorker()));
+
+      if (stopRequestedRef.current) {
+        stoppedEarly = true;
+        appendPostLog(`หยุดโพสต์ Shopee แล้ว (0/${total})`);
+      }
+
+      const payloads: NativeShopeePostingVideoInput[] = [];
+      if (!stoppedEarly) {
+        for (let index = 0; index < total; index += 1) {
+          const video = postableVideos[index];
+          const effectiveVideo = { ...video, ...aiPatches[index] };
+
+          const productName = getPostPayloadProductName(effectiveVideo);
+          const productCode = getPostPayloadProductCode(effectiveVideo);
+          const limitedText = limitShopeePostTextParts({
+            caption: effectiveVideo.caption,
+            cta: effectiveVideo.cta,
+            fallbackCaption: productName,
+            hashtags: effectiveVideo.hashtags,
+          });
+          if (limitedText.wasLimited) {
+            appendPostLog(`ปรับแคปชั่น/แฮชแท็กคลิปที่ ${index + 1} ให้อยู่ไม่เกิน ${SHOPEE_POST_SAFE_WORD_LIMIT} คำ`);
+          }
+
+          payloads.push({
+            fileUri: effectiveVideo.fileUri || '',
+            productName,
+            productId: productCode,
+            productUrl: isShopeeShortLink(effectiveVideo.productUrl) ? effectiveVideo.productUrl : null,
+            caption: limitedText.caption || null,
+            hashtags: limitedText.hashtags || null,
+            cta: limitedText.cta || null,
+            galleryVideoId: effectiveVideo.id,
+            platform: effectiveVideo.platform || 'shopee',
+          });
+        }
+      }
+
+      if (!stoppedEarly) {
+        appendPostLog(`ส่งโพสต์ ${payloads.length} คลิปให้ระบบอัตโนมัติแล้ว`);
+        try {
+          // awaitShopeePostResult รอ broadcast ควบคู่กับ poll ผลจาก disk แบบเดียวกับ auto pilot
+          // (broadcast หล่น/แอปโดน freeze ระหว่าง Shopee อยู่ foreground แล้วยังกู้ผลได้)
+          // timeout สเกลตามจำนวนคลิป แต่ native มีเพดานรอผล 20 นาทีต่อ run
+          const result = await awaitShopeePostResult(
+            postShopeeVideos(payloads, { skipReturnNavigation: false }),
+            Date.now(),
+            Math.min(SHOPEE_POST_TIMEOUT_MS * payloads.length, 20 * 60_000)
           );
-          continue;
-        }
-        consecutiveThrownErrors = 0;
 
-        if (result.stopped) {
-          stoppedEarly = true;
-          appendPostLog(`หยุดโพสต์ Shopee แล้ว (${successCount}/${total})`);
-          break;
-        }
+          const perVideo = Array.isArray(result.results) ? result.results : [];
+          for (const entry of perVideo) {
+            const video = typeof entry.videoIndex === 'number' ? postableVideos[entry.videoIndex] : undefined;
+            if (entry.success) {
+              successCount += 1;
+              if (video) {
+                onRemovePendingVideo?.(video.id);
+              }
+            } else {
+              failedCount += 1;
+              appendPostLog(`คลิปที่ ${(entry.videoIndex ?? 0) + 1} ล้มเหลว: ${entry.error || 'unknown'}`);
+            }
+          }
 
-        if (result.success) {
-          successCount += 1;
-          onRemovePendingVideo?.(video.id);
-        } else {
-          failedCount += 1;
-          appendPostLog(`คลิปที่ ${index + 1} ล้มเหลว: ${result.error || 'unknown'}`);
+          if (result.stopped) {
+            stoppedEarly = true;
+            appendPostLog(`หยุดโพสต์ Shopee แล้ว (${successCount}/${total})`);
+          } else if (!result.success && perVideo.length === 0) {
+            // ล้มเหลวก่อนเริ่มคลิปแรก (เช่น payload ว่าง/เปิด Shopee ไม่ได้) — ไม่มีผลรายคลิป
+            failedCount = total;
+            appendPostLog(`โพสต์ Shopee ไม่สำเร็จ: ${result.error || 'unknown'}`);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          appendPostLog(`โพสต์ Shopee ล้มเหลว: ${message}`);
+          abortedOnError = true;
         }
       }
 
