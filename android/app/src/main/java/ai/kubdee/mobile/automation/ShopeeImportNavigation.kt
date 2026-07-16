@@ -125,8 +125,14 @@ internal fun KubdeeAccessibilityService.collectShopeeMeTabNodes(
     node.getBoundsInScreen(bounds)
     val isBottomNode = bounds.top >= bottomNavStart || bounds.bottom >= bottomNavStart
     val label = text.ifBlank { resourceId.ifBlank { "tab_bar_button_me" } }
+    // บางเครื่อง (เจอจริง: HUAWEI HMA-L29) tab bar เป็นไอคอนล้วนไม่มีข้อความ และ resourceId
+    // เป็นแค่ "icon" — ชื่อไอคอน tab_bar_button_me อยู่ใน contentDescription แทน ต้องเช็คทั้งคู่
+    // ไม่งั้นหาปุ่ม ฉัน ไม่เจอเลย (user-report 2026-07-16: ติดหน้าโฮม ดึงได้ 0 รายการ)
+    val contentDesc = node.contentDescription?.toString().orEmpty()
     val resourceLooksLikeMe = resourceId.contains("tab_bar_button_me", ignoreCase = true) ||
-      resourceId.contains("tab_me", ignoreCase = true)
+      resourceId.contains("tab_me", ignoreCase = true) ||
+      contentDesc.contains("tab_bar_button_me", ignoreCase = true) ||
+      contentDesc.contains("tab_me", ignoreCase = true)
     val rank = when {
       text.equals("ฉัน", ignoreCase = true) || text.equals("Me", ignoreCase = true) -> 3
       text.contains("ฉัน", ignoreCase = true) || Regex("""\bme\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> 2
