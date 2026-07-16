@@ -44,6 +44,25 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.5',
+    date: '2026-07-16',
+    highlight: 'โพสต์ Shopee ครบทุกคลิปในคิว + AI คิดแคปชั่นเร็วขึ้น',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'โพสต์ Shopee หลายคลิปแล้วได้แค่คลิปแรก — ตอนนี้ระบบโพสต์ต่อเนื่องจนครบทุกคลิปในคิว แม้แอปถูกพักระหว่างโพสต์'
+      },
+      {
+        type: 'improved',
+        text: 'หน้าโพสต์ Shopee คิดแคปชั่น/แฮชแท็กด้วย AI พร้อมกันหลายคลิป — คิวใหญ่เริ่มโพสต์ได้เร็วขึ้นมาก และคลิปที่มีแคปชั่นอยู่แล้วไม่ต้องคิดซ้ำ'
+      },
+      {
+        type: 'improved',
+        text: 'Auto Pilot คิดแคปชั่น/แฮชแท็กทีละสินค้าตอนเริ่มทำสินค้านั้นๆ — เลือกสินค้าจำนวนมากก็เริ่มสร้างคลิปแรกได้ทันที ไม่ต้องรอคิดครบทุกตัวก่อน'
+      }
+    ]
+  },
+  {
     version: '0.9.4',
     date: '2026-07-16',
     highlight: 'แก้เข้าสู่ระบบ Google Flow ไม่ได้ + ปุ่มออกจากระบบ Google',
