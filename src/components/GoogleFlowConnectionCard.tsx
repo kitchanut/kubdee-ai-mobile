@@ -1,5 +1,5 @@
 import { ActivityIndicator, Image, Modal, TextInput, TouchableOpacity, View } from 'react-native';
-import { CheckCircle2, RefreshCw, X } from 'lucide-react-native';
+import { CheckCircle2, LogOut, RefreshCw, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -11,6 +11,7 @@ import FlowWebView, {
   type FlowWebViewHandle,
 } from '@/flow/FlowWebView';
 import {
+  clearFlowAccount,
   loadFlowAccount,
   loadFlowConnectionState,
   saveFlowAccount,
@@ -67,6 +68,20 @@ export default function GoogleFlowConnectionCard({ theme }: GoogleFlowConnection
 
   const appendFlowLog = (message: string): void => {
     setFlowLogs((prev) => [...prev.slice(-24), message]);
+  };
+
+  const handleSignOutGoogle = (): void => {
+    appendFlowLog('ออกจากระบบ Google...');
+    flowRef.current?.signOutGoogle();
+    setFlowState('loggedout');
+    void saveFlowConnectionState('loggedout');
+    setFlowAccount(null);
+    void clearFlowAccount();
+    // รอ Logout roundtrip เสร็จ แล้ว remount กลับหน้า Flow เพื่อให้กด Sign in ใหม่ได้เลย
+    setTimeout(() => {
+      setFlowReloadKey((key) => key + 1);
+      setFlowLogs([]);
+    }, 6000);
   };
 
   const runFlowTest = async (): Promise<void> => {
@@ -264,6 +279,15 @@ export default function GoogleFlowConnectionCard({ theme }: GoogleFlowConnection
                     : 'เข้าสู่ระบบ Google เพื่อเชื่อมต่อ'}
               </Text>
             </View>
+            <TouchableOpacity
+              accessibilityLabel="ออกจากระบบ Google"
+              accessibilityRole="button"
+              activeOpacity={0.7}
+              onPress={handleSignOutGoogle}
+              className="h-8 w-8 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel"
+            >
+              <LogOut size={15} color={theme.red} strokeWidth={2.2} />
+            </TouchableOpacity>
             <TouchableOpacity
               accessibilityLabel="โหลดใหม่"
               accessibilityRole="button"

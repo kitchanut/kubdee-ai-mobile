@@ -292,6 +292,8 @@ export interface FlowWebViewHandle {
   ) => Promise<FlowActionResult>;
   goHome: () => void;
   reload: () => void;
+  /** ออกจากระบบ Google ทั้ง session (cookie แชร์ทั้งแอปผ่าน CookieManager — WebView ตัวอื่นหลุดด้วย) */
+  signOutGoogle: () => void;
 }
 
 /**
@@ -360,6 +362,13 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
       },
       reload() {
         innerRef.current?.reload();
+      },
+      signOutGoogle() {
+        // Logout ของ Google เคลียร์ session cookie ฝั่ง server+client — เข้าเงื่อนไข
+        // per-host UA switch (accounts.google.com = mobile UA) ผ่าน onShouldStartLoadWithRequest
+        innerRef.current?.injectJavaScript(
+          `window.location.href = 'https://accounts.google.com/Logout'; true;`
+        );
       },
     }),
     []

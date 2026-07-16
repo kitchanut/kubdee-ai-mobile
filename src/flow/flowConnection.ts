@@ -40,3 +40,11 @@ export async function saveFlowAccount(account: FlowAccount): Promise<void> {
     // ignore persistence failures
   }
 }
+
+export async function clearFlowAccount(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(ACCOUNT_KEY);
+  } catch {
+    // ignore persistence failures
+  }
+}
