@@ -58,7 +58,10 @@ const SHOPEE_POST_RESULT_POLL_MS = 5_000;
 
 export function awaitShopeePostResult(
   broadcastPromise: Promise<NativeShopeePostingResult>,
-  startedAt: number
+  startedAt: number,
+  // batch หลายคลิปใน call เดียวใช้เวลานานกว่า 5 นาที — ผู้เรียกสเกล timeout ตามจำนวนคลิปได้
+  // (native เองมีเพดานรอผล 20 นาทีต่อ run ใน KubdeeAccessibilityModule)
+  timeoutMs: number = SHOPEE_POST_TIMEOUT_MS
 ): Promise<NativeShopeePostingResult> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -105,13 +108,15 @@ export function awaitShopeePostResult(
       // เช็คไฟล์รอบสุดท้ายก่อนตัดสิน timeout — เผื่อผลเพิ่งถูกเขียนพอดี
       void poll().finally(() => {
         settle(() => {
-          reportWarning('postProductToShopee: withTimeout fired', { timeoutMs: SHOPEE_POST_TIMEOUT_MS });
+          reportWarning('postProductToShopee: withTimeout fired', { timeoutMs });
           reject(
-            new ShopeePostTimeoutError('โพสต์ Shopee หมดเวลา (นานเกิน 5 นาที ไม่ได้รับผลลัพธ์จากระบบอัตโนมัติ)')
+            new ShopeePostTimeoutError(
+              `โพสต์ Shopee หมดเวลา (นานเกิน ${Math.round(timeoutMs / 60_000)} นาที ไม่ได้รับผลลัพธ์จากระบบอัตโนมัติ)`
+            )
           );
         });
       });
-    }, SHOPEE_POST_TIMEOUT_MS);
+    }, timeoutMs);
 
     const appStateSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
