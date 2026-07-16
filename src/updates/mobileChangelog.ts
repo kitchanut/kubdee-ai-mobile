@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.4',
+    date: '2026-07-16',
+    highlight: 'แก้เข้าสู่ระบบ Google Flow ไม่ได้ + ปุ่มออกจากระบบ Google',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'เข้าสู่ระบบ Google ในหน้าเชื่อมต่อ Google Flow ไม่ได้ (ขึ้นว่า "เบราว์เซอร์หรือแอปนี้อาจไม่ปลอดภัย") — ตอนนี้เข้าสู่ระบบได้ตามปกติ และหน้า Flow ยังแสดงแบบเดสก์ท็อป/Grid เหมือนเดิม'
+      },
+      {
+        type: 'added',
+        text: 'ปุ่มออกจากระบบ Google ในหน้าจัดการการเชื่อมต่อ Google Flow — ใช้สลับบัญชีหรือเริ่มเชื่อมต่อใหม่ได้เอง'
+      }
+    ]
+  },
+  {
     version: '0.9.3',
     date: '2026-07-15',
     highlight: 'ดึงสินค้า Shopee ได้ราคาและชื่อที่ถูกต้อง ไม่เข้าคลังซ้ำ',
