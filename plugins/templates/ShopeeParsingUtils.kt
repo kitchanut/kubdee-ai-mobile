@@ -146,16 +146,21 @@ internal fun KubdeeAccessibilityService.extractShopeeImageUrl(value: String?): S
 }
 
 // Shopee ไม่ได้ใส่ URL รูปไว้ใน accessibility node แต่ฝัง "ไอดีรูป" ไว้ใน resource id แทน
-// (com.shopee.th:id/imageCover_<id>) — resource id เป็น [a-zA-Z0-9_] เท่านั้น จึงไม่มีทางเป็น URL
-// ต้องแกะไอดีออกมาแล้วประกอบ URL เอง ใช้ร่วมกันทั้งหน้า detail การ์ดสินค้า และแผงแชร์
+// ใช้ร่วมกันทั้งหน้า detail การ์ดสินค้า และแผงแชร์ — มีสองรูปแบบตามเวอร์ชัน Shopee:
+//   - แบบเก่า (ถึง 3.77.25 และหน้า detail ผู้ซื้อใน 3.78.25): imageCover_<id>
+//   - แบบใหม่ (3.78.25+ การ์ดหน้าถูกใจ): _https://cf.shopee.co.th/file/<id>_tn_mainpic
 internal fun KubdeeAccessibilityService.extractShopeeImageIdFromResourceName(value: String?): String? {
   val resourceName = value.orEmpty()
   val markerIndex = resourceName.indexOf("imageCover_")
-  if (markerIndex < 0) return null
-  val imageId = resourceName.substring(markerIndex + "imageCover_".length)
-    .trim()
-    .replace(Regex("""(_tn(?:_[A-Za-z0-9]+)?|_resize[^/?#]*)$"""), "")
-  return imageId.takeIf { it.length >= 12 }
+  if (markerIndex >= 0) {
+    val imageId = resourceName.substring(markerIndex + "imageCover_".length)
+      .trim()
+      .replace(Regex("""(_tn(?:_[A-Za-z0-9]+)?|_resize[^/?#]*)$"""), "")
+    return imageId.takeIf { it.length >= 12 }
+  }
+  return extractShopeeImageUrl(resourceName)
+    ?.substringAfterLast("/file/")
+    ?.takeIf { it.length >= 12 }
 }
 
 internal fun KubdeeAccessibilityService.shopeeImageUrlFromResourceName(value: String?): String? =
@@ -319,7 +324,7 @@ internal fun KubdeeAccessibilityService.isProductNameCandidate(text: String): Bo
     "หน้าแรก", "mall", "live", "video", "สำหรับคุณ", "การแจ้งเตือน", "ฉัน",
     "สิ่งที่ฉันถูกใจ", "รายการถูกใจ", "liked", "ค้นหา", "แก้ไข", "edit",
     "โค้ดลด", "ส่วนลด", "coins", "coin", "เช็คอิน", "รับ", "ซื้อเลย",
-    "ขายแล้ว", "ส่งฟรี", "วันที่", "แนะนำ", "ดูเพิ่มเติม", "ช้อปปี้ถูกชัวร์",
+    "ขายแล้ว", "ขายได้", "ส่งฟรี", "วันที่", "แนะนำ", "ดูเพิ่มเติม", "ช้อปปี้ถูกชัวร์",
     "ถูกชัวร์", "spaylater", "payday", "flashsale", "มีบริการติดตั้ง", "ผ่อน"
   )
   return blocked.none { compact.contains(it.lowercase(Locale.ROOT).replace(Regex("""\s+"""), "")) }
@@ -426,7 +431,7 @@ internal fun KubdeeAccessibilityService.collectShopeeImageNodes(
   if (node == null) return
   if (isAllowedPackageNode(node, allowedPackageName) && node.isVisibleToUser) {
     // resource id มาก่อน — เป็นทางเดียวที่ Shopee บอกไอดีรูปบนการ์ด/แผงแชร์
-    // (เดิมส่ง resource id เข้า extractShopeeImageUrl ซึ่งต้องการ http(s) จึงคืน null เสมอ)
+    // (รองรับทั้ง imageCover_<id> แบบเก่า และ resource id ที่เป็น URL เต็มของ 3.78.25+)
     val imageUrl = shopeeImageUrlFromResourceName(node.viewIdResourceName)
       ?: extractShopeeImageUrl(node.text?.toString())
       ?: extractShopeeImageUrl(node.contentDescription?.toString())

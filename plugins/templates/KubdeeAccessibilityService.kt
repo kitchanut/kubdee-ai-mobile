@@ -223,7 +223,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     )
     private val PRICE_REGEX = Regex("""(?:฿|B)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)""")
     private val PRICE_NUMBER_REGEX = Regex("""^[0-9][0-9,]*(?:\.[0-9]{1,2})?$""")
-    private val STOCK_REGEX = Regex("""(?:ขายแล้ว|stock|สต็อก|คงเหลือ)\s*([0-9,]+)|([0-9,]+)\s*(?:ชิ้น|sold)""", RegexOption.IGNORE_CASE)
+    private val STOCK_REGEX = Regex("""(?:ขายแล้ว|ขายได้|stock|สต็อก|คงเหลือ)\s*([0-9,]+)|([0-9,]+)\s*(?:ชิ้น|sold)""", RegexOption.IGNORE_CASE)
     private val URL_REGEX = Regex("""https?://[^\s]+""", RegexOption.IGNORE_CASE)
 
     @Volatile
