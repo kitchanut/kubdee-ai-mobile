@@ -5,6 +5,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 
+import type { OverlayLogLine } from '@/autopilot/google-flow-runner/runnerBasics';
+import {
+  formatOverlayDuration,
+  formatOverlayTime,
+  getOverlayLogMessageColor,
+  getOverlayLogMessageLineCount,
+} from '@/autopilot/google-flow-runner/runnerOverlay';
 import { TikTokLogo } from '@/components/BrandLogos';
 import Text from '@/components/ui/KubdeeText';
 import {
@@ -29,7 +36,7 @@ const STUDIO_UPLOAD_URL = 'https://www.tiktok.com/tiktokstudio/upload?from=webap
 const POST_RUN_TIMEOUT_MS = 10 * 60 * 1000;
 const TIKTOK_STUDIO_DEVICE_WIDTH = Math.round(Dimensions.get('window').width);
 const TIKTOK_STUDIO_DESKTOP_SPOOF =
-  `window.__kubdeeDesktopWidth=1920;window.__kubdeeDesktopDeviceWidth=${TIKTOK_STUDIO_DEVICE_WIDTH};\n` +
+  `window.__kubdeeDesktopWidth=1280;window.__kubdeeDesktopDeviceWidth=${TIKTOK_STUDIO_DEVICE_WIDTH};\n` +
   DESKTOP_ENV_SPOOF;
 
 function isTikTokHttpsUrl(rawUrl: string): boolean {
@@ -71,6 +78,21 @@ export default function TikTokPostModal({
   onComplete,
   onClose,
 }: TikTokPostModalProps): React.JSX.Element | null {
+  const [overlayLogs, setOverlayLogs] = useState<OverlayLogLine[]>([]);
+
+  const handleLog = useCallback((message: string): void => {
+    onLog(message);
+    const ts = Date.now();
+    setOverlayLogs((current) => [
+      ...current.slice(-3),
+      { id: `${ts}-${current.length}`, message, ts },
+    ]);
+  }, [onLog]);
+
+  useEffect(() => {
+    if (visible) setOverlayLogs([]);
+  }, [video, visible]);
+
   if (!visible) return null;
 
   return (
@@ -91,9 +113,32 @@ export default function TikTokPostModal({
           video={video}
           postAction={postAction}
           enableProductLink={enableProductLink}
-          onLog={onLog}
+          onLog={handleLog}
           onComplete={onComplete}
         />
+        {overlayLogs.length > 0 ? (
+          <View pointerEvents="none" style={styles.logOverlay}>
+            {overlayLogs.map((line, index) => {
+              const firstLog = overlayLogs[0] ?? line;
+              const previousLog = index > 0 ? overlayLogs[index - 1] : null;
+              const deltaMs = previousLog ? Math.max(0, line.ts - previousLog.ts) : 0;
+              const elapsedMs = Math.max(0, line.ts - firstLog.ts);
+              return (
+                <View key={line.id} style={index > 0 ? styles.logLineSpacing : undefined}>
+                  <Text numberOfLines={1} style={styles.logTime}>
+                    {formatOverlayTime(line.ts)} +{formatOverlayDuration(deltaMs)} · {formatOverlayDuration(elapsedMs)}
+                  </Text>
+                  <Text
+                    numberOfLines={getOverlayLogMessageLineCount(line)}
+                    style={[styles.logMessage, { color: getOverlayLogMessageColor(line) }]}
+                  >
+                    {line.message}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </SafeAreaView>
     </Modal>
   );
@@ -391,4 +436,18 @@ const styles = StyleSheet.create({
   loadingText: { color: '#d4d4d4', fontSize: 13 },
   hiddenWebview: { position: 'absolute', width: 1, height: 1, opacity: 0 },
   webview: { flex: 1, backgroundColor: '#000000' },
+  logOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.66)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  logLineSpacing: { marginTop: 4 },
+  logTime: { color: 'rgba(255,255,255,0.6)', fontSize: 8, lineHeight: 12 },
+  logMessage: { fontSize: 10, lineHeight: 16, color: '#ffffff' },
 });
