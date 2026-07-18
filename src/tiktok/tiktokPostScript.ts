@@ -858,7 +858,10 @@ export function buildTikTokPostScript({
       return true;
     }
     var checked = isEnabled();
-    if (!checked) {
+    if (checked) {
+      // TikTok จำค่านี้ไว้ระดับบัญชี — โพสต์รอบก่อนเปิดไว้แล้วจะติดมาให้เลยไม่ต้องแตะซ้ำ
+      log('AI_CONTENT_ALREADY_ON', 'เนื้อหา AI เปิดอยู่แล้ว (ค่าเดิมจากบัญชี)');
+    } else {
       // synthetic click() เฉยๆ ไม่ติด — เจอปัญหาเดียวกับปุ่ม Sounds/ช่องค้นหาสินค้า
       // (TikTok ต้องการ trusted gesture) จึงใช้ trusted tap ผ่าน Accessibility ก่อนแล้วค่อย fallback
       var tapped = await nativeTapOn(toggle, 'สวิตช์เนื้อหา AI');
