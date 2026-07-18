@@ -92,9 +92,12 @@ export default function TikTokPostModal({
 
   useEffect(() => {
     if (visible) setOverlayLogs([]);
-  }, [video, visible]);
+  }, [visible]);
 
   if (!visible) return null;
+
+  // remount เฉพาะ runner/WebView ต่อคลิป — Modal ค้างไว้ทั้งคิวเพื่อไม่ให้จอปิด-เปิดระหว่างคลิป
+  const runnerKey = video.galleryVideoId || video.fileUri || video.fileName || 'clip';
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} visible>
@@ -110,6 +113,7 @@ export default function TikTokPostModal({
           </Pressable>
         </View>
         <TikTokPostRunner
+          key={runnerKey}
           profileLocalId={profileLocalId}
           video={video}
           postAction={postAction}

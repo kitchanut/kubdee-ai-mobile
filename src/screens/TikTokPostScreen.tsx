@@ -504,7 +504,6 @@ export default function TikTokPostScreen({
 
       {activeVideo ? (
         <TikTokPostModal
-          key={activeVideo.id}
           visible
           profileLocalId={selectedProfileId}
           video={toTikTokPostVideo(activeVideo)}
