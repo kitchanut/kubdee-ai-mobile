@@ -518,15 +518,39 @@ export function buildTikTokPostScript({
       for (var i = 0; i < rows.length; i++) { if (visible(rows[i])) out.push(rows[i]); }
       return out;
     };
+    // ใช้ความสูง visualViewport จับสถานะคีย์บอร์ด: เปิด = viewport หด, กด Go สำเร็จ = viewport คืน
+    // (แก้อาการ "กรอกรหัสแล้วไม่กดค้นหา" — เดิมยิง Enter แบบ fire-and-forget ไม่รู้ว่าลงจริงไหม)
+    var vpH = function(){ return Math.round(window.visualViewport ? window.visualViewport.height : window.innerHeight); };
     var fireSearch = async function(label){
-      log('PRODUCT_SEARCH_FILLED', 'ค้นหา Product ID: ' + String(INPUT.productId) + ' — กดปุ่มค้นหาบนคีย์บอร์ด' + (label ? ' (' + label + ')' : ''));
-      var tapped = await nativeTapOn(search, 'ช่องค้นหาสินค้า');
-      if (!tapped) search.click();
-      await sleep(900); // รอคีย์บอร์ดเด้งขึ้นก่อน
+      log('PRODUCT_SEARCH_FILLED', 'ค้นหา Product ID: ' + String(INPUT.productId) + (label ? ' (' + label + ')' : ''));
+      // 1) แตะช่องค้นหาจนคีย์บอร์ดเปิดจริง (เช็คจาก viewport หด) สูงสุด 3 ครั้ง
+      var openedH = vpH();
+      for (var kb = 0; kb < 3; kb++) {
+        var beforeH = vpH();
+        var tapped = await nativeTapOn(search, 'ช่องค้นหาสินค้า');
+        if (!tapped) search.click();
+        await sleep(900);
+        var afterH = vpH();
+        openedH = afterH;
+        if (afterH < beforeH - 80) {
+          log('PRODUCT_KEYBOARD_UP', 'คีย์บอร์ดเปิดแล้ว (viewport ' + beforeH + '→' + afterH + ')');
+          break;
+        }
+        if (kb < 2) log('PRODUCT_KEYBOARD_RETRY', 'ยังไม่เห็นคีย์บอร์ดเปิด (viewport ' + afterH + ') — แตะช่องค้นหาซ้ำ');
+      }
       setNativeValue(search, INPUT.productId);
       await sleep(500);
-      send({ type: 'tiktok-post-native-enter' });
-      await sleep(2800);
+      // 2) กดปุ่มค้นหา (trusted Go) — เช็คว่าลงจริงจากคีย์บอร์ดที่ปิด (viewport คืน) ไม่ลง = กดซ้ำ สูงสุด 3 ครั้ง
+      for (var en = 0; en < 3; en++) {
+        log('PRODUCT_SEARCH_ENTER', 'กดปุ่มค้นหาบนคีย์บอร์ด (ครั้งที่ ' + (en + 1) + '/3)');
+        send({ type: 'tiktok-post-native-enter' });
+        await sleep(1600);
+        if (vpH() > openedH + 80) {
+          log('PRODUCT_KEYBOARD_CLOSED', 'คีย์บอร์ดปิดหลังกดค้นหา — ปุ่ม Go ลงแล้ว');
+          break;
+        }
+      }
+      await sleep(1200);
       try {
         if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
       } catch (e) {}
@@ -540,6 +564,9 @@ export function buildTikTokPostScript({
     var searchDeadline = Date.now() + 180000;
     var lastFireAt = Date.now();
     var lastWaitLogAt = Date.now();
+    // ยิงซ้ำถี่ช่วงแรก (10 วิ × 2 ครั้ง) เผื่อ Go รอบแรกไม่ลง แล้วค่อยผ่อนเป็นทุก 30 วิ
+    var refireCount = 0;
+    var refireGapMs = function(){ return refireCount < 2 ? 10000 : 30000; };
     while (Date.now() < searchDeadline) {
       var rowsNow = productRows();
       var idRow = null;
@@ -574,14 +601,15 @@ export function buildTikTokPostScript({
         singleStreak = 0;
         emptyStreak = 0;
       }
-      if (!idRow && Date.now() - lastFireAt >= 30000) {
+      if (!idRow && Date.now() - lastFireAt >= refireGapMs()) {
+        refireCount++;
         lastFireAt = Date.now();
-        await fireSearch('ยิงซ้ำ');
+        await fireSearch('ยิงซ้ำครั้งที่ ' + refireCount);
         continue;
       }
       if (Date.now() - lastWaitLogAt >= 30000) {
         lastWaitLogAt = Date.now();
-        log('PRODUCT_SEARCH_WAIT', 'ยังรอผลค้นหาสินค้า... (เหลือ ' + Math.round((searchDeadline - Date.now()) / 1000) + ' วิ)');
+        log('PRODUCT_SEARCH_WAIT', 'ยังรอผลค้นหาสินค้า... (' + rowsNow.length + ' แถว, เหลือ ' + Math.round((searchDeadline - Date.now()) / 1000) + ' วิ)');
       }
       await sleep(1000);
     }
