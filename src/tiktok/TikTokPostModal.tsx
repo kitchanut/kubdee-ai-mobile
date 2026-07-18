@@ -1,5 +1,5 @@
 import { Dimensions, Modal, PixelRatio, Pressable, StyleSheet, View } from 'react-native';
-import { X } from 'lucide-react-native';
+import { Square, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -217,12 +217,15 @@ function TikTokPostRunner({
   const [phase, setPhase] = useState<RunnerPhase>('checking');
   const [needsStorageReset, setNeedsStorageReset] = useState(false);
   const [ready, setReady] = useState(false);
+  const [stopped, setStopped] = useState(false);
   const mountedRef = useRef(true);
   const initStartedRef = useRef(false);
   const restoreStartedRef = useRef(false);
   const completedRef = useRef(false);
   const completionStartedRef = useRef(false);
+  const stoppedRef = useRef(false);
   const webViewContainerRef = useRef<View>(null);
+  const webViewRef = useRef<WebView>(null);
 
   const script = useMemo(
     () => buildTikTokPostScript({ video, postAction, enableProductLink, schedule, sound }),
@@ -237,13 +240,27 @@ function TikTokPostRunner({
   }, [onComplete]);
 
   const fail = useCallback((message: string): void => {
-    if (!mountedRef.current) return;
+    // หลังกด Stop ต้องไม่ให้ error ใดๆ (timeout, WebView error, native tap ล้มเหลว ฯลฯ)
+    // มา unmount WebView ทิ้ง — ผู้ใช้ต้องการคงหน้าไว้ตรวจสอบเอง
+    if (!mountedRef.current || stoppedRef.current) return;
     setNeedsStorageReset(false);
     setReady(false);
     setPhase('error');
     onLog(message);
     complete({ success: false, error: message });
   }, [complete, onLog]);
+
+  const handleStop = useCallback((): void => {
+    if (stoppedRef.current) return;
+    stoppedRef.current = true;
+    // กันไม่ให้ผลลัพธ์จาก script (ทั้งสำเร็จ/ล้มเหลว) ที่จะตามมาทีหลังไป trigger onComplete
+    // ต่อ — ผู้ใช้กด Stop แปลว่าอยากคุมเองจากตรงนี้ ไม่ใช่ให้คิวเดินต่ออัตโนมัติ
+    completedRef.current = true;
+    completionStartedRef.current = true;
+    setStopped(true);
+    onLog('ผู้ใช้สั่งหยุดการทำงาน — คงหน้า TikTok Studio ไว้ให้ตรวจสอบ');
+    webViewRef.current?.injectJavaScript('window.__kubdeeTikTokPostStopRequested = true; true;');
+  }, [onLog]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -425,27 +442,50 @@ function TikTokPostRunner({
 
   if (ready) {
     return (
-      <View ref={webViewContainerRef} style={styles.webview}>
-        <WebView
-          source={{ uri: STUDIO_UPLOAD_URL }}
-          userAgent={DESKTOP_CHROME_UA}
-          javaScriptEnabled
-          domStorageEnabled
-          thirdPartyCookiesEnabled
-          sharedCookiesEnabled
-          scalesPageToFit
-          setBuiltInZoomControls={false}
-          setDisplayZoomControls={false}
-          injectedJavaScriptBeforeContentLoaded={TIKTOK_STUDIO_DESKTOP_SPOOF}
-          injectedJavaScript={`${TIKTOK_STUDIO_DESKTOP_SPOOF}\n${script}`}
-          onMessage={handlePostMessage}
-          onShouldStartLoadWithRequest={(request) =>
-            isTikTokHttpsUrl(request.url) || request.url.startsWith('blob:')
-          }
-          onError={() => fail('เปิดหน้า TikTok Studio ไม่สำเร็จ')}
-          onHttpError={(event) => fail(`TikTok Studio ตอบกลับด้วยรหัส ${event.nativeEvent.statusCode}`)}
-          style={styles.webview}
-        />
+      <View style={styles.readyContainer}>
+        <View style={styles.stopBar}>
+          {stopped ? (
+            <Text numberOfLines={1} style={styles.stopBarStoppedText}>
+              หยุดการทำงานแล้ว — ตรวจสอบหน้านี้ได้เลย (กด ✕ เพื่อปิด)
+            </Text>
+          ) : (
+            <Pressable
+              accessibilityLabel="หยุดการทำงานอัตโนมัติ (คงหน้าไว้ตรวจสอบ)"
+              accessibilityRole="button"
+              onPress={handleStop}
+              style={styles.stopButton}
+            >
+              <Square size={11} color="#ffffff" strokeWidth={2.4} />
+              <Text style={styles.stopButtonText}>หยุดทำงาน</Text>
+            </Pressable>
+          )}
+        </View>
+        {/* webViewContainerRef ต้องวัดขนาด/ตำแหน่งของ WebView ล้วนๆ เท่านั้น (native tap
+            คำนวณพิกัดจาก measureInWindow ของ ref นี้) — ห้ามใส่ stopBar ไว้ในนี้ ไม่งั้น
+            offset จะเพี้ยนแล้ว trusted tap ของทุกปุ่มใน TikTok Studio จะพลาดตำแหน่ง */}
+        <View ref={webViewContainerRef} style={styles.webview}>
+          <WebView
+            ref={webViewRef}
+            source={{ uri: STUDIO_UPLOAD_URL }}
+            userAgent={DESKTOP_CHROME_UA}
+            javaScriptEnabled
+            domStorageEnabled
+            thirdPartyCookiesEnabled
+            sharedCookiesEnabled
+            scalesPageToFit
+            setBuiltInZoomControls={false}
+            setDisplayZoomControls={false}
+            injectedJavaScriptBeforeContentLoaded={TIKTOK_STUDIO_DESKTOP_SPOOF}
+            injectedJavaScript={`${TIKTOK_STUDIO_DESKTOP_SPOOF}\n${script}`}
+            onMessage={handlePostMessage}
+            onShouldStartLoadWithRequest={(request) =>
+              isTikTokHttpsUrl(request.url) || request.url.startsWith('blob:')
+            }
+            onError={() => fail('เปิดหน้า TikTok Studio ไม่สำเร็จ')}
+            onHttpError={(event) => fail(`TikTok Studio ตอบกลับด้วยรหัส ${event.nativeEvent.statusCode}`)}
+            style={styles.webview}
+          />
+        </View>
       </View>
     );
   }
@@ -504,6 +544,29 @@ const styles = StyleSheet.create({
   loadingText: { color: '#d4d4d4', fontSize: 13 },
   hiddenWebview: { position: 'absolute', width: 1, height: 1, opacity: 0 },
   webview: { flex: 1, backgroundColor: '#000000' },
+  readyContainer: { flex: 1, backgroundColor: '#000000' },
+  stopBar: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#0a0a0a',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#303030',
+  },
+  stopButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 24,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  stopButtonText: { color: '#ffffff', fontSize: 10, fontWeight: '600' },
+  stopBarStoppedText: { color: '#fbbf24', fontSize: 10, fontWeight: '600' },
   logOverlay: {
     position: 'absolute',
     left: 0,

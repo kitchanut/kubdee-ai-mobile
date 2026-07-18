@@ -69,6 +69,7 @@ export function buildTikTokPostScript({
   return `(function(){
   if (window.__kubdeeTikTokPostRunning) return true;
   window.__kubdeeTikTokPostRunning = true;
+  window.__kubdeeTikTokPostStopRequested = false;
   var INPUT = ${payload};
   var RESULT_SENT = false;
   var VERIFY_KEY = 'kubdee:tiktok-post:verify:v1';
@@ -91,7 +92,14 @@ export function buildTikTokPostScript({
       diagnostics: diagnostics || null
     });
   }
-  function sleep(ms){ return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
+  // ปุ่ม Stop ฝั่งแอปสั่งผ่าน injectJavaScript ตั้ง flag นี้ — เช็คทุกครั้งที่ sleep()
+  // เพราะแทบทุกขั้นตอน await sleep() คั่นอยู่แล้ว จึงหยุดได้เกือบทันทีโดยไม่ต้องแทรกเช็คทุกจุด
+  function sleep(ms){
+    if (window.__kubdeeTikTokPostStopRequested) {
+      return Promise.reject({ code: 'USER_STOPPED', message: 'ผู้ใช้สั่งหยุดการทำงาน', stage: 'stopped' });
+    }
+    return new Promise(function(resolve){ setTimeout(resolve, ms); });
+  }
   function visible(element){
     if (!element) return false;
     var style = window.getComputedStyle(element);
@@ -100,7 +108,7 @@ export function buildTikTokPostScript({
   }
   function normalized(value){ return String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase(); }
   function waitFor(check, timeoutMs, intervalMs){
-    return new Promise(function(resolve){
+    return new Promise(function(resolve, reject){
       var startedAt = Date.now();
       var poll = async function(){
         while (Date.now() - startedAt < timeoutMs) {
@@ -108,7 +116,14 @@ export function buildTikTokPostScript({
             var value = check();
             if (value) { resolve(value); return; }
           } catch (_) {}
-          await sleep(intervalMs || 500);
+          try {
+            await sleep(intervalMs || 500);
+          } catch (stopErr) {
+            // ต้อง reject ต่อ (ไม่ใช่ resolve(null)) ไม่งั้นจะดูเหมือน timeout ธรรมดา
+            // แล้วปุ่ม Stop จะไม่ตัดออกจาก poll loop ที่รอได้นานสุดถึง 3 นาที
+            reject(stopErr);
+            return;
+          }
         }
         resolve(null);
       };
