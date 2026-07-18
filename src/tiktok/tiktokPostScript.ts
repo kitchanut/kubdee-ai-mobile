@@ -1069,18 +1069,34 @@ export function buildTikTokPostScript({
   async function addSoundStep(){
     if (!INPUT.sound) return;
     var sound = INPUT.sound;
-    var soundsButton = document.querySelector('button[data-button-name="sounds"]');
-    if (!soundsButton || !visible(soundsButton)) { log('SOUND_SKIP', 'ไม่พบปุ่ม Sounds — ข้ามใส่เพลง'); return; }
+    if (!document.querySelector('button[data-button-name="sounds"]')) {
+      log('SOUND_SKIP', 'ไม่พบปุ่ม Sounds — ข้ามใส่เพลง');
+      return;
+    }
     log('SOUND_OPEN', 'เปิด editor ใส่เพลงประกอบ...');
     // desktop ใช้ trusted CDP click เปิด editor — synthetic click เปิดไม่ติดบน mobile
-    // (พิสูจน์จาก live-test) จึงใช้ trusted tap ผ่าน Accessibility ก่อน แล้วค่อย fallback
-    var tapped = await nativeTapOn(soundsButton, 'ปุ่ม Sounds');
-    if (tapped) await sleep(2500);
-    if (!soundEditorOpen() && !musicPanelReady()) {
-      heavyClickEl(soundsButton);
-      await sleep(1500);
+    // (พิสูจน์จาก live-test) จึงใช้ trusted tap ผ่าน Accessibility; ก่อนแตะต้องปิด
+    // tooltip โปรโมท "เข้าใจแล้ว" ที่ลอยบังแถบเครื่องมือ (class ไม่เข้าเงื่อนไข
+    // dismissBlockingDialogs เลยหาแบบ exact ทั้ง document)
+    var ready = null;
+    for (var openTry = 0; openTry < 2 && !ready; openTry++) {
+      var ackButton = findButton(['เข้าใจแล้ว', 'Got it'], document, true);
+      if (ackButton) {
+        heavyClickEl(ackButton);
+        log('SOUND_DISMISS', 'ปิด popup แนะนำก่อนเปิด editor');
+        await sleep(800);
+      }
+      dismissBlockingDialogs();
+      var soundsButton = document.querySelector('button[data-button-name="sounds"]');
+      if (!soundsButton || !visible(soundsButton)) break;
+      var tapped = await nativeTapOn(soundsButton, 'ปุ่ม Sounds' + (openTry > 0 ? ' (รอบ 2)' : ''));
+      if (tapped) await sleep(2500);
+      if (!soundEditorOpen() && !musicPanelReady()) {
+        heavyClickEl(soundsButton);
+        await sleep(1500);
+      }
+      ready = await waitFor(musicPanelReady, 15000, 1000);
     }
-    var ready = await waitFor(musicPanelReady, 30000, 1000);
     if (!ready) { log('SOUND_SKIP', 'รอ Sound panel โหลดนานเกินไป — ข้ามใส่เพลง'); await exitSoundEditor(); return; }
     await sleep(500);
 
