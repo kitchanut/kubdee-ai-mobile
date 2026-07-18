@@ -160,7 +160,7 @@ ${[
 }`.trim();
 }
 
-function extractJsonObject(text: string): Record<string, unknown> | null {
+export function extractJsonObject(text: string): Record<string, unknown> | null {
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const jsonText = cleaned.startsWith('{') ? cleaned : cleaned.match(/\{[\s\S]*\}/)?.[0] || '';
   if (!jsonText) {
@@ -177,7 +177,7 @@ function extractJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-async function postAiGenerate(body: Record<string, unknown>): Promise<{ ok: boolean; status: number; data: AiGenerateResponse }> {
+export async function postAiGenerate(body: Record<string, unknown>): Promise<{ ok: boolean; status: number; data: AiGenerateResponse }> {
   const tokens = await getStoredAuthTokens();
   if (!tokens?.accessToken) {
     return { ok: false, status: 401, data: { error: 'กรุณาเข้าสู่ระบบก่อนใช้ KUBDEE AI' } };

@@ -17,6 +17,10 @@ import { PostContentChip, PostWarnChip, resolvePostCaptionState, resolvePostHash
 import Text from '@/components/ui/KubdeeText';
 import TikTokPostModal from '@/tiktok/TikTokPostModal';
 import type { TikTokPostVideoInput } from '@/tiktok/TikTokPostModal';
+import { generateTikTokPostContent } from '@/tiktok/tiktokAiContent';
+import type { TikTokPostSoundInput } from '@/tiktok/tiktokPostScript';
+import { computeNextScheduleTime } from '@/tiktok/tiktokSchedule';
+import type { TikTokScheduleTime } from '@/tiktok/tiktokSchedule';
 import TikTokPostSettingsModal from '@/tiktok/TikTokPostSettingsModal';
 import {
   DEFAULT_TIKTOK_POST_SETTINGS,
@@ -175,6 +179,19 @@ export default function TikTokPostScreen({
   // stat bar ของรอบโพสต์: จำนวนคลิปทั้งหมดตอนเริ่มรอบ + จำนวนที่สำเร็จแล้ว
   const [runTotal, setRunTotal] = useState(0);
   const [successCount, setSuccessCount] = useState(0);
+  // เฟสเตรียมเนื้อหาด้วย AI ก่อนเริ่มคิว (desktop parity: generate ทุกคลิปก่อนโพสต์)
+  const [isPreparingAi, setIsPreparingAi] = useState(false);
+  const aiOverridesRef = useRef<Map<string, { caption?: string; hashtags?: string; cta?: string }>>(
+    new Map()
+  );
+  // เวลาตั้งโพสต์แบบลูกโซ่ (base = เวลาคลิปก่อนหน้า) + config ต่อคลิป cache กัน re-render สุ่มซ้ำ
+  const scheduleStateRef = useRef<{ base: TikTokScheduleTime | null; index: number }>({
+    base: null,
+    index: 0,
+  });
+  const clipRunConfigRef = useRef<
+    Map<string, { schedule: TikTokScheduleTime | null; sound: TikTokPostSoundInput | null }>
+  >(new Map());
   const stopRequestedRef = useRef(false);
   const completedRef = useRef(false);
   const settingsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -230,7 +247,7 @@ export default function TikTokPostScreen({
   // คลิปแดง (ข้าม) จะไม่ถูกหยิบขึ้นมาโพสต์ จึงค้างอยู่ในลิสต์ให้ผู้ใช้แก้/เอาออกเอง
   // คลิปที่ fail ระหว่างรอบนี้ (failedIds) จะถูกข้ามเพื่อให้คิวเดินต่อ (desktop parity) —
   // ค้างในลิสต์ให้ผู้ใช้กด "ลองใหม่" ซึ่งล้าง failedIds แล้วเริ่มรอบใหม่
-  const activeVideo = isPosting
+  const activeVideo = isPosting && !isPreparingAi
     ? postableVideos.find((video) => !failedIds.has(video.id)) ?? null
     : null;
   const missingCount = pendingVideoIds.length - queuedVideos.length;
@@ -289,11 +306,50 @@ export default function TikTokPostScreen({
     setFailedIds(new Set());
     setRunTotal(postableVideos.length);
     setSuccessCount(0);
+    aiOverridesRef.current = new Map();
+    scheduleStateRef.current = { base: null, index: 0 };
+    clipRunConfigRef.current = new Map();
     setIsStopping(false);
     setIsPosting(true);
     beginAutomationActivityRun('tiktok-post', `TikTok post · ${postableVideos.length} วิดีโอ`);
     appendLog(`เริ่ม${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ${postableVideos.length} วิดีโอ`);
-  }, [appendLog, isPosting, postAction, postableVideos, queuedVideos.length, selectedProfileId, skipBreakdown]);
+
+    // AI คิดเนื้อหาทุกคลิปก่อนเริ่มคิว (desktop parity) — เติมเฉพาะช่องที่เปิดใช้และยังว่าง
+    if (settings.aiGenerateCaption || settings.aiGenerateHashtags || settings.aiGenerateCta) {
+      setIsPreparingAi(true);
+      const videosToPrep = [...postableVideos];
+      void (async () => {
+        for (let i = 0; i < videosToPrep.length; i++) {
+          if (stopRequestedRef.current) break;
+          const asset = videosToPrep[i];
+          const needCaption = settings.aiGenerateCaption && !asset.caption?.trim();
+          const needHashtags = settings.aiGenerateHashtags && !asset.hashtags?.trim();
+          const needCta = settings.aiGenerateCta && !asset.cta?.trim();
+          if (!needCaption && !needHashtags && !needCta) continue;
+          appendLog(`AI คิดเนื้อหา (${i + 1}/${videosToPrep.length}): ${videoLabel(asset, i)}`);
+          const result = await generateTikTokPostContent({
+            productName: asset.productName?.trim() || videoLabel(asset, i),
+            productDescription: asset.caption?.trim() || '',
+            hashtagCount: settings.aiHashtagCount,
+            generateCaption: needCaption,
+            generateHashtags: needHashtags,
+            generateCta: needCta,
+          });
+          if (result.success) {
+            aiOverridesRef.current.set(asset.id, {
+              caption: needCaption && result.caption ? result.caption : undefined,
+              hashtags: needHashtags && result.hashtags ? result.hashtags : undefined,
+              cta: needCta && result.cta ? result.cta : undefined,
+            });
+            appendLog(`AI คิดเนื้อหาสำเร็จ: ${videoLabel(asset, i)}`);
+          } else {
+            appendLog(`AI ไม่สำเร็จ (${videoLabel(asset, i)}): ${result.error || 'ไม่ทราบสาเหตุ'} — ใช้ค่าเดิม`);
+          }
+        }
+        setIsPreparingAi(false);
+      })();
+    }
+  }, [appendLog, isPosting, postAction, postableVideos, queuedVideos.length, selectedProfileId, settings, skipBreakdown]);
 
   const stopPosting = useCallback((): void => {
     if (!isPosting || isStopping) return;
@@ -359,6 +415,57 @@ export default function TikTokPostScreen({
       finishRun('หยุด TikTok post แล้ว');
     }
   }, [finishRun, isPosting]);
+
+  // ทับ caption/hashtags/cta ด้วยผลจาก AI (ถ้ามี) ก่อนส่งเข้า modal
+  const withAiOverrides = (video: TikTokPostVideoInput, videoId: string): TikTokPostVideoInput => {
+    const override = aiOverridesRef.current.get(videoId);
+    if (!override) return video;
+    return {
+      ...video,
+      caption: override.caption ?? video.caption,
+      hashtags: override.hashtags ?? video.hashtags,
+      cta: override.cta ?? video.cta,
+    };
+  };
+
+  // คำนวณเวลาตั้งโพสต์ + config เสียงของคลิปนี้ครั้งเดียวแล้ว cache — กัน re-render สุ่มค่าใหม่
+  // และเดินลูกโซ่เวลา (base = เวลาคลิปก่อนหน้า) เหมือน desktop postingWorkflow
+  const resolveRunConfig = (
+    videoId: string
+  ): { schedule: TikTokScheduleTime | null; sound: TikTokPostSoundInput | null } => {
+    const cache = clipRunConfigRef.current;
+    const existing = cache.get(videoId);
+    if (existing) return existing;
+    const index = scheduleStateRef.current.index;
+    const schedule =
+      settings.scheduleMode === 'schedule'
+        ? computeNextScheduleTime({ settings, postIndex: index, base: scheduleStateRef.current.base })
+        : null;
+    let sound: TikTokPostSoundInput | null = null;
+    if (settings.enableSound) {
+      const searchList = settings.soundSearchList.map((item) => item.trim()).filter(Boolean);
+      let searchQuery = '';
+      if (settings.soundMode === 'search' && searchList.length > 0) {
+        searchQuery =
+          settings.soundSearchOrder === 'random'
+            ? searchList[Math.floor(Math.random() * searchList.length)]
+            : searchList[index % searchList.length];
+      }
+      sound = {
+        mode: settings.soundMode,
+        tab: settings.soundTab,
+        searchQuery,
+        soundIndex: settings.soundIndex,
+        videoVolume: settings.soundVideoVolume,
+        musicVolume: settings.soundMusicVolume,
+        duplicateCount: settings.duplicateClipCount,
+      };
+    }
+    scheduleStateRef.current = { base: schedule ?? scheduleStateRef.current.base, index: index + 1 };
+    const config = { schedule, sound };
+    cache.set(videoId, config);
+    return config;
+  };
 
   return (
     <View className="flex-1 bg-kd-screen">
@@ -512,9 +619,11 @@ export default function TikTokPostScreen({
         <TikTokPostModal
           visible
           profileLocalId={selectedProfileId}
-          video={toTikTokPostVideo(activeVideo)}
+          video={withAiOverrides(toTikTokPostVideo(activeVideo), activeVideo.id)}
           postAction={postAction}
           enableProductLink={enableProductLink && activeVideo.platform?.trim().toLowerCase() === 'tiktok'}
+          schedule={resolveRunConfig(activeVideo.id).schedule}
+          sound={resolveRunConfig(activeVideo.id).sound}
           stats={{
             total: Math.max(runTotal, 1),
             success: successCount,

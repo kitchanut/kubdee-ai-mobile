@@ -12,10 +12,34 @@ export interface TikTokPostVideoInput {
   galleryVideoId?: string | null;
 }
 
+// เวลาตั้งโพสต์ต่อคลิป — คำนวณฝั่งแอปด้วย tiktokSchedule.ts (desktop parity)
+export interface TikTokPostScheduleInput {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  dateStr: string;
+  timeStr: string;
+}
+
+// ค่าตั้งเสียง+duplicate ต่อคลิป — searchQuery ถูก resolve ต่อคลิปแล้วจากฝั่งจอ
+export interface TikTokPostSoundInput {
+  mode: 'tab' | 'search';
+  tab: 'for_you' | 'favorites' | 'unlimited' | 'recent_use';
+  searchQuery: string;
+  soundIndex: number;
+  videoVolume: number;
+  musicVolume: number;
+  duplicateCount: number;
+}
+
 interface TikTokPostScriptOptions {
   video: TikTokPostVideoInput;
   postAction: TikTokPostAction;
   enableProductLink: boolean;
+  schedule?: TikTokPostScheduleInput | null;
+  sound?: TikTokPostSoundInput | null;
 }
 
 /**
@@ -27,6 +51,8 @@ export function buildTikTokPostScript({
   video,
   postAction,
   enableProductLink,
+  schedule,
+  sound,
 }: TikTokPostScriptOptions): string {
   const payload = JSON.stringify({
     productName: video.productName?.trim() || '',
@@ -36,6 +62,8 @@ export function buildTikTokPostScript({
     cta: video.cta?.trim() || '',
     postAction,
     enableProductLink,
+    schedule: schedule || null,
+    sound: sound || null,
   }).replace(/</g, '\\u003c');
 
   return `(function(){
@@ -182,6 +210,28 @@ export function buildTikTokPostScript({
     else input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  // คลิกแบบครบชุด Pointer+Mouse+click() — desktop ใช้กับปุ่ม Save editor/ลูกศรปฏิทิน
+  // ที่ TikTok ผูก handler กับ pointer event (el.click() เดี่ยวไม่พอ)
+  function heavyClickEl(el){
+    if (!el) return false;
+    try {
+      var rect = el.getBoundingClientRect();
+      var opts = {
+        bubbles: true,
+        cancelable: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+        button: 0
+      };
+      el.dispatchEvent(new PointerEvent('pointermove', Object.assign({}, opts, { pointerType: 'mouse' })));
+      el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({}, opts, { pointerType: 'mouse' })));
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, opts, { pointerType: 'mouse' })));
+      el.dispatchEvent(new MouseEvent('mouseup', opts));
+      if (typeof el.click === 'function') el.click();
+      return true;
+    } catch (_) { return false; }
   }
   // แตะ element ด้วย gesture จริงผ่าน Accessibility Service (isTrusted) — คืน false ถ้าอยู่นอกจอ
   async function nativeTapOn(element, label){
@@ -773,6 +823,313 @@ export function buildTikTokPostScript({
     }
   }
 
+  // ── ตั้งเวลาโพสต์ (port จาก desktop setSchedule.ts — fail-soft ทุกจุด ไม่ throw) ──
+  async function setScheduleStep(){
+    if (!INPUT.schedule) return;
+    var data = INPUT.schedule;
+    log('SCHEDULE', 'ตั้งเวลาโพสต์: ' + data.dateStr + ' ' + data.timeStr);
+    var radio = document.querySelector('input[name="postSchedule"][value="schedule"]');
+    if (!radio) { log('SCHEDULE_SKIP', 'ไม่พบตัวเลือกตั้งเวลา — โพสต์ทันทีแทน'); return; }
+    radio.click();
+    await sleep(1000);
+    await sleep(1500);
+    var modal = document.querySelector('.TUXModal');
+    if (modal) {
+      var title = modal.querySelector('.TUXText--weight-bold');
+      var titleText = String(title ? title.textContent : '');
+      if (titleText.indexOf('อนุญาต') >= 0 || titleText.indexOf('Allow') >= 0 || titleText.indexOf('Permission') >= 0) {
+        var modalButtons = modal.querySelectorAll('button');
+        for (var mb = 0; mb < modalButtons.length; mb++) {
+          var mbText = String(modalButtons[mb].textContent || '');
+          if (mbText.indexOf('อนุญาต') >= 0 || mbText.indexOf('Allow') >= 0) {
+            modalButtons[mb].click();
+            await sleep(2000);
+            break;
+          }
+        }
+      }
+    }
+    var picker = document.querySelector('.scheduled-picker');
+    if (!picker) { log('SCHEDULE_WARN', 'ไม่พบช่องตั้งเวลา (scheduled-picker)'); return; }
+    var inputs = picker.querySelectorAll('.TUXTextInputCore-input');
+    var timeInput = inputs[0];
+    if (timeInput) {
+      timeInput.click();
+      await sleep(800);
+      var timeContainer = document.querySelector('.tiktok-timepicker-time-picker-container');
+      if (timeContainer) {
+        var scrolls = timeContainer.querySelectorAll('.tiktok-timepicker-time-scroll-container');
+        var selectOpt = async function(scroll, val){
+          if (!scroll) return false;
+          var options = scroll.querySelectorAll('.tiktok-timepicker-option-item');
+          for (var oi = 0; oi < options.length; oi++) {
+            var optText = options[oi].querySelector('.tiktok-timepicker-option-text');
+            if (optText && parseInt(optText.textContent, 10) === val) {
+              options[oi].scrollIntoView({ behavior: 'instant', block: 'center' });
+              await sleep(200);
+              optText.click();
+              await sleep(200);
+              return true;
+            }
+          }
+          return false;
+        };
+        await selectOpt(scrolls[0], data.hour);
+        await sleep(300);
+        await selectOpt(scrolls[1], data.minute);
+        await sleep(300);
+        document.body.click();
+        await sleep(500);
+      } else {
+        log('SCHEDULE_WARN', 'ไม่พบ time picker dropdown');
+      }
+    }
+    var dateInput = inputs[1];
+    if (dateInput && dateInput.value !== data.dateStr) {
+      dateInput.click();
+      await sleep(800);
+      var cal = document.querySelector('.calendar-wrapper');
+      if (cal) {
+        var monthNames = {
+          'มกราคม': 1, 'กุมภาพันธ์': 2, 'มีนาคม': 3, 'เมษายน': 4, 'พฤษภาคม': 5, 'มิถุนายน': 6,
+          'กรกฎาคม': 7, 'สิงหาคม': 8, 'กันยายน': 9, 'ตุลาคม': 10, 'พฤศจิกายน': 11, 'ธันวาคม': 12,
+          'ม.ค.': 1, 'ก.พ.': 2, 'มี.ค.': 3, 'เม.ย.': 4, 'พ.ค.': 5, 'มิ.ย.': 6,
+          'ก.ค.': 7, 'ส.ค.': 8, 'ก.ย.': 9, 'ต.ค.': 10, 'พ.ย.': 11, 'ธ.ค.': 12,
+          'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+          'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12,
+          'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'Jun': 6,
+          'Jul': 7, 'Aug': 8, 'Sep': 9, 'Sept': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+        };
+        // ห้ามใช้ startsWith — ก.พ./ก.ค./ก.ย. ขึ้นต้นด้วย ก เหมือนกันหมด (desktop gotcha)
+        var resolveMonth = function(text){
+          var trimmed = String(text || '').trim();
+          if (monthNames[trimmed]) return monthNames[trimmed];
+          var squashed = trimmed.replace(/\\./g, '').toLowerCase();
+          for (var name in monthNames) {
+            if (name.replace(/\\./g, '').toLowerCase() === squashed) return monthNames[name];
+          }
+          return 0;
+        };
+        for (var nav = 0; nav < 24; nav++) {
+          var monthTitle = cal.querySelector('.month-title');
+          var yearTitle = cal.querySelector('.year-title');
+          if (!monthTitle || !yearTitle) break;
+          var currentMonth = resolveMonth(monthTitle.textContent);
+          var currentYear = parseInt(yearTitle.textContent, 10) || 0;
+          if (!currentMonth || !currentYear) break;
+          if (currentYear < data.year || (currentYear === data.year && currentMonth < data.month)) {
+            var arrows = cal.querySelectorAll('.arrow');
+            if (!arrows[1]) break;
+            heavyClickEl(arrows[1]);
+            await sleep(500);
+          } else {
+            break;
+          }
+        }
+        var days = cal.querySelectorAll('.day-span-container .day.valid');
+        for (var di = 0; di < days.length; di++) {
+          if (parseInt(days[di].textContent, 10) === data.day) {
+            days[di].click();
+            await sleep(500);
+            break;
+          }
+        }
+      } else {
+        log('SCHEDULE_WARN', 'ไม่พบปฏิทินเลือกวันที่');
+      }
+    }
+    log('SCHEDULE_DONE', 'ตั้งเวลาสำเร็จ: ' + data.dateStr + ' ' + data.timeStr);
+  }
+
+  // ── ใส่เพลง + duplicate clip (port จาก desktop addSound.ts/duplicateClip.ts — fail-soft) ──
+  function musicPanelReady(){
+    return document.querySelectorAll('[role="listitem"] .MusicPanelMusicItem__operation button').length > 0
+      || document.querySelectorAll('.MusicPanelMusicItem__operation [data-icon="PlusBold"]').length > 0
+      ? true
+      : null;
+  }
+
+  function setClipVolume(volumeDb){
+    var wrap = document.querySelector('.PropSettingAudioVolume__wrap');
+    if (!wrap) return false;
+    var input = wrap.querySelector('.PropSettingInput__input');
+    if (!input) return false;
+    input.focus();
+    setNativeValue(input, '');
+    setNativeValue(input, String(volumeDb));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+    input.blur();
+    return true;
+  }
+
+  async function exitSoundEditor(){
+    await sleep(2000);
+    var save = document.querySelector('.clip-forge-editor-header-right .Button__root--type-primary');
+    if (!save) save = findButton(['Save', 'บันทึก'], document, true);
+    if (save) {
+      heavyClickEl(save);
+      log('SOUND_SAVE', 'บันทึกและออกจาก editor');
+      await sleep(3000);
+    } else {
+      log('SOUND_WARN', 'ไม่พบปุ่ม Save ใน editor');
+    }
+  }
+
+  async function duplicateClipStep(count){
+    await sleep(1500);
+    var clip = null;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      clip = document.querySelector('[data-anchor-id="first-video-clip"] .VideoClip__root')
+        || document.querySelector('.VideoClip__root');
+      if (clip && visible(clip)) break;
+      clip = null;
+      await sleep(1000);
+    }
+    if (!clip) { log('SOUND_WARN', 'ไม่พบ Video Clip ใน timeline — ข้าม duplicate'); return; }
+    var before = document.querySelectorAll('.VideoClip__root').length;
+    heavyClickEl(clip);
+    await sleep(500);
+    // desktop ใช้ trusted Ctrl+C/V ผ่าน CDP ซึ่ง mobile ไม่มี — ยิง KeyboardEvent สังเคราะห์
+    // ที่ activeElement (bubble ถึง handler ของ TikTok เอง) แล้ว verify จากจำนวนคลิปจริง
+    var fireCombo = function(key, code, keyCode){
+      var target = document.activeElement || document.body;
+      var comboOpts = { key: key, code: code, keyCode: keyCode, which: keyCode, ctrlKey: true, bubbles: true, cancelable: true };
+      target.dispatchEvent(new KeyboardEvent('keydown', comboOpts));
+      target.dispatchEvent(new KeyboardEvent('keyup', comboOpts));
+    };
+    fireCombo('c', 'KeyC', 67);
+    await sleep(500);
+    for (var paste = 0; paste < count; paste++) {
+      fireCombo('v', 'KeyV', 86);
+      await sleep(1500);
+    }
+    await sleep(1000);
+    var after = document.querySelectorAll('.VideoClip__root').length;
+    if (after > before) {
+      log('SOUND_DUPLICATE', 'ทำซ้ำคลิปสำเร็จ: ' + before + ' -> ' + after + ' คลิป');
+    } else {
+      log('SOUND_WARN', 'Duplicate clip ไม่ทำงานบน WebView นี้ (ยังมี ' + after + ' คลิป) — ดำเนินการต่อ');
+    }
+    var ruler = document.querySelector('.TimeRuler__canvas');
+    if (ruler) {
+      var rulerRect = ruler.getBoundingClientRect();
+      var rulerOpts = {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(rulerRect.left + 2),
+        clientY: Math.round(rulerRect.top + rulerRect.height / 2),
+        button: 0
+      };
+      ruler.dispatchEvent(new PointerEvent('pointerdown', Object.assign({}, rulerOpts, { pointerType: 'mouse' })));
+      ruler.dispatchEvent(new MouseEvent('mousedown', rulerOpts));
+      ruler.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, rulerOpts, { pointerType: 'mouse' })));
+      ruler.dispatchEvent(new MouseEvent('mouseup', rulerOpts));
+      await sleep(500);
+    }
+    var firstClip = document.querySelector('[data-anchor-id="first-video-clip"] .VideoClip__root')
+      || document.querySelector('.VideoClip__root');
+    if (firstClip) { heavyClickEl(firstClip); await sleep(500); }
+  }
+
+  async function applySoundVolumes(sound){
+    var clipCount = document.querySelectorAll('.VideoClip__root').length || 1;
+    for (var ci = 0; ci < clipCount; ci++) {
+      var clipEl = document.querySelectorAll('.VideoClip__root')[ci];
+      if (!clipEl) continue;
+      clipEl.click();
+      await sleep(500);
+      if (setClipVolume(sound.videoVolume)) {
+        log('SOUND_VOLUME', 'ตั้งเสียงคลิป ' + (ci + 1) + '/' + clipCount + ' = ' + sound.videoVolume + ' dB');
+      } else {
+        log('SOUND_WARN', 'ไม่พบ volume control คลิป ' + (ci + 1));
+      }
+      await sleep(300);
+    }
+    var audioClip = document.querySelector('.AudioClip__root');
+    if (audioClip) {
+      heavyClickEl(audioClip);
+      await sleep(500);
+      if (setClipVolume(sound.musicVolume)) {
+        log('SOUND_VOLUME', 'ตั้งเสียงเพลง = ' + sound.musicVolume + ' dB');
+      } else {
+        log('SOUND_WARN', 'ไม่พบ volume control สำหรับเพลง');
+      }
+      await sleep(500);
+    } else {
+      log('SOUND_WARN', 'ไม่พบ Audio clip ใน timeline');
+    }
+  }
+
+  async function addSoundStep(){
+    if (!INPUT.sound) return;
+    var sound = INPUT.sound;
+    var soundsButton = document.querySelector('button[data-button-name="sounds"]');
+    if (!soundsButton || !visible(soundsButton)) { log('SOUND_SKIP', 'ไม่พบปุ่ม Sounds — ข้ามใส่เพลง'); return; }
+    log('SOUND_OPEN', 'เปิด editor ใส่เพลงประกอบ...');
+    heavyClickEl(soundsButton);
+    var ready = await waitFor(musicPanelReady, 15000, 1000);
+    if (!ready) { log('SOUND_SKIP', 'รอ Sound panel โหลดนานเกินไป — ข้ามใส่เพลง'); await exitSoundEditor(); return; }
+    await sleep(500);
+
+    if (sound.duplicateCount > 0) await duplicateClipStep(sound.duplicateCount);
+
+    if (sound.mode === 'search' && sound.searchQuery) {
+      var searchInput = document.querySelector('.MusicPanelSearchBar__wrap input[type="text"]');
+      if (!searchInput) { log('SOUND_SKIP', 'ไม่พบช่องค้นหาเพลง'); await exitSoundEditor(); return; }
+      searchInput.focus();
+      setNativeValue(searchInput, '');
+      setNativeValue(searchInput, sound.searchQuery);
+      await sleep(1500);
+      var suggestion = document.querySelector('.MusicPanelSugList__item');
+      if (suggestion) {
+        suggestion.click();
+        log('SOUND_SEARCH', 'ค้นหาเพลง: ' + sound.searchQuery + ' (เลือก suggestion แรก)');
+      } else {
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+        log('SOUND_SEARCH', 'ค้นหาเพลง: ' + sound.searchQuery + ' (กด Enter)');
+      }
+      await sleep(3000);
+      var searchLoaded = await waitFor(function(){
+        return document.querySelectorAll('[role="listitem"] .MusicPanelMusicItem__operation button').length > 0 ? true : null;
+      }, 10000, 1000);
+      if (!searchLoaded) { log('SOUND_SKIP', 'ค้นหาเพลงไม่พบผลลัพธ์'); await exitSoundEditor(); return; }
+      await sleep(500);
+    } else if (sound.tab && sound.tab !== 'for_you') {
+      var tabEl = document.querySelector('[role="tab"][aria-controls="panel-' + sound.tab + '"]');
+      if (tabEl) {
+        heavyClickEl(tabEl);
+        log('SOUND_TAB', 'เลือก tab: ' + sound.tab);
+        await sleep(2000);
+        var tabLoaded = await waitFor(musicPanelReady, 10000, 1000);
+        if (!tabLoaded) { log('SOUND_SKIP', 'tab ' + sound.tab + ' ไม่มีเพลง หรือโหลดไม่สำเร็จ'); await exitSoundEditor(); return; }
+        await sleep(500);
+      } else {
+        log('SOUND_WARN', 'ไม่พบ tab: ' + sound.tab + ' — ใช้ลิสต์ที่แสดงอยู่');
+      }
+    }
+
+    var pickIndex = !sound.soundIndex || sound.soundIndex === 0
+      ? Math.floor(Math.random() * 10) + 1
+      : Math.max(1, Math.min(sound.soundIndex, 10));
+    var added = false;
+    var rows = document.querySelectorAll('[role="listitem"]');
+    var row = rows[pickIndex - 1] || rows[0];
+    if (row) {
+      var addButton = row.querySelector('.MusicPanelMusicItem__operation button');
+      if (addButton) { heavyClickEl(addButton); added = true; }
+    }
+    if (!added) {
+      var firstAdd = document.querySelector('[role="listitem"] .MusicPanelMusicItem__operation button');
+      if (firstAdd) { heavyClickEl(firstAdd); added = true; pickIndex = 1; }
+    }
+    if (!added) { log('SOUND_SKIP', 'ไม่พบเพลงใน list'); await exitSoundEditor(); return; }
+    log('SOUND_ADDED', 'เพิ่มเพลงลำดับที่ ' + pickIndex + ' สำเร็จ');
+    await sleep(2000);
+
+    await applySoundVolumes(sound);
+    await exitSoundEditor();
+  }
+
   async function verifyContent(marker){
     var isDraft = marker.postAction === 'draft';
     var captionSelector = isDraft
@@ -849,7 +1206,9 @@ export function buildTikTokPostScript({
       await waitForEditorAndUpload();
       await fillCaption();
       await bindProduct();
+      await setScheduleStep();
       await enableAiContent();
+      await addSoundStep();
       var matched = await submitAndVerify();
       if (matched) log('SUBMIT_VERIFIED', 'ยืนยันโพสต์สำเร็จ — พบรายการ: "' + String(matched).slice(0, 60) + '"');
       log('POST_SUCCESS', INPUT.postAction === 'draft' ? 'บันทึกแบบร่างสำเร็จ' : 'โพสต์ TikTok สำเร็จ');

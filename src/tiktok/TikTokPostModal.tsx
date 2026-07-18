@@ -22,7 +22,12 @@ import {
 } from '@/native/AccessibilityBridge';
 import { DESKTOP_CHROME_UA, DESKTOP_ENV_SPOOF } from '@/tiktok/desktopSpoof';
 import { buildTikTokPostScript } from '@/tiktok/tiktokPostScript';
-import type { TikTokPostAction, TikTokPostVideoInput } from '@/tiktok/tiktokPostScript';
+import type {
+  TikTokPostAction,
+  TikTokPostScheduleInput,
+  TikTokPostSoundInput,
+  TikTokPostVideoInput,
+} from '@/tiktok/tiktokPostScript';
 import {
   isProfileLoggedIn,
   restoreProfileCookies,
@@ -68,6 +73,8 @@ export interface TikTokPostModalProps {
   video: TikTokPostVideoInput;
   postAction: TikTokPostAction;
   enableProductLink: boolean;
+  schedule?: TikTokPostScheduleInput | null;
+  sound?: TikTokPostSoundInput | null;
   stats?: TikTokPostRunStats;
   onLog: (message: string) => void;
   onComplete: (result: TikTokPostCompleteResult) => void;
@@ -116,6 +123,8 @@ export default function TikTokPostModal({
   video,
   postAction,
   enableProductLink,
+  schedule,
+  sound,
   stats,
   onLog,
   onComplete,
@@ -162,6 +171,8 @@ export default function TikTokPostModal({
           video={video}
           postAction={postAction}
           enableProductLink={enableProductLink}
+          schedule={schedule}
+          sound={sound}
           onLog={handleLog}
           onComplete={onComplete}
         />
@@ -198,6 +209,8 @@ function TikTokPostRunner({
   video,
   postAction,
   enableProductLink,
+  schedule,
+  sound,
   onLog,
   onComplete,
 }: Omit<TikTokPostModalProps, 'visible' | 'onClose'>): React.JSX.Element {
@@ -211,8 +224,8 @@ function TikTokPostRunner({
   const webViewContainerRef = useRef<View>(null);
 
   const script = useMemo(
-    () => buildTikTokPostScript({ video, postAction, enableProductLink }),
-    [enableProductLink, postAction, video]
+    () => buildTikTokPostScript({ video, postAction, enableProductLink, schedule, sound }),
+    [enableProductLink, postAction, schedule, sound, video]
   );
 
   const complete = useCallback((result: TikTokPostCompleteResult): void => {
