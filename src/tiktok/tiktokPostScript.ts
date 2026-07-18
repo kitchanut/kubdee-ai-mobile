@@ -838,7 +838,9 @@ export function buildTikTokPostScript({
       for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
         if (node.checked === true || node.getAttribute('aria-checked') === 'true' || node.getAttribute('data-state') === 'checked') return true;
-        if (/(^|\\s)(checked|active|on)(\\s|$)/i.test(String(node.className || ''))) return true;
+        // \\b จับ BEM modifier แบบ Switch__content--checked ได้ด้วย (ขีดกลางถือเป็น word boundary)
+        // เดิมเช็คแค่ token คั่นด้วย space เลยพลาดคลาสรูปแบบนี้ — ทำให้ verify ไม่ผ่านทั้งที่ tap ติดจริง
+        if (/\\b(checked|active|on)\\b/i.test(String(node.className || ''))) return true;
       }
       return false;
     }
@@ -862,9 +864,18 @@ export function buildTikTokPostScript({
       if (enabled) {
         log('AI_CONTENT_ENABLED', 'เปิดป้ายกำกับเนื้อหา AI สำเร็จ');
       } else {
+        // เก็บ className/attribute จริงไว้ debug — ถ้า tap ติดแต่ verify ไม่ผ่านอีก
+        // จะได้รู้ทันทีว่า selector ต้องปรับยังไงแทนการเดา
+        var debugNodes = container.querySelectorAll('.Switch__content, [role="switch"], .Switch__root, input[type="checkbox"]');
+        var debugInfo = [];
+        for (var di = 0; di < debugNodes.length; di++) {
+          debugInfo.push(String(debugNodes[di].className || '').slice(0, 60) +
+            '|aria=' + debugNodes[di].getAttribute('aria-checked') +
+            '|state=' + debugNodes[di].getAttribute('data-state'));
+        }
         // TikTok variants do not all expose switch state in the DOM. Match the desktop flow:
         // make a best-effort click and do not block the actual post solely on missing ARIA state.
-        log('AI_CONTENT_VERIFY_UNAVAILABLE', 'TikTok ไม่เปิดเผยสถานะเนื้อหา AI — ดำเนินการต่อหลังสั่งเปิดแล้ว');
+        log('AI_CONTENT_VERIFY_UNAVAILABLE', 'TikTok ไม่เปิดเผยสถานะเนื้อหา AI — ดำเนินการต่อหลังสั่งเปิดแล้ว [' + debugInfo.join(' / ') + ']');
       }
     }
   }
