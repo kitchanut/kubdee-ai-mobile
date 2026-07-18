@@ -571,11 +571,34 @@ export function buildTikTokPostScript({
     // ใช้ความสูง visualViewport จับสถานะคีย์บอร์ด: เปิด = viewport หด, กด Go สำเร็จ = viewport คืน
     // (แก้อาการ "กรอกรหัสแล้วไม่กดค้นหา" — เดิมยิง Enter แบบ fire-and-forget ไม่รู้ว่าลงจริงไหม)
     var vpH = function(){ return Math.round(window.visualViewport ? window.visualViewport.height : window.innerHeight); };
+    // WebView บางเครื่อง auto-zoom ตอน trusted tap ลงช่อง input (scale เด้งจากค่า lock)
+    // ทำให้แตะไม่โฟกัส/คีย์บอร์ดไม่เปิด — ตรวจ scale แล้วกระตุก meta viewport ให้ snap กลับ
+    var resetZoomIfNeeded = function(){
+      try {
+        var vv = window.visualViewport;
+        if (!vv || !vv.scale) return false;
+        var deviceWidth = Number(window.__kubdeeDesktopDeviceWidth) || (window.screen ? window.screen.width : 0) || 360;
+        var desktopWidth = Number(window.__kubdeeDesktopWidth) || 1280;
+        var expected = Math.max(0.1, Math.min(1, deviceWidth / desktopWidth));
+        if (vv.scale <= expected * 1.15) return false;
+        var meta = document.querySelector('meta[name="viewport"]');
+        if (!meta) return false;
+        var content = meta.getAttribute('content') || '';
+        if (!content) return false;
+        meta.setAttribute('content', content.replace(/maximum-scale=[0-9.]+/, 'maximum-scale=' + (expected + 0.001)));
+        setTimeout(function(){ meta.setAttribute('content', content); }, 150);
+        return true;
+      } catch (_) { return false; }
+    };
     var fireSearch = async function(label){
       log('PRODUCT_SEARCH_FILLED', 'ค้นหา Product ID: ' + String(INPUT.productId) + (label ? ' (' + label + ')' : ''));
       // 1) แตะช่องค้นหาจนคีย์บอร์ดเปิดจริง (เช็คจาก viewport หด) สูงสุด 3 ครั้ง
       var openedH = vpH();
       for (var kb = 0; kb < 3; kb++) {
+        if (resetZoomIfNeeded()) {
+          log('PRODUCT_ZOOM_RESET', 'WebView zoom เพี้ยน — รีเซ็ตกลับสเกลปกติ');
+          await sleep(700);
+        }
         var beforeH = vpH();
         var tapped = await nativeTapOn(search, 'ช่องค้นหาสินค้า');
         if (!tapped) search.click();
