@@ -854,8 +854,10 @@ export function buildTikTokPostScript({
         var node = nodes[i];
         if (node.checked === true || node.getAttribute('aria-checked') === 'true' || node.getAttribute('data-state') === 'checked') return true;
         // \\b จับ BEM modifier แบบ Switch__content--checked ได้ด้วย (ขีดกลางถือเป็น word boundary)
-        // เดิมเช็คแค่ token คั่นด้วย space เลยพลาดคลาสรูปแบบนี้ — ทำให้ verify ไม่ผ่านทั้งที่ tap ติดจริง
-        if (/\\b(checked|active|on)\\b/i.test(String(node.className || ''))) return true;
+        // GOTCHA: เดิมมี "on" อยู่ในลิสต์นี้ด้วย — คำว่า "on" สั้นและกำกวมเกินไป มีโอกาสชนกับ
+        // class อื่นที่ไม่เกี่ยวกับสถานะสวิตช์เลย (live-test ยืนยันว่า verify ผ่านทั้งที่สวิตช์จริงยังปิดอยู่)
+        // เหลือแค่ checked/active ซึ่งเจาะจงกว่ามาก
+        if (/\\b(checked|active)\\b/i.test(String(node.className || ''))) return true;
       }
       return false;
     }
@@ -872,10 +874,21 @@ export function buildTikTokPostScript({
       log('AI_CONTENT_CONFIRM_DISMISSED', 'ปิด dialog ยืนยันเนื้อหา AI: ' + normalized(btn.textContent).slice(0, 40));
       return true;
     }
+    function dumpToggleState(){
+      var nodes = container.querySelectorAll('.Switch__content, [role="switch"], .Switch__root, input[type="checkbox"]');
+      var out = [];
+      for (var di = 0; di < nodes.length; di++) {
+        out.push(String(nodes[di].className || '').slice(0, 60) +
+          '|aria=' + nodes[di].getAttribute('aria-checked') +
+          '|state=' + nodes[di].getAttribute('data-state'));
+      }
+      return out.join(' / ');
+    }
     var checked = isEnabled();
     if (checked) {
       // TikTok จำค่านี้ไว้ระดับบัญชี — โพสต์รอบก่อนเปิดไว้แล้วจะติดมาให้เลยไม่ต้องแตะซ้ำ
-      log('AI_CONTENT_ALREADY_ON', 'เนื้อหา AI เปิดอยู่แล้ว (ค่าเดิมจากบัญชี)');
+      // เก็บ state จริงแนบ log ไว้เผื่อยัง false-positive อยู่ (ยืนยันได้ทันทีไม่ต้องเดาอีกรอบ)
+      log('AI_CONTENT_ALREADY_ON', 'เนื้อหา AI เปิดอยู่แล้ว (ค่าเดิมจากบัญชี) [' + dumpToggleState() + ']');
     } else {
       // synthetic click() เฉยๆ ไม่ติด — เจอปัญหาเดียวกับปุ่ม Sounds/ช่องค้นหาสินค้า
       // (TikTok ต้องการ trusted gesture) จึงใช้ trusted tap ผ่าน Accessibility ก่อนแล้วค่อย fallback
@@ -897,20 +910,11 @@ export function buildTikTokPostScript({
         }
       }
       if (enabled) {
-        log('AI_CONTENT_ENABLED', 'เปิดป้ายกำกับเนื้อหา AI สำเร็จ');
+        log('AI_CONTENT_ENABLED', 'เปิดป้ายกำกับเนื้อหา AI สำเร็จ [' + dumpToggleState() + ']');
       } else {
-        // เก็บ className/attribute จริงไว้ debug — ถ้า tap ติดแต่ verify ไม่ผ่านอีก
-        // จะได้รู้ทันทีว่า selector ต้องปรับยังไงแทนการเดา
-        var debugNodes = container.querySelectorAll('.Switch__content, [role="switch"], .Switch__root, input[type="checkbox"]');
-        var debugInfo = [];
-        for (var di = 0; di < debugNodes.length; di++) {
-          debugInfo.push(String(debugNodes[di].className || '').slice(0, 60) +
-            '|aria=' + debugNodes[di].getAttribute('aria-checked') +
-            '|state=' + debugNodes[di].getAttribute('data-state'));
-        }
         // TikTok variants do not all expose switch state in the DOM. Match the desktop flow:
         // make a best-effort click and do not block the actual post solely on missing ARIA state.
-        log('AI_CONTENT_VERIFY_UNAVAILABLE', 'TikTok ไม่เปิดเผยสถานะเนื้อหา AI — ดำเนินการต่อหลังสั่งเปิดแล้ว [' + debugInfo.join(' / ') + ']');
+        log('AI_CONTENT_VERIFY_UNAVAILABLE', 'TikTok ไม่เปิดเผยสถานะเนื้อหา AI — ดำเนินการต่อหลังสั่งเปิดแล้ว [' + dumpToggleState() + ']');
       }
     }
   }
