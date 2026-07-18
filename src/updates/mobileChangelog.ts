@@ -44,6 +44,25 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.7',
+    date: '2026-07-18',
+    highlight: 'รองรับ Shopee เวอร์ชันใหม่ 3.78.25',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'Shopee เวอร์ชันใหม่เปลี่ยนรูปแบบข้อมูลรูปสินค้าในหน้าสิ่งที่ฉันถูกใจ ทำให้ดึงรูปจากการ์ดไม่ได้ — รองรับรูปแบบใหม่แล้ว (เครื่องที่ยังใช้ Shopee เวอร์ชันเดิมใช้ได้เหมือนเดิม)'
+      },
+      {
+        type: 'fixed',
+        text: 'หน้าข้อเสนอ Shopee เปลี่ยนป้ายยอดขายจาก "ขายแล้ว" เป็น "ขายได้" ทำให้อ่านยอดขายไม่ได้ — อ่านได้ทั้งสองแบบแล้ว'
+      },
+      {
+        type: 'improved',
+        text: 'อัปเดตเวอร์ชัน Shopee ที่ผ่านการทดสอบของระบบดึงสินค้าเป็น 3.78.25'
+      }
+    ]
+  },
+  {
     version: '0.9.6',
     date: '2026-07-16',
     highlight: 'แก้ดึงสินค้า Shopee ไม่เริ่ม/ข้ามสินค้าบนบางเครื่อง',
