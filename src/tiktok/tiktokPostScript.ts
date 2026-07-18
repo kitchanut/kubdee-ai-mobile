@@ -844,6 +844,19 @@ export function buildTikTokPostScript({
       }
       return false;
     }
+    // บัญชีที่ยังไม่เคยเปิด "เนื้อหา AI" มาก่อน TikTok จะโชว์ dialog อธิบาย/ยืนยันครั้งแรก
+    // (ปุ่ม "ยืนยัน"/"ตกลง"/"Confirm") — เจอแค่ครั้งแรกของบัญชี พอกดผ่านแล้วจะไม่ขึ้นอีก
+    // สโคปแค่ modal ที่เปิดอยู่ตอนนี้เท่านั้น ห้ามปนกับ ACK list กลางของ dismissBlockingDialogs
+    // เพราะ "ยืนยัน"/"ตกลง" ไปโดนปุ่มอื่นที่อันตรายกว่าได้ (เช่น modal ยืนยันโพสต์)
+    function dismissAiContentConfirm(){
+      var modal = findProductModal();
+      if (!modal) return false;
+      var btn = findButton(['ยืนยัน', 'ตกลง', 'confirm', 'ok'], modal, true);
+      if (!btn) return false;
+      btn.click();
+      log('AI_CONTENT_CONFIRM_DISMISSED', 'ปิด dialog ยืนยันเนื้อหา AI: ' + normalized(btn.textContent).slice(0, 40));
+      return true;
+    }
     var checked = isEnabled();
     if (!checked) {
       // synthetic click() เฉยๆ ไม่ติด — เจอปัญหาเดียวกับปุ่ม Sounds/ช่องค้นหาสินค้า
@@ -851,6 +864,8 @@ export function buildTikTokPostScript({
       var tapped = await nativeTapOn(toggle, 'สวิตช์เนื้อหา AI');
       if (tapped) await sleep(700);
       else toggle.click();
+      await sleep(300);
+      if (dismissAiContentConfirm()) await sleep(500);
       var enabled = await waitFor(isEnabled, 1500, 250);
       if (!enabled) {
         var root = container.querySelector('.Switch__root');
@@ -858,6 +873,8 @@ export function buildTikTokPostScript({
           var tappedRoot = await nativeTapOn(root, 'สวิตช์เนื้อหา AI (root)');
           if (tappedRoot) await sleep(700);
           else root.click();
+          await sleep(300);
+          if (dismissAiContentConfirm()) await sleep(500);
           enabled = await waitFor(isEnabled, 1500, 250);
         }
       }
