@@ -1099,28 +1099,35 @@ export function buildTikTokPostScript({
     log('SOUND_OPEN', 'เปิด editor ใส่เพลงประกอบ...');
     // desktop ใช้ trusted CDP click เปิด editor — synthetic click เปิดไม่ติดบน mobile
     // (พิสูจน์จาก live-test) จึงใช้ trusted tap ผ่าน Accessibility; ก่อนแตะต้องปิด
-    // tooltip โปรโมท "เข้าใจแล้ว" ที่ลอยบังแถบเครื่องมือ (class ไม่เข้าเงื่อนไข
-    // dismissBlockingDialogs เลยหาแบบ exact ทั้ง document)
+    // tooltip โปรโมท "เข้าใจแล้ว" ที่ลอยบังแถบเครื่องมือ; editor (clip-forge) โหลดช้ามาก
+    // บนเครื่องสเปคต่ำ — แตะซ้ำได้เฉพาะตอนหน้า upload ยังอยู่ (คลิกแรกไม่ติดจริง)
+    // ห้ามแตะซ้ำระหว่าง editor กำลังโหลด และรอ panel ได้ถึง 75 วิ
     var ready = null;
-    for (var openTry = 0; openTry < 2 && !ready; openTry++) {
-      var ackButton = findButton(['เข้าใจแล้ว', 'Got it'], document, true);
-      if (ackButton) {
-        heavyClickEl(ackButton);
-        log('SOUND_DISMISS', 'ปิด popup แนะนำก่อนเปิด editor');
-        await sleep(800);
+    var soundTapsLeft = 2;
+    var lastSoundTapAt = 0;
+    var soundOpenStart = Date.now();
+    while (Date.now() - soundOpenStart < 75000) {
+      if (musicPanelReady()) { ready = true; break; }
+      var onUploadForm = !!document.querySelector('.public-DraftEditor-content');
+      if (onUploadForm && !soundEditorOpen() && soundTapsLeft > 0 && Date.now() - lastSoundTapAt > 10000) {
+        var ackButton = findButton(['เข้าใจแล้ว', 'Got it'], document, true);
+        if (ackButton) {
+          heavyClickEl(ackButton);
+          log('SOUND_DISMISS', 'ปิด popup แนะนำก่อนเปิด editor');
+          await sleep(800);
+        }
+        dismissBlockingDialogs();
+        var soundsButton = document.querySelector('button[data-button-name="sounds"]');
+        if (!soundsButton || !visible(soundsButton)) break;
+        var tapped = await nativeTapOn(soundsButton, 'ปุ่ม Sounds');
+        if (!tapped) heavyClickEl(soundsButton);
+        soundTapsLeft--;
+        lastSoundTapAt = Date.now();
       }
-      dismissBlockingDialogs();
-      var soundsButton = document.querySelector('button[data-button-name="sounds"]');
-      if (!soundsButton || !visible(soundsButton)) break;
-      var tapped = await nativeTapOn(soundsButton, 'ปุ่ม Sounds' + (openTry > 0 ? ' (รอบ 2)' : ''));
-      if (tapped) await sleep(2500);
-      if (!soundEditorOpen() && !musicPanelReady()) {
-        heavyClickEl(soundsButton);
-        await sleep(1500);
-      }
-      ready = await waitFor(musicPanelReady, 15000, 1000);
+      await sleep(1000);
     }
     if (!ready) { log('SOUND_SKIP', 'รอ Sound panel โหลดนานเกินไป — ข้ามใส่เพลง'); await exitSoundEditor(); return; }
+    log('SOUND_PANEL_READY', 'Sound panel พร้อมแล้ว');
     await sleep(500);
 
     if (sound.duplicateCount > 0) await duplicateClipStep(sound.duplicateCount);
