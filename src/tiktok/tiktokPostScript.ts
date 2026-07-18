@@ -186,6 +186,16 @@ export function buildTikTokPostScript({
       }
       if (clicked) break;
     }
+    // fallback: บาง tooltip แนะนำฟีเจอร์ (เช่นก่อนเปิด editor เพลง) ใช้ class ที่ไม่เข้าเงื่อนไข
+    // scope ด้านบน (ไม่ใช่ modal/dialog/popup/guide/onboarding) — หาปุ่ม ACK แบบ exact ทั้งหน้าแทน
+    if (!clicked) {
+      var fallbackButton = findButton(ACK, document, true);
+      if (fallbackButton) {
+        fallbackButton.click();
+        log('DIALOG_DISMISSED', 'ปิด popup แนะนำ: ' + normalized(fallbackButton.textContent).slice(0, 40));
+        clicked = true;
+      }
+    }
     return clicked;
   }
   function diagnostics(stage){
@@ -381,6 +391,7 @@ export function buildTikTokPostScript({
     var caption = String(INPUT.caption || INPUT.productName || '').replace(/\\s*[\\r\\n]+\\s*/g, ' ').trim();
     if (!caption) throw { code: 'CAPTION_REQUIRED', message: 'ไม่มี Caption หรือชื่อสินค้า จึงไม่โพสต์', stage: 'caption' };
 
+    dismissBlockingDialogs();
     log('CAPTION_FILL', 'กำลังใส่ Caption...');
     var editor = document.querySelector('.public-DraftEditor-content');
     if (!editor) throw { code: 'CAPTION_EDITOR_NOT_FOUND', message: 'ไม่พบช่อง Caption', stage: 'caption' };
@@ -849,6 +860,7 @@ export function buildTikTokPostScript({
   // ── ตั้งเวลาโพสต์ (port จาก desktop setSchedule.ts — fail-soft ทุกจุด ไม่ throw) ──
   async function setScheduleStep(){
     if (!INPUT.schedule) return;
+    dismissBlockingDialogs();
     var data = INPUT.schedule;
     log('SCHEDULE', 'ตั้งเวลาโพสต์: ' + data.dateStr + ' ' + data.timeStr);
     var radio = document.querySelector('input[name="postSchedule"][value="schedule"]');
@@ -1099,7 +1111,8 @@ export function buildTikTokPostScript({
     log('SOUND_OPEN', 'เปิด editor ใส่เพลงประกอบ...');
     // desktop ใช้ trusted CDP click เปิด editor — synthetic click เปิดไม่ติดบน mobile
     // (พิสูจน์จาก live-test) จึงใช้ trusted tap ผ่าน Accessibility; ก่อนแตะต้องปิด
-    // tooltip โปรโมท "เข้าใจแล้ว" ที่ลอยบังแถบเครื่องมือ; editor (clip-forge) โหลดช้ามาก
+    // tooltip โปรโมท "เข้าใจแล้ว" ที่ลอยบังแถบเครื่องมือ (dismissBlockingDialogs เช็คให้แล้ว
+    // ทั้ง scoped container และ fallback หาปุ่ม exact ทั้งหน้า); editor (clip-forge) โหลดช้ามาก
     // บนเครื่องสเปคต่ำ — แตะซ้ำได้เฉพาะตอนหน้า upload ยังอยู่ (คลิกแรกไม่ติดจริง)
     // ห้ามแตะซ้ำระหว่าง editor กำลังโหลด และรอ panel ได้ถึง 75 วิ
     var ready = null;
@@ -1110,13 +1123,10 @@ export function buildTikTokPostScript({
       if (musicPanelReady()) { ready = true; break; }
       var onUploadForm = !!document.querySelector('.public-DraftEditor-content');
       if (onUploadForm && !soundEditorOpen() && soundTapsLeft > 0 && Date.now() - lastSoundTapAt > 10000) {
-        var ackButton = findButton(['เข้าใจแล้ว', 'Got it'], document, true);
-        if (ackButton) {
-          heavyClickEl(ackButton);
+        if (dismissBlockingDialogs()) {
           log('SOUND_DISMISS', 'ปิด popup แนะนำก่อนเปิด editor');
           await sleep(800);
         }
-        dismissBlockingDialogs();
         var soundsButton = document.querySelector('button[data-button-name="sounds"]');
         if (!soundsButton || !visible(soundsButton)) break;
         var tapped = await nativeTapOn(soundsButton, 'ปุ่ม Sounds');
