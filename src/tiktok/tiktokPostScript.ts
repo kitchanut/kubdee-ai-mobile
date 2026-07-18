@@ -299,29 +299,153 @@ export function buildTikTokPostScript({
     if (!uploadState.done) throw { code: 'UPLOAD_REJECTED', message: uploadState.error || 'TikTok ปฏิเสธไฟล์วิดีโอ', stage: 'upload-processing' };
   }
 
+  // ตัด zero-width chars ที่ DraftJS อาจแทรก (กัน verify fail ทั้งที่ข้อความถูก)
+  function stripInvisible(value){
+    return String(value || '').replace(/[\\u200B\\u200C\\u200D\\uFEFF]/g, '');
+  }
+  function editorFocused(editor){
+    var active = document.activeElement;
+    return !!active && (active === editor || editor.contains(active));
+  }
+  function caretToEnd(editor){
+    editor.focus();
+    var range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  // เคลียร์ข้อความเฉพาะใน editor ผ่าน Selection API — ห้าม execCommand('selectAll') ระดับ document
+  // (desktop เคยพัง: focus หลุดแล้ว selectAll ไฮไลต์ทั้งหน้า ข้อความพิมพ์ไม่เข้าแต่โพสต์ออกไป)
+  function clearEditorScoped(editor){
+    var range = document.createRange();
+    range.selectNodeContents(editor);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('delete', false, null);
+  }
+
   async function fillCaption(){
     var caption = String(INPUT.caption || INPUT.productName || '').replace(/\\s*[\\r\\n]+\\s*/g, ' ').trim();
-    var hashtags = String(INPUT.hashtags || '').trim();
-    var content = (caption + (hashtags ? ' ' + hashtags : '')).trim();
-    if (!content) throw { code: 'CAPTION_REQUIRED', message: 'ไม่มี Caption หรือชื่อสินค้า จึงไม่โพสต์', stage: 'caption' };
+    if (!caption) throw { code: 'CAPTION_REQUIRED', message: 'ไม่มี Caption หรือชื่อสินค้า จึงไม่โพสต์', stage: 'caption' };
 
-    log('CAPTION_FILL', 'กำลังใส่ Caption และ Hashtags...');
+    log('CAPTION_FILL', 'กำลังใส่ Caption...');
     var editor = document.querySelector('.public-DraftEditor-content');
     if (!editor) throw { code: 'CAPTION_EDITOR_NOT_FOUND', message: 'ไม่พบช่อง Caption', stage: 'caption' };
-    editor.click();
-    editor.focus();
-    document.execCommand('selectAll', false, null);
-    document.execCommand('delete', false, null);
-    if (!document.execCommand('insertText', false, content)) {
-      editor.textContent = content;
-      editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: content }));
+
+    // desktop parity: focus → clear เฉพาะ editor → พิมพ์ → อ่านทวน — retry สูงสุด 3 รอบ
+    var captionOk = false;
+    for (var attempt = 1; attempt <= 3 && !captionOk; attempt++) {
+      if (attempt > 1) {
+        log('CAPTION_RETRY', 'กรอกคำบรรยายไม่เข้า ลองใหม่รอบ ' + attempt + '/3...');
+        await sleep(800);
+      }
+      editor.click();
+      editor.focus();
+      await sleep(250);
+      if (!editorFocused(editor)) { caretToEnd(editor); await sleep(200); }
+      if (!editorFocused(editor)) continue;
+      clearEditorScoped(editor);
+      await sleep(150);
+      if (!document.execCommand('insertText', false, caption)) {
+        editor.textContent = caption;
+        editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: caption }));
+      }
+      await sleep(800);
+      var typed = stripInvisible(normalized(editor.innerText || editor.textContent));
+      var expected = stripInvisible(normalized(caption));
+      if (typed === expected) { captionOk = true; break; }
+      // TikTok ตัด caption ยาวเกิน limit → ยอมรับเมื่อได้ prefix อย่างน้อย 90%
+      if (typed && expected.indexOf(typed) === 0 && typed.length >= Math.floor(expected.length * 0.9)) {
+        log('CAPTION_TRUNCATED', 'caption โดนตัดท้ายที่ ' + typed.length + '/' + expected.length + ' ตัวอักษร (ยอมรับ)');
+        captionOk = true;
+        break;
+      }
+      log('CAPTION_MISMATCH', 'ข้อความใน editor ไม่ตรง (ได้ "' + typed.slice(0, 30) + '")');
     }
-    await sleep(800);
-    if (!textMatches(editor.innerText || editor.textContent, content)) {
-      throw { code: 'CAPTION_VERIFY_FAILED', message: 'ตรวจสอบ Caption ที่กรอกไม่ผ่าน', stage: 'caption-verify' };
+    if (!captionOk) {
+      throw { code: 'CAPTION_VERIFY_FAILED', message: 'ตรวจสอบ Caption ที่กรอกไม่ผ่าน — ข้ามคลิปนี้ ไม่โพสต์', stage: 'caption-verify' };
     }
+
+    await typeHashtags(editor);
+
     if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
     await sleep(250);
+  }
+
+  // พิมพ์ hashtag ทีละแท็ก + เลือกจาก autocomplete (desktop parity) — fail-soft ทั้งฟังก์ชัน:
+  // dropdown ไม่ขึ้น/เลือกไม่ติด = ปล่อยเป็นข้อความธรรมดา ไม่ล้มโพสต์ (caption ผ่าน verify แล้ว)
+  async function typeHashtags(editor){
+    var hashtags = String(INPUT.hashtags || '').trim();
+    if (!hashtags) return;
+    var tags = hashtags.match(/#[^#\\s]+/g) || [];
+    if (!tags.length) return;
+    log('HASHTAG_FILL', 'กำลังพิมพ์ hashtag ' + tags.length + ' แท็ก (เลือกจาก autocomplete)...');
+    await sleep(1000);
+    for (var t = 0; t < tags.length; t++) {
+      var tagText = tags[t].slice(1);
+      if (!editorFocused(editor)) {
+        caretToEnd(editor);
+        await sleep(200);
+        if (!editorFocused(editor)) {
+          log('HASHTAG_FOCUS_LOST', 'focus หลุดก่อนพิมพ์ ' + tags[t] + ' — เติมแท็กที่เหลือเป็นข้อความธรรมดา');
+          document.execCommand('insertText', false, ' ' + tags.slice(t).join(' ') + ' ');
+          return;
+        }
+      }
+      document.execCommand('insertText', false, ' ');
+      await sleep(120);
+      document.execCommand('insertText', false, '#');
+      await sleep(200);
+      // พิมพ์ทีละตัวอักษรให้ dropdown autocomplete เด้ง (พิมพ์ทั้งก้อน dropdown ไม่ขึ้น)
+      for (var c = 0; c < tagText.length; c++) {
+        document.execCommand('insertText', false, tagText.charAt(c));
+        await sleep(45);
+      }
+      // รอ dropdown สูงสุด 10 วิ — เจอตัวตรงกับแท็กหยุดรอทันที ครบเวลาไม่เจอ = ข้อความธรรมดา
+      var expectedTag = normalized(tagText).replace(/\\s+/g, '');
+      var picked = null;
+      var matchedPick = false;
+      var tagDeadline = Date.now() + 10000;
+      while (Date.now() < tagDeadline) {
+        await sleep(400);
+        var items = document.querySelectorAll('.hashtag-suggestion-item');
+        var visibleItems = [];
+        for (var i = 0; i < items.length; i++) { if (visible(items[i])) visibleItems.push(items[i]); }
+        if (!visibleItems.length) continue;
+        var matchItem = null;
+        var focusedItem = null;
+        for (var j = 0; j < visibleItems.length; j++) {
+          var topic = visibleItems[j].querySelector('.hash-tag-topic');
+          var textJ = normalized((topic ? topic.textContent : visibleItems[j].textContent) || '').replace(/^#/, '').replace(/\\s+/g, '');
+          if (textJ && (textJ === expectedTag || textJ.indexOf(expectedTag) === 0 || expectedTag.indexOf(textJ) === 0)) matchItem = matchItem || visibleItems[j];
+          if (visibleItems[j].classList.contains('focused')) focusedItem = focusedItem || visibleItems[j];
+        }
+        picked = matchItem || focusedItem || visibleItems[0];
+        matchedPick = !!matchItem;
+        if (matchedPick) break;
+      }
+      if (picked) {
+        picked.click();
+        await sleep(700);
+        // dropdown ยังค้าง = คลิกไม่ติด → เคาะ space ปิดให้แท็กจบเป็นข้อความธรรมดา
+        var stillOpen = false;
+        var itemsAfter = document.querySelectorAll('.hashtag-suggestion-item');
+        for (var k = 0; k < itemsAfter.length; k++) { if (visible(itemsAfter[k])) { stillOpen = true; break; } }
+        if (stillOpen) {
+          document.execCommand('insertText', false, ' ');
+          log('HASHTAG_PLAIN', 'เลือก autocomplete ไม่ติดสำหรับ ' + tags[t] + ' — ใช้ข้อความธรรมดา');
+        } else {
+          log('HASHTAG_PICKED', 'เลือก hashtag: ' + tags[t] + (matchedPick ? '' : ' (ตัวใกล้เคียง)'));
+        }
+      } else {
+        document.execCommand('insertText', false, ' ');
+        log('HASHTAG_PLAIN', 'ไม่พบ autocomplete สำหรับ ' + tags[t] + ' ภายใน 10 วิ (ใช้ข้อความธรรมดา)');
+      }
+      await sleep(300);
+    }
   }
 
   async function bindProduct(){
@@ -381,55 +505,92 @@ export function buildTikTokPostScript({
     // Enter สังเคราะห์จาก JS ทำ search พัง และ input/change เฉยๆ ไม่ trigger ค้นหา
     // → แตะช่องค้นหาด้วย gesture จริงให้ focus + คีย์บอร์ดเด้ง แล้วให้ native แตะปุ่ม Go/ค้นหา
     // บนคีย์บอร์ด (ACTION_IME_ENTER บน WebView ไม่ทำงาน จึงกดปุ่มคีย์บอร์ดโดยตรงแทน)
-    var searchTapped = await nativeTapOn(search, 'ช่องค้นหาสินค้า');
-    if (!searchTapped) search.click();
-    await sleep(900); // รอคีย์บอร์ดเด้งขึ้นก่อน
-    setNativeValue(search, INPUT.productId);
-    await sleep(500);
-
-    // หา radio ของสินค้าที่ตรง — ยิง Enter/กดปุ่มค้นหาซ้ำได้ถ้ายังไม่มีผล (กันคีย์บอร์ด/โฟกัสไม่พร้อมรอบแรก)
-    var findMatchRadio = function(){
+    // desktop parity: รอผลค้นหาจริงสูงสุด 3 นาที (เดิมรอ ~20 วิแล้ว fail — เน็ตช้าไม่ทัน)
+    // เจอแถวที่มี productId → เลือกแถวนั้น / เหลือแถวเดียวนิ่ง 3 รอบ → ใช้แถวนั้น
+    // empty state นิ่ง 3 รอบ = ไม่พบสินค้า / ครบเวลา = timeout → ทั้งคู่ข้ามคลิปนี้ ไม่โพสต์
+    // ระหว่างรอถ้ายังไม่มีผล ยิงปุ่มค้นหาบนคีย์บอร์ด (trusted Enter) ซ้ำทุก ~30 วิ
+    // สำคัญ: ห้ามเลือก radio ทันทีหลังยิง Enter — รายการ showcase โชว์สินค้าทั้งหมดอยู่แล้ว
+    // ต้องรอให้ Go (async มี latency) ลงจริง + search กรอง แล้วบังคับปิดคีย์บอร์ด (blur) ค่อยเลือก
+    var pidNorm = normalized(INPUT.productId);
+    var productRows = function(){
       var rows = document.querySelectorAll('tbody tr, .product-tb-row, [data-e2e*="product-row"]');
-      for (var i = 0; i < rows.length; i++) {
-        if (normalized(rows[i].textContent).indexOf(normalized(INPUT.productId)) < 0) continue;
-        var candidate = rows[i].querySelector('input[type="radio"]');
-        if (candidate) return candidate;
-      }
-      return null;
+      var out = [];
+      for (var i = 0; i < rows.length; i++) { if (visible(rows[i])) out.push(rows[i]); }
+      return out;
     };
-    var radio = null;
-    for (var searchAttempt = 1; searchAttempt <= 3 && !radio; searchAttempt++) {
-      log('PRODUCT_SEARCH_FILLED', 'ค้นหา Product ID: ' + String(search.value || '') + ' — กดปุ่มค้นหาบนคีย์บอร์ด (ครั้ง ' + searchAttempt + '/3)');
+    var fireSearch = async function(label){
+      log('PRODUCT_SEARCH_FILLED', 'ค้นหา Product ID: ' + String(INPUT.productId) + ' — กดปุ่มค้นหาบนคีย์บอร์ด' + (label ? ' (' + label + ')' : ''));
+      var tapped = await nativeTapOn(search, 'ช่องค้นหาสินค้า');
+      if (!tapped) search.click();
+      await sleep(900); // รอคีย์บอร์ดเด้งขึ้นก่อน
+      setNativeValue(search, INPUT.productId);
+      await sleep(500);
       send({ type: 'tiktok-post-native-enter' });
-      // สำคัญ: ห้ามหา/เลือก radio ทันที — รายการ showcase โชว์สินค้าทั้งหมดอยู่แล้ว
-      // ถ้าหาเลยจะเจอ radio ที่ t=0 แล้วกดเลือกก่อนที่ native Go (async มี latency) จะลงจริง
-      // → Go ลงทีหลังโดนที่ผิด คีย์บอร์ดค้าง สินค้าไม่ถูกเลือก
-      // จึงรอให้ Go ลง + search กรอง ก่อน แล้วบังคับปิดคีย์บอร์ด (blur) ค่อยเลือก
       await sleep(2800);
       try {
         if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
       } catch (e) {}
       await sleep(700);
-      radio = await waitFor(findMatchRadio, 4000, 500);
-      if (!radio && searchAttempt < 3) {
-        // ยังไม่เจอผล — โฟกัสช่องค้นหาใหม่ (คีย์บอร์ดเด้ง) แล้วเติมค่าใหม่ก่อนลองยิงอีกครั้ง
-        await nativeTapOn(search, 'ช่องค้นหาสินค้า');
-        await sleep(800);
-        setNativeValue(search, INPUT.productId);
-        await sleep(400);
+    };
+    await fireSearch('');
+    var radio = null;
+    var notFoundStable = false;
+    var singleStreak = 0;
+    var emptyStreak = 0;
+    var searchDeadline = Date.now() + 180000;
+    var lastFireAt = Date.now();
+    var lastWaitLogAt = Date.now();
+    while (Date.now() < searchDeadline) {
+      var rowsNow = productRows();
+      var idRow = null;
+      for (var r = 0; r < rowsNow.length; r++) {
+        if (normalized(rowsNow[r].textContent).indexOf(pidNorm) >= 0) { idRow = rowsNow[r]; break; }
       }
+      if (idRow) {
+        radio = idRow.querySelector('input[type="radio"]');
+        if (radio) { log('PRODUCT_SELECTED', 'พบสินค้าตรงรหัส กำลังเลือก...'); break; }
+      }
+      if (rowsNow.length === 1 && Date.now() - lastFireAt >= 8000) {
+        // แถวผลลัพธ์มักโชว์ชื่อสินค้าไม่ใช่ ID — ใช้แถวเดียวที่เหลือได้เมื่อนิ่งติดกัน 3 รอบ
+        // และผ่านไปแล้วอย่างน้อย 8 วิหลังยิงค้นหา (กัน showcase 1 ตัวที่ filter ยังไม่ทันบนเน็ตช้า)
+        singleStreak++;
+        emptyStreak = 0;
+        if (singleStreak >= 3) {
+          radio = rowsNow[0].querySelector('input[type="radio"]');
+          if (radio) { log('PRODUCT_SELECTED', 'ผลค้นหาเหลือรายการเดียว กำลังเลือก...'); break; }
+        }
+      } else if (rowsNow.length === 0) {
+        singleStreak = 0;
+        var modalArea = findProductModal() || document.body;
+        var areaText = normalized(modalArea.textContent);
+        if (areaText.indexOf('ไม่พบ') >= 0 || areaText.indexOf('ไม่มีสินค้า') >= 0 || areaText.indexOf('no products') >= 0 || areaText.indexOf('no results') >= 0) {
+          emptyStreak++;
+          if (emptyStreak >= 3) { notFoundStable = true; break; }
+        } else {
+          emptyStreak = 0;
+        }
+      } else {
+        // หลายแถว = ยังไม่กรอง (รายการเต็ม) — ห้ามเดาแถวแรก (จะแนบสินค้าผิดตัว) รอต่อ
+        singleStreak = 0;
+        emptyStreak = 0;
+      }
+      if (!idRow && Date.now() - lastFireAt >= 30000) {
+        lastFireAt = Date.now();
+        await fireSearch('ยิงซ้ำ');
+        continue;
+      }
+      if (Date.now() - lastWaitLogAt >= 30000) {
+        lastWaitLogAt = Date.now();
+        log('PRODUCT_SEARCH_WAIT', 'ยังรอผลค้นหาสินค้า... (เหลือ ' + Math.round((searchDeadline - Date.now()) / 1000) + ' วิ)');
+      }
+      await sleep(1000);
     }
     if (!radio) {
-      // แถวผลลัพธ์มักโชว์ชื่อสินค้าไม่ใช่ ID — ใช้ radio แถวแรกเฉพาะเมื่อค้นหากรองเหลือแถวเดียว
-      // ถ้ามีหลายแถวแปลว่า search ไม่ได้กรอง ห้ามเดาแถวแรก (จะแนบสินค้าผิดตัว)
-      var radios = document.querySelectorAll('.product-tb-row input[type="radio"], tbody tr input[type="radio"]');
-      if (radios.length === 1) radio = radios[0];
-      else if (radios.length > 1) {
-        throw { code: 'PRODUCT_NOT_FOUND', message: 'ค้นหาแล้วเหลือ ' + radios.length + ' รายการ จับคู่ Product ID ไม่ได้', stage: 'product-result' };
+      if (notFoundStable) {
+        throw { code: 'PRODUCT_NOT_FOUND', message: 'ไม่พบสินค้า ' + String(INPUT.productId) + ' ใน Showcase — ข้ามคลิปนี้ ไม่โพสต์', stage: 'product-result' };
       }
+      throw { code: 'PRODUCT_SEARCH_TIMEOUT', message: 'รอผลค้นหาสินค้าเกิน 3 นาที (เหลือ ' + productRows().length + ' รายการ จับคู่ Product ID ไม่ได้) — ข้ามคลิปนี้ ไม่โพสต์', stage: 'product-result' };
     }
-    if (!radio) throw { code: 'PRODUCT_NOT_FOUND', message: 'ไม่พบ TikTok Product ID ที่เลือก', stage: 'product-result' };
-    log('PRODUCT_SELECTED', 'พบสินค้าแล้ว กำลังเลือก...');
     radio.click();
     await sleep(1000); // ให้ TikTok enable ปุ่มถัดไปหลังเลือก radio (desktop ก็รอ 1 วิ)
 
@@ -442,53 +603,107 @@ export function buildTikTokPostScript({
       return !!document.querySelector('[data-e2e="anchor_container"] img, [data-e2e="anchor_container"] [data-e2e*="product"]');
     }
 
-    // เดินหน้าใน modal ทีละหน้า: กด "ถัดไป" ไปเรื่อยๆ จนเจอปุ่ม "เพิ่ม" (ยืนยัน) แล้วกดจบ
-    // — บางรุ่นมีหน้า CTA คั่นกลาง และปุ่มอาจ enable ช้า loop นี้กดซ้ำได้เองจนกว่า modal จะเปลี่ยน
-    var confirmClicked = false;
-    for (var stepIndex = 0; stepIndex < 4; stepIndex++) {
+    // desktop parity: รอให้เข้าหน้าใส่ CTA/ยืนยันจริงก่อนไปต่อ (เน็ตช้าหน้าเปลี่ยนไม่ทัน
+    // เดิมเคยเสี่ยงพิมพ์ CTA ลงช่องค้นหาเพราะเป็น TUX input เหมือนกัน) — สูงสุด 60 วิ
+    // สัญญาณหน้า CTA: ช่องค้นหาหายไป + มีปุ่มยืนยัน เพิ่ม/Add ใน footer ของ modal
+    // ระหว่างรอถ้ายังค้างหน้าเลือกสินค้า จะติ๊กสินค้า + กดถัดไปซ้ำให้เอง
+    var isSearchVisible = function(){
+      var inputs = document.querySelectorAll('input[placeholder="ค้นหาสินค้า"], input[placeholder="Search products"], input[placeholder*="Product ID" i]');
+      for (var i = 0; i < inputs.length; i++) { if (visible(inputs[i])) return true; }
+      return false;
+    };
+    var ctaPageDeadline = Date.now() + 60000;
+    var onCtaPage = false;
+    var nextClickedOnce = false;
+    while (Date.now() < ctaPageDeadline) {
+      dismissBlockingDialogs(); // กัน dialog ประกาศของ TikTok เด้งมาเป็น topmost แทน modal สินค้า
       var modalNow = findProductModal();
-      if (!modalNow) {
-        log('PRODUCT_MODAL_CLOSED', 'modal สินค้าปิดแล้ว (step ' + stepIndex + ')');
+      if (!modalNow) { onCtaPage = true; break; } // บางรุ่นเพิ่มทันทีไม่มีหน้า CTA — modal ปิดเลย
+      var confirmProbe = findModalAction(['เพิ่ม', 'Add', 'ยืนยัน', 'Confirm', 'เสร็จสิ้น', 'Done']);
+      if (!isSearchVisible() && confirmProbe) { onCtaPage = true; break; }
+      if (isSearchVisible()) {
+        // ยังค้างหน้าเลือกสินค้า — ติ๊กสินค้าซ้ำ (ถ้าหลุด) แล้วกดถัดไปอีกครั้ง
+        try {
+          if (radio && !radio.isConnected) {
+            // React re-render ทำ node เดิม detach — หาแถวที่ตรงรหัส (หรือแถวเดียวที่เหลือ) ใหม่
+            var rowsAgain = productRows();
+            var reRow = null;
+            for (var ra = 0; ra < rowsAgain.length; ra++) {
+              if (normalized(rowsAgain[ra].textContent).indexOf(pidNorm) >= 0) { reRow = rowsAgain[ra]; break; }
+            }
+            if (!reRow && rowsAgain.length === 1) reRow = rowsAgain[0];
+            if (reRow) radio = reRow.querySelector('input[type="radio"]') || radio;
+          }
+          if (radio && !radio.checked) { radio.click(); await sleep(400); }
+        } catch (e) {}
+        var nextButton2 = findModalAction(['ถัดไป', 'Next']);
+        if (!nextButton2) {
+          // fallback ปุ่ม primary เฉพาะใน footer ของ modal สินค้าเท่านั้น —
+          // ห้ามค้นทั้งหน้า เพราะปุ่ม primary ของหน้า editor คือ "โพสต์"
+          var prim = modalNow.querySelector('.common-modal-footer .TUXButton--primary, .button-group .TUXButton--primary, footer .TUXButton--primary');
+          if (prim && visible(prim)) nextButton2 = prim;
+        }
+        if (nextButton2) {
+          log('PRODUCT_STEP_NEXT', 'กดปุ่ม "' + normalized(nextButton2.textContent).slice(0, 40) + '" ใน modal สินค้า');
+          nextButton2.click();
+          nextClickedOnce = true;
+        } else if (!nextClickedOnce) {
+          throw { code: 'PRODUCT_SELECT_NEXT_NOT_FOUND', message: 'เลือกสินค้าแล้วแต่ไม่พบปุ่มถัดไป', stage: 'product-select' };
+        }
+      } else {
+        // หน้ากลางระหว่าง transition — บางรุ่นมีหน้า "ถัดไป" คั่นเพิ่ม
+        var nextMid = findModalAction(['ถัดไป', 'Next']);
+        if (nextMid) nextMid.click();
+      }
+      await sleep(1500);
+    }
+    if (!onCtaPage) {
+      throw { code: 'PRODUCT_CTA_PAGE_TIMEOUT', message: 'หน้าใส่ CTA ไม่ขึ้นหลังกดถัดไป (เกิน 60 วิ) — ข้ามคลิปนี้ ไม่โพสต์', stage: 'product-cta' };
+    }
+
+    // เติม CTA — เฉพาะ input ใน modal ที่ "ไม่ใช่" ช่องค้นหา (กันพิมพ์ผิดช่อง)
+    var modalCta = findProductModal();
+    if (INPUT.cta && modalCta) {
+      var ctaInput = null;
+      var ctaCandidates = modalCta.querySelectorAll('input.TUXTextInputCore-input, input[placeholder*="ชื่อ"], input[placeholder*="Name" i], input[data-e2e*="cta"]');
+      for (var ci = 0; ci < ctaCandidates.length; ci++) {
+        var ph = ctaCandidates[ci].getAttribute('placeholder') || '';
+        if (ph === 'ค้นหาสินค้า' || ph === 'Search products') continue;
+        if (!visible(ctaCandidates[ci])) continue;
+        ctaInput = ctaCandidates[ci];
         break;
       }
-      if (INPUT.cta) {
-        var ctaInput = modalNow.querySelector('input.TUXTextInputCore-input, input[placeholder*="ชื่อ"], input[placeholder*="Name" i], input[data-e2e*="cta"]');
-        if (ctaInput && visible(ctaInput) && ctaInput.value !== INPUT.cta) {
-          ctaInput.click();
-          setNativeValue(ctaInput, INPUT.cta);
-          await sleep(300);
-        }
+      if (ctaInput && ctaInput.value !== INPUT.cta) {
+        ctaInput.click();
+        setNativeValue(ctaInput, INPUT.cta);
+        await sleep(300);
       }
+      if (!ctaInput) log('PRODUCT_CTA_INPUT_MISSING', 'ไม่พบช่อง CTA — ใช้ข้อความปุ่มค่าเริ่มต้นของ TikTok');
+    }
+
+    // กดยืนยัน "เพิ่ม" แล้วรอ modal ปิดจริง (hard verify แบบ desktop) สูงสุด 30 วิ —
+    // modal ไม่ปิด = เพิ่มสินค้าไม่สำเร็จ ห้ามเดินหน้าไปโพสต์
+    var confirmClicked = false;
+    var lastConfirmAt = 0;
+    var confirmDeadline = Date.now() + 30000;
+    while (Date.now() < confirmDeadline) {
+      dismissBlockingDialogs(); // กัน dialog แปลกปลอมทำให้เข้าใจผิดว่า modal สินค้ายังไม่ปิด
+      if (!findProductModal()) break;
       var confirmButton = findModalAction(['เพิ่ม', 'Add', 'ยืนยัน', 'Confirm', 'เสร็จสิ้น', 'Done']);
-      if (confirmButton) {
+      if (confirmButton && (!confirmClicked || Date.now() - lastConfirmAt >= 8000)) {
         log('PRODUCT_CONFIRM_CLICK', 'กดปุ่มยืนยันสินค้า: "' + normalized(confirmButton.textContent).slice(0, 40) + '"');
         confirmButton.click();
         confirmClicked = true;
-        await sleep(1200);
-        break;
+        lastConfirmAt = Date.now();
       }
-      var nextButton2 = findModalAction(['ถัดไป', 'Next']);
-      if (!nextButton2) {
-        // fallback ปุ่ม primary เฉพาะใน footer ของ modal สินค้าเท่านั้น —
-        // ห้ามค้นทั้งหน้า เพราะปุ่ม primary ของหน้า editor คือ "โพสต์"
-        var prim = modalNow.querySelector('.common-modal-footer .TUXButton--primary, .button-group .TUXButton--primary, footer .TUXButton--primary');
-        if (prim && visible(prim)) nextButton2 = prim;
-      }
-      if (!nextButton2) {
-        if (stepIndex === 0) throw { code: 'PRODUCT_SELECT_NEXT_NOT_FOUND', message: 'เลือกสินค้าแล้วแต่ไม่พบปุ่มถัดไป', stage: 'product-select' };
-        log('PRODUCT_CONFIRM_NOT_FOUND', 'ไม่พบปุ่มยืนยัน/ถัดไปใน modal สินค้า (step ' + stepIndex + ')');
-        break;
-      }
-      log('PRODUCT_STEP_NEXT', 'กดปุ่ม "' + normalized(nextButton2.textContent).slice(0, 40) + '" ใน modal สินค้า (step ' + stepIndex + ')');
-      nextButton2.click();
-      await sleep(1200);
+      await sleep(1000);
     }
-    if (!confirmClicked) {
-      log('PRODUCT_CONFIRM_SOFT', 'ไม่ได้กดปุ่ม "เพิ่ม" โดยตรง — ตรวจผลจาก DOM ต่อ');
+    if (findProductModal()) {
+      throw { code: 'PRODUCT_CONFIRM_TIMEOUT', message: 'กดยืนยันแล้วหน้าต่างสินค้าไม่ปิด (เกิน 30 วิ) — ข้ามคลิปนี้ ไม่โพสต์', stage: 'product-confirm' };
     }
+    log('PRODUCT_MODAL_CLOSED', 'modal สินค้าปิดแล้ว — เพิ่มสินค้าเสร็จ');
 
-    // ไม่ verify แบบ hard เหมือน desktop — ถ้า DOM ยืนยันไม่ชัดก็ดำเนินต่อ (กัน false-negative
-    // จาก anchor ที่โชว์ชื่อสินค้าไม่ใช่ ID) แล้วปล่อยให้ขั้นตอนถัดไป (submit) ทำงานต่อ
+    // ตรวจ anchor เป็น soft-verify เพิ่มเติม (anchor มักโชว์ชื่อสินค้าไม่ใช่ ID จึงไม่ hard fail)
     var bound = await waitFor(function(){ return productBound() ? true : null; }, 6000, 500);
     if (!bound) {
       log('PRODUCT_BIND_SOFT', 'ยืนยันการแนบสินค้าจาก DOM ไม่ชัด — ดำเนินการต่อ (เหมือน flow desktop)');

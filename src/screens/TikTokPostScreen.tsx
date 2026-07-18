@@ -170,6 +170,8 @@ export default function TikTokPostScreen({
   const [isPosting, setIsPosting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  // คลิปที่โพสต์ไม่สำเร็จในรอบปัจจุบัน — ข้ามไปคลิปถัดไปแทนการหยุดทั้งคิว (desktop parity)
+  const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
   const stopRequestedRef = useRef(false);
   const completedRef = useRef(false);
   const settingsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -223,7 +225,11 @@ export default function TikTokPostScreen({
   const blockedCount = queuedVideos.length - postableVideos.length;
   // ทำงานกับหัวคิวที่โพสต์ได้เสมอ เมื่อสำเร็จ App จะนำรายการนั้นออกและคลิปถัดไปเลื่อนขึ้นมา
   // คลิปแดง (ข้าม) จะไม่ถูกหยิบขึ้นมาโพสต์ จึงค้างอยู่ในลิสต์ให้ผู้ใช้แก้/เอาออกเอง
-  const activeVideo = isPosting ? postableVideos[0] ?? null : null;
+  // คลิปที่ fail ระหว่างรอบนี้ (failedIds) จะถูกข้ามเพื่อให้คิวเดินต่อ (desktop parity) —
+  // ค้างในลิสต์ให้ผู้ใช้กด "ลองใหม่" ซึ่งล้าง failedIds แล้วเริ่มรอบใหม่
+  const activeVideo = isPosting
+    ? postableVideos.find((video) => !failedIds.has(video.id)) ?? null
+    : null;
   const missingCount = pendingVideoIds.length - queuedVideos.length;
   const canPost = Boolean(selectedProfileId && postableVideos.length > 0 && !isPosting);
 
@@ -243,6 +249,9 @@ export default function TikTokPostScreen({
   }, [appendLog]);
 
   const startPosting = useCallback((): void => {
+    // กันกดซ้ำระหว่างรันอยู่ — ล้าง failedIds กลางรันจะทำ modal ของคลิปที่กำลังโพสต์
+    // unmount แล้วเริ่มคลิปเดิมใหม่ = เสี่ยงโพสต์ซ้ำบน TikTok
+    if (isPosting) return;
     if (!selectedProfileId) {
       toast.warning('เลือกโปรไฟล์ก่อนโพสต์ TikTok');
       return;
@@ -274,11 +283,12 @@ export default function TikTokPostScreen({
     stopRequestedRef.current = false;
     completedRef.current = false;
     setLastError(null);
+    setFailedIds(new Set());
     setIsStopping(false);
     setIsPosting(true);
     beginAutomationActivityRun('tiktok-post', `TikTok post · ${postableVideos.length} วิดีโอ`);
     appendLog(`เริ่ม${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ${postableVideos.length} วิดีโอ`);
-  }, [appendLog, postAction, postableVideos, queuedVideos.length, selectedProfileId, skipBreakdown]);
+  }, [appendLog, isPosting, postAction, postableVideos, queuedVideos.length, selectedProfileId, skipBreakdown]);
 
   const stopPosting = useCallback((): void => {
     if (!isPosting || isStopping) return;
@@ -298,9 +308,21 @@ export default function TikTokPostScreen({
     completedRef.current = true;
 
     if (!result.success) {
+      // desktop parity: คลิป fail = ข้ามคลิปนั้นแล้วเดินคิวต่อ ไม่หยุดทั้งชุด
       const message = result.error?.trim() || `ทำรายการ ${videoLabel(activeVideo, 0)} ไม่สำเร็จ`;
+      appendLog(`ข้ามคลิปที่ล้มเหลว: ${message}`);
       setLastError(message);
-      finishRun(message, true);
+      const nextFailed = new Set(failedIds).add(activeVideo.id);
+      setFailedIds(nextFailed);
+      const remainingAfterFail = queuedVideos.filter(
+        (video) => !nextFailed.has(video.id) && isTikTokPostable(video, enableProductLink)
+      ).length;
+      if (stopRequestedRef.current || remainingAfterFail === 0) {
+        finishRun(`TikTok post จบ — ล้มเหลว ${nextFailed.size} คลิป (กด "ลองใหม่" เพื่อโพสต์ซ้ำ)`, true);
+        return;
+      }
+      toast.error(message);
+      completedRef.current = false;
       return;
     }
 
@@ -310,15 +332,19 @@ export default function TikTokPostScreen({
     }
     onRemovePendingVideo(activeVideo.id);
     const remainingPostable = queuedVideos.filter(
-      (video) => video.id !== activeVideo.id && isTikTokPostable(video, enableProductLink)
+      (video) => video.id !== activeVideo.id && !failedIds.has(video.id) && isTikTokPostable(video, enableProductLink)
     ).length;
     if (stopRequestedRef.current || remainingPostable === 0) {
-      finishRun(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ครบแล้ว`);
+      if (failedIds.size > 0) {
+        finishRun(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok จบ — ล้มเหลว ${failedIds.size} คลิป (กด "ลองใหม่" เพื่อโพสต์ซ้ำ)`, true);
+      } else {
+        finishRun(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'} TikTok ครบแล้ว`);
+      }
       return;
     }
 
     completedRef.current = false;
-  }, [activeVideo, appendLog, enableProductLink, finishRun, markPosted, onRemovePendingVideo, postAction, queuedVideos]);
+  }, [activeVideo, appendLog, enableProductLink, failedIds, finishRun, markPosted, onRemovePendingVideo, postAction, queuedVideos]);
 
   const handleModalClose = useCallback((): void => {
     if (completedRef.current) return;
@@ -372,8 +398,9 @@ export default function TikTokPostScreen({
                 <Pressable
                   accessibilityLabel="ลองโพสต์ TikTok ใหม่"
                   accessibilityRole="button"
+                  disabled={isPosting}
                   onPress={startPosting}
-                  className="flex-row items-center gap-1 rounded-kd-md border border-kd-red px-2 py-1"
+                  className={`flex-row items-center gap-1 rounded-kd-md border border-kd-red px-2 py-1 ${isPosting ? 'opacity-40' : ''}`}
                 >
                   <RotateCcw size={12} color={theme.red} />
                   <Text className="text-kd-micro font-semibold text-kd-red">ลองใหม่</Text>
