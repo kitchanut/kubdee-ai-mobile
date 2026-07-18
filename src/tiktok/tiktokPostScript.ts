@@ -962,7 +962,13 @@ export function buildTikTokPostScript({
     return true;
   }
 
+  function soundEditorOpen(){
+    return !!document.querySelector('.clip-forge-editor-header-right');
+  }
+
   async function exitSoundEditor(){
+    // ออกเฉพาะเมื่อ editor เปิดจริง — กันกดปุ่ม primary อื่นบนหน้า upload โดยไม่ตั้งใจ
+    if (!soundEditorOpen()) return;
     await sleep(2000);
     var save = document.querySelector('.clip-forge-editor-header-right .Button__root--type-primary');
     if (!save) save = findButton(['Save', 'บันทึก'], document, true);
@@ -1066,8 +1072,15 @@ export function buildTikTokPostScript({
     var soundsButton = document.querySelector('button[data-button-name="sounds"]');
     if (!soundsButton || !visible(soundsButton)) { log('SOUND_SKIP', 'ไม่พบปุ่ม Sounds — ข้ามใส่เพลง'); return; }
     log('SOUND_OPEN', 'เปิด editor ใส่เพลงประกอบ...');
-    heavyClickEl(soundsButton);
-    var ready = await waitFor(musicPanelReady, 15000, 1000);
+    // desktop ใช้ trusted CDP click เปิด editor — synthetic click เปิดไม่ติดบน mobile
+    // (พิสูจน์จาก live-test) จึงใช้ trusted tap ผ่าน Accessibility ก่อน แล้วค่อย fallback
+    var tapped = await nativeTapOn(soundsButton, 'ปุ่ม Sounds');
+    if (tapped) await sleep(2500);
+    if (!soundEditorOpen() && !musicPanelReady()) {
+      heavyClickEl(soundsButton);
+      await sleep(1500);
+    }
+    var ready = await waitFor(musicPanelReady, 30000, 1000);
     if (!ready) { log('SOUND_SKIP', 'รอ Sound panel โหลดนานเกินไป — ข้ามใส่เพลง'); await exitSoundEditor(); return; }
     await sleep(500);
 

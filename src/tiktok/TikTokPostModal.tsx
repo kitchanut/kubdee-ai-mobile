@@ -218,6 +218,7 @@ function TikTokPostRunner({
   const [needsStorageReset, setNeedsStorageReset] = useState(false);
   const [ready, setReady] = useState(false);
   const mountedRef = useRef(true);
+  const initStartedRef = useRef(false);
   const restoreStartedRef = useRef(false);
   const completedRef = useRef(false);
   const completionStartedRef = useRef(false);
@@ -253,6 +254,11 @@ function TikTokPostRunner({
   }, []);
 
   useEffect(() => {
+    // รันครั้งเดียวต่อ runner (remount ต่อคลิปด้วย key อยู่แล้ว) — ห้ามรันซ้ำเมื่อ dep
+    // identity เปลี่ยนกลางคัน (เช่น fail เปลี่ยนเพราะ screen re-render ระหว่าง Modal ค้างทั้งคิว)
+    // ไม่งั้น phase จะถูก set กลับเป็น 'clearing' ระหว่างโพสต์ แล้ว timer 15 วิ ตัดจบคลิปทิ้ง
+    if (initStartedRef.current) return;
+    initStartedRef.current = true;
     let active = true;
     void clearTikTokWebViewUpload()
       .then(() => isProfileLoggedIn(profileLocalId))
