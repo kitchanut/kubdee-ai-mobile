@@ -186,7 +186,7 @@ export default function TikTokPostSettingsModal({
 
       <SectionTitle label="เสียง" />
       <ToggleRow
-        description="เปิด editor ใส่เพลงประกอบก่อนโพสต์ (ทดลอง — ช้าลงต่อคลิป)"
+        description="เปิด editor ใส่เพลงประกอบก่อนโพสต์ (ทดลอง — เครื่องสเปคต่ำอาจโหลด editor ไม่ทัน ระบบจะข้ามให้และโพสต์ต่อ)"
         label="ใส่เพลงประกอบ"
         onValueChange={(value) => onChange('enableSound', value)}
         theme={theme}
