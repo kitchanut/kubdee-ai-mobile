@@ -844,16 +844,28 @@ export function buildTikTokPostScript({
     }
     var checked = isEnabled();
     if (!checked) {
-      toggle.click();
+      // synthetic click() เฉยๆ ไม่ติด — เจอปัญหาเดียวกับปุ่ม Sounds/ช่องค้นหาสินค้า
+      // (TikTok ต้องการ trusted gesture) จึงใช้ trusted tap ผ่าน Accessibility ก่อนแล้วค่อย fallback
+      var tapped = await nativeTapOn(toggle, 'สวิตช์เนื้อหา AI');
+      if (tapped) await sleep(700);
+      else toggle.click();
       var enabled = await waitFor(isEnabled, 1500, 250);
       if (!enabled) {
         var root = container.querySelector('.Switch__root');
-        if (root && root !== toggle) root.click();
-        enabled = await waitFor(isEnabled, 1500, 250);
+        if (root && root !== toggle) {
+          var tappedRoot = await nativeTapOn(root, 'สวิตช์เนื้อหา AI (root)');
+          if (tappedRoot) await sleep(700);
+          else root.click();
+          enabled = await waitFor(isEnabled, 1500, 250);
+        }
       }
-      // TikTok variants do not all expose switch state in the DOM. Match the desktop flow:
-      // make a best-effort click and do not block the actual post solely on missing ARIA state.
-      if (!enabled) log('AI_CONTENT_VERIFY_UNAVAILABLE', 'TikTok ไม่เปิดเผยสถานะเนื้อหา AI — ดำเนินการต่อหลังสั่งเปิดแล้ว');
+      if (enabled) {
+        log('AI_CONTENT_ENABLED', 'เปิดป้ายกำกับเนื้อหา AI สำเร็จ');
+      } else {
+        // TikTok variants do not all expose switch state in the DOM. Match the desktop flow:
+        // make a best-effort click and do not block the actual post solely on missing ARIA state.
+        log('AI_CONTENT_VERIFY_UNAVAILABLE', 'TikTok ไม่เปิดเผยสถานะเนื้อหา AI — ดำเนินการต่อหลังสั่งเปิดแล้ว');
+      }
     }
   }
 
