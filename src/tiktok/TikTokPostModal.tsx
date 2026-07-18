@@ -1,7 +1,7 @@
 import { Dimensions, Modal, PixelRatio, Pressable, StyleSheet, View } from 'react-native';
 import { X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
 
@@ -78,6 +78,7 @@ export default function TikTokPostModal({
   onComplete,
   onClose,
 }: TikTokPostModalProps): React.JSX.Element | null {
+  const insets = useSafeAreaInsets();
   const [overlayLogs, setOverlayLogs] = useState<OverlayLogLine[]>([]);
 
   const handleLog = useCallback((message: string): void => {
@@ -117,7 +118,7 @@ export default function TikTokPostModal({
           onComplete={onComplete}
         />
         {overlayLogs.length > 0 ? (
-          <View pointerEvents="none" style={styles.logOverlay}>
+          <View pointerEvents="none" style={[styles.logOverlay, { paddingBottom: 8 + insets.bottom }]}>
             {overlayLogs.map((line, index) => {
               const firstLog = overlayLogs[0] ?? line;
               const previousLog = index > 0 ? overlayLogs[index - 1] : null;
