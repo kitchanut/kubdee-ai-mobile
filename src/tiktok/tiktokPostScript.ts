@@ -822,6 +822,7 @@ export function buildTikTokPostScript({
 
     var reachedContent = await waitFor(function(){ return location.href.indexOf('/tiktokstudio/content') >= 0 ? true : null; }, 45000, 1000);
     if (!reachedContent) throw { code: 'SUBMIT_NAVIGATION_TIMEOUT', message: 'TikTok ไม่ไปหน้ารายการหลังส่งโพสต์', stage: 'submit-navigation' };
+    log('SUBMIT_VERIFY', 'ถึงหน้า Content แล้ว — ยืนยันว่าโพสต์ขึ้นจริง...');
     return verifyContent({ expected: expectedText(), postAction: INPUT.postAction });
   }
 
@@ -850,6 +851,7 @@ export function buildTikTokPostScript({
       await bindProduct();
       await enableAiContent();
       var matched = await submitAndVerify();
+      if (matched) log('SUBMIT_VERIFIED', 'ยืนยันโพสต์สำเร็จ — พบรายการ: "' + String(matched).slice(0, 60) + '"');
       log('POST_SUCCESS', INPUT.postAction === 'draft' ? 'บันทึกแบบร่างสำเร็จ' : 'โพสต์ TikTok สำเร็จ');
       finish(true, 'SUCCESS', null, { matchedCaption: String(matched || '').slice(0, 120), url: location.href });
     } catch (error) {

@@ -55,12 +55,20 @@ export interface TikTokPostCompleteResult {
   error?: string;
 }
 
+export interface TikTokPostRunStats {
+  total: number;
+  success: number;
+  failed: number;
+  current: number;
+}
+
 export interface TikTokPostModalProps {
   visible: boolean;
   profileLocalId: string;
   video: TikTokPostVideoInput;
   postAction: TikTokPostAction;
   enableProductLink: boolean;
+  stats?: TikTokPostRunStats;
   onLog: (message: string) => void;
   onComplete: (result: TikTokPostCompleteResult) => void;
   onClose: () => void;
@@ -68,12 +76,47 @@ export interface TikTokPostModalProps {
 
 type RunnerPhase = 'checking' | 'clearing' | 'restoring' | 'preparing-file' | 'posting' | 'error';
 
+function TikTokPostStatChip({ color, label, value }: {
+  color: string;
+  label: string;
+  value: string;
+}): React.JSX.Element {
+  return (
+    <View style={styles.statChip}>
+      <View style={[styles.statDot, { backgroundColor: color }]} />
+      <Text numberOfLines={1} style={styles.statLabel}>{label}</Text>
+      <Text numberOfLines={1} style={[styles.statValue, { color }]}>{value}</Text>
+    </View>
+  );
+}
+
+function TikTokPostStatBar({ stats }: { stats: TikTokPostRunStats }): React.JSX.Element {
+  // timer แยกอยู่ใน component นี้ เพื่อไม่ให้ tick ทุกวินาทีไป re-render runner/WebView
+  const startedAtRef = useRef(Date.now());
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <View style={styles.statBar}>
+      <TikTokPostStatChip color="#60a5fa" label="คลิป" value={`${stats.current}/${stats.total}`} />
+      <TikTokPostStatChip color="#34d399" label="สำเร็จ" value={String(stats.success)} />
+      <TikTokPostStatChip color={stats.failed > 0 ? '#f87171' : '#737373'} label="ล้มเหลว" value={String(stats.failed)} />
+      <TikTokPostStatChip color="#fbbf24" label="เวลา" value={formatOverlayDuration(Math.max(0, now - startedAtRef.current))} />
+    </View>
+  );
+}
+
 export default function TikTokPostModal({
   visible,
   profileLocalId,
   video,
   postAction,
   enableProductLink,
+  stats,
   onLog,
   onComplete,
   onClose,
@@ -112,6 +155,7 @@ export default function TikTokPostModal({
             <X size={18} color="#ffffff" strokeWidth={2.4} />
           </Pressable>
         </View>
+        {stats ? <TikTokPostStatBar stats={stats} /> : null}
         <TikTokPostRunner
           key={runnerKey}
           profileLocalId={profileLocalId}
@@ -455,4 +499,26 @@ const styles = StyleSheet.create({
   logLineSpacing: { marginTop: 4 },
   logTime: { color: 'rgba(255,255,255,0.6)', fontSize: 8, lineHeight: 12 },
   logMessage: { fontSize: 10, lineHeight: 16, color: '#ffffff' },
+  statBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#0a0a0a',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#303030',
+  },
+  statChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    height: 20,
+  },
+  statDot: { width: 6, height: 6, borderRadius: 3 },
+  statLabel: { color: '#a3a3a3', fontSize: 9 },
+  statValue: { fontSize: 10, fontWeight: '600' },
 });

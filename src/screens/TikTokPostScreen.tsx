@@ -172,6 +172,9 @@ export default function TikTokPostScreen({
   const [lastError, setLastError] = useState<string | null>(null);
   // คลิปที่โพสต์ไม่สำเร็จในรอบปัจจุบัน — ข้ามไปคลิปถัดไปแทนการหยุดทั้งคิว (desktop parity)
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
+  // stat bar ของรอบโพสต์: จำนวนคลิปทั้งหมดตอนเริ่มรอบ + จำนวนที่สำเร็จแล้ว
+  const [runTotal, setRunTotal] = useState(0);
+  const [successCount, setSuccessCount] = useState(0);
   const stopRequestedRef = useRef(false);
   const completedRef = useRef(false);
   const settingsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -284,6 +287,8 @@ export default function TikTokPostScreen({
     completedRef.current = false;
     setLastError(null);
     setFailedIds(new Set());
+    setRunTotal(postableVideos.length);
+    setSuccessCount(0);
     setIsStopping(false);
     setIsPosting(true);
     beginAutomationActivityRun('tiktok-post', `TikTok post · ${postableVideos.length} วิดีโอ`);
@@ -327,6 +332,7 @@ export default function TikTokPostScreen({
     }
 
     appendLog(`${postAction === 'publish' ? 'โพสต์' : 'บันทึกร่าง'}สำเร็จ: ${videoLabel(activeVideo, 0)}`);
+    setSuccessCount((count) => count + 1);
     if (postAction === 'publish') {
       void markPosted(activeVideo.id, 'tiktok');
     }
@@ -509,6 +515,12 @@ export default function TikTokPostScreen({
           video={toTikTokPostVideo(activeVideo)}
           postAction={postAction}
           enableProductLink={enableProductLink && activeVideo.platform?.trim().toLowerCase() === 'tiktok'}
+          stats={{
+            total: Math.max(runTotal, 1),
+            success: successCount,
+            failed: failedIds.size,
+            current: Math.min(successCount + failedIds.size + 1, Math.max(runTotal, 1)),
+          }}
           onLog={handleModalLog}
           onComplete={handleComplete}
           onClose={handleModalClose}
