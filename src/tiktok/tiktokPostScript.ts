@@ -657,6 +657,7 @@ export function buildTikTokPostScript({
     };
     await fireSearch('');
     var radio = null;
+    var pickedRow = null;
     var notFoundStable = false;
     var singleStreak = 0;
     var emptyStreak = 0;
@@ -674,7 +675,7 @@ export function buildTikTokPostScript({
       }
       if (idRow) {
         radio = idRow.querySelector('input[type="radio"]');
-        if (radio) { log('PRODUCT_SELECTED', 'พบสินค้าตรงรหัส กำลังเลือก...'); break; }
+        if (radio) { pickedRow = idRow; log('PRODUCT_SELECTED', 'พบสินค้าตรงรหัส กำลังเลือก...'); break; }
       }
       if (rowsNow.length === 1 && Date.now() - lastFireAt >= 8000) {
         // แถวผลลัพธ์มักโชว์ชื่อสินค้าไม่ใช่ ID — ใช้แถวเดียวที่เหลือได้เมื่อนิ่งติดกัน 3 รอบ
@@ -683,7 +684,7 @@ export function buildTikTokPostScript({
         emptyStreak = 0;
         if (singleStreak >= 3) {
           radio = rowsNow[0].querySelector('input[type="radio"]');
-          if (radio) { log('PRODUCT_SELECTED', 'ผลค้นหาเหลือรายการเดียว กำลังเลือก...'); break; }
+          if (radio) { pickedRow = rowsNow[0]; log('PRODUCT_SELECTED', 'ผลค้นหาเหลือรายการเดียว กำลังเลือก...'); break; }
         }
       } else if (rowsNow.length === 0) {
         singleStreak = 0;
@@ -718,6 +719,34 @@ export function buildTikTokPostScript({
       }
       throw { code: 'PRODUCT_SEARCH_TIMEOUT', message: 'รอผลค้นหาสินค้าเกิน 3 นาที (เหลือ ' + productRows().length + ' รายการ จับคู่ Product ID ไม่ได้) — ข้ามคลิปนี้ ไม่โพสต์', stage: 'product-result' };
     }
+    // ตรวจสถานะสินค้าสดจากแถวที่จับคู่ได้ — สินค้าอาจถูกปิด/ระงับหลังดึงเข้าคลังไปแล้ว
+    // คลังเก็บสถานะไว้ตอน scrape เท่านั้น ไม่เคย refresh (สินค้าที่ถูกถอดจะหายจากผล scrape
+    // เฉยๆ ไม่มีใครอัปเดตแถวเดิม) จึงเชื่อค่าใน DB ไม่ได้ ต้องอ่านสดตรงนี้
+    // เกณฑ์เดียวกับตอนดึงสินค้า (showcaseScraperScript) — อ่านไม่ได้ = ไม่โพสต์ (fail-closed)
+    var statusOfRow = function(row){
+      if (!row) return '';
+      var sels = ['.product-status', '[data-e2e*="status"]', '[data-testid*="status"]', '[class*="product-status"]'];
+      for (var s = 0; s < sels.length; s++) {
+        var el = null;
+        try { el = row.querySelector(sels[s]); } catch (_) { el = null; }
+        if (el) { var t = String(el.textContent || '').replace(/\\s+/g, ' ').trim(); if (t) return t; }
+      }
+      // ไม่เจอ element — หาคำสถานะจากข้อความในแถวแทน ต้องจับแบบคำเดี่ยว
+      // ไม่งั้น "Deactivated"/"Inactive" จะ match คำว่า active ด้วย
+      var rowText = normalized(row.textContent);
+      if (/(?:^|\\s)ดำเนินอยู่(?:\\s|$)/.test(rowText)) return 'ดำเนินอยู่';
+      if (/(?:^|\\s)active(?:\\s|$)/.test(rowText)) return 'Active';
+      return '';
+    };
+    var pickedStatus = statusOfRow(pickedRow);
+    if (!pickedStatus) {
+      throw { code: 'PRODUCT_STATUS_UNKNOWN', message: 'อ่านสถานะสินค้าไม่ได้ (ไม่พบสถานะในแถวผลค้นหา) — ข้ามคลิปนี้ ไม่โพสต์', stage: 'product-result' };
+    }
+    if (pickedStatus !== 'ดำเนินอยู่' && pickedStatus.toLowerCase() !== 'active') {
+      throw { code: 'PRODUCT_INACTIVE', message: 'สินค้าไม่พร้อมใช้งาน (สถานะ: "' + pickedStatus + '") — ข้ามคลิปนี้ ไม่โพสต์', stage: 'product-result' };
+    }
+    log('PRODUCT_STATUS_OK', 'สถานะสินค้า: "' + pickedStatus + '" — พร้อมใช้งาน');
+
     radio.click();
     await sleep(1000); // ให้ TikTok enable ปุ่มถัดไปหลังเลือก radio (desktop ก็รอ 1 วิ)
 
