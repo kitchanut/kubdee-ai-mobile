@@ -44,6 +44,33 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.8',
+    date: '2026-07-19',
+    highlight: 'โพสต์ TikTok ตั้งเวลาได้ + AI คิดเนื้อหา + ปุ่มหยุดตรวจสอบ',
+    changes: [
+      {
+        type: 'feature',
+        text: 'โพสต์ TikTok ตั้งเวลาล่วงหน้าได้ พร้อมกำหนดระยะห่างระหว่างคลิปอัตโนมัติ'
+      },
+      {
+        type: 'feature',
+        text: 'โพสต์ TikTok ให้ AI คิด Caption/Hashtags/CTA และเปิดป้ายกำกับ "เนื้อหาที่สร้างโดย AI" ให้อัตโนมัติก่อนโพสต์'
+      },
+      {
+        type: 'added',
+        text: 'เพิ่มปุ่มหยุดการทำงานระหว่างโพสต์ TikTok — กดแล้วหยุดทันทีแต่คงหน้าเว็บไว้ให้ตรวจสอบเอง ไม่ต้องปิดทิ้ง'
+      },
+      {
+        type: 'fixed',
+        text: 'แก้ปักตะกร้าสินค้า TikTok บางเครื่องกรอกรหัสสินค้าแล้วไม่กดค้นหาให้ — ตรวจสอบและกดซ้ำอัตโนมัติจนสำเร็จ'
+      },
+      {
+        type: 'fixed',
+        text: 'แก้เปิดป้ายกำกับเนื้อหาที่สร้างโดย AI ไม่ติดในบางกรณี'
+      }
+    ]
+  },
+  {
     version: '0.9.7',
     date: '2026-07-18',
     highlight: 'รองรับ Shopee เวอร์ชันใหม่ 3.78.25',
