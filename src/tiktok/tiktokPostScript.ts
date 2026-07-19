@@ -867,7 +867,9 @@ export function buildTikTokPostScript({
     function dismissAiContentConfirm(){
       var modal = findProductModal();
       if (!modal) return false;
-      var btn = findButton(['ยืนยัน', 'ตกลง', 'confirm', 'ok'], modal, true);
+      // ปุ่มจริงที่เห็นคือ "เปิด" (Turn on) — ไม่ใช่ "ยืนยัน/ตกลง" ตามที่เดาไว้แต่แรก
+      // เก็บตัวเดิมไว้เป็น fallback เผื่อ TikTok เปลี่ยนคำ/มีหลายเวอร์ชัน
+      var btn = findButton(['เปิด', 'ยืนยัน', 'ตกลง', 'confirm', 'ok', 'turn on'], modal, true);
       if (!btn) return false;
       btn.click();
       log('AI_CONTENT_CONFIRM_DISMISSED', 'ปิด dialog ยืนยันเนื้อหา AI: ' + normalized(btn.textContent).slice(0, 40));
