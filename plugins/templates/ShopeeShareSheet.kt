@@ -332,21 +332,43 @@ internal fun KubdeeAccessibilityService.closeShopeeShareSheet(): Boolean {
     if (!isShopeeShareSheetVisible()) return true
 
     // ⚠️ tapShopeeShareDrawerClose() = "กดปุ่มติด" ไม่ใช่ "แผงปิดแล้ว" ต้องรอจนหายจริง
-    // และบางครั้งกดครั้งเดียวไม่ปิด (ยืนยันด้วยตาบนเครื่องจริง) -> กดปุ่ม X ซ้ำก่อน อย่ารีบไป back
-    // เพราะ X ปิดได้เฉพาะชั้นแผงแชร์ ส่วน back ปิดอะไรก็ได้ที่อยู่บนสุด ถ้าแผงปิดไปแล้ว back จะไป
-    // กินหน้ารายการถูกใจแทน ทำให้หลุดออกไปถึงหน้า "ฉัน" แล้ววิ่งไปหาเมนูถูกใจใหม่ทั้งรอบ
+    // และบางครั้งกดครั้งเดียวไม่ปิด (ยืนยันด้วยตาบนเครื่องจริง) -> กดปุ่ม X ซ้ำได้ถึง 3 ครั้ง
     repeat(3) { attempt ->
-      if (!tapShopeeShareDrawerClose()) return@repeat
-      if (waitForShopeeShareSheetGone(timeoutMs = 1_800L)) return true
-      logStep("กดปิดแผ่นแชร์ครั้งที่ ${attempt + 1}/3 แล้วยังไม่หาย")
+      if (tapShopeeShareDrawerClose()) {
+        if (waitForShopeeShareSheetGone(timeoutMs = 1_800L)) return true
+        logStep("กดปิดแผ่นแชร์ครั้งที่ ${attempt + 1}/3 แล้วยังไม่หาย")
+      }
     }
 
-    // ทางสุดท้ายจริงๆ: หาปุ่ม X ไม่เจอ หรือกดครบ 3 ครั้งแล้วยังปิดไม่ได้
-    logStep("ปิดแผ่นแชร์ด้วยปุ่ม back (ทางสุดท้าย)")
-    performBack()
-    if (waitForShopeeShareSheetGone(timeoutMs = 2_000L)) return true
-    logStep("ปิดแผ่นแชร์ไม่สำเร็จ แผงยังค้างอยู่")
-    return false
+    // 🚫 ห้ามใช้ back เป็นทางสำรองเด็ดขาด — X ปิดได้เฉพาะชั้นแผงแชร์ แต่ back ปิดอะไรก็ได้ที่อยู่
+    // บนสุด ถ้าแผงปิดไปแล้ว (หรือ isShopeeShareSheetVisible อ่านผิดเพราะมันดูจากข้อความบนจอ)
+    // back จะไปกินหน้าถัดไป หลุดออกไปถึงหน้า "ฉัน" แล้ววิ่งหาเมนูใหม่ทั้งรอบ — บางเครื่องจอดำ
+    // แล้วเด้งออกไปข้างนอกเลย เสียทั้งรอบโดยไม่รู้ตัว
+    //
+    // แทนที่จะเดา: บอกให้คนช่วยกดปิด ย้ำทุก 5 วิ รอ 30 วิ ถ้าไม่มีใครกดก็จบงานทันที
+    // (จบด้วย ShopeeAutomationStoppedException = เส้นทางเดียวกับตอน user กดหยุดเอง)
+    // หมายเหตุ: ตัวเรียกใน ShopeeProductDetailShare อยู่ใน finally การ throw ตรงนี้จะกลบ
+    // exception เดิมที่กำลังลอยอยู่ — ยอมได้ เพราะแผงแชร์ค้าง = ทั้งรอบเชื่อถือไม่ได้อยู่แล้ว
+    val manualCloseMs = 30_000L
+    logStep("!! ปิดแผงแชร์เองไม่ได้ (หาปุ่มกากบาทไม่เจอ หรือกดแล้วแผงไม่ปิด)")
+    logStep("!! ช่วยกดกากบาทปิดแผงแชร์บนมือถือให้หน่อย — รอ ${manualCloseMs / 1000} วิ")
+    val start = System.currentTimeMillis()
+    var lastNagAt = 0L
+    while (System.currentTimeMillis() - start < manualCloseMs) {
+      checkStopRequested()
+      if (!isShopeeShareSheetVisible()) {
+        logStep("แผงแชร์ปิดแล้ว ทำงานต่อ")
+        return true
+      }
+      val elapsed = System.currentTimeMillis() - start
+      if (elapsed - lastNagAt >= 5_000L) {
+        lastNagAt = elapsed
+        logStep("!! ยังรอให้กดปิดแผงแชร์อยู่... เหลืออีก ${(manualCloseMs - elapsed) / 1000} วิ")
+      }
+      sleepStep(500L)
+    }
+    logStep("!! ไม่มีคนกดปิดแผงแชร์ใน ${manualCloseMs / 1000} วิ — หยุดงานนำเข้าสินค้า (กันแอปกดมั่วจนหลุดหน้า)")
+    throw ShopeeAutomationStoppedException()
   }
 
 internal fun KubdeeAccessibilityService.tapShopeeShareDrawerClose(): Boolean {
@@ -859,10 +881,10 @@ internal fun KubdeeAccessibilityService.returnToShopeeLikedList(): Boolean {
   repeat(6) { attempt ->
     checkStopRequested()
     if (isShopeeShareSheetVisible()) {
-      logStep("ปิดแผ่นแชร์สินค้า")
-      if (!performBack()) {
-        tapShopeeTopBackFallback()
-      }
+      // ปิดแผงแชร์ด้วยปุ่ม X ผ่าน closeShopeeShareSheet เท่านั้น — เดิมตรงนี้กด back ตรงๆ
+      // ซึ่งเป็นอีกทาง (และอยู่ในลูปที่กด back ได้ถึง 6 รอบ) ที่ทำให้หลุดออกไปนอกแอปโดยไม่รู้ตัว
+      // ถ้าปิดเองไม่ได้ closeShopeeShareSheet จะขอให้คนช่วยกด แล้วจบงานถ้าไม่มีใครกดใน 30 วิ
+      closeShopeeShareSheet()
       sleepStep(1200L)
       return@repeat
     }
