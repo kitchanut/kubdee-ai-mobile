@@ -849,15 +849,14 @@ export function buildTikTokPostScript({
     var toggle = container.querySelector('.Switch__content, [role="switch"], .Switch__root');
     if (!toggle) throw { code: 'AI_CONTENT_TOGGLE_NOT_FOUND', message: 'พบส่วนเนื้อหา AI แต่ไม่พบสวิตช์', stage: 'ai-content' };
     function isEnabled(){
+      // GOTCHA (ยืนยันจาก live-test 2 รอบ): ห้ามเดาจาก className เด็ดขาด — ลองมาแล้วทั้ง "on"
+      // และ "active" ก็ false-positive ทั้งคู่ (TUX ใช้ "active" สื่อ hover/press ไม่ใช่สถานะ toggle
+      // จริง) เห็นสวิตช์ปิดอยู่บนจอแต่ log บอกว่าเปิดแล้ว — เหลือแค่ attribute ที่เชื่อถือได้จริง
+      // ถ้าตรวจไม่ได้ = ถือว่ายังไม่ติด (fail-safe ปลอดภัยกว่า false-positive แล้วไม่กดให้)
       var nodes = container.querySelectorAll('.Switch__content, [role="switch"], .Switch__root, input[type="checkbox"]');
       for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
         if (node.checked === true || node.getAttribute('aria-checked') === 'true' || node.getAttribute('data-state') === 'checked') return true;
-        // \\b จับ BEM modifier แบบ Switch__content--checked ได้ด้วย (ขีดกลางถือเป็น word boundary)
-        // GOTCHA: เดิมมี "on" อยู่ในลิสต์นี้ด้วย — คำว่า "on" สั้นและกำกวมเกินไป มีโอกาสชนกับ
-        // class อื่นที่ไม่เกี่ยวกับสถานะสวิตช์เลย (live-test ยืนยันว่า verify ผ่านทั้งที่สวิตช์จริงยังปิดอยู่)
-        // เหลือแค่ checked/active ซึ่งเจาะจงกว่ามาก
-        if (/\\b(checked|active)\\b/i.test(String(node.className || ''))) return true;
       }
       return false;
     }
