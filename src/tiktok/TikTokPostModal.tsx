@@ -161,17 +161,18 @@ export default function TikTokPostModal({
     if (visible) setOverlayLogs([]);
   }, [visible]);
 
-  if (!visible) return null;
-
   // remount เฉพาะ runner/WebView ต่อคลิป — Modal ค้างไว้ทั้งคิวเพื่อไม่ให้จอปิด-เปิดระหว่างคลิป
   const runnerKey = video.galleryVideoId || video.fileUri || video.fileName || 'clip';
 
   useEffect(() => {
     // header (parent) ค้างไว้ข้ามคลิป แต่ runner remount ใหม่ทุกคลิป — reset ทันทีที่เปลี่ยนคลิป
     // กันปุ่ม Stop ของ header โชว์สถานะ "หยุดแล้ว" ค้างจากคลิปก่อนแวบนึงก่อน runner ใหม่รายงานสถานะ
+    // ต้องอยู่ก่อน early return ด้านล่างเสมอ (React Hooks ต้องถูกเรียกลำดับเดิมทุก render)
     setRunnerReady(false);
     setRunnerStopped(false);
   }, [runnerKey]);
+
+  if (!visible) return null;
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} visible>
