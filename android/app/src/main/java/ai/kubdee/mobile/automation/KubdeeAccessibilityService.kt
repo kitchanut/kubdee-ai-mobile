@@ -627,7 +627,7 @@ class KubdeeAccessibilityService : AccessibilityService() {
     // backgrounding the process while Shopee had focus.
     val skipReturnNavigation = try {
       JSONObject(payloadJson).optBoolean("skipReturnNavigation", false)
-    } catch (_: Exception) {
+    } catch (_: Throwable) {
       false
     }
     val runningThread = shopeePostThread
@@ -656,44 +656,52 @@ class KubdeeAccessibilityService : AccessibilityService() {
           put("success", false)
           put("error", error.message ?: "Shopee post failed")
         }
+      } catch (error: Throwable) {
+        // Error (เช่น OutOfMemoryError) ต้องไม่ทำให้ thread ตายเงียบก่อน persist ผลลัพธ์ —
+        // ไม่งั้น JS ฝั่ง await จะรอจนครบ timeout (Sentry MOBILE-G)
+        Log.e(TAG, "Shopee post runner crashed", error)
+        JSONObject().apply {
+          put("success", false)
+          put("error", "${error.javaClass.name}: ${error.message ?: "Shopee post crashed"}")
+        }
       }
 
       val postStoppedByUser = stopRequested
-      logStep(
-        if (postStoppedByUser) "หยุดแล้ว — กด 'รายงานปัญหา' เพื่อส่งข้อมูลให้ทีม หรือ 'กลับแอป'"
-        else if (skipReturnNavigation) "โพสต์ Shopee เสร็จแล้ว กำลังแจ้งผลกลับแอป"
-        else "กลับไป Kubdee AI เพื่อเปิดรายการ Shopee Post"
+      try {
+        // งานก่อนส่งผล (log / นำแอปขึ้น foreground) เป็น best-effort — ถ้าพังตรงนี้
+        // (เช่น OOM หรือ interrupt) ห้ามข้ามการ persist+broadcast ผลลัพธ์ด้านล่าง
+        logStep(
+          if (postStoppedByUser) "หยุดแล้ว — กด 'รายงานปัญหา' เพื่อส่งข้อมูลให้ทีม หรือ 'กลับแอป'"
+          else if (skipReturnNavigation) "โพสต์ Shopee เสร็จแล้ว กำลังแจ้งผลกลับแอป"
+          else "กลับไป Kubdee AI เพื่อเปิดรายการ Shopee Post"
+        )
+        if (!postStoppedByUser) {
+          // Bring the main process to the foreground BEFORE sending the finished broadcast. The main
+          // process is often backgrounded/frozen (OEM process freezers, e.g. Samsung Freecess) while
+          // Shopee is in the foreground; a broadcast fired at that instant can be silently dropped,
+          // leaving the JS-side await(postShopeeVideos(...)) hanging forever even though this
+          // automation already finished. Each launch call blocks until startActivity() is dispatched
+          // on the main thread, then a short buffer gives the process time to resume before the
+          // result broadcast goes out.
+          if (skipReturnNavigation) {
+            launchPackage(packageName)
+          } else {
+            launchKubdeeShopeePostList()
+          }
+          Thread.sleep(400L)
+        }
+      } catch (error: Throwable) {
+        Log.e(TAG, "Shopee post pre-delivery step failed", error)
+      }
+      KubdeeAutomationIpc.sendShopeePostFinished(
+        this,
+        runId,
+        result,
+        error = result.optString("error").takeIf { it.isNotBlank() },
+        stopped = result.optBoolean("stopped", false)
       )
       if (postStoppedByUser) {
-        KubdeeAutomationIpc.sendShopeePostFinished(
-          this,
-          runId,
-          result,
-          error = result.optString("error").takeIf { it.isNotBlank() },
-          stopped = result.optBoolean("stopped", false)
-        )
         showAutomationStoppedControls()
-      } else {
-        // Bring the main process to the foreground BEFORE sending the finished broadcast. The main
-        // process is often backgrounded/frozen (OEM process freezers, e.g. Samsung Freecess) while
-        // Shopee is in the foreground; a broadcast fired at that instant can be silently dropped,
-        // leaving the JS-side await(postShopeeVideos(...)) hanging forever even though this
-        // automation already finished. Each launch call blocks until startActivity() is dispatched
-        // on the main thread, then a short buffer gives the process time to resume before the
-        // result broadcast goes out.
-        if (skipReturnNavigation) {
-          launchPackage(packageName)
-        } else {
-          launchKubdeeShopeePostList()
-        }
-        Thread.sleep(400L)
-        KubdeeAutomationIpc.sendShopeePostFinished(
-          this,
-          runId,
-          result,
-          error = result.optString("error").takeIf { it.isNotBlank() },
-          stopped = result.optBoolean("stopped", false)
-        )
       }
       if (shopeePostThread === Thread.currentThread()) {
         shopeePostThread = null

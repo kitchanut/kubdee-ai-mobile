@@ -14,7 +14,7 @@ import {
 import { useGeneratedMedia } from '@/autopilot/generatedMediaStore';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import { generateAutoPilotProductContent, getAutoPilotAiContentLabels } from '@/autopilot/aiCaption';
-import { SHOPEE_POST_TIMEOUT_MS, awaitShopeePostResult } from '@/autopilot/autoProductPosting';
+import { awaitShopeePostResult, shopeePostBatchTimeoutMs } from '@/autopilot/autoProductPosting';
 import {
   DEFAULT_SHOPEE_AI_CONTENT_SETTINGS,
   getShopeeAiContentSettings,
@@ -27,6 +27,7 @@ import PostSettingsModal from '@/components/post/PostSettingsModal';
 import { PostContentChip, resolvePostCaptionState, resolvePostHashtagState } from '@/components/post/PostStatusChips';
 import Text from '@/components/ui/KubdeeText';
 import {
+  clearPendingShopeePostResults,
   getAccessibilityStatus,
   launchTargetApp,
   openAccessibilitySettings,
@@ -345,13 +346,16 @@ export default function ShopeeScreen({
       if (!stoppedEarly) {
         appendPostLog(`ส่งโพสต์ ${payloads.length} คลิปให้ระบบอัตโนมัติแล้ว`);
         try {
+          // เคลียร์ผลค้างของ run ก่อนหน้า (แบบเดียวกับ auto pilot) — กันผล late ของรอบที่แล้ว
+          // ถูกนับเป็นผลของรอบนี้
+          await clearPendingShopeePostResults().catch(() => {});
           // awaitShopeePostResult รอ broadcast ควบคู่กับ poll ผลจาก disk แบบเดียวกับ auto pilot
           // (broadcast หล่น/แอปโดน freeze ระหว่าง Shopee อยู่ foreground แล้วยังกู้ผลได้)
           // timeout สเกลตามจำนวนคลิป แต่ native มีเพดานรอผล 20 นาทีต่อ run
           const result = await awaitShopeePostResult(
             postShopeeVideos(payloads, { skipReturnNavigation: false }),
             Date.now(),
-            Math.min(SHOPEE_POST_TIMEOUT_MS * payloads.length, 20 * 60_000)
+            shopeePostBatchTimeoutMs(payloads.length)
           );
 
           const perVideo = Array.isArray(result.results) ? result.results : [];

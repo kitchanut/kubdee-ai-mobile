@@ -24,6 +24,7 @@ import {
   getPendingShopeePostResults,
   postShopeeVideos,
   requestAndroidVideoPermission,
+  stopShopeeAutomation,
 } from '@/native/AccessibilityBridge';
 import type { NativeShopeePostingResult, NativeShopeePostingVideoInput } from '@/native/AccessibilityBridge';
 
@@ -40,6 +41,18 @@ export interface AutoPilotProductVideoAsset {
 // hang this one product — and the whole remaining auto pilot run behind it — for the full 20
 // minutes. 5 minutes is well above the ~2 minutes a real Shopee post takes end to end.
 export const SHOPEE_POST_TIMEOUT_MS = 5 * 60_000;
+
+// เพดานรอผลฝั่ง native 20 นาทีต่อ run (KubdeeAccessibilityModule มี timer reject ของตัวเองที่ 20 นาที) —
+// timeout ฝั่ง JS ต้องยิงก่อนเพดาน native เสมอ (เผื่อ 1 นาที) ไม่งั้น error ที่หลุดมาไม่ใช่
+// ShopeePostTimeoutError แล้ว path stop+reconcile ใน catch จะไม่ทำงาน
+const SHOPEE_POST_NATIVE_RUN_CAP_MS = 20 * 60_000;
+const SHOPEE_POST_JS_WAIT_CAP_MS = SHOPEE_POST_NATIVE_RUN_CAP_MS - 60_000;
+
+// batch หลายคลิปใน call เดียวใช้เวลาเกิน 5 นาที (~2-2.5 นาที/คลิป, เครื่องช้า 3-5 นาที) —
+// สเกล timeout ตามจำนวนคลิปใต้เพดาน (ใช้ร่วมกันทั้ง auto pilot และหน้า Shopee)
+export function shopeePostBatchTimeoutMs(videoCount: number): number {
+  return Math.min(SHOPEE_POST_TIMEOUT_MS * Math.max(1, videoCount), SHOPEE_POST_JS_WAIT_CAP_MS);
+}
 
 // TikTokPostModal มี timeout 10 นาทีในตัวเอง — เผื่ออีก 2 นาทีกันเคส promise จาก host
 // ไม่ resolve (เช่น host โดน unmount กลางคัน) แล้วทั้ง run ค้าง
@@ -145,10 +158,12 @@ export function awaitShopeePostResult(
   });
 }
 
-export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+// sentryLabel = ชื่อ call site (เช่น 'postProductToTikTok') — เดิม hardcode เป็นข้อความฝั่ง Shopee
+// ทำให้ timeout ของ TikTok ไป group รวมใน Sentry issue MOBILE-G ของ Shopee
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string, sentryLabel: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      reportWarning('postProductToShopee: withTimeout fired', { timeoutMs });
+      reportWarning(`${sentryLabel}: withTimeout fired`, { timeoutMs });
       reject(new ShopeePostTimeoutError(message));
     }, timeoutMs);
     promise.then(
@@ -158,7 +173,7 @@ export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: 
       },
       (error) => {
         clearTimeout(timer);
-        reportWarning('postProductToShopee: postShopeeVideos rejected', {
+        reportWarning(`${sentryLabel}: promise rejected`, {
           error: error instanceof Error ? error.message : String(error),
         });
         reject(error);
@@ -339,7 +354,8 @@ async function postProductToTikTok(
           },
         }),
         TIKTOK_POST_TIMEOUT_MS,
-        'โพสต์ TikTok หมดเวลา (นานเกิน 12 นาที ไม่ได้รับผลลัพธ์)'
+        'โพสต์ TikTok หมดเวลา (นานเกิน 12 นาที ไม่ได้รับผลลัพธ์)',
+        'postProductToTikTok'
       );
 
       if (!result.success) {
@@ -372,6 +388,46 @@ async function postProductToTikTok(
   }
 }
 
+// หลัง timeout: run จริงอาจไปเสร็จหลังจาก JS เลิกรอ (ผลถูกเขียนลง disk ทีหลัง) — poll ซ้ำ
+// อีกครั้งเดียวแบบ fire-and-forget เพื่อ mark posted ให้ตรงความจริง กันรอบถัดไปโพสต์คลิปเดิมซ้ำ
+// ห้าม clear ไฟล์ในนี้: run ถัดไป (ทั้ง auto pilot และหน้า Shopee) clear เองตอนเริ่มอยู่แล้ว
+// และ RN timer อาจโดนเลื่อน (แอปถูก background) ไปยิงตอน run ใหม่กำลังวิ่ง — clear ตรงนี้
+// จะลบผลของ run ใหม่ทิ้งก่อนเจ้าของได้อ่าน; ขอบบนเวลา (armedAt + delay) กันหยิบผลข้าม run
+// ในเคส timer ยิงช้าด้วยเหตุเดียวกัน
+const SHOPEE_LATE_RECONCILE_DELAY_MS = 120_000;
+
+function scheduleShopeeLateResultReconcile(
+  startedAt: number,
+  fileUris: string[],
+  onProductPosted?: (platform: string, fileUris: string[]) => void
+): void {
+  const armedAt = Date.now();
+  setTimeout(() => {
+    void (async () => {
+      const pending = await getPendingShopeePostResults();
+      const record = pending
+        .filter((row) => row.ts >= startedAt && row.ts <= armedAt + SHOPEE_LATE_RECONCILE_DELAY_MS)
+        .sort((a, b) => b.ts - a.ts)[0];
+      if (!record) return;
+      const result = JSON.parse(record.resultJson) as NativeShopeePostingResult;
+      const successCount =
+        result.successCount ?? result.results?.filter((entry) => entry.success).length ?? result.postedCount ?? 0;
+      reportWarning('postProductToShopee: late result reconciled after timeout', {
+        runId: record.runId,
+        success: result.success === true,
+        stopped: result.stopped === true,
+        successCount,
+      });
+      // เงื่อนไข mark เดียวกับ path ปกติ: สำเร็จ (ไม่ถูกหยุดกลางคัน) และมีคลิปโพสต์ได้จริง
+      if (result.success && !result.stopped && successCount > 0) {
+        onProductPosted?.('shopee', fileUris);
+      }
+    })().catch(() => {
+      // best-effort — พลาดแค่การ mark posted ไม่กระทบ loop หลัก
+    });
+  }, SHOPEE_LATE_RECONCILE_DELAY_MS);
+}
+
 async function postProductToShopee(
   product: GoogleFlowRunnerProduct,
   videoAssets: AutoPilotProductVideoAsset[],
@@ -395,6 +451,8 @@ async function postProductToShopee(
     return;
   }
 
+  // hoist ไว้ให้ catch ใช้ schedule reconcile หลัง timeout ได้ (0 = ยังไม่ได้เริ่มโพสต์)
+  let postStartedAt = 0;
   try {
     const status = await getAccessibilityStatus();
     if (!status.running) {
@@ -437,10 +495,12 @@ async function postProductToShopee(
 
     // เคลียร์ผลค้างของรอบก่อนออกก่อนเริ่ม (ts filter กันข้ามรอบอยู่แล้ว — นี่กันไฟล์โต)
     await clearPendingShopeePostResults().catch(() => {});
-    const postStartedAt = Date.now();
+    postStartedAt = Date.now();
     const result = await awaitShopeePostResult(
       postShopeeVideos(videos, { skipReturnNavigation: true }),
-      postStartedAt
+      postStartedAt,
+      // timeout สเกลตามจำนวนคลิป — flat 5 นาทีไม่พอเมื่อสินค้ามีหลายคลิป (Sentry MOBILE-G)
+      shopeePostBatchTimeoutMs(videos.length)
     );
 
     if (result.stopped) {
@@ -467,6 +527,22 @@ async function postProductToShopee(
     reportWarning('postProductToShopee: caught error, emitting failed stage', {
       error: error instanceof Error ? error.message : String(error),
     });
+    if (error instanceof ShopeePostTimeoutError) {
+      // JS เลิกรอแล้ว แต่ native run เดิมอาจยังขับ Shopee ต่อได้ถึง 20 นาที — สั่งหยุด
+      // กันสินค้าถัดไปชน "Shopee post กำลังทำงานอยู่แล้ว" (หยุดพลาดก็ห้ามล้ม loop หลัก)
+      try {
+        await stopShopeeAutomation();
+      } catch {
+        // best-effort
+      }
+      if (postStartedAt > 0) {
+        scheduleShopeeLateResultReconcile(
+          postStartedAt,
+          videoAssets.map((asset) => asset.fileUri),
+          onProductPosted
+        );
+      }
+    }
     emitStage(
       'failed',
       `โพสต์ Shopee ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,

@@ -158,6 +158,23 @@ internal fun KubdeeAccessibilityService.postShopeeVideos(payloadJson: String): J
       put("successCount", successCount)
       put("results", results)
     }
+  } catch (error: Throwable) {
+    // จับ Error ด้วย (เช่น OutOfMemoryError จาก captureScreenBitmapBlocking บนเครื่อง RAM น้อย) —
+    // ถ้าปล่อยหลุด thread จะตายเงียบโดยไม่มีผลลัพธ์ แล้ว JS รอจนครบ timeout (Sentry MOBILE-G).
+    // path นี้ทำงานให้น้อยที่สุด: สร้างข้อความสั้นๆ แล้วคืน failure result ตามปกติ
+    val message = "${error.javaClass.name}: ${error.message ?: "Shopee posting ล้มเหลวร้ายแรง"}"
+    try {
+      logShopeePostStep("Shopee posting ผิดพลาดร้ายแรง: $message")
+    } catch (_: Throwable) {
+      // log เป็น best-effort — ห้ามให้การ log ทำผลลัพธ์หาย
+    }
+    JSONObject().apply {
+      put("success", false)
+      put("error", message)
+      put("postedCount", postedCount)
+      put("successCount", successCount)
+      put("results", results)
+    }
   } finally {
     endAutomationForeground()
     hideAutomationOverlay(2500L)
