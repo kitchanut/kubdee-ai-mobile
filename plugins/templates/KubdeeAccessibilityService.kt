@@ -519,11 +519,6 @@ class KubdeeAccessibilityService : AccessibilityService() {
     return true
   }
 
-  internal fun pressImeEnterOn(target: AccessibilityNodeInfo): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-    return target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
-  }
-
   fun requestStopShopeeAutomation() {
     stopRequested = true
     updateAutomationStats(statusLabel = "STOPPING")
@@ -573,13 +568,24 @@ class KubdeeAccessibilityService : AccessibilityService() {
       } catch (error: Exception) {
         errorMessage = error.message ?: "Shopee import failed"
         Log.e(TAG, "Shopee import runner failed", error)
+      } catch (error: Throwable) {
+        // Error (เช่น OutOfMemoryError) ต้องไม่ทำให้ thread ตายเงียบก่อนส่งผลลัพธ์ —
+        // ไม่งั้น JS ฝั่ง await จะรอจนครบ timeout (แบบเดียวกับ posting runner / Sentry MOBILE-G)
+        Log.e(TAG, "Shopee import runner crashed", error)
+        errorMessage = "${error.javaClass.name}: ${error.message ?: "Shopee import crashed"}"
       } finally {
         val stoppedByUser = stopRequested
         val shouldReturnToKubdee = errorMessage == null && !stoppedByUser
-        if (shouldReturnToKubdee) {
-          logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า (${importedCount} รายการ)")
-        } else if (stoppedByUser) {
-          logStep("หยุดแล้ว — กด 'รายงานปัญหา' เพื่อส่งข้อมูลให้ทีม หรือ 'กลับแอป'")
+        try {
+          // งานก่อนส่งผล (log) เป็น best-effort — ถ้าพังตรงนี้ (เช่น OOM หรือ interrupt)
+          // ห้ามข้ามการ broadcast ผลลัพธ์ด้านล่าง
+          if (shouldReturnToKubdee) {
+            logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า (${importedCount} รายการ)")
+          } else if (stoppedByUser) {
+            logStep("หยุดแล้ว — กด 'รายงานปัญหา' เพื่อส่งข้อมูลให้ทีม หรือ 'กลับแอป'")
+          }
+        } catch (error: Throwable) {
+          Log.e(TAG, "Shopee import pre-delivery step failed", error)
         }
         KubdeeAutomationIpc.sendShopeeImportFinished(
           this,
@@ -746,9 +752,23 @@ class KubdeeAccessibilityService : AccessibilityService() {
           put("success", false)
           put("error", error.message ?: "Shopee convert failed")
         }
+      } catch (error: Throwable) {
+        // Error (เช่น OutOfMemoryError) ต้องไม่ทำให้ thread ตายเงียบก่อนส่งผลลัพธ์ —
+        // ไม่งั้น JS ฝั่ง await จะรอจนครบ timeout (แบบเดียวกับ posting runner / Sentry MOBILE-G)
+        Log.e(TAG, "Shopee convert runner crashed", error)
+        JSONObject().apply {
+          put("success", false)
+          put("error", "${error.javaClass.name}: ${error.message ?: "Shopee convert crashed"}")
+        }
       }
 
-      logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า")
+      try {
+        // งานก่อนส่งผล (log) เป็น best-effort — ถ้าพังตรงนี้ (เช่น OOM หรือ interrupt)
+        // ห้ามข้ามการ broadcast ผลลัพธ์ด้านล่าง
+        logStep("กลับไป Kubdee AI เพื่อเปิดคลังสินค้า")
+      } catch (error: Throwable) {
+        Log.e(TAG, "Shopee convert pre-delivery step failed", error)
+      }
       KubdeeAutomationIpc.sendShopeeConvertFinished(
         this,
         runId,

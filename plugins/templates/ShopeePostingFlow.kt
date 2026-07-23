@@ -353,9 +353,10 @@ internal fun KubdeeAccessibilityService.fillShopeePostingCaption(video: ShopeePo
 
 internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(video: ShopeePostingVideo) {
   val productUrl = normalizeShopeeProductUrl(video.productUrl.orEmpty())
-  val productName = video.productName?.trim().orEmpty()
-  if (productUrl.isBlank() && productName.isBlank()) {
-    logShopeePostStep("ไม่มีข้อมูลสินค้า ข้ามการแนบสินค้า")
+  if (productUrl.isBlank()) {
+    // ไม่มีลิงก์ = ไม่แนบสินค้าเลย — ห้าม fallback ค้นหาด้วยชื่อ เพราะ Shopee จัดอันดับผลค้นหา
+    // ตามความนิยม เสี่ยงแนบสินค้าคนละตัว (สาเหตุจริงของรายงาน "สินค้าคนละอัน")
+    logShopeePostStep("ไม่มีลิงก์สินค้า — ข้ามการแนบสินค้า (ไม่แนบด้วยการค้นหาชื่อ เพราะเสี่ยงได้สินค้าผิดตัว)")
     return
   }
 
@@ -367,60 +368,24 @@ internal fun KubdeeAccessibilityService.attachShopeePostingProductBestEffort(vid
     }
     sleepStep(1800L)
 
-    if (
-      productUrl.isNotBlank() &&
-      tapShopeeProductLinkEntry()
-    ) {
+    if (tapShopeeProductLinkEntry()) {
       sleepStep(1000L)
       if (fillAndAttachShopeeProductLink(productUrl)) {
         logShopeePostStep("แนบสินค้าด้วยลิงก์แล้ว")
         return
       }
-      logShopeePostStep("แนบสินค้าด้วยลิงก์ไม่สำเร็จ จะกลับไปค้นหาด้วยชื่อสินค้า")
-      prepareShopeeAddProductPickerAfterLinkFailure()
     }
 
-    if (productName.isNotBlank() && ensureShopeeAddProductPickerOpenForSearch()) {
-      clickByAnyText(
-        listOf("กดถูกใจ", "ถูกใจ", "Liked", "ค้นหา", "Search"),
-        exact = false,
-        allowedPackageName = TARGET_PACKAGE_SHOPEE
-      )
+    // แนบด้วยลิงก์ไม่สำเร็จ → โพสต์ต่อโดยไม่แนบสินค้า (ไม่มี fallback ค้นหาด้วยชื่อ)
+    logShopeePostStep("แนบสินค้าไม่สำเร็จ — ข้ามการแนบสินค้า (ไม่แนบด้วยการค้นหาชื่อ เพราะเสี่ยงได้สินค้าผิดตัว)")
+    if (isShopeeProductLinkInputScreen()) {
+      performBack()
+      sleepStep(900L)
+    }
+    if (!isShopeePostingEditorVisible()) {
+      performBack()
       sleepStep(800L)
-      val edit = findEditableNode(rootInActiveWindow, TARGET_PACKAGE_SHOPEE)
-      if (edit != null) {
-        clickNode(edit)
-        sleepStep(400L)
-        setNodeText(edit, productName)
-        pressImeEnterOn(edit)
-        sleepStep(2600L)
-        if (
-          clickByAnyText(
-            listOf("เพิ่ม", "Add", "เลือก", "Select"),
-            exact = false,
-            allowedPackageName = TARGET_PACKAGE_SHOPEE
-          )
-        ) {
-          sleepStep(1800L)
-          clickByAnyText(
-            listOf("เสร็จสิ้น", "เสร็จ", "Done"),
-            exact = false,
-            allowedPackageName = TARGET_PACKAGE_SHOPEE
-          )
-          if (!waitForShopeePostingEditorVisible(maxAttempts = 6, delayMs = 900L)) {
-            logShopeePostStep("แนบสินค้าด้วยชื่อสินค้าแล้ว แต่ยังไม่กลับ editor -> กดกลับหนึ่งครั้ง")
-            performBack()
-            waitForShopeePostingEditorVisible(maxAttempts = 4, delayMs = 700L)
-          }
-          logShopeePostStep("แนบสินค้าด้วยชื่อสินค้าแล้ว")
-          return
-        }
-      }
     }
-
-    logShopeePostStep("แนบสินค้าไม่สำเร็จ จะโพสต์ต่อโดยไม่แนบสินค้า")
-    performBack()
-    sleepStep(800L)
   } catch (error: Exception) {
     logShopeePostStep("แนบสินค้าไม่สำเร็จ: ${error.message ?: "unknown"}")
     performBack()
@@ -1257,30 +1222,6 @@ internal fun KubdeeAccessibilityService.isShopeePostingProductAttachedVisible():
   return false
 }
 
-internal fun KubdeeAccessibilityService.prepareShopeeAddProductPickerAfterLinkFailure(): Boolean {
-  if (isShopeeProductLinkInputScreen()) {
-    performBack()
-    sleepStep(900L)
-  }
-  return ensureShopeeAddProductPickerOpenForSearch()
-}
-
-internal fun KubdeeAccessibilityService.ensureShopeeAddProductPickerOpenForSearch(): Boolean {
-  if (isShopeeAddProductPickerScreen()) return true
-  if (isShopeePostingEditorVisible()) {
-    logShopeePostStep("กลับมา editor แล้ว เปิดเมนูเพิ่มสินค้าอีกครั้งเพื่อค้นหาจากชื่อ")
-    return tapShopeeAddProductEntry()
-  }
-  performBack()
-  sleepStep(700L)
-  if (isShopeeAddProductPickerScreen()) return true
-  if (isShopeePostingEditorVisible()) {
-    logShopeePostStep("กลับมา editor หลัง back เปิดเมนูเพิ่มสินค้าอีกครั้ง")
-    return tapShopeeAddProductEntry()
-  }
-  return false
-}
-
 internal fun KubdeeAccessibilityService.collectShopeeProductLinkActionCandidates(
   node: AccessibilityNodeInfo?,
   screen: Rect,
@@ -1532,14 +1473,6 @@ internal fun KubdeeAccessibilityService.tapShopeeProductLinkHeaderIcon(): Boolea
 
   if (sawAddProductScreen) {
     logShopeePostStep("ไม่พบ node ไอคอนโซ่บน header หน้าเพิ่มสินค้า")
-  }
-  return false
-}
-
-internal fun KubdeeAccessibilityService.isShopeeAddProductPickerScreen(): Boolean {
-  for (root in shopeeWindowRoots()) {
-    val screen = screenBounds(root)
-    if (isShopeeAddProductPickerScreenRoot(root, screen)) return true
   }
   return false
 }

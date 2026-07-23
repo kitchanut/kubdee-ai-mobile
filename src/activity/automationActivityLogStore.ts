@@ -293,6 +293,11 @@ export function useAutomationActivitySnapshot(): AutomationActivitySnapshot {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+// อ่าน snapshot ตรงๆ นอก React (เช่น shopeeDiagnostic ใช้หา flow ที่รันล่าสุดตอน bucket user report)
+export function getAutomationActivitySnapshot(): AutomationActivitySnapshot {
+  return snapshot;
+}
+
 export function beginAutomationActivityRun(kind: AutomationActivityKind, title = defaultTitles[kind]): void {
   const now = Date.now();
   updateRun(kind, (run) => ({
@@ -367,4 +372,10 @@ export function useAutomationActivityNativeBridge(): void {
   }, []);
 }
 
-void hydrateAutomationActivitySnapshot();
+const automationActivityHydration = hydrateAutomationActivitySnapshot();
+
+// รอให้ snapshot ถูก restore จาก AsyncStorage ก่อนอ่านค่านอก React (ไม่เคย reject) — จำเป็นกับ
+// จังหวะ startup ที่ flush diagnostic อาจวิ่งก่อน hydration เสร็จ
+export function waitForAutomationActivityHydration(): Promise<void> {
+  return automationActivityHydration;
+}

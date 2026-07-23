@@ -2093,5 +2093,8 @@ internal fun KubdeeAccessibilityService.isShopeePartnerProductNameCandidate(text
   }
 // การ์ดสินค้าของ Shopee มี badge ตัวเลข (เช่น "0") วางทับหน้าชื่อสินค้า ทั้งมุมมองพาร์ทเนอร์
 // และมุมมองผู้ซื้อ — ตัดทิ้งทั้งแบบติดกัน ("0CIVAGO") และแบบมีช่องว่างคั่น ("0 CIVAGO")
+// แบบมีช่องว่างต้องรองรับชื่อที่ขึ้นต้นด้วยสัญลักษณ์/วงเล็บด้วย (MOBILE-9: "0 ‼️แพคคู่‼️ Vaseline…",
+// "0 【10/20/36 แพ็ค】 Botare…", "0 [มี 4 แพ็คให้เลือก]…") เลยตัด 0 เมื่อหลังช่องว่างไม่ใช่ตัวเลข
+// ส่วนแบบติดกันยังตัดเฉพาะเมื่อตามด้วยตัวอักษร — คงชื่อจริงอย่าง "0.5mm ปากกา" / "007 เสื้อ" ไว้
 internal fun KubdeeAccessibilityService.cleanShopeeProductName(text: String): String =
-    cleanNodeText(text).replace(Regex("""^0[\s ]*(?=\p{L})"""), "").trim()
+    cleanNodeText(text).replace(Regex("""^0(?:[\s ]+(?=[^\s 0-9])|(?=\p{L}))"""), "").trim()

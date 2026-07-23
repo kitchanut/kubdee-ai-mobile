@@ -1,5 +1,9 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
+import {
+  getAutomationActivitySnapshot,
+  waitForAutomationActivityHydration,
+} from '@/activity/automationActivityLogStore';
 import { captureShopeeDiagnostic } from '@/lib/sentry';
 
 // The native accessibility service writes these files (into the app's files dir, shared with the
@@ -66,11 +70,34 @@ function isManualReport(dump: string): boolean {
   return dump.startsWith(MANUAL_REPORT_MARKER) || dump.includes(`\n${MANUAL_REPORT_MARKER}`);
 }
 
+// หา flow อัตโนมัติที่รันล่าสุดจาก activity store (persist ใน AsyncStorage ข้าม restart แล้ว)
+// ตอนผู้ใช้กดรายงานปัญหา flow ที่ active/จบล่าสุดคืองานที่รายงานถึง — dump ของ manual report
+// ไม่มี header บอก flow เอง ค่าที่ได้เป็น AutomationActivityKind (cardinality ต่ำและคงที่:
+// shopee-import / shopee-post / shopee-convert / auto-pilot / tiktok-post) จึงใช้ใน fingerprint ได้
+async function resolveLatestAutomationFlow(): Promise<string> {
+  try {
+    await waitForAutomationActivityHydration();
+    let latestKind: string | null = null;
+    let latestTs = 0;
+    for (const run of Object.values(getAutomationActivitySnapshot().runs)) {
+      const ts = run.updatedAt ?? run.startedAt ?? 0;
+      if (ts > latestTs) {
+        latestTs = ts;
+        latestKind = run.kind;
+      }
+    }
+    return latestKind ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /**
  * Forward any diagnostic the native side left behind to Sentry, then delete the files.
  * - Automatic scrape diagnostics send as "Shopee automation diagnostic".
- * - Manual reports send as "Shopee user report[: description]" — but only once the description
- *   file exists (the user tapped ส่ง on the overlay panel); before that they are left in place.
+ * - Manual reports send as "Shopee user report (<flow>)[: description]" — grouped per flow ที่รัน
+ *   ล่าสุด — but only once the description file exists (the user tapped ส่ง on the overlay panel);
+ *   before that they are left in place.
  * Best-effort; never throws. Call on app start and whenever the app returns to foreground.
  */
 export async function flushShopeeScrapeDiagnostic(context: Record<string, unknown> = {}): Promise<void> {
@@ -80,6 +107,7 @@ export async function flushShopeeScrapeDiagnostic(context: Record<string, unknow
 
     const manual = isManualReport(dump);
     let description = '';
+    let flow = 'unknown';
     if (manual) {
       const descFile = await readTextFile(DESCRIPTION_FILE);
       if (descFile === null) {
@@ -87,13 +115,16 @@ export async function flushShopeeScrapeDiagnostic(context: Record<string, unknow
         return;
       }
       description = descFile.trim();
+      // bucket รายงานตาม flow ที่รันล่าสุด — กันทุก flow รวมเป็น Sentry issue เดียว (MOBILE-9)
+      flow = await resolveLatestAutomationFlow();
     }
 
     const screenshot = await readScreenshotBytes();
+    // ใส่ flow ใน message ให้แยก issue ออกจากกันได้ด้วยตาเปล่าในลิสต์ Sentry
     const message = manual
       ? description
-        ? `Shopee user report: ${description.slice(0, 120)}`
-        : 'Shopee user report'
+        ? `Shopee user report (${flow}): ${description.slice(0, 120)}`
+        : `Shopee user report (${flow})`
       : 'Shopee automation diagnostic';
     // Stable trigger for grouping + context, even if the caller forgot to pass one.
     const trigger = manual
@@ -104,6 +135,7 @@ export async function flushShopeeScrapeDiagnostic(context: Record<string, unknow
     console.log('[shopee-diagnostic] sending to Sentry', {
       manual,
       trigger,
+      flow,
       bytes: dump.length,
       hasScreenshot: Boolean(screenshot),
       hasDescription: Boolean(description),
@@ -112,12 +144,13 @@ export async function flushShopeeScrapeDiagnostic(context: Record<string, unknow
       message,
       dump,
       manual
-        ? { ...context, trigger, userDescription: description || null }
+        ? { ...context, trigger, flow, userDescription: description || null }
         : { ...context, trigger },
       screenshot,
-      // User reports share one issue (the description varies per report); automation
+      // User reports แยก issue ตาม flow ที่รัน (ห้ามเอา userDescription เข้า fingerprint —
+      // ละเอียดเกินจนแตก issue ต่อรายงาน; ให้อยู่ใน message/extra พอ); automation
       // diagnostics split by what flushed them.
-      manual ? ['shopee-user-report'] : ['shopee-diagnostic', trigger]
+      manual ? ['shopee-user-report', flow] : ['shopee-diagnostic', trigger]
     );
     await deleteDiagnosticFiles();
   } catch {

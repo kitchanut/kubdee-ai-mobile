@@ -316,6 +316,9 @@ internal fun KubdeeAccessibilityService.isProductNameCandidate(text: String): Bo
   if (blockedExact.any { compact == it.lowercase(Locale.ROOT).replace(Regex("""\s+"""), "") }) {
     return false
   }
+  // ป้ายโปรโมชั่นบนการ์ดต้องตัดก่อนกติกา "ยาวพอ = ชื่อจริง" ด้านล่าง
+  // เพราะป้ายบางแบบยาวเกิน 25 ตัว เช่น "VIP Price | พิเศษเฉพาะสมาชิก ลด 13%" (MOBILE-9)
+  if (isShopeePromoBadgeText(text)) return false
   // label/badge ของ Shopee สั้นเสมอ (ยาวสุด ~17 ตัวอักษรแบบตัดช่องว่าง เช่น ขายแล้ว30พัน+ชิ้น)
   // ชื่อสินค้าจริงยาวกว่านั้น — ข้าม blocklist แบบ contains กันชื่อที่มีคำอย่าง
   // "รับประกัน 1 ปี" / "ผ่อน 0%" / "ส่งฟรี" โดนกรองทิ้งทั้งการ์ดจนสินค้าหายจากการ import
@@ -328,6 +331,42 @@ internal fun KubdeeAccessibilityService.isProductNameCandidate(text: String): Bo
     "ถูกชัวร์", "spaylater", "payday", "flashsale", "มีบริการติดตั้ง", "ผ่อน"
   )
   return blocked.none { compact.contains(it.lowercase(Locale.ROOT).replace(Regex("""\s+"""), "")) }
+}
+
+// ป้ายโปรโมชั่น/ส่วนลดบนการ์ดสินค้า — Shopee แทรกป้ายไว้ระหว่างชื่อกับราคา ป้ายเลยอยู่ใกล้ราคากว่า
+// และชนะการจับคู่ชื่อ ทำให้คลังได้ชื่อขยะ (MOBILE-9: "ราคาพิเศษในไลฟ์" ฿185,
+// "VIP Price | พิเศษเฉพาะสมาชิก ลด 13%" ฿93, "โปรโมชั่นลูกค้าที่คิดถึง ลด 92%" ฿1)
+// ตัดที่ต้นทางแบบนี้ ตัวจับคู่ใน buildProductCandidateFromPriceNode จะถอยไปหยิบ text node
+// ถัดไปเหนือราคา (ชื่อจริงอยู่เหนือป้าย) แทน — ไม่ใช่ทิ้งการ์ดทั้งใบ
+internal fun KubdeeAccessibilityService.isShopeePromoBadgeText(text: String): Boolean {
+  val compact = cleanNodeText(text).lowercase(Locale.ROOT).replace(Regex("""\s+"""), "")
+  if (compact.isBlank()) return false
+
+  // ชั้นที่ 1: ป้าย/label ที่เจอจริงแบบตรงตัว (เทียบแบบตัดช่องว่าง) — กันป้ายที่รูปแบบไม่เข้ากติกาชั้นอื่น
+  val exactBadges = listOf(
+    "ราคาพิเศษในไลฟ์",
+    "แชร์เพื่อรับค่าคอมมิชชั่น",
+    "ของขวัญพิเศษสำหรับคุณ",
+    "ซื้อโดยใช้โค้ด",
+    "มุมมองพาร์ทเนอร์",
+    "มุมมองผู้ซื้อ"
+  )
+  if (exactBadges.any { compact == it.replace(Regex("""\s+"""), "").lowercase(Locale.ROOT) }) return true
+
+  // ชั้นที่ 2: ป้ายส่วนลด — ลงท้ายด้วย "ลด NN%" และสั้นกว่าชื่อสินค้าจริง
+  // (ชื่อการ์ดจริงใน corpus ยาว 27+ ตัวแบบตัดช่องว่าง และไม่มีชื่อจริงตัวไหนลงท้ายด้วยป้ายส่วนลด)
+  if (compact.length <= 40 && Regex("""ลด(?:สูงสุด|เพิ่ม|อีก)?\d{1,3}%$""").containsMatchIn(compact)) {
+    return true
+  }
+
+  // ชั้นที่ 3: ข้อความสั้น (< 25 ตัดช่องว่าง) ที่มีคำโปรโมชั่นชัดๆ — ป้าย badge ของ Shopee สั้นเสมอ
+  // ชื่อสินค้าจริงที่มีคำพวกนี้ปนจะยาวกว่านั้นและไม่โดนกติกานี้
+  if (compact.length < 25) {
+    val promoMarkers = listOf("ราคาพิเศษ", "โปรโมชั่น", "เฉพาะสมาชิก", "vipprice", "ในไลฟ์", "ข้อเสนอ", "คอมมิชชั่น")
+    if (promoMarkers.any { compact.contains(it) }) return true
+  }
+
+  return false
 }
 
 internal fun KubdeeAccessibilityService.stableProductKey(product: ShopeeLikedProduct): String =

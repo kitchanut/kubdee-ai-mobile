@@ -451,6 +451,17 @@ async function postProductToShopee(
     return;
   }
 
+  // gate ลิงก์: ช่องค้นหาสินค้าของ Shopee หาเจอเฉพาะ short link — ไม่มี short link = ผูกสินค้า
+  // ตอนโพสต์ไม่ได้ ข้ามสินค้านี้ไปขั้นถัดไปเลย (กติกาเดียวกับ 'no-link' ของหน้า manual)
+  if (!isShopeeShortLink(product.productUrl)) {
+    emitStage(
+      'posting_shopee',
+      `ข้ามโพสต์ Shopee: ${product.name || 'สินค้า'} ไม่มีลิงก์สินค้า Shopee`,
+      'warning'
+    );
+    return;
+  }
+
   // hoist ไว้ให้ catch ใช้ schedule reconcile หลัง timeout ได้ (0 = ยังไม่ได้เริ่มโพสต์)
   let postStartedAt = 0;
   try {
