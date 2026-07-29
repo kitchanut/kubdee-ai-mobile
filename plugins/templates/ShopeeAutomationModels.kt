@@ -89,6 +89,13 @@ internal val SHOPEE_VIDEO_COMPOSER_TEXTS = listOf(
   "Click to post video"
 )
 
+// Shopee 3.79.24+: หน้า ฉัน มีเมนู Live & Video เข้าหน้า creator ที่มีปุ่ม โพสต์วิดีโอ โดยตรง
+// (header ของหน้าปลายทางสะกด "Live and Video")
+internal val SHOPEE_LIVE_VIDEO_MENU_TEXTS = listOf(
+  "Live & Video",
+  "Live and Video"
+)
+
 internal val SHOPEE_POSTING_SURFACE_TEXTS = listOf(
   "ถัดไป",
   "Next",

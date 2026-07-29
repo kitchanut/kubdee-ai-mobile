@@ -253,6 +253,29 @@ internal fun KubdeeAccessibilityService.navigateShopeeVideoAccount(): Boolean {
   if (!goToShopeeMeTab()) return false
   sleepStep(1200L)
 
+  // Shopee 3.79.24+: หน้า ฉัน มีเมนู Live & Video เข้าหน้า creator ที่มีปุ่ม โพสต์วิดีโอ ล่างกลางโดยตรง
+  logShopeePostStep("เปิดเมนู Live & Video จากหน้า ฉัน")
+  if (scrollUntilTapShopeeLiveVideoMenu(maxAttempts = 6)) {
+    if (waitForShopeeVideoComposerButton(12_000L)) {
+      logShopeePostStep("เข้าหน้า Live & Video แล้ว (พบปุ่ม โพสต์วิดีโอ)")
+      return true
+    }
+    logShopeePostStep("เข้าเมนู Live & Video แล้วแต่ไม่พบปุ่ม โพสต์วิดีโอ จะถอยกลับไปใช้เส้นทาง โปรแกรม Affiliate เดิม")
+    performBack()
+    sleepStep(2500L)
+  } else {
+    logShopeePostStep("ไม่พบเมนู Live & Video ในหน้า ฉัน จะใช้เส้นทาง โปรแกรม Affiliate เดิม")
+  }
+
+  // เส้นทางเดิม (ก่อน 3.79.24): ฉัน → โปรแกรม Affiliate → บัญชีผู้ใช้ → หน้าบัญชี Shopee Video
+  // การไล่หาเมนูข้างบนอาจเลื่อนหน้า ฉัน ลงไปไกล ต้องกลับแท็บ ฉัน แล้วเลื่อนขึ้นบนสุดก่อน
+  if (!goToShopeeMeTab()) return false
+  sleepStep(1200L)
+  repeat(6) {
+    swipeDownByScreen()
+    sleepStep(300L)
+  }
+
   logShopeePostStep("เปิด โปรแกรม Affiliate")
   if (!scrollUntilTapText(SHOPEE_AFFILIATE_TEXTS, maxAttempts = 8)) {
     logShopeePostStep("ไม่พบเมนู โปรแกรม Affiliate")
@@ -274,6 +297,62 @@ internal fun KubdeeAccessibilityService.navigateShopeeVideoAccount(): Boolean {
   }
   sleepStep(4000L)
   return true
+}
+
+// เมนู Live & Video บนหน้า ฉัน ชื่อชนกับแท็บ Live & Video ที่ bottom bar ของ Shopee
+// จึงรับเฉพาะ node ที่อยู่เหนือโซน bottom nav (0.74 ของจอ — เกณฑ์เดียวกับ clickShopeeBottomMeTab)
+internal fun KubdeeAccessibilityService.tapShopeeLiveVideoMenuOnMePage(): Boolean {
+  val root = rootInActiveWindow ?: return false
+  val screen = screenBounds(root)
+  val bottomNavStart = screen.top + (screen.height() * 0.74f).toInt()
+  val textNodes = mutableListOf<TextNode>()
+  collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+  val candidates = textNodes
+    .filter { candidate ->
+      SHOPEE_LIVE_VIDEO_MENU_TEXTS.any { needle -> candidate.text.contains(needle, ignoreCase = true) } &&
+        candidate.bounds.bottom <= bottomNavStart
+    }
+    .sortedBy { it.bounds.top }
+  for (candidate in candidates) {
+    if (tapBlocking(candidate.bounds.centerX().toFloat(), candidate.bounds.centerY().toFloat())) return true
+    if (clickNode(candidate.node)) return true
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.scrollUntilTapShopeeLiveVideoMenu(maxAttempts: Int): Boolean {
+  repeat(maxAttempts) {
+    dismissShopeeBlockingPopups()
+    if (tapShopeeLiveVideoMenuOnMePage()) return true
+    if (!scrollFirstScrollableForward(allowedPackageName = TARGET_PACKAGE_SHOPEE)) {
+      swipeUpByScreen()
+    }
+    sleepStep(900L)
+  }
+  return tapShopeeLiveVideoMenuOnMePage()
+}
+
+// รอหน้า Live & Video โหลดจนเห็นปุ่ม โพสต์วิดีโอ (หน้าเป็น React เปิดช้าได้หลายวินาที)
+internal fun KubdeeAccessibilityService.waitForShopeeVideoComposerButton(timeoutMs: Long): Boolean {
+  val deadline = System.currentTimeMillis() + timeoutMs
+  while (System.currentTimeMillis() <= deadline) {
+    dismissShopeeBlockingPopups()
+    val root = rootInActiveWindow
+    if (
+      root != null &&
+      findVisibleMatchingNode(
+        root,
+        SHOPEE_VIDEO_COMPOSER_TEXTS,
+        exact = false,
+        includeResourceId = false,
+        allowedPackageName = TARGET_PACKAGE_SHOPEE
+      ) != null
+    ) {
+      return true
+    }
+    sleepStep(900L)
+  }
+  return false
 }
 
 internal fun KubdeeAccessibilityService.openShopeeVideoComposer() {
