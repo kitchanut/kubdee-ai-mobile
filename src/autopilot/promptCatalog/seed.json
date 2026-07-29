@@ -1,7 +1,7 @@
 {
-  "catalogVersion": 1,
+  "catalogVersion": 3,
   "schemaVersion": 1,
-  "updatedAt": 0,
+  "updatedAt": 1785283200000,
   "updatedBy": "seed",
   "joinSeparator": "; ",
   "placeholders": [
@@ -124,6 +124,18 @@
     {
       "key": "reference_note",
       "label": "หมายเหตุรูปอ้างอิง"
+    },
+    {
+      "key": "character_clause",
+      "label": "ประโยคตัวละคร (ต่อท้ายคำสั่งหลักรูปภาพ)"
+    },
+    {
+      "key": "speech_block",
+      "label": "บล็อกเสียง/บทพูด (คำนวณจากโหมดเสียง)"
+    },
+    {
+      "key": "music_sfx_line",
+      "label": "บรรทัดเพลง/SFX (คำนวณจากโหมดเพลง)"
     }
   ],
   "categories": [
@@ -1755,7 +1767,7 @@
         {
           "value": "none",
           "label": "ไม่ใส่",
-          "prompt": "",
+          "prompt": "ห้ามมีข้อความหรือตัวอักษรใดๆ ในภาพ",
           "enabled": true,
           "order": 1
         }
@@ -1785,7 +1797,7 @@
         {
           "value": "original",
           "label": "ตามภาพ",
-          "prompt": "",
+          "prompt": "ให้ตัวละครใส่ชุดเดิมตามภาพต้นฉบับ",
           "enabled": true,
           "order": 1
         }
@@ -1815,28 +1827,28 @@
         {
           "value": "wear",
           "label": "สวมใส่",
-          "prompt": "",
+          "prompt": "ให้ตัวละครสวมใส่สินค้าให้เห็นชัดเจน",
           "enabled": true,
           "order": 1
         },
         {
           "value": "hold",
           "label": "ถือสินค้า",
-          "prompt": "",
+          "prompt": "ให้ถือสินค้าโชว์ให้เห็นเด่นชัด",
           "enabled": true,
           "order": 2
         },
         {
           "value": "use",
           "label": "ใช้งานจริง",
-          "prompt": "",
+          "prompt": "ให้สาธิตการใช้งานสินค้าจริงให้เห็นชัดเจน",
           "enabled": true,
           "order": 3
         },
         {
           "value": "display",
           "label": "วางโชว์",
-          "prompt": "",
+          "prompt": "จัดวางโชว์สินค้าให้โดดเด่นเป็นพระเอกของภาพ",
           "enabled": true,
           "order": 4
         }
@@ -2249,13 +2261,19 @@
       "key": "image_main_instruction",
       "label": "รูป: คำสั่งหลัก",
       "appliesTo": "image",
-      "text": "สร้างภาพโฆษณาสินค้ามืออาชีพ ภาพต้องเต็มสัดส่วนที่กำหนด ห้ามมีขอบดำ ต้องเป็นภาพเดียว ห้าม collage สินค้าคือ {{product_name}} ตามรูปสินค้า reference ที่แนบให้"
+      "text": "สร้างภาพโฆษณาสินค้ามืออาชีพ ภาพต้องเต็มสัดส่วนที่กำหนด ห้ามมีขอบดำหรือพื้นที่ว่างบนล่างหรือซ้ายขวา ต้องเป็นภาพเดียวเท่านั้น ห้ามเป็น collage ห้ามมีภาพซ้อนภาพ ห้ามมี inset หรือ overlay ของสินค้าในมุมภาพ ห้ามมี product shot แยกต่างหาก สินค้าต้องปรากฏในฉากหลักเท่านั้น สินค้าคือ {{product_name}} ตามรูปสินค้า reference ที่แนบให้"
+    },
+    {
+      "key": "image_face_rule",
+      "label": "รูป: กฎใบหน้าคน",
+      "appliesTo": "image",
+      "text": "กฎใบหน้าคน: ถ้ามีใบหน้าคนในภาพ ต้องเห็นใบหน้าชัดเจน เปิดโล่ง ไม่ถูกสินค้า มือ ผม หมวก หน้ากาก แว่น เงา ขอบภาพ หรือวัตถุใดๆ บดบัง และไม่เบลอหรือบิดเบี้ยว ถ้าภาพตั้งใจเป็น product-only, hands-only, close-up รายละเอียดสินค้า หรือมุมที่ไม่เห็นหน้า ให้ไม่เห็นหน้าไปเลย ห้ามถอยกล้องหรือเปลี่ยน framing เพื่อ reveal หน้า"
     },
     {
       "key": "image_reference_rule",
       "label": "รูป: กฎรูปอ้างอิง",
       "appliesTo": "image",
-      "text": "รูปสินค้า reference: ใช้สินค้าให้ตรงกับภาพอ้างอิง ห้ามเปลี่ยนรูปทรง สี โลโก้ หรือแพ็กเกจ"
+      "text": "รูปอ้างอิงที่แนบ: รูปสินค้า reference: ใช้สินค้าให้ตรงกับภาพอ้างอิง ห้ามเปลี่ยนรูปทรง สี โลโก้ หรือแพ็กเกจ"
     },
     {
       "key": "image_quality_rule",
@@ -2273,7 +2291,7 @@
       "key": "video_main_instruction",
       "label": "วิดีโอ: คำสั่งหลัก",
       "appliesTo": "video",
-      "text": "สร้างวิดีโอโฆษณาสินค้าภาษาไทย สัดส่วน {{aspect_ratio}} ความยาวประมาณ {{duration}} วินาที"
+      "text": "สร้างวิดีโอโฆษณาสินค้าภาษาไทย ต้องใช้ฉากและตัวละครหรือมือจากภาพที่แนบมาเท่านั้น ห้ามสร้างฉากใหม่ ห้ามเปลี่ยนสถานที่ตลอดทั้งวิดีโอ"
     },
     {
       "key": "video_reference_rule",
@@ -2285,19 +2303,61 @@
       "key": "video_auto_dialogue",
       "label": "วิดีโอ: บทพูดอัตโนมัติ",
       "appliesTo": "video",
-      "text": "พูดแนะนำจุดเด่นสินค้าแบบกระชับ เป็นภาษาไทย ฟังเป็นธรรมชาติ"
+      "text": "บทพูด: สร้างบทโฆษณาภาษาไทยประมาณ 6.5 วินาที หรือ 1-2 ประโยคที่พูดต่อเนื่องกัน กระตุ้นให้อยากซื้อและลดช่วงเงียบท้ายคลิป"
     },
     {
       "key": "video_prohibition_with_dialogue",
       "label": "วิดีโอ: ข้อห้าม (มีบทพูด)",
       "appliesTo": "video",
-      "text": "ห้ามมี subtitle ห้ามมีข้อความมั่ว ห้ามมีขอบดำ วิดีโอต้องเต็มจอ"
+      "text": "ข้อห้าม: ห้ามมี subtitle ห้ามมีข้อความบนจอ ทุกบทพูดต้องเป็นเสียงเท่านั้น ห้ามมีขอบดำ วิดีโอต้องเต็มจอ ใช้เสียงพูดภาษาไทยเท่านั้น"
     },
     {
       "key": "video_prohibition_no_dialogue",
       "label": "วิดีโอ: ข้อห้าม (ไม่มีบทพูด)",
       "appliesTo": "video",
-      "text": "ไม่มีบทพูด ให้เป็นวิดีโอเงียบหรือมีเสียงบรรยากาศเท่านั้น ห้ามมี subtitle ห้ามมีขอบดำ"
+      "text": "ข้อห้าม: ห้ามมี subtitle ห้ามมีข้อความบนจอ ห้ามมีขอบดำ วิดีโอต้องเต็มจอ ห้ามมีเสียงพูดใดๆ ทั้งสิ้น"
+    },
+    {
+      "key": "video_scene_rule",
+      "label": "วิดีโอ: กฎฉาก",
+      "appliesTo": "video",
+      "text": "ฉาก: ใช้ฉากจากภาพที่แนบมาเท่านั้น พื้นหลังและสถานที่ต้องเหมือนกับในภาพทุกประการ ห้ามสร้างฉากใหม่ ห้ามเปลี่ยนสถานที่"
+    },
+    {
+      "key": "video_character_rule",
+      "label": "วิดีโอ: กฎตัวละคร",
+      "appliesTo": "video",
+      "text": "ตัวละคร: ใช้ตัวละครหรือมือจากภาพที่แนบมา คงลักษณะเดิมทุกประการตลอดทั้งวิดีโอ ถ้าในภาพเห็นแค่มือก็ให้เห็นแค่มือ"
+    },
+    {
+      "key": "video_character_rule_no_ref",
+      "label": "วิดีโอ: ไม่มีตัวละคร",
+      "appliesTo": "video",
+      "text": "ตัวละคร: ไม่มีตัวละคร โฟกัสที่สินค้าเป็นหลัก"
+    },
+    {
+      "key": "video_face_rule",
+      "label": "วิดีโอ: กฎใบหน้าคน",
+      "appliesTo": "video",
+      "text": "ใบหน้าคน: ถ้าในภาพ reference เห็นใบหน้า ต้องรักษาให้ใบหน้าชัดเจน ไม่ถูกสินค้า มือ ผม หมวก หน้ากาก แว่น เงา ขอบภาพ หรือวัตถุใดๆ บดบัง และไม่เบลอ ถ้าภาพ reference ไม่เห็นหน้า เช่น hands-only, product-only หรือมุมด้านหลัง ห้าม reveal หน้าใหม่ในวิดีโอ"
+    },
+    {
+      "key": "video_continuity_rule",
+      "label": "วิดีโอ: ความต่อเนื่อง",
+      "appliesTo": "video",
+      "text": "ความต่อเนื่อง: ห้ามเปลี่ยนฉาก ห้ามเปลี่ยนสถานที่ ห้ามเปลี่ยนพื้นหลัง วิดีโอทั้งหมดต้องอยู่ในที่เดียวตั้งแต่ต้นจนจบ ตัวละครหรือมือต้องเป็นคนเดิมเหมือนกันตลอด ห้ามหมุนสินค้า"
+    },
+    {
+      "key": "video_auto_voice_ref",
+      "label": "วิดีโอ: เสียงพากย์ออโต้ (มีภาพอ้างอิง)",
+      "appliesTo": "video",
+      "text": "เสียงพากย์: ออโต้จากภาพ reference ถ้าเห็นตัวละครหรือใบหน้าคน ให้เลือกเสียงพูดภาษาไทยที่เหมาะกับเพศและวัยของตัวละครในภาพ เช่น ผู้หญิงใช้เสียงผู้หญิงไทย ผู้ชายใช้เสียงผู้ชายไทย ถ้าเห็นแค่มือหรือสินค้าและไม่เห็นคน ให้ใช้เสียงบรรยายไทยกลางที่เหมาะกับสินค้า"
+    },
+    {
+      "key": "video_auto_voice_no_ref",
+      "label": "วิดีโอ: เสียงพากย์ออโต้ (ไม่มีภาพอ้างอิง)",
+      "appliesTo": "video",
+      "text": "เสียงพากย์: ออโต้ เลือกเสียงพูดภาษาไทยกลางที่เหมาะกับสินค้าและโทนโฆษณา"
     }
   ],
   "assembly": [
@@ -2305,38 +2365,78 @@
       "key": "image_auto",
       "lines": [
         {
-          "template": "{{image_main_instruction}}"
+          "template": "{{image_main_instruction}}{{character_clause}}"
+        },
+        {
+          "template": "{{image_face_rule}}"
         },
         {
           "template": "{{image_reference_rule}}",
           "when": "hasReference"
         },
         {
-          "template": "สไตล์: {{style}}"
+          "template": "{{product_display}}",
+          "when": "product_display != ''"
         },
         {
-          "template": "ฉาก: {{background}}"
+          "template": "แสดงสินค้าอย่างเหมาะสมกับประเภทสินค้า เช่น สวมใส่ถ้าเป็นเสื้อผ้า/รองเท้า ถือถ้าเป็นสินค้าทั่วไป",
+          "when": "product_display == ''"
         },
         {
-          "template": "แสง: {{lighting}}"
+          "template": "รายละเอียดสินค้า: {{product_description}}",
+          "when": "product_description != ''"
+        },
+        {
+          "template": "สไตล์: {{style}}",
+          "when": "style != ''"
+        },
+        {
+          "template": "สไตล์: เลือกสไตล์ภาพที่เหมาะสมกับสินค้าและบรรยากาศโดยอัตโนมัติ",
+          "when": "style == ''"
+        },
+        {
+          "template": "ฉาก: {{background}}",
+          "when": "background != ''"
+        },
+        {
+          "template": "ฉาก: เลือกฉาก/พื้นหลังที่เหมาะสมกับสินค้าและสไตล์ภาพโดยอัตโนมัติ",
+          "when": "background == ''"
+        },
+        {
+          "template": "แสง: {{lighting}}",
+          "when": "lighting != ''"
+        },
+        {
+          "template": "แสง: เลือกการจัดแสงที่เหมาะสมกับสินค้าและบรรยากาศโดยอัตโนมัติ",
+          "when": "lighting == ''"
         },
         {
           "template": "มุมกล้อง: {{frame}}",
           "when": "frame != ''"
         },
         {
-          "template": "ข้อความบนภาพตามที่ผู้ใช้กำหนดเท่านั้น: {{text_overlay}}",
+          "template": "มุมกล้อง: เลือกมุมกล้องที่เหมาะสมกับสินค้าและการนำเสนอโดยอัตโนมัติ",
+          "when": "frame == ''"
+        },
+        {
+          "template": "{{character_outfit}}",
+          "when": "character_outfit != ''"
+        },
+        {
+          "template": "ให้ตัวละครใส่ชุดที่เหมาะสมกับฉากและสินค้า",
+          "when": "character_outfit == ''"
+        },
+        {
+          "template": "{{text_overlay}}",
           "when": "text_overlay != ''"
         },
         {
-          "template": "{{image_quality_rule}}"
+          "template": "ใส่ข้อความแนวโฆษณาสั้นๆ ที่สะดุดตาในภาพ เช่น ชื่อสินค้า slogan กระตุ้นให้อยากซื้อ ห้ามใส่ราคา จัดวางในตำแหน่งที่โดดเด่นไม่บังสินค้า ใช้ภาษาไทยเป็นหลัก ยกเว้นชื่อยี่ห้อหรือคำที่จำเป็นค่อยใช้ภาษาอังกฤษ",
+          "when": "text_overlay == ''"
         },
         {
-          "template": "{{system_prompt}}",
+          "template": "คำสั่งเพิ่มเติม: {{system_prompt}}",
           "when": "system_prompt != ''"
-        },
-        {
-          "template": "{{image_prohibition}}"
         }
       ]
     },
@@ -2368,44 +2468,57 @@
           "template": "สินค้า: {{product_name}}"
         },
         {
-          "template": "{{reference_note}}",
-          "when": "hasReference"
+          "template": "รายละเอียดสินค้า: {{product_description}}",
+          "when": "product_description != ''"
         },
         {
-          "template": "{{video_reference_rule}}"
+          "template": "{{video_scene_rule}}"
         },
         {
-          "template": "สไตล์: {{video_style}}"
+          "template": "{{video_character_rule}}",
+          "when": "videoCharacterMode != 'none'"
         },
         {
-          "template": "จำนวนฉาก: {{scene_count}}"
+          "template": "{{video_face_rule}}",
+          "when": "videoCharacterMode != 'none'"
         },
         {
-          "template": "กล้อง: {{camera_motion}}",
+          "template": "{{video_character_rule_no_ref}}",
+          "when": "videoCharacterMode == 'none'"
+        },
+        {
+          "template": "สไตล์วิดีโอ: {{video_style}}"
+        },
+        {
+          "template": "การเคลื่อนกล้อง: {{camera_motion}}",
           "when": "cameraMotion != ''"
         },
         {
-          "template": "เสียงตัวละคร: {{voice}}",
-          "when": "voice != ''"
+          "template": "{{speech_block}}",
+          "when": "speech_block != ''"
         },
         {
-          "template": "สไตล์สคริปต์: {{script_style}}",
-          "when": "scriptStyle != ''"
+          "template": "{{music_sfx_line}}",
+          "when": "music_sfx_line != ''"
         },
         {
-          "template": "บทพูด/ข้อความประกอบ: {{dialogue}}"
-        },
-        {
-          "template": "{{system_prompt}}",
-          "when": "system_prompt != ''"
+          "template": "{{video_continuity_rule}}"
         },
         {
           "template": "คำต้องห้าม: {{forbidden_words}}",
           "when": "forbidden_words != ''"
         },
         {
+          "template": "{{video_prohibition_no_dialogue}}",
+          "when": "prohibitionMode == 'silent'"
+        },
+        {
           "template": "{{video_prohibition_with_dialogue}}",
-          "when": "dialogueMode != none"
+          "when": "prohibitionMode == 'dialogue'"
+        },
+        {
+          "template": "คำสั่งเพิ่มเติม: {{system_prompt}}",
+          "when": "system_prompt != ''"
         }
       ]
     },

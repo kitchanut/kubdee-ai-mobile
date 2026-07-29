@@ -72,6 +72,9 @@ export function buildPrompt(
     custom_prompt: settingValue(settings.customPrompt),
     forbidden_words: settingValue(settings.forbiddenWords),
     reference_note: product.hasReference ? 'ใช้รูปอ้างอิงเป็นภาพหลัก' : '',
+    character_clause: settingValue(settings.characterClause),
+    speech_block: settingValue(settings.speechBlock),
+    music_sfx_line: settingValue(settings.musicSfxLine),
     dialogue: settingValue(settings.dialogue),
   };
 

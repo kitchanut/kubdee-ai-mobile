@@ -88,6 +88,13 @@ const CAMERA_MOTION_FALLBACKS: Record<string, string> = {
   คงที่: 'กล้องคงที่ไม่เคลื่อนไหว ถ่ายจากมุมเดียว',
 };
 
+// web/desktop parity (autoWorkflowPrompts.ts): fallback text กรณี catalog v3 ไม่มี template
+const VIDEO_AUTO_VOICE_REF_TEXT =
+  'เสียงพากย์: ออโต้จากภาพ reference ถ้าเห็นตัวละครหรือใบหน้าคน ให้เลือกเสียงพูดภาษาไทยที่เหมาะกับเพศและวัยของตัวละครในภาพ เช่น ผู้หญิงใช้เสียงผู้หญิงไทย ผู้ชายใช้เสียงผู้ชายไทย ถ้าเห็นแค่มือหรือสินค้าและไม่เห็นคน ให้ใช้เสียงบรรยายไทยกลางที่เหมาะกับสินค้า';
+const VIDEO_AUTO_VOICE_NO_REF_TEXT = 'เสียงพากย์: ออโต้ เลือกเสียงพูดภาษาไทยกลางที่เหมาะกับสินค้าและโทนโฆษณา';
+const VIDEO_AUTO_DIALOGUE_TEXT =
+  'บทพูด: สร้างบทโฆษณาภาษาไทยประมาณ 6.5 วินาที หรือ 1-2 ประโยคที่พูดต่อเนื่องกัน กระตุ้นให้อยากซื้อและลดช่วงเงียบท้ายคลิป';
+
 function resolveDialogue(product: AutoPilotProduct, settings: AutoPilotProduct['settings']['video']): string {
   if (settings.dialogueMode === 'none') {
     return 'ไม่มีบทพูด ให้เป็นวิดีโอเงียบหรือมีเสียงบรรยากาศเท่านั้น';
@@ -121,6 +128,54 @@ function catalogOptionPrompt(catalog: PromptCatalog, categoryId: string, value: 
   }
 
   return categoryOptions(category).find((option) => option.value === cleanValue)?.prompt || '';
+}
+
+function catalogTemplateText(catalog: PromptCatalog, key: string, fallback: string): string {
+  return compactText(catalog.templates.find((template) => template.key === key)?.text) || fallback;
+}
+
+// ตรวจว่า chain ใน catalog อ้าง placeholder ใหม่ของ v3 หรือยัง — catalog เก่า (v1) ที่ค้าง cache
+// บนเครื่องจะไม่มี ให้ถอยกลับไปใช้ desktop-like path เดิมเพื่อไม่ให้ prompt เสียเนื้อหา
+function chainUsesPlaceholder(catalog: PromptCatalog, chainKey: string, placeholder: string): boolean {
+  const chain = catalog.assembly.find((item) => item.key === chainKey);
+  if (!chain) {
+    return false;
+  }
+  const pattern = new RegExp(`\\{\\{\\s*${placeholder}\\s*\\}\\}`);
+  return chain.lines.some((line) => pattern.test(line.template));
+}
+
+// desktop/web parity (buildCharacterClause) + ส่วนขยาย mobile: gallery/upload แนบรูปตัวละครจริง
+function buildImageCharacterClause(imageSettings: AutoPilotProduct['settings']['image']): string {
+  const mode = imageSettings.characterMode || 'auto';
+  const description = compactText(imageSettings.characterDescription);
+  if (mode === 'none') {
+    return ' ไม่ต้องใส่ตัวละคร';
+  }
+  if (mode === 'description' && description) {
+    return ` และใช้ตัวละคร ${description}`;
+  }
+  if (mode === 'gallery' || mode === 'upload') {
+    return ' และใช้ตัวละครตามรูปตัวละคร reference ที่แนบให้';
+  }
+  return ' และให้สร้างตัวละครคนไทยตามความเหมาะสมกับสินค้า';
+}
+
+function hasSceneReferenceImage(imageSettings: AutoPilotProduct['settings']['image']): boolean {
+  return Boolean(imageSettings.customSceneUri || imageSettings.customScenePreview || imageSettings.selectedSceneId);
+}
+
+function createBuildProduct(product: AutoPilotProduct, hasReference: boolean) {
+  return {
+    name: product.name,
+    description: product.description,
+    productUrl: product.productUrl,
+    imageUrl: product.preview ?? '',
+    caption: product.caption,
+    hashtags: product.hashtags,
+    cta: product.cta,
+    hasReference,
+  };
 }
 
 function resolveImageStylePrompt(
@@ -611,6 +666,208 @@ function createVideoBuildSettings(product: AutoPilotProduct, settings: AutoPilot
   };
 }
 
+// catalog v3 path (web parity: buildCatalogImagePrompt ใน autoWorkflowPrompts.ts fc2386a)
+// ประกอบ prompt รูปจาก assembly chain `image_auto` ของ catalog แทน desktop-like hardcode
+function buildCatalogImagePrompt(
+  product: AutoPilotProduct,
+  settings: AutoPilotSettings,
+  catalog: PromptCatalog,
+  hasReference: boolean
+): string {
+  const imageSettings = product.settings.image;
+  // สตอรี่ (storyboard 5 ช่อง) เป็นโหมดเฉพาะ mobile — catalog chain ยังไม่รองรับ ใช้ path เดิม
+  if ((imageSettings.styleMode || 'preset') === 'story') {
+    return '';
+  }
+  // catalog เก่าไม่มี {{character_clause}} — ถอยไป desktop-like path เดิม
+  if (!chainUsesPlaceholder(catalog, 'image_auto', 'character_clause')) {
+    return '';
+  }
+
+  // desktop parity: sceneMode ชนะ background preset (none/รูปฉากแนบ/คำอธิบาย)
+  const sceneMode = imageSettings.sceneMode || 'auto';
+  const sceneDescription = compactText(imageSettings.sceneDescription);
+  const sceneReferenceAttached =
+    ['gallery', 'upload'].includes(sceneMode) && hasSceneReferenceImage(imageSettings);
+  let background = imageSettings.background;
+  let backgroundCustom = imageSettings.backgroundCustom;
+  if (sceneMode === 'none') {
+    background = '__custom__';
+    backgroundCustom = 'ไม่ต้องใช้ฉากเด่น ให้ใช้พื้นหลังเรียบหรือพื้นผิวสะอาดที่ทำให้สินค้าเด่น';
+  } else if (sceneReferenceAttached) {
+    background = '__custom__';
+    backgroundCustom = `ใช้รูปฉาก reference ที่แนบเป็นฉากหลังหลัก คง mood, lighting, layout, material, color tone และบรรยากาศเดิมของฉาก แล้วจัดวางสินค้าให้เด่นชัดในฉากอย่างเป็นธรรมชาติ${sceneDescription ? ` รายละเอียดเพิ่มเติมของฉาก: ${sceneDescription}` : ''}`;
+  } else if (sceneMode !== 'auto' && sceneDescription) {
+    background = '__custom__';
+    backgroundCustom = sceneDescription;
+  }
+
+  // desktop parity: ข้อความในภาพแบบกำหนดเอง ห่อด้วย TEXT OVERLAY REQUIREMENT
+  const overlayText = compactText(imageSettings.textOverlayCustom);
+  const textOverlayCustom = overlayText
+    ? `TEXT OVERLAY REQUIREMENT: The image MUST contain this EXACT text verbatim: '${overlayText}' - This text uses Thai script/characters. CRITICAL: Render the Thai characters EXACTLY as shown above. DO NOT translate to English. Copy the Thai text character-by-character: ${overlayText}`
+    : '';
+
+  // desktop parity: ชุดตัวละครแบบกำหนดเอง
+  const outfitText = compactText(imageSettings.characterOutfitCustom);
+  const characterOutfitCustom = outfitText ? `ชุดของตัวละคร: ${outfitText}` : '';
+
+  const prompt = buildPrompt(
+    'image',
+    {
+      ...createImageBuildSettings(product, settings),
+      characterClause: buildImageCharacterClause(imageSettings),
+      background,
+      backgroundCustom,
+      textOverlayCustom,
+      characterOutfitCustom,
+    },
+    createBuildProduct(product, hasReference),
+    catalog
+  ).trim();
+  if (!prompt) {
+    return '';
+  }
+
+  // mobile เฉพาะ: กติการูป reference ตัวละคร/ฉากที่แนบจริง (catalog v3 มีแค่กติการูปสินค้า)
+  const extras: string[] = [];
+  const characterMode = imageSettings.characterMode || 'auto';
+  if (['gallery', 'upload'].includes(characterMode)) {
+    extras.push('รูปตัวละคร reference: ใช้หน้าตา บุคลิก และความต่อเนื่องของตัวละคร แต่ปรับท่าทางให้เข้ากับฉากได้');
+  }
+  if (sceneReferenceAttached) {
+    extras.push('รูปฉาก reference: ใช้เป็นฉากหลัง บรรยากาศ layout แสง material และ color tone ห้ามทำให้ฉากกลายเป็นสินค้า');
+  }
+  return [prompt, ...extras].join('\n');
+}
+
+// catalog v3 path (web parity: buildCatalogVideoPrompt ใน autoWorkflowPrompts.ts a8db502)
+// ประกอบ speech block/สไตล์/เพลง แล้วส่งเข้า assembly chain `video_auto` ของ catalog
+function buildCatalogVideoPrompt(
+  product: AutoPilotProduct,
+  settings: AutoPilotSettings,
+  catalog: PromptCatalog,
+  hasRefImage: boolean
+): string {
+  const videoSettings = product.settings.video;
+  const styleKey = compactText(videoSettings.presetStyle);
+  // สตอรี่เป็นโหมดเฉพาะ mobile — ใช้ buildStoryVideoPrompt เดิม
+  if (styleKey === STORY_STYLE_KEY) {
+    return '';
+  }
+  // catalog เก่าไม่มี {{speech_block}} — ถอยไป desktop-like path เดิม
+  if (!chainUsesPlaceholder(catalog, 'video_auto', 'speech_block')) {
+    return '';
+  }
+
+  const sceneCount = Number.parseInt(videoSettings.sceneCount || '1', 10) || 1;
+  // โหมด "เสียงพากย์" (voiceover) = คลิปเงียบ ระบบจะพากย์เสียงไทยทับทีหลัง จึงบังคับไม่มีบทพูด
+  const voiceoverSilent =
+    (videoSettings.videoMethod || 'extend') === 'multi' &&
+    videoSettings.multiSceneAngleMode === 'voiceover' &&
+    sceneCount > 1;
+  const effectiveDialogueMode: 'auto' | 'none' | 'custom' =
+    voiceoverSilent || videoSettings.dialogueMode === 'none' ? 'none' : videoSettings.dialogueMode || 'auto';
+  const cameraMotion =
+    videoSettings.cameraMotion === '__custom__' ? videoSettings.cameraMotionCustom : videoSettings.cameraMotion;
+  const voiceKey = compactText(videoSettings.voiceCharacter);
+  const scriptKey = compactText(videoSettings.scriptStyle);
+  // mobile รู้สถานะรูปแนบจริง: รวม hasRefImage กับ characterMode (fromImage|none) เป็นค่าเดียว
+  const videoCharacterMode = hasRefImage && videoSettings.characterMode !== 'none' ? 'fromImage' : 'none';
+  const refMode = videoCharacterMode !== 'none';
+
+  // desktop parity (buildVideoPrompt): precedence ไม่มีเสียง > ไม่มีบทพูด > พูด
+  const speechMode: 'silent_voice' | 'no_dialogue' | 'speak' =
+    voiceKey === 'none' ? 'silent_voice' : effectiveDialogueMode === 'none' ? 'no_dialogue' : 'speak';
+
+  // speech block — บรรทัดเสียง/สไตล์บทพูด/บทพูด รวมเป็นก้อนเดียวส่งเข้า {{speech_block}}
+  const speechParts: string[] = [];
+  if (speechMode === 'silent_voice') {
+    speechParts.push('เสียง: ไม่มีเสียงพูด วิดีโอเงียบมีแค่เพลงประกอบ');
+  } else if (speechMode === 'no_dialogue') {
+    speechParts.push('บทพูด: ไม่มีบทพูด ห้ามมีเสียงพูดใดๆ ในวิดีโอ');
+  } else {
+    if (!voiceKey) {
+      speechParts.push(
+        refMode
+          ? catalogTemplateText(catalog, 'video_auto_voice_ref', VIDEO_AUTO_VOICE_REF_TEXT)
+          : catalogTemplateText(catalog, 'video_auto_voice_no_ref', VIDEO_AUTO_VOICE_NO_REF_TEXT)
+      );
+    } else if (voiceKey === '__custom__') {
+      const customVoice = compactText(videoSettings.voiceCharacterCustom);
+      if (customVoice) {
+        speechParts.push(`เสียงพากย์: ${customVoice}`);
+      }
+    } else {
+      const voicePrompt =
+        catalogOptionPrompt(catalog, 'video_voice', voiceKey) || VOICE_CHARACTER_FALLBACKS[voiceKey] || '';
+      if (voicePrompt) {
+        speechParts.push(`เสียงพากย์: ${voicePrompt}`);
+      }
+    }
+    const customTone = scriptKey === '__custom__' ? compactText(videoSettings.scriptStyleCustom) : '';
+    const presetTone =
+      scriptKey && scriptKey !== '__custom__'
+        ? catalogOptionPrompt(catalog, 'video_script_style', scriptKey) || SCRIPT_STYLE_FALLBACKS[scriptKey] || ''
+        : '';
+    speechParts.push(`สไตล์บทพูด: ${customTone || presetTone || SCRIPT_STYLE_FALLBACKS['']}`);
+    if (effectiveDialogueMode === 'auto') {
+      speechParts.push(catalogTemplateText(catalog, 'video_auto_dialogue', VIDEO_AUTO_DIALOGUE_TEXT));
+    } else if (effectiveDialogueMode === 'custom') {
+      const dialogue = resolveVideoDialogueForDesktopLikePrompt(videoSettings);
+      if (dialogue) {
+        speechParts.push(`บทพูด: ${dialogue}`);
+      }
+    }
+  }
+  const speechBlock = speechParts.join('; ');
+
+  // resolve สไตล์วิดีโอ + ตัดคำเกี่ยวกับการพูดออกถ้าไม่มีบทพูด (desktop parity)
+  let styleText: string;
+  if (styleKey === '__custom__') {
+    styleText = compactText(videoSettings.presetStyleCustom) || VIDEO_STYLE_FALLBACKS[''];
+  } else if (!styleKey || styleKey === 'auto') {
+    styleText = VIDEO_STYLE_FALLBACKS[''];
+  } else {
+    styleText = catalogOptionPrompt(catalog, 'video_style', styleKey) || VIDEO_STYLE_FALLBACKS[styleKey] || styleKey;
+  }
+  if (speechMode !== 'speak') {
+    styleText = styleText
+      .replace(/\s*พูดแนะนำสินค้าอย่างเป็นธรรมชาติ/g, '')
+      .replace(/\s*พูดรีวิว/g, '')
+      .replace(/\s*พูดเชียร์ขายของ[^,;]*/g, '')
+      .replace(/\s*พูดคุยกับกล้อง/g, '')
+      .replace(/\s*พูด[^\s,;]*/g, '');
+  }
+
+  const musicSfxLine =
+    videoSettings.musicSfxMode === 'none'
+      ? 'เสียงดนตรีและเอฟเฟค: ห้ามมีเสียงดนตรีหรือเสียงเอฟเฟคใดๆ ทั้งสิ้น'
+      : videoSettings.musicSfxMode === 'custom' && compactText(videoSettings.musicSfxCustom)
+        ? `เสียงดนตรีและเอฟเฟค: ${compactText(videoSettings.musicSfxCustom)}`
+        : '';
+
+  return buildPrompt(
+    'video',
+    {
+      ...createVideoBuildSettings(product, settings),
+      // ส่ง style ที่ resolve+scrub แล้วผ่านช่อง custom เพื่อให้ {{video_style}} เป็นข้อความสุดท้ายเสมอ
+      presetStyle: '__custom__',
+      presetStyleCustom: styleText,
+      cameraMotion,
+      dialogueMode: effectiveDialogueMode,
+      videoCharacterMode,
+      prohibitionMode: speechMode === 'speak' ? 'dialogue' : 'silent',
+      speechBlock,
+      musicSfxLine,
+      // v3 เลิกใช้ caption เป็นบทพูด fallback — ส่ง dialogue เฉพาะโหมด custom เท่านั้น
+      dialogue: effectiveDialogueMode === 'custom' ? resolveVideoDialogueForDesktopLikePrompt(videoSettings) : '',
+    },
+    createBuildProduct(product, hasRefImage),
+    catalog
+  ).trim();
+}
+
 export function buildGoogleFlowPromptBundle({
   catalog,
   enabledSteps,
@@ -622,32 +879,21 @@ export function buildGoogleFlowPromptBundle({
   product: AutoPilotProduct;
   settings: AutoPilotSettings;
 }): GoogleFlowRunnerPromptBundle {
-  const baseProduct = {
-    name: product.name,
-    description: product.description,
-    productUrl: product.productUrl,
-    imageUrl: product.preview ?? '',
-    caption: product.caption,
-    hashtags: product.hashtags,
-    cta: product.cta,
-  };
-
   const bundle: GoogleFlowRunnerPromptBundle = {};
   const needsImagePrompt = enabledSteps.includes('image') || (enabledSteps.includes('video') && isMultiSceneVideo(product));
   if (needsImagePrompt) {
     const imageSettings = product.settings.image;
+    const hasReference = Boolean(product.preview);
     const prompt =
       imageSettings.promptMode === 'custom'
         ? buildPrompt(
             'image',
             createImageBuildSettings(product, settings),
-            {
-              ...baseProduct,
-              hasReference: Boolean(product.preview),
-            },
+            createBuildProduct(product, hasReference),
             catalog
           ).trim()
-        : buildDesktopLikeImagePrompt(product, catalog).trim();
+        : buildCatalogImagePrompt(product, settings, catalog, hasReference) ||
+          buildDesktopLikeImagePrompt(product, catalog).trim();
     if (prompt) {
       bundle.image = imageSettings.promptMode === 'custom'
         ? appendImageReferenceInstructions(prompt, product.settings.image)
@@ -663,13 +909,11 @@ export function buildGoogleFlowPromptBundle({
         ? buildPrompt(
             'video',
             createVideoBuildSettings(product, settings),
-            {
-              ...baseProduct,
-              hasReference: hasRefImage,
-            },
+            createBuildProduct(product, hasRefImage),
             catalog
           ).trim()
-        : buildDesktopLikeVideoPrompt(product, catalog, hasRefImage).trim();
+        : buildCatalogVideoPrompt(product, settings, catalog, hasRefImage) ||
+          buildDesktopLikeVideoPrompt(product, catalog, hasRefImage).trim();
     if (prompt) {
       bundle.video = prompt;
     }
