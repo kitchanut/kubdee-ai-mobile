@@ -337,7 +337,16 @@ export function buildShowcaseScraperScript(): string {
         await waitFor(showcaseListReady, 10000, 300);
       }
       if (all.length === 0){
-        done(false, [], 'SCRAPE-DIAG ' + JSON.stringify(scrapeDiag()));
+        // dump โครงสร้างหน้าจอไปทาง log ไว้แก้ selector ตอน TikTok เปลี่ยน DOM — ห้ามโชว์เป็น error หน้า user
+        log('SCRAPE-DIAG ' + JSON.stringify(scrapeDiag()));
+        var emptyArea = document.querySelector('[role="dialog"]') || document.body;
+        var emptyText = ((emptyArea.textContent || '') + '').toLowerCase();
+        var looksEmpty = emptyText.indexOf('ไม่พบ') >= 0 || emptyText.indexOf('ไม่มีสินค้า') >= 0
+          || emptyText.indexOf('no products') >= 0 || emptyText.indexOf('no results') >= 0
+          || !!document.querySelector('[data-e2e*="empty"], [class*="product"][class*="empty"]');
+        done(false, [], looksEmpty
+          ? 'ไม่พบสินค้าใน Showcase ของบัญชีนี้ — ตรวจสอบว่าบัญชี TikTok มีสินค้าในหน้า "นำเสนอสินค้า" แล้วลองใหม่อีกครั้ง'
+          : 'ดึงรายการสินค้าไม่สำเร็จ หน้าจอ TikTok อาจมีการเปลี่ยนแปลง — กรุณาลองใหม่หรือแจ้งทีมงาน');
         return;
       }
       done(true, all, null);
