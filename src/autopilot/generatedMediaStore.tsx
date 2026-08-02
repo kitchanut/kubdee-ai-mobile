@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -6,6 +7,7 @@ import type { ReactNode } from 'react';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import { useLibrary } from '@/library/LibraryContext';
 import type { CreativeMediaAsset } from '@/library/CreativeLibraryContext';
+import { getCreativeMediaAssets } from '@/library/localCreativeLibraryDb';
 import { createGoogleFlowVideoThumbnail, listGoogleFlowAssets } from '@/native/AccessibilityBridge';
 
 export type GeneratedMediaKind = 'images' | 'videos';
@@ -126,6 +128,14 @@ function normalizeSource(value: string | null | undefined): GeneratedMediaSource
   return 'auto-pilot-google-flow';
 }
 
+function hashAssetIdInput(value: string): string {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) + hash + value.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
 function createAssetId(input: AddGeneratedMediaAssetInput): string {
   const stablePart = [
     input.kind,
@@ -137,7 +147,9 @@ function createAssetId(input: AddGeneratedMediaAssetInput): string {
   ]
     .filter(Boolean)
     .join(':');
-  return `generated-${stablePart.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 120)}`;
+  // ต้องต่อ hash ของสตริงเต็มเสมอ — ส่วน unique (fileUri/ชื่อไฟล์/เวลา) อยู่ท้ายสตริง การตัดความยาว
+  // อย่างเดียวทำให้คลิปสินค้าเดียวกัน id ชนกันแล้วทับกันใน SQLite (คลังเหลือคลิปเดียว)
+  return `generated-${stablePart.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 96)}-${hashAssetIdInput(stablePart)}`;
 }
 
 function normalizeAsset(input: AddGeneratedMediaAssetInput): GeneratedMediaAsset {
@@ -288,6 +300,61 @@ async function loadStoredAssets(): Promise<GeneratedMediaAsset[]> {
   return legacyAssets;
 }
 
+const ORPHAN_VIDEO_RECOVERY_KEY = 'kubdee_ai_mobile_orphan_video_recovery_v1';
+const RECOVERABLE_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
+
+interface OrphanVideoFile {
+  fileUri: string;
+  fileName: string;
+  sizeBytes: number | null;
+  createdAt: number;
+}
+
+/**
+ * หาไฟล์วิดีโอใน creative-media/videos/ ที่ไม่มีแถวอ้างถึงในคลัง SQLite —
+ * ส่วนใหญ่คือคลิปที่เคยโดนบั๊ก id ชนกันทับแถวกันใน DB (ไฟล์ยังอยู่ครบเพราะตั้งชื่อกันซ้ำ)
+ * เทียบด้วยชื่อไฟล์แทน URI เต็ม กัน false-orphan จากรูปแบบ URI ที่ต่างกัน
+ */
+async function findOrphanVideoFiles(): Promise<OrphanVideoFile[]> {
+  if (!FileSystem.documentDirectory) {
+    return [];
+  }
+  const directory = `${FileSystem.documentDirectory}creative-media/videos/`;
+  const names = await FileSystem.readDirectoryAsync(directory).catch(() => [] as string[]);
+  if (names.length === 0) {
+    return [];
+  }
+  const stored = await getCreativeMediaAssets('videos');
+  const referencedNames = new Set(
+    stored.map((asset) => (asset.fileUri || '').split('/').pop() || '').filter(Boolean)
+  );
+  const orphans: OrphanVideoFile[] = [];
+  for (const name of names) {
+    const lower = name.toLowerCase();
+    if (!RECOVERABLE_VIDEO_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+      continue;
+    }
+    if (referencedNames.has(name)) {
+      continue;
+    }
+    const fileUri = `${directory}${name}`;
+    const info = await FileSystem.getInfoAsync(fileUri).catch(() => null);
+    if (!info?.exists || info.isDirectory || typeof info.size !== 'number' || info.size <= 0) {
+      continue;
+    }
+    orphans.push({
+      fileUri,
+      fileName: name,
+      sizeBytes: info.size,
+      createdAt:
+        typeof info.modificationTime === 'number' && info.modificationTime > 0
+          ? Math.round(info.modificationTime * 1000)
+          : Date.now(),
+    });
+  }
+  return orphans;
+}
+
 export function GeneratedMediaProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const {
     addMediaAsset,
@@ -332,6 +399,65 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           source: storedAsset.source,
           createdAt: storedAsset.createdAt,
         });
+      }
+
+      // กู้ไฟล์วิดีโอที่มีบนดิสก์แต่ไม่มีแถวในคลัง (เหยื่อบั๊ก id ชนกัน) กลับเข้าคลัง — รันครั้งเดียวหลังอัปเดต
+      try {
+        const alreadyRecovered = await AsyncStorage.getItem(ORPHAN_VIDEO_RECOVERY_KEY);
+        if (alreadyRecovered || cancelled) {
+          return;
+        }
+        const orphans = await findOrphanVideoFiles();
+        for (const orphan of orphans) {
+          if (cancelled) {
+            return;
+          }
+          const thumbnailUri = await createGoogleFlowVideoThumbnail(orphan.fileUri).catch(() => null);
+          const recovered = normalizeAsset({
+            kind: 'videos',
+            runId: 'orphan-recovery',
+            profileLocalId: '',
+            productId: 'recovered',
+            productName: 'คลิปกู้คืน (ไม่พบข้อมูลสินค้า)',
+            productCode: 'recovered',
+            title: orphan.fileName.replace(/\.[^.]+$/, ''),
+            fileUri: orphan.fileUri,
+            fileName: orphan.fileName,
+            mimeType: 'video/mp4',
+            thumbnailUri,
+            sizeBytes: orphan.sizeBytes,
+            source: 'mobile-device-import',
+            createdAt: orphan.createdAt,
+          });
+          await addMediaAsset({
+            id: recovered.id,
+            kind: recovered.kind,
+            runId: recovered.runId,
+            profileLocalId: recovered.profileLocalId,
+            productId: recovered.productId,
+            productName: recovered.productName,
+            productCode: recovered.productCode,
+            productUrl: recovered.productUrl,
+            caption: recovered.caption,
+            hashtags: recovered.hashtags,
+            cta: recovered.cta,
+            platform: recovered.platform,
+            title: recovered.title,
+            fileUri: recovered.fileUri,
+            fileName: recovered.fileName,
+            mimeType: recovered.mimeType,
+            thumbnailUri: recovered.thumbnailUri,
+            sizeBytes: recovered.sizeBytes,
+            width: recovered.width,
+            height: recovered.height,
+            durationMs: recovered.durationMs,
+            source: recovered.source,
+            createdAt: recovered.createdAt,
+          });
+        }
+        await AsyncStorage.setItem(ORPHAN_VIDEO_RECOVERY_KEY, String(Date.now()));
+      } catch {
+        // สแกนไม่สำเร็จรอบนี้ — ไม่ set flag เพื่อให้ลองใหม่ตอนเปิดแอปครั้งถัดไป
       }
     });
 
@@ -565,7 +691,8 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       return assets.filter(
         (asset) =>
           asset.kind === kind &&
-          (!cleanProfileLocalId || asset.profileLocalId === cleanProfileLocalId)
+          // asset ที่ไม่รู้เจ้าของโปรไฟล์ (เช่น คลิปกู้คืน) ต้องเห็นได้จากทุกโปรไฟล์
+          (!cleanProfileLocalId || !asset.profileLocalId || asset.profileLocalId === cleanProfileLocalId)
       );
     },
     [assets]
