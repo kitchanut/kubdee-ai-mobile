@@ -44,6 +44,25 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.14',
+    date: '2026-08-02',
+    highlight: 'รับคลิปจาก Cloud Transfer แล้วโพสต์ Shopee ได้จริง — ลิงก์สินค้ามาครบ',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'คลิปที่รับจาก Cloud Transfer อ่านลิงก์สินค้า Shopee จากข้อมูลที่แนบมาโดยตรง — แก้อาการขึ้น "ไม่มีลิงก์สินค้า Shopee" ทั้งที่ฝั่งส่งผูกสินค้าไว้แล้ว รวมถึงคลิปที่ผูกทั้ง TikTok และ Shopee'
+      },
+      {
+        type: 'fixed',
+        text: 'คลิปที่รับจาก Cloud Transfer เข้าโปรไฟล์ที่เลือกไว้บนเครื่องนี้เสมอ — เดิมอาจไปเกาะโปรไฟล์ของเครื่องส่งจนคลิปไม่โผล่ในคิวโพสต์'
+      },
+      {
+        type: 'improved',
+        text: 'ส่งคลิปผ่าน Cloud Transfer ได้ครั้งละมากขึ้น — เพดานใหม่ 100 คลิปต่อ 10 นาที และค้างรอรับได้สูงสุด 300 รายการ'
+      }
+    ]
+  },
+  {
     version: '0.9.13',
     date: '2026-07-30',
     highlight: 'รองรับ Shopee เวอร์ชันใหม่ (โพสต์วิดีโอผ่านเมนู Live & Video) + งานออโต้ออกแนวเดียวกันทุกแพลตฟอร์ม',
