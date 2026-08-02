@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.15',
+    date: '2026-08-02',
+    highlight: 'ดึงสินค้า TikTok Showcase — แจ้งสาเหตุชัดเจนเมื่อไม่พบสินค้า',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'ดึงสินค้า TikTok Showcase แล้วไม่พบสินค้า — เดิมแสดงข้อความทางเทคนิคยาวอ่านไม่รู้เรื่อง ตอนนี้แจ้งชัดเจนว่าบัญชียังไม่มีสินค้าในหน้านำเสนอสินค้า หรือหน้าจอ TikTok มีการเปลี่ยนแปลงให้ลองใหม่อีกครั้ง'
+      }
+    ]
+  },
+  {
     version: '0.9.14',
     date: '2026-08-02',
     highlight: 'รับคลิปจาก Cloud Transfer แล้วโพสต์ Shopee ได้จริง — ลิงก์สินค้ามาครบ',
