@@ -22,7 +22,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     ...config.android,
     package: 'ai.kubdee.mobile',
-    versionCode: 175,
+    versionCode: 176,
     predictiveBackGestureEnabled: false,
     permissions: [
       'android.permission.INTERNET',
