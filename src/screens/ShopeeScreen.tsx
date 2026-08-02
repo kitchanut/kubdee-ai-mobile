@@ -749,7 +749,13 @@ function isGenericPostVideoLabel(value: string | null | undefined): boolean {
 
 function isPlaceholderProductCode(value: string | null | undefined): boolean {
   const code = value?.trim().toLowerCase();
-  return !code || code === 'unknown' || code === 'device-import' || code === 'mobile-device-import';
+  return (
+    !code ||
+    code === 'unknown' ||
+    code === 'device-import' ||
+    code === 'mobile-device-import' ||
+    code === 'cloud-transfer'
+  );
 }
 
 function getPostPayloadProductName(video: GeneratedMediaAsset): string | null {

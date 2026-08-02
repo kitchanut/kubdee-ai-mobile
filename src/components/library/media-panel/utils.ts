@@ -6,6 +6,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import type { GeneratedMediaAsset } from '@/autopilot/generatedMediaStore';
 import type { AffiliateProduct } from '@/library/types';
 import { createGoogleFlowVideoThumbnail, deleteGoogleFlowAssets } from '@/native/AccessibilityBridge';
+import { isShopeeShortLink } from '@/library/shopeeLinks';
 import {
   getCloudTransferText,
   type CloudTransferItem,
@@ -189,6 +190,44 @@ export function buildCloudUploadItem(asset: GeneratedMediaAsset): CloudTransferV
   };
 }
 
+type CloudBindingRecord = Record<string, unknown>;
+
+// field แบนบนสุดของ metadata อาจถูก flatten มาจาก binding ของแพลตฟอร์มอื่น (เช่น TikTok)
+// ทำให้ platform/productUrl ปนกันจนไม่ผ่านเงื่อนไขโพสต์ Shopee — เลือก binding ฝั่ง Shopee ตรงๆ ก่อนเสมอ
+function getPreferredShopeeBinding(transfer: CloudTransferItem): CloudBindingRecord | null {
+  const metadata = transfer.metadata && typeof transfer.metadata === 'object' ? transfer.metadata : null;
+  const bindings = metadata?.platformBindings;
+  if (!Array.isArray(bindings)) {
+    return null;
+  }
+  const records = bindings.filter(
+    (binding): binding is CloudBindingRecord =>
+      !!binding && typeof binding === 'object' && !Array.isArray(binding)
+  );
+  return (
+    records.find((binding) =>
+      isShopeeShortLink(typeof binding.productUrl === 'string' ? binding.productUrl : null)
+    ) ||
+    records.find(
+      (binding) =>
+        typeof binding.platform === 'string' && binding.platform.trim().toLowerCase() === 'shopee'
+    ) ||
+    null
+  );
+}
+
+function readBindingText(binding: CloudBindingRecord | null, ...keys: string[]): string {
+  if (!binding) {
+    return '';
+  }
+  for (const key of keys) {
+    const value = binding[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
 export function resolveCloudTransferProductFields(transfer: CloudTransferItem, fallbackProfileId: string): {
   caption: string | null;
   cta: string | null;
@@ -202,15 +241,31 @@ export function resolveCloudTransferProductFields(transfer: CloudTransferItem, f
   title: string;
 } {
   const title = getCloudTransferTitle(transfer);
-  const productName = getCloudTransferText(transfer, 'productName') || 'ไฟล์นำเข้า';
-  const productCode = getCloudTransferText(transfer, 'productId', 'productCode') || 'cloud-transfer';
-  const productDbId = getCloudTransferText(transfer, 'productDbId');
-  const productUrl = getCloudTransferText(transfer, 'productUrl') || null;
-  const platform = getCloudTransferText(transfer, 'platform') || null;
-  const caption = getCloudTransferText(transfer, 'caption') || null;
-  const hashtags = getCloudTransferText(transfer, 'hashtags', 'hashtag') || null;
-  const cta = getCloudTransferText(transfer, 'cta') || null;
-  const profileLocalId = getCloudTransferText(transfer, 'profileId') || fallbackProfileId;
+  const shopeeBinding = getPreferredShopeeBinding(transfer);
+  const productName =
+    readBindingText(shopeeBinding, 'productName') ||
+    getCloudTransferText(transfer, 'productName') ||
+    'ไฟล์นำเข้า';
+  const productCode =
+    readBindingText(shopeeBinding, 'productId', 'productCode') ||
+    getCloudTransferText(transfer, 'productId', 'productCode') ||
+    'cloud-transfer';
+  const productDbId =
+    readBindingText(shopeeBinding, 'productDbId') || getCloudTransferText(transfer, 'productDbId');
+  const productUrl =
+    readBindingText(shopeeBinding, 'productUrl') || getCloudTransferText(transfer, 'productUrl') || null;
+  const platform = (shopeeBinding ? 'shopee' : getCloudTransferText(transfer, 'platform')) || null;
+  const caption =
+    readBindingText(shopeeBinding, 'caption') || getCloudTransferText(transfer, 'caption') || null;
+  const hashtags =
+    readBindingText(shopeeBinding, 'hashtags', 'hashtag') ||
+    getCloudTransferText(transfer, 'hashtags', 'hashtag') ||
+    null;
+  const cta = readBindingText(shopeeBinding, 'cta') || getCloudTransferText(transfer, 'cta') || null;
+  // profileId ใน metadata เป็น id ฝั่งเครื่องส่ง (เช่น desktop) ซึ่งไม่ตรงกับ profile บนเครื่องนี้ —
+  // ถ้าใช้ตรงๆ คลิปจะไปเกาะ profile ที่ไม่มีอยู่แล้วไม่โผล่ในคิวโพสต์เลย
+  // ให้เกาะ profile ที่ผู้ใช้เลือกไว้ตอนกดรับเสมอ
+  const profileLocalId = fallbackProfileId || getCloudTransferText(transfer, 'profileId');
 
   return {
     caption,
