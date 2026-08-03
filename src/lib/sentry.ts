@@ -23,10 +23,19 @@ function sentryLevel(severity: 'error' | 'warning' | 'info'): Sentry.SeverityLev
 
 const sentryReporter: TelemetryReporter = {
   capture(event) {
-    // info = local diagnostics เท่านั้น ไม่ส่งขึ้น Sentry — ใช้กับเหตุการณ์ที่เป็นสภาพ
-    // แวดล้อมปกติ (เช่นเน็ตหลุดระหว่างใช้งาน — Sentry MOBILE-6) ยังดูได้จาก console
-    // และ getRecentTelemetry ตามเดิม
-    if (event.severity === 'info') return;
+    // info = local diagnostics เท่านั้น ไม่สร้าง Sentry event — ใช้กับเหตุการณ์ที่เป็นสภาพ
+    // แวดล้อมปกติ (เน็ตหลุดระหว่างใช้งาน — MOBILE-6; broadcast ผลโพสต์ Shopee หายแล้ว
+    // reconcile จาก disk สำเร็จ — MOBILE-S) ยังดูได้จาก console + getRecentTelemetry ตามเดิม
+    // และแนบเป็น breadcrumb ติดไปกับ event ถัดไป (ถ้ามี) เพื่อคงบริบทไว้โดยไม่กินโควตา event
+    if (event.severity === 'info') {
+      Sentry.addBreadcrumb({
+        category: 'telemetry',
+        level: 'info',
+        message: event.message,
+        data: event.context,
+      });
+      return;
+    }
     const extra = { message: event.message, ...event.context };
     if (event.severity === 'error' && event.error !== undefined && event.error !== null) {
       Sentry.captureException(event.error, { extra });

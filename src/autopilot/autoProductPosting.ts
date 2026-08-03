@@ -14,7 +14,7 @@ import type { AutoPilotLogLevel, AutoPilotSettings, GoogleFlowRunnerLogEntry, Go
 import { limitShopeePostTextParts } from '@/autopilot/shopeePostTextLimit';
 import { postTikTokVideoViaHost } from '@/autopilot/tiktokAutoPost';
 import { isShopeeShortLink } from '@/library/shopeeLinks';
-import { reportWarning } from '@/lib/telemetry';
+import { reportInfo, reportWarning } from '@/lib/telemetry';
 import { getTikTokPostSettings } from '@/tiktok/tiktokPostSettingsStore';
 import { AppState } from 'react-native';
 
@@ -69,6 +69,10 @@ export class ShopeePostTimeoutError extends Error {}
 // (โพสต์ทีละคลิปตามลำดับ) เข้าเงื่อนไขนี้
 const SHOPEE_POST_RESULT_POLL_MS = 5_000;
 
+// นับจำนวนครั้งที่กู้ผลจาก disk ต่อ session — แนบใน context ของ local diagnostics/breadcrumb
+// เพื่อยังเห็นความถี่ได้โดยไม่ต้องสร้าง Sentry event
+let diskReconcileCount = 0;
+
 export function awaitShopeePostResult(
   broadcastPromise: Promise<NativeShopeePostingResult>,
   startedAt: number,
@@ -99,8 +103,15 @@ export function awaitShopeePostResult(
         if (record) {
           const parsed = JSON.parse(record.resultJson) as NativeShopeePostingResult;
           settle(() => {
-            reportWarning('postProductToShopee: reconciled result from disk (broadcast missed)', {
+            // safety net ทำงานตามออกแบบ: แอปหลักโดน freeze/kill ระหว่าง Shopee อยู่หน้า
+            // foreground ทำให้ broadcast หาย แต่กู้ผลจาก disk สำเร็จ — เกิดบ่อยจนเป็น path
+            // ปกติ (Sentry MOBILE-S: 745 events / 69 users) จึงลดเป็น info = local
+            // diagnostics + Sentry breadcrumb ไม่สร้าง event (แพทเทิร์นเดียวกับ MOBILE-6)
+            diskReconcileCount += 1;
+            reportInfo('postProductToShopee: reconciled result from disk (broadcast missed)', {
               runId: record.runId,
+              reconcileCount: diskReconcileCount,
+              waitedMs: Date.now() - startedAt,
             });
             void clearPendingShopeePostResults().catch(() => {});
             resolve(parsed);
