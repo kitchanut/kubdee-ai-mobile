@@ -8,7 +8,7 @@ import {
   ScrollView,
   View,
 } from 'react-native';
-import { CloudDownload, Download, Globe, LogIn, Play, RefreshCw, X } from 'lucide-react-native';
+import { CloudDownload, Download, Globe, LogIn, Play, RefreshCw, Video, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 
@@ -40,6 +40,7 @@ import {
 import {
   LocalVideoPlaceholder,
   LocalVideoPlayer,
+  accentClasses,
   cleanText,
   formatAssetDate,
   resolveMediaPlatform,
@@ -101,19 +102,24 @@ function getClipRunId(clip: WebAutoClip): string {
 export default function WebJobsPanel({
   theme,
   selectedProfileId,
+  modeSwitch,
   onSendVideosToShopee,
   onSendVideosToTikTok,
 }: {
   theme: KubdeeTheme;
   selectedProfileId: string;
+  /** สวิตช์โหมดย่อย (สินค้า/ทั่วไป/จากเว็บ) จาก MediaPanel — วางในแถวค้นหาให้โครงเหมือนโหมดอื่น */
+  modeSwitch?: React.ReactNode;
   onSendVideosToShopee?: (videoIds: string[]) => void;
   onSendVideosToTikTok?: (videoIds: string[]) => void;
 }): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { token } = useAuth();
   const { addGeneratedMediaAsset, assets, refreshGeneratedMediaAssets } = useGeneratedMedia();
-  const accentColor = theme.blue;
+  // accent เดียวกับคลังวิดีโอ (MediaPanel kind='videos') เพื่อให้ 3 โหมดหน้าตาเป็นชุดเดียวกัน
+  const accentColor = theme.red;
   const accent = getAccentTone(theme, accentColor);
+  const accentClass = accentClasses.videos;
 
   const [clips, setClips] = useState<WebAutoClip[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -409,12 +415,22 @@ export default function WebJobsPanel({
         <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
           <LibraryPanelHeader
             theme={theme}
-            title="คลิปจากเว็บ"
+            title="คลังวิดีโอ"
             count={0}
             total={0}
-            icon={Globe}
+            icon={Video}
             tone={accent}
           />
+          {/* คงแถวค้นหา + สวิตช์โหมดไว้ เพื่อให้สลับกลับคลังในเครื่องได้แม้ยังไม่ล็อกอิน */}
+          <View className="flex-row items-center gap-1.5">
+            <SearchBox
+              theme={theme}
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="ค้นหาชื่อ/สินค้า/รหัสงาน..."
+            />
+            {modeSwitch}
+          </View>
           <EmptyState
             theme={theme}
             icon={LogIn}
@@ -442,27 +458,36 @@ export default function WebJobsPanel({
       >
         <LibraryPanelHeader
           theme={theme}
-          title="คลิปจากเว็บ"
+          title="คลังวิดีโอ"
           count={visibleClips.length}
           total={clips.length}
-          icon={Globe}
+          icon={Video}
           tone={accent}
           actions={
-            <HeaderIconButton
-              theme={theme}
-              icon={RefreshCw}
-              label={isLoading || isRefreshing ? 'กำลังโหลดคลิปจากเว็บ' : 'รีเฟรชคลิปจากเว็บ'}
-              onPress={() => void loadClips('refresh')}
-            />
+            isLoading || isRefreshing ? (
+              <View className="h-7 w-7 items-center justify-center">
+                <ActivityIndicator color={accent.color} size="small" />
+              </View>
+            ) : (
+              <HeaderIconButton
+                theme={theme}
+                icon={RefreshCw}
+                label="รีเฟรชคลิปจากเว็บ"
+                onPress={() => void loadClips('refresh')}
+              />
+            )
           }
         />
 
-        <SearchBox
-          theme={theme}
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder="ค้นหาชื่อ/สินค้า/รหัสงาน..."
-        />
+        <View className="flex-row items-center gap-1.5">
+          <SearchBox
+            theme={theme}
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="ค้นหาชื่อ/สินค้า/รหัสงาน..."
+          />
+          {modeSwitch}
+        </View>
 
         {isLoading ? (
           <View className="gap-2 py-2">
@@ -606,14 +631,14 @@ export default function WebJobsPanel({
         <View className="flex-1 items-center justify-center bg-black/45 px-6">
           <View className="w-full max-w-[340px] overflow-hidden rounded-[18px] border border-kd-border bg-kd-panel">
             <View className="flex-row items-center gap-3 border-b border-kd-border px-4 py-3">
-              <View className="h-10 w-10 items-center justify-center rounded-kd-lg bg-kd-blue/10 dark:bg-kd-blue/15">
+              <View className={`h-10 w-10 items-center justify-center rounded-kd-lg ${accentClass.soft}`}>
                 <CloudDownload size={18} color={accentColor} strokeWidth={2.2} />
               </View>
               <View className="min-w-0 flex-1">
                 <Text className="text-kd-body font-semibold text-kd-text">กำลังรับคลิปจากเว็บ</Text>
                 <View className="mt-1 flex-row items-center gap-1.5">
-                  <View className="rounded-full bg-kd-blue/10 px-2 py-0.5 dark:bg-kd-blue/15">
-                    <Text className="text-kd-micro font-semibold text-kd-blue">
+                  <View className={`rounded-full px-2 py-0.5 ${accentClass.soft}`}>
+                    <Text className="text-kd-micro font-semibold text-kd-red">
                       {downloadStatus ? formatWebDownloadPhase(downloadStatus.phase) : ''}
                     </Text>
                   </View>
@@ -634,7 +659,7 @@ export default function WebJobsPanel({
               ) : null}
               <View className="h-2 overflow-hidden rounded-full bg-kd-card-muted">
                 <View
-                  className="h-full rounded-full bg-kd-blue"
+                  className="h-full rounded-full bg-kd-red"
                   style={{ width: `${Math.round(progressValue * 100)}%` }}
                 />
               </View>
@@ -742,7 +767,7 @@ function WebClipRow({
       accessibilityState={{ checked: selected }}
       onPress={onToggleSelect}
       className={`rounded-kd-lg border p-2.5 active:opacity-80 ${
-        selected ? 'bg-kd-blue/10 dark:bg-kd-blue/15' : 'border-kd-border bg-kd-card'
+        selected ? accentClasses.videos.soft : 'border-kd-border bg-kd-card'
       }`}
       style={selected ? { borderColor: accentColor } : undefined}
     >

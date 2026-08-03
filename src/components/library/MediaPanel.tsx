@@ -1067,18 +1067,16 @@ export default function MediaPanel({
   );
 
   // โหมด "จากเว็บ" (เฉพาะวิดีโอ): สลับ body ทั้งแผงเป็น WebJobsPanel ซึ่งมี ScrollView ของตัวเอง
-  // (ห้ามซ้อนใน ScrollView ของแผงนี้) — คงสวิตช์โหมดไว้แถวบนเพื่อกดกลับคลังในเครื่องได้
+  // (ห้ามซ้อนใน ScrollView ของแผงนี้) — ส่ง modeSwitch เข้าไปวางในแถวค้นหาให้โครงเหมือนโหมดอื่น
   if (kind === 'videos' && mediaMode === 'web') {
     return (
-      <View className="flex-1">
-        <View className="flex-row items-center justify-end px-3 pt-3">{modeSwitch}</View>
-        <WebJobsPanel
-          selectedProfileId={selectedProfileId}
-          theme={theme}
-          onSendVideosToShopee={onSendVideosToShopee}
-          onSendVideosToTikTok={onSendVideosToTikTok}
-        />
-      </View>
+      <WebJobsPanel
+        selectedProfileId={selectedProfileId}
+        theme={theme}
+        modeSwitch={modeSwitch}
+        onSendVideosToShopee={onSendVideosToShopee}
+        onSendVideosToTikTok={onSendVideosToTikTok}
+      />
     );
   }
 
