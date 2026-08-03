@@ -15,7 +15,8 @@ export type GeneratedMediaSource =
   | 'auto-pilot-google-flow'
   | 'cloud-transfer'
   | 'mobile-device-import'
-  | 'mobile-local-upload';
+  | 'mobile-local-upload'
+  | 'web-auto';
 
 export interface GeneratedMediaAsset {
   id: string;
@@ -122,7 +123,12 @@ function cleanText(value: string | null | undefined): string {
 
 function normalizeSource(value: string | null | undefined): GeneratedMediaSource {
   const cleanValue = cleanText(value);
-  if (cleanValue === 'cloud-transfer' || cleanValue === 'mobile-device-import' || cleanValue === 'mobile-local-upload') {
+  if (
+    cleanValue === 'cloud-transfer' ||
+    cleanValue === 'mobile-device-import' ||
+    cleanValue === 'mobile-local-upload' ||
+    cleanValue === 'web-auto'
+  ) {
     return cleanValue;
   }
   return 'auto-pilot-google-flow';

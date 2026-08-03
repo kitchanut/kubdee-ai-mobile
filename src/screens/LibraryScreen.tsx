@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
+  Globe,
   Image as ImageIcon,
   Presentation,
   ShoppingBag,
@@ -13,6 +14,7 @@ import Text from '@/components/ui/KubdeeText';
 import MediaPanel from '@/components/library/MediaPanel';
 import ProductPanel from '@/components/library/ProductPanel';
 import SimpleListPanel from '@/components/library/SimpleListPanel';
+import WebJobsPanel from '@/components/library/WebJobsPanel';
 import type { KubdeeTheme } from '@/theme/tokens';
 import type { SocialService } from '@/types/navigation';
 
@@ -22,7 +24,7 @@ type IconProps = {
   strokeWidth?: number;
 };
 
-type LibraryTabId = 'products' | 'images' | 'videos' | 'characters' | 'scenes';
+type LibraryTabId = 'products' | 'images' | 'videos' | 'characters' | 'scenes' | 'web';
 type LibraryTabRequest = { tab: LibraryTabId; requestId: number };
 
 interface LibraryScreenProps {
@@ -50,6 +52,7 @@ const libraryTabs: {
   { id: 'videos', label: 'วิดีโอ', icon: Video },
   { id: 'characters', label: 'ตัวละคร', icon: User },
   { id: 'scenes', label: 'ฉาก', icon: Presentation },
+  { id: 'web', label: 'จากเว็บ', icon: Globe },
 ];
 
 export default function LibraryScreen({
@@ -110,6 +113,14 @@ export default function LibraryScreen({
       ) : null}
       {activeTab === 'scenes' ? (
         <SimpleListPanel theme={theme} kind="scenes" selectedProfileId={selectedProfileId} />
+      ) : null}
+      {activeTab === 'web' ? (
+        <WebJobsPanel
+          selectedProfileId={selectedProfileId}
+          theme={theme}
+          onSendVideosToShopee={onSendVideosToShopee}
+          onSendVideosToTikTok={onSendVideosToTikTok}
+        />
       ) : null}
     </View>
   );
