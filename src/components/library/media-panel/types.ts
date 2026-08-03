@@ -3,7 +3,8 @@ import type * as ImagePicker from 'expo-image-picker';
 
 export type MediaKind = 'images' | 'videos';
 
-export type MediaMode = 'product' | 'general';
+/** โหมดย่อยของแผงคลัง — 'web' (คลิปจากเว็บ /auto) มีเฉพาะคลังวิดีโอ เหมือน videoModeTabs ของ extension */
+export type MediaMode = 'product' | 'general' | 'web';
 
 /** Source marketplace a media asset was generated for. */
 export type MediaPlatform = 'shopee' | 'tiktok';

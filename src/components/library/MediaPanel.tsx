@@ -6,6 +6,7 @@ import {
   ChevronsDown,
   ChevronsUp,
   CloudDownload,
+  Globe,
   Grid2X2,
   Image as ImageIcon,
   Package,
@@ -40,6 +41,7 @@ import { alpha } from '@/theme/tokens';
 import type { KubdeeTheme } from '@/theme/tokens';
 import type { SocialService } from '@/types/navigation';
 
+import WebJobsPanel from './WebJobsPanel';
 import {
   CardBackdrop,
   EmptyHint,
@@ -130,6 +132,8 @@ export default function MediaPanel({
   const modeTabs: { key: MediaMode; icon: IconComponent; label: string }[] = [
     { key: 'product', icon: Package, label: copy.productTab },
     { key: 'general', icon: HeaderIcon, label: copy.generalTab },
+    // แท็บ "จากเว็บ" มีเฉพาะคลังวิดีโอ — ตาม videoModeTabs ของ extension (สินค้า/ทั่วไป/จากเว็บ)
+    ...(kind === 'videos' ? [{ key: 'web' as const, icon: Globe as IconComponent, label: 'จากเว็บ' }] : []),
   ];
 
   const [mediaMode, setMediaMode] = useState<MediaMode>('product');
@@ -1035,6 +1039,49 @@ export default function MediaPanel({
     }
   };
 
+  // สวิตช์โหมดย่อย (สินค้า/ทั่วไป/จากเว็บ) — ใช้ตัวเดียวกันทั้ง layout ปกติและตอนสลับไปหน้า "จากเว็บ"
+  const modeSwitch = (
+    <View className="h-8 shrink-0 flex-row items-center gap-0.5 rounded-kd-md border border-kd-border bg-kd-input px-0.5">
+      {modeTabs.map(({ key, icon: TabIcon, label }) => {
+        const isActive = mediaMode === key;
+
+        return (
+          <Pressable
+            accessibilityLabel={label}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
+            key={key}
+            onPress={() => {
+              setMediaMode(key);
+              setSelectedIds(new Set());
+            }}
+            className={`h-[26px] w-[30px] items-center justify-center rounded-kd-sm ${
+              isActive ? accentClass.soft : ''
+            }`}
+          >
+            <TabIcon size={13} color={isActive ? accentColor : theme.textSubtle} strokeWidth={2} />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
+  // โหมด "จากเว็บ" (เฉพาะวิดีโอ): สลับ body ทั้งแผงเป็น WebJobsPanel ซึ่งมี ScrollView ของตัวเอง
+  // (ห้ามซ้อนใน ScrollView ของแผงนี้) — คงสวิตช์โหมดไว้แถวบนเพื่อกดกลับคลังในเครื่องได้
+  if (kind === 'videos' && mediaMode === 'web') {
+    return (
+      <View className="flex-1">
+        <View className="flex-row items-center justify-end px-3 pt-3">{modeSwitch}</View>
+        <WebJobsPanel
+          selectedProfileId={selectedProfileId}
+          theme={theme}
+          onSendVideosToShopee={onSendVideosToShopee}
+          onSendVideosToTikTok={onSendVideosToTikTok}
+        />
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1">
       <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
@@ -1079,29 +1126,7 @@ export default function MediaPanel({
               onChange={setSearchQuery}
               placeholder="ค้นหาชื่อ/รหัสสินค้า..."
             />
-            <View className="h-8 shrink-0 flex-row items-center gap-0.5 rounded-kd-md border border-kd-border bg-kd-input px-0.5">
-              {modeTabs.map(({ key, icon: TabIcon, label }) => {
-                const isActive = mediaMode === key;
-
-                return (
-                  <Pressable
-                    accessibilityLabel={label}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: isActive }}
-                    key={key}
-                    onPress={() => {
-                      setMediaMode(key);
-                      setSelectedIds(new Set());
-                    }}
-                    className={`h-[26px] w-[30px] items-center justify-center rounded-kd-sm ${
-                      isActive ? accentClass.soft : ''
-                    }`}
-                  >
-                    <TabIcon size={13} color={isActive ? accentColor : theme.textSubtle} strokeWidth={2} />
-                  </Pressable>
-                );
-              })}
-            </View>
+            {modeSwitch}
             <Pressable
               accessibilityLabel={groupByProduct ? 'ยกเลิกจัดกลุ่ม' : 'จัดกลุ่มตามสินค้า'}
               accessibilityRole="button"
