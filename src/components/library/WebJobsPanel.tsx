@@ -8,7 +8,18 @@ import {
   ScrollView,
   View,
 } from 'react-native';
-import { CloudDownload, Download, Globe, LogIn, Play, RefreshCw, Video, X } from 'lucide-react-native';
+import {
+  CloudDownload,
+  Download,
+  Eye,
+  EyeOff,
+  Globe,
+  LogIn,
+  Play,
+  RefreshCw,
+  Video,
+  X,
+} from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 
@@ -23,7 +34,9 @@ import {
   downloadWebAutoClip,
   isWebClipLinkStale,
   listWebAutoClips,
+  probeWebClipsLiveness,
   type WebAutoClip,
+  type WebClipLiveness,
 } from '@/services/autoJobsService';
 import { SHOPEE_ORANGE } from '@/theme/brandColors';
 import type { KubdeeTheme } from '@/theme/tokens';
@@ -130,7 +143,12 @@ export default function WebJobsPanel({
   const [previewClip, setPreviewClip] = useState<WebAutoClip | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<WebDownloadStatus | null>(null);
   const [downloadWorking, setDownloadWorking] = useState(false);
+  // ผล probe ลิงก์จริงต่อ jobId — ไม่มี entry = ยัง probe ไม่เสร็จ (แสดงตาม heuristic ไปก่อน)
+  const [liveness, setLiveness] = useState<Map<string, WebClipLiveness>>(new Map());
+  const [showDeadClips, setShowDeadClips] = useState(false);
   const hasLoadedRef = useRef(false);
+  // กันผล probe ของรอบโหลดเก่ามาทับรอบใหม่ (ผู้ใช้ refresh กลางคัน)
+  const probeRunRef = useRef(0);
 
   // ดัชนีคลิปเว็บที่ถูกเก็บเข้าคลังแล้ว (dedup ด้วย runId = web-auto-<jobId> ของวิดีโอในคลัง)
   const assetByRunId = useMemo(() => {
@@ -159,6 +177,36 @@ export default function WebJobsPanel({
       const nextClips = await listWebAutoClips({ limit: 100 });
       setClips(nextClips);
       setSelectedIds(new Set());
+      setShowDeadClips(false);
+      setLiveness(new Map());
+
+      // probe ลิงก์จริงเบื้องหลัง — ไม่บล็อกการแสดงรายการ อัปเดตทีละคลิปเมื่อรู้ผล
+      const probeRun = probeRunRef.current + 1;
+      probeRunRef.current = probeRun;
+      void probeWebClipsLiveness(nextClips, (jobId, result) => {
+        if (probeRunRef.current !== probeRun) {
+          return;
+        }
+        setLiveness((current) => {
+          const next = new Map(current);
+          next.set(jobId, result);
+          return next;
+        });
+        // probe เพิ่งรู้ว่าคลิปที่เลือกไว้ตาย → เอาออกจาก selection ทันที
+        if (result === 'dead') {
+          const deadClip = nextClips.find((clip) => clip.jobId === jobId);
+          if (deadClip) {
+            setSelectedIds((current) => {
+              if (!current.has(deadClip.id)) {
+                return current;
+              }
+              const next = new Set(current);
+              next.delete(deadClip.id);
+              return next;
+            });
+          }
+        }
+      });
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'โหลดคลิปจากเว็บไม่สำเร็จ');
     } finally {
@@ -189,11 +237,21 @@ export default function WebJobsPanel({
     );
   }, [clips, searchQuery]);
 
-  const selectedClips = useMemo(
-    () => clips.filter((clip) => selectedIds.has(clip.id)),
-    [clips, selectedIds]
+  // แยกคลิปเป็น/ตายตามผล probe จริง — ยังไม่รู้ผล (pending) ถือว่าเป็นอยู่ไปก่อน
+  const aliveClips = useMemo(
+    () => visibleClips.filter((clip) => liveness.get(clip.jobId) !== 'dead'),
+    [liveness, visibleClips]
   );
-  const allSelected = visibleClips.length > 0 && visibleClips.every((clip) => selectedIds.has(clip.id));
+  const deadClips = useMemo(
+    () => visibleClips.filter((clip) => liveness.get(clip.jobId) === 'dead'),
+    [liveness, visibleClips]
+  );
+
+  const selectedClips = useMemo(
+    () => clips.filter((clip) => selectedIds.has(clip.id) && liveness.get(clip.jobId) !== 'dead'),
+    [clips, liveness, selectedIds]
+  );
+  const allSelected = aliveClips.length > 0 && aliveClips.every((clip) => selectedIds.has(clip.id));
 
   const toggleSelect = (id: string): void => {
     setSelectedIds((current) => {
@@ -207,7 +265,7 @@ export default function WebJobsPanel({
   const toggleAll = (): void => {
     setSelectedIds(() => {
       if (allSelected) return new Set();
-      return new Set(visibleClips.map((clip) => clip.id));
+      return new Set(aliveClips.map((clip) => clip.id));
     });
   };
 
@@ -459,7 +517,7 @@ export default function WebJobsPanel({
         <LibraryPanelHeader
           theme={theme}
           title="คลังวิดีโอ"
-          count={visibleClips.length}
+          count={aliveClips.length}
           total={clips.length}
           icon={Video}
           tone={accent}
@@ -535,7 +593,7 @@ export default function WebJobsPanel({
               >
                 <SelectCircle theme={theme} selected={allSelected} accent={accentColor} size={15} />
                 <Text className="text-kd-caption text-kd-text-subtle">
-                  ทั้งหมด ({visibleClips.length})
+                  ทั้งหมด ({aliveClips.length})
                 </Text>
               </Pressable>
               {selectedIds.size > 0 ? (
@@ -543,12 +601,13 @@ export default function WebJobsPanel({
               ) : null}
             </View>
 
-            {visibleClips.map((clip) => (
+            {aliveClips.map((clip) => (
               <WebClipRow
                 key={clip.id}
                 theme={theme}
                 accentColor={accentColor}
                 clip={clip}
+                liveness={liveness.get(clip.jobId)}
                 selected={selectedIds.has(clip.id)}
                 inLibrary={!!getLibraryAsset(clip)}
                 onToggleSelect={() => toggleSelect(clip.id)}
@@ -562,6 +621,45 @@ export default function WebJobsPanel({
                 <Text className="text-kd-caption text-kd-text-subtle">ไม่พบคลิปที่ค้นหา</Text>
               </View>
             ) : null}
+
+            {/* คลิปที่ probe แล้วพบว่าลิงก์ตาย — ซ่อนไว้ก่อน แตะเพื่อกางดู */}
+            {deadClips.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showDeadClips }}
+                onPress={() => setShowDeadClips((current) => !current)}
+                className="flex-row items-center justify-center gap-1.5 rounded-kd-lg border border-dashed border-kd-border bg-kd-card px-3 py-2.5 active:opacity-70"
+              >
+                {showDeadClips ? (
+                  <Eye size={12} color={theme.textSubtle} strokeWidth={2.2} />
+                ) : (
+                  <EyeOff size={12} color={theme.textSubtle} strokeWidth={2.2} />
+                )}
+                <Text className="text-kd-micro text-kd-text-subtle">
+                  ซ่อนคลิปที่ใช้ไม่ได้แล้ว {deadClips.length} รายการ ·{' '}
+                  <Text className="text-kd-micro font-semibold text-kd-text-muted">
+                    {showDeadClips ? 'แตะเพื่อซ่อน' : 'แตะเพื่อแสดง'}
+                  </Text>
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {showDeadClips
+              ? deadClips.map((clip) => (
+                  <WebClipRow
+                    key={clip.id}
+                    theme={theme}
+                    accentColor={accentColor}
+                    clip={clip}
+                    liveness="dead"
+                    selected={false}
+                    inLibrary={!!getLibraryAsset(clip)}
+                    onToggleSelect={() => undefined}
+                    onPlay={() => setPreviewClip(clip)}
+                    onSave={() => void saveClipToLibrary(clip)}
+                  />
+                ))
+              : null}
           </>
         )}
       </ScrollView>
@@ -733,11 +831,17 @@ export default function WebJobsPanel({
   );
 }
 
-/** แถวคลิปจากเว็บ — โครงเดียวกับ VideoRow (checkbox + thumbnail + ชื่อ/เมทา + ปุ่มแอ็กชัน) */
+/**
+ * แถวคลิปจากเว็บ — โครงเดียวกับ VideoRow (checkbox + thumbnail + ชื่อ/เมทา + ปุ่มแอ็กชัน)
+ * liveness: undefined = ยัง probe ไม่เสร็จ (แสดง badge ตาม heuristic เดิม),
+ * 'alive' = probe ยืนยันว่าใช้ได้ (ตัด badge "ลิงก์อาจหมดอายุ" ทิ้ง),
+ * 'dead' = ลิงก์ตายจริง — จางทั้งแถว เลือกไม่ได้ เก็บเข้าคลังไม่ได้ เหลือแค่กดเล่น
+ */
 function WebClipRow({
   theme,
   accentColor,
   clip,
+  liveness,
   selected,
   inLibrary,
   onToggleSelect,
@@ -747,6 +851,7 @@ function WebClipRow({
   theme: KubdeeTheme;
   accentColor: string;
   clip: WebAutoClip;
+  liveness: WebClipLiveness | undefined;
   selected: boolean;
   inLibrary: boolean;
   onToggleSelect: () => void;
@@ -754,27 +859,36 @@ function WebClipRow({
   onSave: () => void;
 }): React.JSX.Element {
   const platform = resolveMediaPlatform(clip.platform, clip.productUrl);
+  const isDead = liveness === 'dead';
   const isExternal = clip.urlKind === 'external';
-  const isStale = isWebClipLinkStale(clip);
+  // heuristic อายุลิงก์เป็นแค่คำใบ้ระหว่างรอ probe — ผล probe จริงชนะเสมอ
+  const isStale = liveness === undefined && isWebClipLinkStale(clip);
   const dateLabel = clip.createdAtMs ? formatAssetDate(clip.createdAtMs) : '-';
   const productCode = cleanText(clip.productId);
   const profileName = cleanText(clip.profileName);
 
   return (
     <Pressable
-      accessibilityLabel="เลือกคลิปจากเว็บ"
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected }}
+      accessibilityLabel={isDead ? 'คลิปจากเว็บที่ใช้ไม่ได้แล้ว' : 'เลือกคลิปจากเว็บ'}
+      accessibilityRole={isDead ? 'none' : 'checkbox'}
+      accessibilityState={isDead ? { disabled: true } : { checked: selected }}
+      disabled={isDead}
       onPress={onToggleSelect}
       className={`rounded-kd-lg border p-2.5 active:opacity-80 ${
-        selected ? accentClasses.videos.soft : 'border-kd-border bg-kd-card'
+        isDead
+          ? 'border-kd-border bg-kd-card-muted opacity-60'
+          : selected
+            ? accentClasses.videos.soft
+            : 'border-kd-border bg-kd-card'
       }`}
-      style={selected ? { borderColor: accentColor } : undefined}
+      style={selected && !isDead ? { borderColor: accentColor } : undefined}
     >
       <View className="flex-row items-start gap-2.5">
-        <View className="mt-0.5">
-          <SelectCircle theme={theme} selected={selected} accent={accentColor} size={16} />
-        </View>
+        {isDead ? null : (
+          <View className="mt-0.5">
+            <SelectCircle theme={theme} selected={selected} accent={accentColor} size={16} />
+          </View>
+        )}
 
         <Pressable
           accessibilityLabel="เล่นวิดีโอ"
@@ -828,7 +942,11 @@ function WebClipRow({
                   <Text className="text-[8px] font-bold text-kd-emerald">อยู่ในคลังแล้ว</Text>
                 </View>
               ) : null}
-              {isStale ? (
+              {isDead ? (
+                <View className="rounded-full border border-kd-border-strong bg-kd-card px-1.5 py-0.5">
+                  <Text className="text-[8px] font-bold text-kd-text-subtle">ใช้ไม่ได้แล้ว</Text>
+                </View>
+              ) : isStale ? (
                 <View className="rounded-full border border-kd-amber bg-kd-amber/10 px-1.5 py-0.5">
                   <Text className="text-[8px] font-bold text-kd-amber">ลิงก์อาจหมดอายุ</Text>
                 </View>
@@ -840,13 +958,15 @@ function WebClipRow({
             </View>
             <View className="shrink-0 flex-row items-center gap-0.5">
               <RowIconButton theme={theme} icon={Play} label="เล่น" onPress={onPlay} />
-              <RowIconButton
-                theme={theme}
-                icon={Download}
-                label={inLibrary ? 'อยู่ในคลังแล้ว' : 'เก็บเข้าคลัง'}
-                color={inLibrary ? theme.emerald : undefined}
-                onPress={onSave}
-              />
+              {isDead ? null : (
+                <RowIconButton
+                  theme={theme}
+                  icon={Download}
+                  label={inLibrary ? 'อยู่ในคลังแล้ว' : 'เก็บเข้าคลัง'}
+                  color={inLibrary ? theme.emerald : undefined}
+                  onPress={onSave}
+                />
+              )}
             </View>
           </View>
         </View>

@@ -245,6 +245,82 @@ export function isWebClipLinkStale(clip: WebAutoClip, maxAgeMs = WEB_CLIP_STALE_
   return Date.now() - clip.createdAtMs > maxAgeMs;
 }
 
+export type WebClipLiveness = 'alive' | 'dead';
+
+const PROBE_DEFAULT_TIMEOUT_MS = 8000;
+const PROBE_DEFAULT_CONCURRENCY = 4;
+
+/**
+ * เช็คว่าลิงก์คลิปยังใช้ได้จริงด้วย ranged GET (ขอแค่ 1KB แรก)
+ * - ห้ามใช้ HEAD เพราะ signed URL (GCS/idrivee2) ตอบ 403 กับ HEAD
+ * - ห้ามส่ง auth headers เพราะจะทำ signed URL พัง (เหตุผลเดียวกับ downloadWebAutoClip)
+ * - ลิงก์ตาย = 403 (signature หมดอายุ) หรือ 404 (ไฟล์ถูกลบฝั่งเซิร์ฟเวอร์)
+ * - network error/timeout → ถือว่า 'alive' (fail-open): คลิปเสียที่เผลอโชว์กดแล้วพังแบบมี
+ *   error handling รองรับอยู่แล้ว แต่คลิปดีที่โดนซ่อนเพราะเน็ตสะดุดคือหายไปเลย — แย่กว่า
+ */
+export async function probeWebClipUrl(
+  url: string,
+  options: { timeoutMs?: number } = {}
+): Promise<WebClipLiveness> {
+  const timeoutMs =
+    typeof options.timeoutMs === 'number' && options.timeoutMs > 0
+      ? options.timeoutMs
+      : PROBE_DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: { Range: 'bytes=0-1023' },
+      signal: controller.signal,
+    });
+    const alive = response.ok || response.status === 206;
+    // รู้สถานะแล้วตัดการเชื่อมต่อทันที — ไม่ต้องปล่อยให้ body สตรีมต่อ
+    controller.abort();
+    return alive ? 'alive' : 'dead';
+  } catch {
+    return 'alive';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * probe หลายคลิปพร้อมกันแบบ worker pool (default 4 ตัว)
+ * รายงานผลทีละคลิปผ่าน onResult (key = jobId) เพื่อให้ UI อัปเดตได้ทันทีโดยไม่ต้องรอครบชุด
+ * ไม่ throw — คลิปที่ probe พังถือเป็น 'alive' ตามกติกา fail-open ของ probeWebClipUrl
+ */
+export async function probeWebClipsLiveness(
+  clips: WebAutoClip[],
+  onResult: (jobId: string, liveness: WebClipLiveness) => void,
+  options: { concurrency?: number; timeoutMs?: number } = {}
+): Promise<Map<string, WebClipLiveness>> {
+  const concurrency = Math.max(
+    1,
+    Math.floor(
+      typeof options.concurrency === 'number' && options.concurrency > 0
+        ? options.concurrency
+        : PROBE_DEFAULT_CONCURRENCY
+    )
+  );
+  const results = new Map<string, WebClipLiveness>();
+  let nextIndex = 0;
+
+  const worker = async (): Promise<void> => {
+    while (nextIndex < clips.length) {
+      const clip = clips[nextIndex];
+      nextIndex += 1;
+      const liveness = await probeWebClipUrl(clip.videoUrl, { timeoutMs: options.timeoutMs });
+      results.set(clip.jobId, liveness);
+      onResult(clip.jobId, liveness);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, clips.length) }, () => worker())
+  );
+  return results;
+}
+
 export async function listWebAutoClips(options: { limit?: number } = {}): Promise<WebAutoClip[]> {
   const limit =
     typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0
