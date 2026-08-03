@@ -159,7 +159,10 @@ export default function GoogleFlowWebViewRunnerHost({
   const flowStatusRef = useRef<FlowConnectionState>('unknown');
   const flowUrlRef = useRef('');
   const actionLogContextRef = useRef<FlowActionLogContext | null>(null);
-  const latestGeneratedImageDataUrlsRef = useRef<Map<string, string[]>>(new Map());
+  // เก็บ "file URI" ของรูปที่ generate แล้ว (ไม่ใช่ base64 data URL) ต่อ product+round —
+  // data URL ตัวละ ~2MB ถ้าถือไว้ทั้ง run จะ OOM บนเครื่อง heap 256MB; ผู้ใช้ cache
+  // ต้อง re-materialize ผ่าน loadImageReferenceDataUrl(uri) ตอนใช้จริงเท่านั้น
+  const latestGeneratedImageUrisRef = useRef<Map<string, string[]>>(new Map());
   const latestProductAssetsRef = useRef<Map<string, TrackedProductAsset[]>>(new Map());
   // Kept in a ref so the (stable) posting handler always calls the latest marker without
   // needing it in its dependency list.
@@ -1595,10 +1598,30 @@ export default function GoogleFlowWebViewRunnerHost({
         const knownFlowVideoUrls: string[] = [];
 
         if (hasPriorImageStep) {
-          const cachedPriorImages = latestGeneratedImageDataUrlsRef.current.get(
+          const cachedPriorImageUri = latestGeneratedImageUrisRef.current.get(
             getGeneratedImageCacheKey(product, round)
-          );
-          const cachedPriorImage = cachedPriorImages?.[0];
+          )?.[0];
+          // cache เก็บแค่ file URI — อ่านไฟล์กลับมาเป็น data URL เฉพาะตอนใช้จริง
+          const cachedPriorImage = cachedPriorImageUri
+            ? await loadImageReferenceDataUrl(cachedPriorImageUri)
+            : null;
+          if (cachedPriorImageUri && !cachedPriorImage) {
+            emit({
+              event: 'progress',
+              runId: payload.runId,
+              status: 'running',
+              level: 'warning',
+              step: 'image',
+              stage: 'multi_scene_capture_prior_image',
+              productId: product.id,
+              productName: product.name,
+              currentRound: round,
+              totalRounds: payload.settings.totalRounds,
+              currentProduct: productIndex + 1,
+              totalProducts: payload.products.length,
+              message: 'อ่านรูปที่บันทึกไว้จากไฟล์ไม่สำเร็จ จะดึงรูปที่เพิ่งสร้างจากหน้า Flow แทน',
+            });
+          }
           emit({
             event: 'progress',
             runId: payload.runId,
@@ -2785,10 +2808,16 @@ export default function GoogleFlowWebViewRunnerHost({
           }
 
           if (!attached) {
-            const cachedImages = latestGeneratedImageDataUrlsRef.current.get(
+            const cachedImageUri = latestGeneratedImageUrisRef.current.get(
               getGeneratedImageCacheKey(product, round)
-            );
-            let uploadDataUrl = cachedImages?.[0] ?? null;
+            )?.[0];
+            // cache เก็บแค่ file URI — อ่านไฟล์กลับมาเป็น data URL เฉพาะตอนใช้จริง
+            let uploadDataUrl = cachedImageUri
+              ? await loadImageReferenceDataUrl(cachedImageUri)
+              : null;
+            if (cachedImageUri && !uploadDataUrl) {
+              emitAttach('อ่านรูป cache จากไฟล์ไม่สำเร็จ — จะดึงรูปที่เพิ่งสร้างจากหน้า Flow แทน', 'warning');
+            }
             if (uploadDataUrl) {
               emitAttach('อัปโหลดรูปที่เพิ่งสร้างจาก cache เป็น reference สำหรับวิดีโอ');
             } else {
@@ -3366,7 +3395,7 @@ export default function GoogleFlowWebViewRunnerHost({
           );
         }
 
-        const generatedImageDataUrls: string[] = [];
+        const generatedImageUris: string[] = [];
         for (const [index, image] of images.entries()) {
           if (!image.dataUrl) {
             continue;
@@ -3375,7 +3404,8 @@ export default function GoogleFlowWebViewRunnerHost({
           if (!downloaded?.uri) {
             throw new Error('บันทึกรูปภาพลงมือถือไม่สำเร็จ');
           }
-          generatedImageDataUrls.push(image.dataUrl);
+          // cache แค่ file URI ที่เพิ่งบันทึกลงดิสก์ — ห้ามถือ base64 ต่อ (กิน heap ตัวละ ~2MB)
+          generatedImageUris.push(downloaded.uri);
           emit({
             event: 'asset',
             runId: payload.runId,
@@ -3398,10 +3428,10 @@ export default function GoogleFlowWebViewRunnerHost({
             message: `ได้รูปภาพจาก Google Flow แล้ว (${index + 1}/${images.length})`,
           });
         }
-        if (generatedImageDataUrls.length > 0) {
-          latestGeneratedImageDataUrlsRef.current.set(
+        if (generatedImageUris.length > 0) {
+          latestGeneratedImageUrisRef.current.set(
             getGeneratedImageCacheKey(product, round),
-            generatedImageDataUrls
+            generatedImageUris
           );
           emit({
             event: 'progress',
@@ -3415,7 +3445,7 @@ export default function GoogleFlowWebViewRunnerHost({
             totalRounds: payload.settings.totalRounds,
             currentProduct: productIndex + 1,
             totalProducts: payload.products.length,
-            message: `บันทึกรูป reference ของสินค้านี้ไว้ใช้สร้างวิดีโอแล้ว (${generatedImageDataUrls.length})`,
+            message: `บันทึกรูป reference ของสินค้านี้ไว้ใช้สร้างวิดีโอแล้ว (${generatedImageUris.length})`,
           });
         }
       }
@@ -3687,6 +3717,11 @@ export default function GoogleFlowWebViewRunnerHost({
               }
             }
 
+            // จบทุก step ของสินค้านี้ในรอบนี้แล้ว (video ใช้รูป reference เสร็จแล้ว) —
+            // ปล่อย cache รายสินค้าทันที ไม่รอจบ run (แบบเดียวกับ latestProductAssetsRef
+            // ที่ถูก drop รายสินค้า) โดย clear ตอนจบ/เริ่ม run ยังเป็น backstop อยู่
+            latestGeneratedImageUrisRef.current.delete(getGeneratedImageCacheKey(product, round));
+
             if (productHadStructuralFailure) {
               consecutiveStructuralFailures += 1;
               if (consecutiveStructuralFailures >= STRUCTURAL_FLOW_FAILURE_LIMIT) {
@@ -3807,7 +3842,7 @@ export default function GoogleFlowWebViewRunnerHost({
         runningRef.current = false;
         stopRequestedRef.current = false;
         payloadRef.current = null;
-        latestGeneratedImageDataUrlsRef.current.clear();
+        latestGeneratedImageUrisRef.current.clear();
         setIsRunning(false);
       }
     },
@@ -3823,7 +3858,7 @@ export default function GoogleFlowWebViewRunnerHost({
         runningRef.current = true;
         stopRequestedRef.current = false;
         payloadRef.current = payload;
-        latestGeneratedImageDataUrlsRef.current.clear();
+        latestGeneratedImageUrisRef.current.clear();
         setIsRunning(true);
         flowStatusRef.current = 'unknown';
         setOverlayLogs([]);

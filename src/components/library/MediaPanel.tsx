@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image as RNImage, Modal, Pressable, ScrollView, View } from 'react-native';
+import { Alert, FlatList, Image as RNImage, Modal, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ChevronRight,
@@ -83,9 +83,23 @@ import {
   resolveCloudTransferProductFields,
   toGeneratedGroups,
 } from './media-panel';
-import type { MediaKind, MediaMode, MediaSubItem, UploadDraft } from './media-panel';
+import type { MediaGroupRecord, MediaKind, MediaMode, MediaSubItem, UploadDraft } from './media-panel';
 
 export type { MediaKind } from './media-panel';
+
+/**
+ * One virtualized row of the media list — either a whole product group card (grouped mode)
+ * or a single media item (ungrouped grid tile / video card).
+ */
+type MediaListEntry = { item: MediaGroupRecord; media: MediaSubItem[] } | MediaSubItem;
+
+/** 8px row gap — matches the old `gap-2` container the .map() rows lived in. */
+function MediaListSeparator(): React.JSX.Element {
+  return <View className="h-2" />;
+}
+
+/** ช่องไฟแนวนอน 8px ระหว่าง tile ใน grid 3 คอลัมน์ — เท่า gap-2 ของ flex-wrap เดิม */
+const mediaGridColumnStyle = { gap: 8 };
 
 // สี accent ของ flow โพสต์โซเชียล (ใช้ใน header ของ sheet เลือกปลายทาง)
 const SOCIAL_VIOLET = '#7c3aed';
@@ -302,7 +316,10 @@ export default function MediaPanel({
           (!!n && n === candidate.name?.trim())
         );
       });
-      return product?.imageUrl?.trim() || product?.imagePath?.trim() || null;
+      // Render-time priority: local cached file first — RN Android only auto-downsamples
+      // file:///content:// sources, so a remote URL would decode at full resolution inside
+      // tiny tiles (same order as productAdapter.pickDevicePreview / product-panel ProductCard).
+      return product?.imagePath?.trim() || product?.imageUrl?.trim() || null;
     };
   }, [productOptions]);
   const [productImageModalUri, setProductImageModalUri] = useState<string | null>(null);
@@ -1080,222 +1097,256 @@ export default function MediaPanel({
     );
   }
 
+  // เดิม body เป็น ScrollView ที่ .map() ทุกชิ้นพร้อมกัน ทำให้รูปทั้งคลังถูก decode รวดเดียว
+  // (OOM บนเครื่อง Android Java heap 256MB) — เปลี่ยนเป็น FlatList ให้ mount เฉพาะแถวใกล้จอ
+  // (พารามิเตอร์ virtualization ชุดเดียวกับ ProductPanel)
+  const showMediaRows = mediaMode === 'product' && totalMedia > 0;
+  const isImageGrid = showMediaRows && !groupByProduct && kind === 'images';
+  const listData: MediaListEntry[] = showMediaRows ? (groupByProduct ? visibleGroups : productMedia) : [];
+  const mediaListKeyExtractor = (entry: MediaListEntry): string =>
+    'media' in entry ? entry.item.id : entry.id;
+
+  const renderMediaListItem = ({ item: entry }: { item: MediaListEntry }): React.JSX.Element => {
+    // โหมดจัดกลุ่ม — การ์ดกลุ่มสินค้า (ใช้ทั้งคลังรูปและคลังวิดีโอ)
+    if ('media' in entry) {
+      const { item, media } = entry;
+      return (
+        <MediaGroupCard
+          theme={theme}
+          kind={kind}
+          accentColor={accentColor}
+          item={item}
+          media={media}
+          unit={copy.unit}
+          expanded={!collapsedGroups.has(item.id)}
+          selectedIds={selectedIds}
+          onToggleExpand={() => toggleGroup(item.id)}
+          onToggleSelect={toggleSelect}
+          onDeleteMedia={(media) => confirmDelete([media.id])}
+          onDownloadMedia={(media) => void downloadMedia(media)}
+          onEditMedia={openEdit}
+          onFavoriteMedia={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
+          onViewMedia={(media) => void openMedia(media)}
+          productImageUrl={findProductImage(item.code, media[0]?.productUrl, media[0]?.productName)}
+          onViewProductImage={(uri) => setProductImageModalUri(uri)}
+        />
+      );
+    }
+
+    // คลังรูปแบบไม่จัดกลุ่ม — tile ใน grid 3 คอลัมน์ (numColumns)
+    if (kind === 'images') {
+      const media = entry;
+      return (
+        <ImageTile
+          theme={theme}
+          accentColor={accentColor}
+          media={media}
+          selected={selectedIds.has(media.id)}
+          showProductInfo
+          onDelete={() => confirmDelete([media.id])}
+          onEdit={() => openEdit(media)}
+          onToggleSelect={() => toggleSelect(media.id)}
+          onView={() => void openMedia(media)}
+        />
+      );
+    }
+
+    // คลังวิดีโอแบบไม่จัดกลุ่ม — การ์ดแถวเดี่ยว
+    const media = entry;
+    const isSelected = selectedIds.has(media.id);
+    return (
+      <View
+        className={`overflow-hidden rounded-[12px] bg-kd-panel border ${
+          isSelected ? '' : 'border-gray-100 dark:border-kd-border'
+        }`}
+        style={{
+          elevation: 1,
+          shadowOffset: { height: 1, width: 0 },
+          shadowOpacity: 0.05,
+          shadowRadius: 2,
+          ...(isSelected ? { borderColor: accentColor, borderWidth: 1.5 } : {}),
+        }}
+      >
+        <CardBackdrop theme={theme} id="videos-flat" stops={libraryCardStops.videos} />
+        <View className="px-1.5">
+          <VideoRow
+            theme={theme}
+            accentColor={accentColor}
+            media={media}
+            selected={isSelected}
+            selectionByParent
+            showDivider={false}
+            showProductInfo
+            onDelete={() => confirmDelete([media.id])}
+            onDownload={() => void downloadMedia(media)}
+            onEdit={() => openEdit(media)}
+            onFavorite={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
+            onPlay={() => void openMedia(media)}
+            onToggleSelect={() => toggleSelect(media.id)}
+            productImageUrl={findProductImage(media.productCode, media.productUrl, media.productName)}
+            onViewProductImage={(uri) => setProductImageModalUri(uri)}
+          />
+        </View>
+      </View>
+    );
+  };
+
+  // ส่วนหัว (แผงหัวข้อ + แถวค้นหา + แถวเลือกทั้งหมด/เรียง + empty states) เลื่อนไปพร้อมลิสต์
+  // pb-2 = ระยะ 8px ก่อนการ์ดแรก แทน gap-2 ของ container เดิม
+  const listHeader = (
+    <View className="gap-3 pb-2">
+      <LibraryPanelHeader
+        theme={theme}
+        title={copy.title}
+        count={productMedia.length}
+        total={totalMedia}
+        icon={HeaderIcon}
+        tone={accent}
+        actions={
+          <>
+            <HeaderIconButton
+              theme={theme}
+              icon={Upload}
+              label={isAddingMedia ? 'กำลังเพิ่ม' : kind === 'images' ? 'เพิ่มรูป' : 'เพิ่มวิดีโอ'}
+              onPress={() => void pickMediaFiles()}
+            />
+            {kind === 'videos' ? (
+              <HeaderIconButton
+                theme={theme}
+                icon={CloudDownload}
+                label={cloudInboxLoading ? 'กำลังโหลด Cloud Transfer' : 'รับ Cloud Transfer'}
+                onPress={() => void openCloudInbox()}
+              />
+            ) : null}
+            <HeaderIconButton
+              theme={theme}
+              icon={RefreshCw}
+              label={isRefreshing ? 'กำลังรีเฟรช' : 'รีเฟรช'}
+              onPress={() => void refreshMedia()}
+            />
+          </>
+        }
+      />
+
+      <View className="gap-2">
+        <View className="flex-row items-center gap-1.5">
+          <SearchBox
+            theme={theme}
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="ค้นหาชื่อ/รหัสสินค้า..."
+          />
+          {modeSwitch}
+          <Pressable
+            accessibilityLabel={groupByProduct ? 'ยกเลิกจัดกลุ่ม' : 'จัดกลุ่มตามสินค้า'}
+            accessibilityRole="button"
+            accessibilityState={{ selected: groupByProduct }}
+            onPress={() => setGroupByProduct((current) => !current)}
+            className={`h-8 w-8 shrink-0 items-center justify-center rounded-kd-md border ${
+              groupByProduct ? `${accentClass.soft} ${accentClass.border}` : 'border-kd-border bg-kd-input'
+            }`}
+          >
+            <Grid2X2 size={13} color={groupByProduct ? accentColor : theme.textSubtle} strokeWidth={2} />
+          </Pressable>
+        </View>
+
+        {mediaMode === 'product' ? (
+          totalMedia === 0 ? (
+            <EmptyState theme={theme} icon={HeaderIcon} title={copy.emptyTitle} copy={copy.emptyCopy} />
+          ) : (
+            <View className="flex-row items-center justify-between">
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: allSelected }}
+                onPress={toggleAll}
+                className="min-h-6 flex-row items-center gap-1.5"
+              >
+                <SelectCircle theme={theme} selected={allSelected} accent={accentColor} size={15} />
+                <Text className="text-kd-caption text-kd-text-subtle">
+                  ทั้งหมด ({productMedia.length})
+                </Text>
+              </Pressable>
+
+              <View className="flex-row items-center gap-1">
+                <SortPill
+                  theme={theme}
+                  accent={accentColor}
+                  active={sortKey === 'name'}
+                  ascending={sortAscending}
+                  label="ชื่อ"
+                  onPress={() => changeSort('name')}
+                />
+                {groupByProduct ? (
+                  <SortPill
+                    theme={theme}
+                    accent={accentColor}
+                    active={sortKey === 'code'}
+                    ascending={sortAscending}
+                    label="รหัส"
+                    onPress={() => changeSort('code')}
+                  />
+                ) : (
+                  <SortPill
+                    theme={theme}
+                    accent={accentColor}
+                    active={sortKey === 'date'}
+                    ascending={sortAscending}
+                    label="วันที่"
+                    onPress={() => changeSort('date')}
+                  />
+                )}
+                {groupByProduct && visibleGroups.length > 1 ? (
+                  <>
+                    <View className="mx-[3px] h-3 w-px bg-kd-border" />
+                    <Pressable
+                      accessibilityLabel="ขยายทั้งหมด"
+                      accessibilityRole="button"
+                      onPress={() => setCollapsedGroups(new Set())}
+                      className="h-[22px] w-5 items-center justify-center"
+                    >
+                      <ChevronsDown size={13} color={theme.textSubtle} strokeWidth={2} />
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel="ย่อทั้งหมด"
+                      accessibilityRole="button"
+                      onPress={() => setCollapsedGroups(new Set(visibleGroups.map((group) => group.item.id)))}
+                      className="h-[22px] w-5 items-center justify-center"
+                    >
+                      <ChevronsUp size={13} color={theme.textSubtle} strokeWidth={2} />
+                    </Pressable>
+                  </>
+                ) : null}
+              </View>
+            </View>
+          )
+        ) : (
+          <EmptyHint theme={theme} label={copy.emptyGeneral} />
+        )}
+      </View>
+    </View>
+  );
+
   return (
     <View className="flex-1">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="gap-3 px-3 pb-20 pt-3">
-        <LibraryPanelHeader
-          theme={theme}
-          title={copy.title}
-          count={productMedia.length}
-          total={totalMedia}
-          icon={HeaderIcon}
-          tone={accent}
-          actions={
-            <>
-              <HeaderIconButton
-                theme={theme}
-                icon={Upload}
-                label={isAddingMedia ? 'กำลังเพิ่ม' : kind === 'images' ? 'เพิ่มรูป' : 'เพิ่มวิดีโอ'}
-                onPress={() => void pickMediaFiles()}
-              />
-              {kind === 'videos' ? (
-                <HeaderIconButton
-                  theme={theme}
-                  icon={CloudDownload}
-                  label={cloudInboxLoading ? 'กำลังโหลด Cloud Transfer' : 'รับ Cloud Transfer'}
-                  onPress={() => void openCloudInbox()}
-                />
-              ) : null}
-              <HeaderIconButton
-                theme={theme}
-                icon={RefreshCw}
-                label={isRefreshing ? 'กำลังรีเฟรช' : 'รีเฟรช'}
-                onPress={() => void refreshMedia()}
-              />
-            </>
-          }
-        />
-
-        <View className="gap-2">
-          <View className="flex-row items-center gap-1.5">
-            <SearchBox
-              theme={theme}
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="ค้นหาชื่อ/รหัสสินค้า..."
-            />
-            {modeSwitch}
-            <Pressable
-              accessibilityLabel={groupByProduct ? 'ยกเลิกจัดกลุ่ม' : 'จัดกลุ่มตามสินค้า'}
-              accessibilityRole="button"
-              accessibilityState={{ selected: groupByProduct }}
-              onPress={() => setGroupByProduct((current) => !current)}
-              className={`h-8 w-8 shrink-0 items-center justify-center rounded-kd-md border ${
-                groupByProduct ? `${accentClass.soft} ${accentClass.border}` : 'border-kd-border bg-kd-input'
-              }`}
-            >
-              <Grid2X2 size={13} color={groupByProduct ? accentColor : theme.textSubtle} strokeWidth={2} />
-            </Pressable>
-          </View>
-
-          {mediaMode === 'product' ? (
-            totalMedia === 0 ? (
-              <EmptyState theme={theme} icon={HeaderIcon} title={copy.emptyTitle} copy={copy.emptyCopy} />
-            ) : (
-              <>
-                <View className="flex-row items-center justify-between">
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: allSelected }}
-                    onPress={toggleAll}
-                    className="min-h-6 flex-row items-center gap-1.5"
-                  >
-                    <SelectCircle theme={theme} selected={allSelected} accent={accentColor} size={15} />
-                    <Text className="text-kd-caption text-kd-text-subtle">
-                      ทั้งหมด ({productMedia.length})
-                    </Text>
-                  </Pressable>
-
-                  <View className="flex-row items-center gap-1">
-                    <SortPill
-                      theme={theme}
-                      accent={accentColor}
-                      active={sortKey === 'name'}
-                      ascending={sortAscending}
-                      label="ชื่อ"
-                      onPress={() => changeSort('name')}
-                    />
-                    {groupByProduct ? (
-                      <SortPill
-                        theme={theme}
-                        accent={accentColor}
-                        active={sortKey === 'code'}
-                        ascending={sortAscending}
-                        label="รหัส"
-                        onPress={() => changeSort('code')}
-                      />
-                    ) : (
-                      <SortPill
-                        theme={theme}
-                        accent={accentColor}
-                        active={sortKey === 'date'}
-                        ascending={sortAscending}
-                        label="วันที่"
-                        onPress={() => changeSort('date')}
-                      />
-                    )}
-                    {groupByProduct && visibleGroups.length > 1 ? (
-                      <>
-                        <View className="mx-[3px] h-3 w-px bg-kd-border" />
-                        <Pressable
-                          accessibilityLabel="ขยายทั้งหมด"
-                          accessibilityRole="button"
-                          onPress={() => setCollapsedGroups(new Set())}
-                          className="h-[22px] w-5 items-center justify-center"
-                        >
-                          <ChevronsDown size={13} color={theme.textSubtle} strokeWidth={2} />
-                        </Pressable>
-                        <Pressable
-                          accessibilityLabel="ย่อทั้งหมด"
-                          accessibilityRole="button"
-                          onPress={() => setCollapsedGroups(new Set(visibleGroups.map((group) => group.item.id)))}
-                          className="h-[22px] w-5 items-center justify-center"
-                        >
-                          <ChevronsUp size={13} color={theme.textSubtle} strokeWidth={2} />
-                        </Pressable>
-                      </>
-                    ) : null}
-                  </View>
-                </View>
-
-                {groupByProduct ? (
-                  visibleGroups.map(({ item, media }) => (
-                    <MediaGroupCard
-                      key={item.id}
-                      theme={theme}
-                      kind={kind}
-                      accentColor={accentColor}
-                      item={item}
-                      media={media}
-                      unit={copy.unit}
-                      expanded={!collapsedGroups.has(item.id)}
-                      selectedIds={selectedIds}
-                      onToggleExpand={() => toggleGroup(item.id)}
-                      onToggleSelect={toggleSelect}
-                      onDeleteMedia={(media) => confirmDelete([media.id])}
-                      onDownloadMedia={(media) => void downloadMedia(media)}
-                      onEditMedia={openEdit}
-                      onFavoriteMedia={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
-                      onViewMedia={(media) => void openMedia(media)}
-                      productImageUrl={findProductImage(item.code, media[0]?.productUrl, media[0]?.productName)}
-                      onViewProductImage={(uri) => setProductImageModalUri(uri)}
-                    />
-                  ))
-                ) : kind === 'images' ? (
-                  <View className="flex-row flex-wrap gap-2">
-                    {productMedia.map((media) => (
-                      <ImageTile
-                        key={media.id}
-                        theme={theme}
-                        accentColor={accentColor}
-                        media={media}
-                        selected={selectedIds.has(media.id)}
-                        showProductInfo
-                        onDelete={() => confirmDelete([media.id])}
-                        onEdit={() => openEdit(media)}
-                        onToggleSelect={() => toggleSelect(media.id)}
-                        onView={() => void openMedia(media)}
-                      />
-                    ))}
-                  </View>
-                ) : (
-                  productMedia.map((media) => {
-                    const isSelected = selectedIds.has(media.id);
-                    return (
-                      <View
-                        key={media.id}
-                        className={`overflow-hidden rounded-[12px] bg-kd-panel border ${
-                          isSelected ? '' : 'border-gray-100 dark:border-kd-border'
-                        }`}
-                        style={{
-                          elevation: 1,
-                          shadowOffset: { height: 1, width: 0 },
-                          shadowOpacity: 0.05,
-                          shadowRadius: 2,
-                          ...(isSelected ? { borderColor: accentColor, borderWidth: 1.5 } : {}),
-                        }}
-                      >
-                        <CardBackdrop theme={theme} id="videos-flat" stops={libraryCardStops.videos} />
-                        <View className="px-1.5">
-                          <VideoRow
-                            theme={theme}
-                            accentColor={accentColor}
-                            media={media}
-                            selected={isSelected}
-                            selectionByParent
-                            showDivider={false}
-                            showProductInfo
-                            onDelete={() => confirmDelete([media.id])}
-                            onDownload={() => void downloadMedia(media)}
-                            onEdit={() => openEdit(media)}
-                            onFavorite={() => toast.info('ฟีเจอร์ถูกใจจะเพิ่มในเวอร์ชันถัดไป')}
-                            onPlay={() => void openMedia(media)}
-                            onToggleSelect={() => toggleSelect(media.id)}
-                            productImageUrl={findProductImage(media.productCode, media.productUrl, media.productName)}
-                            onViewProductImage={(uri) => setProductImageModalUri(uri)}
-                          />
-                        </View>
-                      </View>
-                    );
-                  })
-                )}
-              </>
-            )
-          ) : (
-            <EmptyHint theme={theme} label={copy.emptyGeneral} />
-          )}
-        </View>
-      </ScrollView>
+      <FlatList
+        key={isImageGrid ? 'media-grid' : 'media-list'}
+        data={listData}
+        extraData={selectedIds}
+        keyExtractor={mediaListKeyExtractor}
+        renderItem={renderMediaListItem}
+        numColumns={isImageGrid ? 3 : 1}
+        columnWrapperStyle={isImageGrid ? mediaGridColumnStyle : undefined}
+        ItemSeparatorComponent={MediaListSeparator}
+        initialNumToRender={12}
+        keyboardShouldPersistTaps="handled"
+        maxToRenderPerBatch={10}
+        removeClippedSubviews
+        showsVerticalScrollIndicator={false}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
+        contentContainerClassName="px-3 pb-20 pt-3"
+        ListHeaderComponent={listHeader}
+      />
 
       {selectedIds.size > 0 ? (
         <SelectionBar
@@ -1482,6 +1533,7 @@ export default function MediaPanel({
               source={{ uri: productImageModalUri }}
               className="h-[70%] w-full"
               resizeMode="contain"
+              resizeMethod="resize"
             />
           ) : null}
         </Pressable>

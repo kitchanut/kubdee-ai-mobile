@@ -156,7 +156,8 @@ export function MediaGroupCard({
             onPress={() => onViewProductImage?.(productImageUrl)}
             className="h-9 w-9 shrink-0 overflow-hidden rounded-kd-lg border border-kd-border active:opacity-70"
           >
-            <NativeImage source={{ uri: productImageUrl }} className="h-full w-full" resizeMode="cover" />
+            {/* resizeMethod="resize" — Android decode ที่ขนาด view (กัน bitmap เต็ม res ใน tile จิ๋ว แม้ source เป็น URL) */}
+            <NativeImage source={{ uri: productImageUrl }} className="h-full w-full" resizeMode="cover" resizeMethod="resize" />
           </Pressable>
         ) : (
           <View className="h-9 w-9 shrink-0 items-center justify-center rounded-kd-lg border border-kd-border bg-kd-panel-muted dark:bg-kd-card-muted">
@@ -260,7 +261,8 @@ export function ImageTile({
     >
       <View className="flex-1 items-center justify-center">
         {media.uri ? (
-          <NativeImage source={{ uri: media.uri }} className="h-full w-full" resizeMode="cover" />
+          // resizeMethod="resize" — Android decode ที่ขนาด tile ไม่ใช่ขนาดไฟล์เต็ม
+          <NativeImage source={{ uri: media.uri }} className="h-full w-full" resizeMode="cover" resizeMethod="resize" />
         ) : (
           <ImageIcon size={22} color={theme.textSubtle} strokeWidth={1.5} />
         )}
@@ -394,7 +396,8 @@ export function VideoRow({
                 onPress={() => onViewProductImage?.(productImageUrl)}
                 className="h-[18px] w-[18px] shrink-0 overflow-hidden rounded-kd-sm border border-kd-border active:opacity-70"
               >
-                <NativeImage source={{ uri: productImageUrl }} className="h-full w-full" resizeMode="cover" />
+                {/* resizeMethod="resize" — tile 18dp ห้าม decode รูปสินค้าเต็ม res */}
+                <NativeImage source={{ uri: productImageUrl }} className="h-full w-full" resizeMode="cover" resizeMethod="resize" />
               </Pressable>
             ) : null}
             <PlatformBadge theme={theme} platform={media.platform} productUrl={media.productUrl} />

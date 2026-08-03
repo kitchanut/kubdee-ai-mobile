@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
@@ -57,6 +58,11 @@ const listeners = new Set<() => void>();
 let hydrated = false;
 let mutatedBeforeHydration = false;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+const PERSIST_DEBOUNCE_MS = 250;
+// เพดานเวลาระหว่างมี log ไหลต่อเนื่อง — ระหว่าง automation แอปมักอยู่ background ซึ่ง JS timer
+// อาจไม่ fire จนกลับมา foreground; เกินเพดานนี้ให้เขียนทันทีจาก mutation แทนการรอ timer
+const PERSIST_MAX_WAIT_MS = 5000;
+let lastPersistAt = 0;
 
 function createRun(kind: AutomationActivityKind): AutomationActivityRun {
   return {
@@ -211,13 +217,23 @@ function schedulePersist(): void {
     return;
   }
 
+  // ถ้าห่างจากการเขียนล่าสุดเกินเพดาน ให้ flush ทันที (ไม่พึ่ง timer ที่อาจโดน pause ตอน background)
+  if (Date.now() - lastPersistAt >= PERSIST_MAX_WAIT_MS) {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    void persistSnapshotNow().catch(() => {});
+    return;
+  }
+
   if (persistTimer) {
     clearTimeout(persistTimer);
   }
   persistTimer = setTimeout(() => {
     persistTimer = null;
     void persistSnapshotNow().catch(() => {});
-  }, 250);
+  }, PERSIST_DEBOUNCE_MS);
 }
 
 async function hydrateAutomationActivitySnapshot(): Promise<void> {
@@ -273,6 +289,7 @@ function serializeSnapshot(): string {
 }
 
 async function persistSnapshotNow(): Promise<void> {
+  lastPersistAt = Date.now();
   await AsyncStorage.setItem(STORAGE_KEY, serializeSnapshot());
 }
 
@@ -335,6 +352,12 @@ export function setAutomationActivityRunning(kind: AutomationActivityKind, runni
     stopping: running ? run.stopping : false,
     updatedAt: Date.now(),
   }));
+
+  // จุดจบ run (สำเร็จ/ล้มเหลว/ถูกหยุด) ต้อง flush ทันที — ห้ามพึ่ง debounce อย่างเดียว
+  // เพราะถ้า process ตายก่อน timer fire จะเสีย log ท้าย run และ flag running ค้างเป็น true
+  if (!running) {
+    void flushAutomationActivitySnapshot();
+  }
 }
 
 export function setAutomationActivityStopping(kind: AutomationActivityKind, stopping: boolean): void {
@@ -351,23 +374,31 @@ export function clearAutomationActivityRun(kind: AutomationActivityKind): void {
 
 export function useAutomationActivityNativeBridge(): void {
   useEffect(() => {
+    // ห้าม flush ต่อ log ทีละบรรทัด — แต่ละครั้งคือ JSON.stringify ทั้ง 5 run (สูงสุด 300 entry/run)
+    // + bridge round-trip ไป AsyncStorage ระหว่าง automation ยิง log ถี่ๆ ทำให้ ANR/OOM
+    // ปล่อยให้ debounce + max-wait ใน schedulePersist จัดการ ส่วนความทนทานมี flush การันตีที่
+    // จุดจบ run (setAutomationActivityRunning(false)) กับตอนแอปลง background ด้านล่าง
     const importSubscription = subscribeShopeeImportLogs((entry: NativeShopeeImportLog) => {
       pushAutomationActivityLog('shopee-import', entry.message, entry.ts);
-      void flushAutomationActivitySnapshot();
     });
     const postSubscription = subscribeShopeePostLogs((entry: NativeShopeePostLog) => {
       pushAutomationActivityLog('shopee-post', entry.message, entry.ts);
-      void flushAutomationActivitySnapshot();
     });
     const convertSubscription = subscribeShopeeConvertLogs((entry: NativeShopeeConvertLog) => {
       pushAutomationActivityLog('shopee-convert', entry.message, entry.ts);
-      void flushAutomationActivitySnapshot();
+    });
+    // hook นี้ mount ครั้งเดียวที่ KubdeeMobileApp — เป็นจุดลงทะเบียน AppState listener จุดเดียวของ store
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background' || state === 'inactive') {
+        void flushAutomationActivitySnapshot();
+      }
     });
 
     return () => {
       importSubscription?.remove();
       postSubscription?.remove();
       convertSubscription?.remove();
+      appStateSubscription.remove();
     };
   }, []);
 }

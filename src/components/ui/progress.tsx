@@ -1,11 +1,12 @@
 import { cn } from '@/lib/utils';
 import * as ProgressPrimitive from '@rn-primitives/progress';
+import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import Animated, {
   Extrapolation,
   interpolate,
   useAnimatedStyle,
-  useDerivedValue,
+  useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
 
@@ -54,16 +55,30 @@ function WebIndicator({ value, className }: IndicatorProps) {
 }
 
 function NativeIndicator({ value, className }: IndicatorProps) {
-  const progress = useDerivedValue(() => value ?? 0);
+  // spring ต้อง retarget (ไม่ restart) เมื่อ value เปลี่ยน: เก็บ progress เป็น shared value
+  // แล้วสั่ง withSpring จาก useEffect — reanimated จะสานต่อจากตำแหน่ง/ความเร็วปัจจุบัน
+  // (แบบเดิมที่ withSpring อยู่ใน useAnimatedStyle deps [value] จะเริ่ม spring ใหม่ทุกอัปเดต)
+  const progress = useSharedValue(clampProgress(value));
+  const trackWidth = useSharedValue(0);
 
+  useEffect(() => {
+    progress.value = withSpring(clampProgress(value), { overshootClamping: true });
+  }, [progress, value]);
+
+  // เลื่อนแท่ง w-full ด้วย translateX แทนการ animate width% — transform ไม่แตะ layout
+  // (ไม่เกิด Fabric mount transaction ต่อเฟรม) ภาพเท่าเดิมเพราะ Root เป็นคน clip มุมโค้ง
+  // ด้วย overflow-hidden rounded-full อยู่แล้ว (วิธีเดียวกับ WebIndicator ด้านบน)
   const indicator = useAnimatedStyle(() => {
+    if (trackWidth.value === 0) {
+      // ยังไม่รู้ความกว้าง track — ซ่อนไว้ก่อน กันแท่งเต็มวาบหนึ่งเฟรมตอน mount
+      return { opacity: 0, transform: [{ translateX: 0 }] };
+    }
+    const visiblePercent = interpolate(progress.value, [0, 100], [1, 100], Extrapolation.CLAMP);
     return {
-      width: withSpring(
-        `${interpolate(progress.value, [0, 100], [1, 100], Extrapolation.CLAMP)}%`,
-        { overshootClamping: true }
-      ),
+      opacity: 1,
+      transform: [{ translateX: (-trackWidth.value * (100 - visiblePercent)) / 100 }],
     };
-  }, [value]);
+  });
 
   if (Platform.OS === 'web') {
     return null;
@@ -71,9 +86,19 @@ function NativeIndicator({ value, className }: IndicatorProps) {
 
   return (
     <ProgressPrimitive.Indicator asChild>
-      <Animated.View style={indicator} className={cn('bg-foreground h-full', className)} />
+      <Animated.View
+        onLayout={(event) => {
+          trackWidth.value = event.nativeEvent.layout.width;
+        }}
+        style={indicator}
+        className={cn('bg-foreground h-full w-full', className)}
+      />
     </ProgressPrimitive.Indicator>
   );
+}
+
+function clampProgress(value: number | undefined | null): number {
+  return Math.max(0, Math.min(100, value ?? 0));
 }
 
 function NullIndicator(_props: IndicatorProps) {
