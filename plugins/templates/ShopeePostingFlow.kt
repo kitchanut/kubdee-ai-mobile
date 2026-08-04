@@ -292,6 +292,14 @@ internal fun KubdeeAccessibilityService.navigateShopeeVideoAccount(): Boolean {
 
   logShopeePostStep("เปิด หน้าบัญชี Shopee Video")
   if (!scrollUntilTapText(SHOPEE_VIDEO_ACCOUNT_TEXTS, maxAttempts = 5)) {
+    // Shopee 3.79.24: แท็บ บัญชีผู้ใช้ ของหน้า Affiliate พาเข้าหน้าบัญชี Shopee Video โดยตรง
+    // ไม่มีแถว "หน้าบัญชี Shopee Video" ให้กดอีกแล้ว (Sentry MOBILE-1C: tree ตอนรายงานเป็น
+    // หน้าบัญชีที่มีปุ่ม "click to post video" อยู่แล้ว แต่ flow ตัดสินว่าไม่พบแล้วล้มทั้งคลิป)
+    // -> ก่อนสรุปว่าล้มเหลว รอดูปุ่ม โพสต์วิดีโอ ก่อน (หน้าเป็น React โหลดช้าได้หลายวินาที)
+    if (waitForShopeeVideoComposerButton(12_000L)) {
+      logShopeePostStep("อยู่หน้าบัญชี Shopee Video แล้ว (พบปุ่ม โพสต์วิดีโอ) ไปขั้นตอนถัดไป")
+      return true
+    }
     logShopeePostStep("ไม่พบ หน้าบัญชี Shopee Video")
     return false
   }
@@ -1777,10 +1785,50 @@ internal fun KubdeeAccessibilityService.tapShopeePostButton() {
       tapShopeeBottomPostButtonFallback()
   }
   if (!published) {
+    // รายงานผู้ใช้ (Sentry MOBILE-1C) tree แนบมากับรายงานถ่ายหลังออกจาก Shopee ไปแล้ว เลยไม่เห็น
+    // หน้าที่หาปุ่มไม่เจอจริงๆ — log สภาพแถบล่างจอ ณ ตอนพลาดไว้ในตัว log ที่แนบไปกับรายงานเสมอ
+    logShopeePostButtonDebugSnapshot()
     throw IllegalStateException("ไม่พบปุ่มโพสต์")
   }
   logShopeePostStep("กดโพสต์แล้ว รอ Shopee รับคำสั่ง")
   sleepStep(2000L)
+}
+
+// สรุป node ที่มองเห็นในโซนล่างของจอ (ที่ปุ่มโพสต์ควรอยู่) ลง log แบบย่อ — ใช้วินิจฉัยเครื่องที่
+// composer ของ Shopee เผย accessibility tree ไม่ครบ (เช่น Sentry MOBILE-1C: หา "โพสต์" exact ไม่เจอ
+// และ editor markers ไม่พอให้ fallback ปุ่มล่างทำงาน) รูปแบบเดียวกับ debug ของ collectShopeeHeaderDebugNodes
+internal fun KubdeeAccessibilityService.logShopeePostButtonDebugSnapshot() {
+  try {
+    val summaries = mutableListOf<String>()
+    for (root in shopeeWindowRoots()) {
+      val screen = screenBounds(root)
+      val bottomStart = screen.top + (screen.height() * 0.62f).toInt()
+      fun visit(node: AccessibilityNodeInfo?, depth: Int) {
+        if (node == null || depth > 56 || summaries.size >= 12) return
+        if (node.isVisibleToUser && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) {
+          val bounds = Rect()
+          node.getBoundsInScreen(bounds)
+          if (bounds.centerY() >= bottomStart && bounds.width() > 0 && bounds.height() > 0) {
+            val text = cleanNodeText(readNodeText(node)).take(16)
+            if (text.isNotBlank() || node.isClickable) {
+              val marker = if (node.isClickable) "clk:" else ""
+              val label = text.ifBlank { "${bounds.width()}x${bounds.height()}" }
+              summaries += "$marker$label@${bounds.centerX()},${bounds.centerY()}"
+            }
+          }
+        }
+        for (index in 0 until node.childCount) visit(node.getChild(index), depth + 1)
+      }
+      visit(root, 0)
+      if (summaries.size >= 12) break
+    }
+    logShopeePostStep(
+      "หาปุ่มโพสต์ไม่เจอ สภาพแถบล่างจอ: " +
+        (if (summaries.isEmpty()) "(ไม่มี node ที่มองเห็นเลย)" else summaries.joinToString(" | "))
+    )
+  } catch (_: Exception) {
+    // debug เป็น best-effort — ห้ามทำ flow ล้มซ้ำ
+  }
 }
 
 internal fun KubdeeAccessibilityService.tapShopeeBottomPostButtonFallback(): Boolean {
@@ -2225,6 +2273,33 @@ internal fun KubdeeAccessibilityService.captureScreenBitmapBlocking(): Bitmap? {
     return null
   }
 
+  // Android จำกัดความถี่ takeScreenshot ต่อ accessibility service — เรียกติดกันเร็วเกินได้
+  // ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT (code=3) เช่นเช็ค toggle reuse เพิ่งถ่ายภาพเสร็จ
+  // แล้วป้ายกำกับ AI ถ่ายซ้ำในวินาทีเดียวกัน (Sentry MOBILE-1C: ล้มเหลว code=3 ทุกครั้งทั้งที่
+  // ถ่ายรอบแรกสำเร็จ) -> เจอ code=3 ให้พักสั้นๆ แล้วลองใหม่อีกหนึ่งครั้ง
+  repeat(2) { attempt ->
+    val (bitmap, failureCode) = captureScreenBitmapOnceBlocking() ?: return null
+    if (bitmap != null) return bitmap
+    if (
+      attempt == 0 &&
+      failureCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT
+    ) {
+      logShopeePostStep("อ่านภาพหน้าจอถี่เกินไป (code=$failureCode) พัก 1.3 วิ แล้วลองใหม่")
+      sleepStep(1_300L)
+    } else {
+      if (failureCode != null) {
+        logShopeePostStep("อ่านภาพหน้าจอเพื่อหา toggle ล้มเหลว code=$failureCode")
+      }
+      return null
+    }
+  }
+  return null
+}
+
+// ถ่ายภาพหน้าจอหนึ่งครั้ง: Pair(bitmap, failureCode) — bitmap=null+code!=null คือ Shopee/ระบบปฏิเสธ,
+// คืน null ทั้งคู่เมื่อ callback ไม่ตอบ (timeout) และคืนค่า null (ของทั้งฟังก์ชัน) เมื่อ error จน retry ไม่มีประโยชน์
+internal fun KubdeeAccessibilityService.captureScreenBitmapOnceBlocking(): Pair<Bitmap?, Int?>? {
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
   val latch = CountDownLatch(1)
   var bitmap: Bitmap? = null
   var failureCode: Int? = null
@@ -2258,12 +2333,9 @@ internal fun KubdeeAccessibilityService.captureScreenBitmapBlocking(): Bitmap? {
 
   if (!latch.await(1800L, TimeUnit.MILLISECONDS)) {
     logShopeePostStep("อ่านภาพหน้าจอเพื่อหา toggle หมดเวลา")
-    return null
+    return Pair(null, null)
   }
-  if (failureCode != null) {
-    logShopeePostStep("อ่านภาพหน้าจอเพื่อหา toggle ล้มเหลว code=$failureCode")
-  }
-  return bitmap
+  return Pair(bitmap, failureCode)
 }
 
 internal fun scanShopeePostingVisualToggles(bitmap: Bitmap): List<ShopeeVisualToggleTarget> {

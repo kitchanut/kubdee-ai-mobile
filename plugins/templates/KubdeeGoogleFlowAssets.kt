@@ -204,6 +204,10 @@ internal fun KubdeeAccessibilityModule.cachedVideoThumbnailUri(uri: Uri): String
   return if (file.exists() && file.length() > 0L) Uri.fromFile(file).toString() else null
 }
 
+// Thumbnail แสดงในลิสต์แค่ ~56dp — decode เฟรมเต็ม 1080x1920 (~8.3MB ARGB_8888) เปลืองเมมโดยไม่จำเป็น
+// จำกัดด้านยาวไว้ ~480px คงสัดส่วนเดิม (คมพอสำหรับลิสต์ + JPEG ที่เซฟเล็กลง → decode รอบหลังเบาลงด้วย)
+private const val VIDEO_THUMBNAIL_LONG_EDGE = 480
+
 internal fun KubdeeAccessibilityModule.createVideoThumbnail(uri: Uri): String? {
   val cached = cachedVideoThumbnailUri(uri)
   if (cached != null) {
@@ -218,8 +222,7 @@ internal fun KubdeeAccessibilityModule.createVideoThumbnail(uri: Uri): String? {
       "file" -> retriever.setDataSource(uri.path.orEmpty())
       else -> retriever.setDataSource(uri.toString())
     }
-    retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-      ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
+    decodeScaledVideoThumbnailFrame(retriever)
   } finally {
     retriever.release()
   } ?: return null
@@ -230,6 +233,48 @@ internal fun KubdeeAccessibilityModule.createVideoThumbnail(uri: Uri): String? {
   }
   bitmap.recycle()
   return Uri.fromFile(target).toString()
+}
+
+private fun decodeScaledVideoThumbnailFrame(retriever: MediaMetadataRetriever): Bitmap? {
+  val srcWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+  val srcHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+  val longEdge = maxOf(srcWidth, srcHeight)
+
+  // API 27+ ให้ decoder ย่อให้เลย (ไม่ต้องถือ bitmap เต็มเฟรมในเมมแม้แต่ชั่วคราว)
+  // ข้ามเมื่อ metadata ไม่บอกขนาด (longEdge = 0) หรือวิดีโอเล็กกว่าเป้าอยู่แล้ว (ไม่ขยายภาพ)
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && longEdge > VIDEO_THUMBNAIL_LONG_EDGE) {
+    val scale = VIDEO_THUMBNAIL_LONG_EDGE.toFloat() / longEdge.toFloat()
+    val dstWidth = (srcWidth * scale).toInt().coerceAtLeast(1)
+    val dstHeight = (srcHeight * scale).toInt().coerceAtLeast(1)
+    val scaled =
+      retriever.getScaledFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, dstWidth, dstHeight)
+        ?: retriever.getScaledFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST, dstWidth, dstHeight)
+    if (scaled != null) {
+      return scaled
+    }
+    // getScaledFrameAtTime ล้มเหลว → ตกไปเส้นทาง full-frame + ย่อเองด้านล่าง
+  }
+
+  // เส้นทางสำรอง (API 26 / metadata ไม่มีขนาด / scaled decode ล้มเหลว): decode เต็มเฟรมแล้วย่อเองทันที
+  val frame = retriever.getFrameAtTime(1_000_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+    ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
+    ?: return null
+  return downscaleVideoThumbnailFrame(frame)
+}
+
+private fun downscaleVideoThumbnailFrame(frame: Bitmap): Bitmap {
+  val longEdge = maxOf(frame.width, frame.height)
+  if (longEdge <= VIDEO_THUMBNAIL_LONG_EDGE) {
+    return frame
+  }
+  val scale = VIDEO_THUMBNAIL_LONG_EDGE.toFloat() / longEdge.toFloat()
+  val dstWidth = (frame.width * scale).toInt().coerceAtLeast(1)
+  val dstHeight = (frame.height * scale).toInt().coerceAtLeast(1)
+  val scaled = Bitmap.createScaledBitmap(frame, dstWidth, dstHeight, true)
+  if (scaled !== frame) {
+    frame.recycle()
+  }
+  return scaled
 }
 
 internal fun KubdeeAccessibilityModule.videoThumbnailFile(uri: Uri): File {

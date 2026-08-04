@@ -398,10 +398,63 @@ internal fun KubdeeAccessibilityService.tapShopeeShareDrawerClose(): Boolean {
     }
 
     visit(root)
-    val bounds = candidates.sortedWith(compareBy<Rect> { it.top }.thenByDescending { it.left }).firstOrNull()
-      ?: return false
-    logStep("ปิดแผ่นแชร์สินค้า")
+    val byResourceId = candidates.sortedWith(compareBy<Rect> { it.top }.thenByDescending { it.left }).firstOrNull()
+    // Shopee บางบิลด์ปุ่ม X ของแผงแชร์ไม่มี resource id/ข้อความ/contentDescription ให้จับเลย
+    // (Sentry MOBILE-1E: 3.78.28 บน SM-A075F — tree มีแค่ ViewGroup [clk] 45x45 มุมขวาบนของแผง
+    // แถวเดียวกับหัวข้อ "แชร์เพื่อรับค่าคอมมิชชั่น") -> หาแบบตำแหน่งเทียบหัวข้อแผงแทน
+    val bounds = byResourceId ?: findShopeeShareDrawerCloseByPosition(root, screen) ?: return false
+    logStep(if (byResourceId != null) "ปิดแผ่นแชร์สินค้า" else "ปิดแผ่นแชร์สินค้า (ปุ่ม X ตามตำแหน่งหัวแผง)")
     return tapBlocking(bounds.centerX().toFloat(), bounds.centerY().toFloat(), timeoutMs = 1800L, durationMs = 90L)
+  }
+
+// ปุ่ม X แบบไม่มี id/label: ยึดหัวข้อแผงแชร์ (ข้อความชุดเดียวกับ isShopeeShareSheetVisible) เป็นหลัก
+// แล้วรับเฉพาะ node กดได้ขนาดเล็กจัตุรัสๆ ที่อยู่แถวเดียวกับหัวข้อ ชิดขอบขวาของจอ และไม่มี label —
+// แนวเดียวกับ dismissShopeePromoPopupByIcon / findShopeeShareFirstImageDownloadIcon
+internal fun KubdeeAccessibilityService.findShopeeShareDrawerCloseByPosition(
+  root: AccessibilityNodeInfo,
+  screen: Rect
+): Rect? {
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val title = textNodes
+      .filter { candidate ->
+        candidate.node.isVisibleToUser &&
+          candidate.bounds.top > screen.top + (screen.height() * 0.40f).toInt() &&
+          (
+            candidate.text.contains("แชร์เพื่อรับ") ||
+              candidate.text.contains("share to earn", ignoreCase = true) ||
+              candidate.text.contains("แชร์ให้เพื่อน")
+          )
+      }
+      .minByOrNull { it.bounds.top }
+      ?: return null
+
+    val minSize = maxOf(18, (screen.width() * 0.035f).toInt())
+    val maxSize = (screen.width() * 0.14f).toInt()
+    val rightZoneStart = screen.left + (screen.width() * 0.78f).toInt()
+    val rowPadding = title.bounds.height().coerceAtLeast(12)
+    val closeCandidates = mutableListOf<Rect>()
+
+    fun visit(node: AccessibilityNodeInfo?, depth: Int = 0) {
+      if (node == null || depth > 56) return
+      if (node.isVisibleToUser && node.isClickable && node.packageName?.toString() == TARGET_PACKAGE_SHOPEE) {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        val label = (node.text?.toString().orEmpty() + " " + node.contentDescription?.toString().orEmpty()).trim()
+        val squareish = bounds.width() in minSize..maxSize && bounds.height() in minSize..maxSize &&
+          kotlin.math.abs(bounds.width() - bounds.height()) <= (maxOf(bounds.width(), bounds.height()) * 0.5f).toInt()
+        val sameRowAsTitle = bounds.centerY() >= title.bounds.top - rowPadding &&
+          bounds.centerY() <= title.bounds.bottom + rowPadding
+        val atRightEdge = bounds.centerX() >= rightZoneStart && bounds.left >= title.bounds.right - rowPadding
+        if (squareish && sameRowAsTitle && atRightEdge && label.isEmpty()) {
+          closeCandidates += Rect(bounds)
+        }
+      }
+      for (index in 0 until node.childCount) visit(node.getChild(index), depth + 1)
+    }
+
+    visit(root)
+    return closeCandidates.sortedWith(compareBy<Rect> { it.top }.thenByDescending { it.left }).firstOrNull()
   }
 
 internal fun KubdeeAccessibilityService.findShopeeShareDrawerImageUrl(): String? {

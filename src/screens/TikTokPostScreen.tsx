@@ -5,7 +5,6 @@ import { toast } from 'sonner-native';
 
 import {
   beginAutomationActivityRun,
-  flushAutomationActivitySnapshot,
   pushAutomationActivityLog,
   setAutomationActivityRunning,
   setAutomationActivityStopping,
@@ -254,8 +253,9 @@ export default function TikTokPostScreen({
   const canPost = Boolean(selectedProfileId && postableVideos.length > 0 && !isPosting);
 
   const appendLog = useCallback((message: string): void => {
+    // ไม่ต้อง flush ต่อบรรทัด — store มี debounce 250ms + max-wait 5s และ flush การันตี
+    // ที่จุดจบ run (setAutomationActivityRunning(false) ใน finishRun) กับตอนแอปลง background
     pushAutomationActivityLog('tiktok-post', message);
-    void flushAutomationActivitySnapshot();
   }, []);
 
   const finishRun = useCallback((message: string, error = false): void => {
