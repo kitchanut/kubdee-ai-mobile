@@ -422,7 +422,9 @@ internal fun KubdeeAccessibilityService.findShopeeShareDrawerCloseByPosition(
           candidate.bounds.top > screen.top + (screen.height() * 0.40f).toInt() &&
           (
             candidate.text.contains("แชร์เพื่อรับ") ||
+              candidate.text.contains("แชร์สินค้า") ||
               candidate.text.contains("share to earn", ignoreCase = true) ||
+              candidate.text.contains("share product", ignoreCase = true) ||
               candidate.text.contains("แชร์ให้เพื่อน")
           )
       }

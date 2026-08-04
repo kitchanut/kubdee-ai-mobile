@@ -1,6 +1,8 @@
 # Expo HAS CHANGED
 
 Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before writing any code.
+Read `docs/DEVELOPMENT.md` before editing for the required Android toolchain, dev-build loop,
+and project verification commands.
 
 # Native automation Kotlin — single source of truth
 
@@ -11,6 +13,7 @@ so they can silently drift and break a fresh prebuild.
 - ✅ Edit Kotlin in `plugins/templates/` only, then `npx expo prebuild -p android` to regenerate `android/`.
 - 🚫 Never hand-edit `android/app/src/main/java/ai/kubdee/mobile/automation/*.kt`.
 - Run `npm run check:native-drift` after any native change (CI enforces it).
+- Run `npm run verify` before committing; it covers typecheck, native drift, and release consistency.
 
 # Versioning — single source of truth
 

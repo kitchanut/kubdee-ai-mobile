@@ -11,7 +11,7 @@ internal const val AUTOMATION_NOTIFICATION_ID = 2401
 internal const val TARGET_PACKAGE_SHOPEE = "com.shopee.th"
 // Shopee build the automation is verified against. Shown next to the device's installed version so
 // a mismatch (Shopee changed its UI) is obvious. Bump when we test/support a newer Shopee build.
-internal const val SHOPEE_TESTED_VERSION = "3.78.25"
+internal const val SHOPEE_TESTED_VERSION = "3.79.27"
 internal const val COPY_SHOPEE_PRODUCT_URL_DURING_IMPORT = true
 // ⚠️ ต้องเป็น UA เดสก์ท็อป — Shopee ตอบ s.shopee.co.th ต่างกันตาม User-Agent (วัดจริง 2026-07-15):
 //   UA มือถือ  -> HTTP 200 ไม่มี Location เลย (หน้า JS ที่พยายาม deep link เข้าแอป) = ตามต่อไม่ได้
@@ -33,7 +33,7 @@ internal val SHOPEE_OFFER_CATEGORY_TEXTS = listOf(
   "เครื่องใช้ในบ้าน",
   "กีฬาและกิจกรรมกลางแจ้ง",
   "เสื้อผ้าแฟชั่นผู้ชาย",
-  "อาหารและเครื่องดื่ม",
+  "เครื่องใช้ไฟฟ้าภายในบ้าน",
   "กลุ่มผลิตภัณฑ์เพื่อสุขภาพ"
 )
 
