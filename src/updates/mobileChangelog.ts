@@ -44,9 +44,31 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
-    version: '0.9.20',
+    version: '0.9.22',
     date: '2026-08-05',
-    highlight: 'รองรับ Shopee 3.79.27 สำหรับนำเข้าสินค้าและข้อเสนอ',
+    highlight: 'อัปเดตหมวดข้อเสนอ Shopee ให้ตรงกับหน้าจอเวอร์ชัน 3.79.27',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'เปลี่ยนหมวด “อาหารและเครื่องดื่ม” ที่ไม่มีบน Shopee รุ่นทดสอบเป็น “เครื่องใช้ไฟฟ้าภายในบ้าน” เพื่อให้ดึงครบทุกหมวดได้จริง'
+      }
+    ]
+  },
+  {
+    version: '0.9.21',
+    date: '2026-08-04',
+    highlight: 'แก้การปิดแผงแชร์ Shopee บางรูปแบบอัตโนมัติ',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'ปรับการค้นหาปุ่ม X ของแผงแชร์ให้รองรับหัวข้อ “แชร์สินค้า” บน Shopee เวอร์ชัน 3.79.27'
+      }
+    ]
+  },
+  {
+    version: '0.9.20',
+    date: '2026-08-04',
+    highlight: 'รองรับ Shopee 3.79.27 สำหรับนำเข้าสินค้าจากรายการถูกใจ',
     changes: [
       {
         type: 'improved',
@@ -55,14 +77,6 @@ export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
       {
         type: 'improved',
         text: 'ปรับรุ่น Mobile สำหรับการดึงสินค้าจากรายการถูกใจในมุมมองผู้ซื้อให้สอดคล้องกับ Shopee เวอร์ชันปัจจุบัน'
-      },
-      {
-        type: 'fixed',
-        text: 'ปรับการค้นหาปุ่ม X ของแผงแชร์ให้รองรับหัวข้อ “แชร์สินค้า” บน Shopee เวอร์ชัน 3.79.27'
-      },
-      {
-        type: 'fixed',
-        text: 'เปลี่ยนหมวด “อาหารและเครื่องดื่ม” ที่ไม่มีบน Shopee รุ่นทดสอบเป็น “เครื่องใช้ไฟฟ้าภายในบ้าน” เพื่อให้ดึงครบทุกหมวดได้จริง'
       }
     ]
   },
