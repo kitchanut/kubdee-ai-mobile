@@ -345,19 +345,7 @@ internal fun KubdeeAccessibilityService.waitForShopeeVideoComposerButton(timeout
   val deadline = System.currentTimeMillis() + timeoutMs
   while (System.currentTimeMillis() <= deadline) {
     dismissShopeeBlockingPopups()
-    val root = rootInActiveWindow
-    if (
-      root != null &&
-      findVisibleMatchingNode(
-        root,
-        SHOPEE_VIDEO_COMPOSER_TEXTS,
-        exact = false,
-        includeResourceId = false,
-        allowedPackageName = TARGET_PACKAGE_SHOPEE
-      ) != null
-    ) {
-      return true
-    }
+    if (findShopeeVideoComposerTextTarget() != null || findShopeeComposerPlusTarget() != null) return true
     sleepStep(900L)
   }
   return false
@@ -365,12 +353,137 @@ internal fun KubdeeAccessibilityService.waitForShopeeVideoComposerButton(timeout
 
 internal fun KubdeeAccessibilityService.openShopeeVideoComposer() {
   logShopeePostStep("กดปุ่ม โพสต์วิดีโอ")
-  if (!tapShopeeVideoComposerButton()) {
-    throw IllegalStateException("ไม่พบปุ่ม โพสต์วิดีโอ")
+  var foundTarget = false
+  repeat(3) { attempt ->
+    // Picker อาจเปิดช้ากว่า timeout ของรอบก่อน จึงตรวจปลายทางก่อนกดซ้ำทุกครั้ง
+    if (finishShopeeVideoComposerTransitionIfVisible()) return
+    if (attempt > 0) {
+      logShopeePostStep("หน้าคลังวิดีโอยังไม่เปิด ลองกดปุ่ม โพสต์วิดีโอ อีกครั้ง (${attempt + 1}/3)")
+    }
+    if (!tapShopeeVideoComposerButton(attempt)) {
+      sleepStep(500L)
+      return@repeat
+    }
+    foundTarget = true
+    if (waitForShopeeVideoComposerTransition(3_000L)) {
+      sleepStep(500L)
+      if (finishShopeeVideoComposerTransitionIfVisible()) return
+    }
   }
-  sleepStep(4000L)
-  tapAndroidPermissionAllow()
+  // กัน race รอบสุดท้าย: Shopee บางเครื่องเปลี่ยนหน้าเกิน 3 วินาที
+  if (waitForShopeeVideoComposerTransition(2_000L) && finishShopeeVideoComposerTransitionIfVisible()) return
+  if (foundTarget) {
+    throw IllegalStateException("กดปุ่ม โพสต์วิดีโอ แล้ว แต่หน้าคลังวิดีโอไม่เปิด")
+  }
+  throw IllegalStateException("ไม่พบปุ่ม โพสต์วิดีโอ")
 }
+
+internal fun KubdeeAccessibilityService.finishShopeeVideoComposerTransitionIfVisible(): Boolean {
+  val root = rootInActiveWindow ?: return false
+  if (!containsNodeFromPackage(root, TARGET_PACKAGE_SHOPEE) && isAndroidMediaPermissionPrompt(root)) {
+    if (!tapAndroidPermissionAllowExact()) {
+      throw IllegalStateException("พบหน้าขอสิทธิ์ แต่กดอนุญาตเปิดคลังวิดีโอไม่ได้")
+    }
+    if (!waitForShopeeVideoPickerReady(5_000L)) {
+      throw IllegalStateException("อนุญาตสิทธิ์แล้ว แต่หน้าคลังวิดีโอยังไม่เปิด")
+    }
+    return true
+  }
+  return containsNodeFromPackage(root, TARGET_PACKAGE_SHOPEE) && isShopeeVideoPickerEntryVisible(root)
+}
+
+// ต้องเทียบข้อความปุ่มแบบตรงตัวเท่านั้น เพราะ "ไม่อนุญาต" และ "Don't allow" มีคำว่า
+// "อนุญาต"/"Allow" อยู่ภายใน และลำดับ node ของ permission dialog ต่างกันตามยี่ห้อเครื่อง
+internal fun KubdeeAccessibilityService.tapAndroidPermissionAllowExact(): Boolean =
+  clickByAnyText(
+    listOf(
+      "อนุญาตทั้งหมด",
+      "อนุญาต",
+      "ขณะใช้แอป",
+      "Allow all",
+      "Allow",
+      "While using the app",
+      "Only this time"
+    ),
+    exact = true
+  )
+
+// ACTION_CLICK/dispatchGesture คืน true หมายถึง Android รับคำสั่งแล้วเท่านั้น ไม่ได้แปลว่า Shopee
+// เปลี่ยนหน้าจริง จึงยอมรับเฉพาะเมื่อเห็นหน้าเลือกสื่อหรือหน้าต่าง permission จริง
+internal fun KubdeeAccessibilityService.waitForShopeeVideoComposerTransition(timeoutMs: Long): Boolean {
+  val deadline = System.currentTimeMillis() + timeoutMs
+  while (System.currentTimeMillis() <= deadline) {
+    val activeRoot = rootInActiveWindow
+    if (activeRoot == null) {
+      sleepStep(350L)
+      continue
+    }
+    if (!containsNodeFromPackage(activeRoot, TARGET_PACKAGE_SHOPEE)) {
+      if (isAndroidMediaPermissionPrompt(activeRoot)) return true
+      sleepStep(350L)
+      continue
+    }
+    if (isShopeeVideoPickerEntryVisible(activeRoot)) return true
+    sleepStep(350L)
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.isAndroidMediaPermissionPrompt(root: AccessibilityNodeInfo): Boolean {
+  val activePackage = root.packageName?.toString().orEmpty()
+  if (
+    activePackage.contains("permissioncontroller", ignoreCase = true) ||
+    activePackage.contains("packageinstaller", ignoreCase = true)
+  ) {
+    return true
+  }
+  return findVisibleMatchingNode(
+    root,
+    listOf(
+      "อนุญาตทั้งหมด",
+      "อนุญาต",
+      "ขณะใช้แอป",
+      "Allow all",
+      "Allow",
+      "While using the app",
+      "Only this time"
+    ),
+    exact = true,
+    includeResourceId = false
+  ) != null
+}
+
+internal fun KubdeeAccessibilityService.waitForShopeeVideoPickerReady(timeoutMs: Long): Boolean {
+  val deadline = System.currentTimeMillis() + timeoutMs
+  while (System.currentTimeMillis() <= deadline) {
+    val root = rootInActiveWindow
+    if (
+      root != null &&
+      containsNodeFromPackage(root, TARGET_PACKAGE_SHOPEE) &&
+      isShopeeVideoPickerEntryVisible(root)
+    ) {
+      return true
+    }
+    sleepStep(350L)
+  }
+  return false
+}
+
+internal fun KubdeeAccessibilityService.isShopeeVideoPickerEntryVisible(root: AccessibilityNodeInfo): Boolean =
+  findVisibleMatchingNode(
+    root,
+    listOf("คลังภาพ", "Gallery", "Albums"),
+    exact = false,
+    includeResourceId = false,
+    allowedPackageName = TARGET_PACKAGE_SHOPEE
+  ) != null ||
+    findVisibleMatchingNode(
+      root,
+      listOf("pick_media", "pick_gallery", "media_picker", "album_picker"),
+      exact = false,
+      includeResourceId = true,
+      allowedPackageName = TARGET_PACKAGE_SHOPEE
+    ) != null
 
 internal fun KubdeeAccessibilityService.selectPreparedShopeeVideoFromGallery(preparedVideo: PreparedShopeeVideo) {
   logShopeePostStep("เปิดคลังภาพ")
@@ -2659,63 +2772,236 @@ internal fun KubdeeAccessibilityService.clickShopeeToggleTarget(
 
 internal fun KubdeeAccessibilityService.toggleCenterY(bounds: Rect): Int = (bounds.top + bounds.bottom) / 2
 
-internal fun KubdeeAccessibilityService.tapShopeeVideoComposerButton(): Boolean {
-  if (clickByAnyText(SHOPEE_VIDEO_COMPOSER_TEXTS, exact = false, allowedPackageName = TARGET_PACKAGE_SHOPEE)) return true
+internal fun KubdeeAccessibilityService.tapShopeeVideoComposerButton(attempt: Int = 0): Boolean {
+  val target = findShopeeVideoComposerTextTarget()
+  if (target != null) {
+    val root = target.node.rootOrSelf()
+    val screen = screenBounds(root)
+    val clickable = findShopeeComposerClickableAncestor(target.node, target.bounds, screen)
 
-  val root = rootInActiveWindow ?: return false
+    if (attempt >= 2 && clickable != null) {
+      val (_, bounds) = clickable
+      logShopeePostStep(
+        "กดปุ่ม โพสต์วิดีโอ ด้วย action ที่กรอบ ${bounds.flattenToString()} (ครั้ง ${attempt + 1})"
+      )
+      showAutomationTapIndicatorBeforeTap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+      if (clickable.first.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+    }
+
+    val tapBounds = if (attempt >= 1 && clickable != null) clickable.second else target.bounds
+    logShopeePostStep(
+      "แตะปุ่ม โพสต์วิดีโอ ที่ ${tapBounds.centerX()},${tapBounds.centerY()} " +
+        "กรอบ=${tapBounds.flattenToString()} label=${target.text}"
+    )
+    return tapBlocking(
+      tapBounds.centerX().toFloat(),
+      tapBounds.centerY().toFloat(),
+      durationMs = 100L
+    )
+  }
+
+  val root = shopeeWindowRoots().firstOrNull() ?: return false
   val screen = screenBounds(root)
   val textNodes = mutableListOf<TextNode>()
   collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
-  val candidate = textNodes
-    .filter { node ->
-      SHOPEE_VIDEO_COMPOSER_TEXTS.any { needle -> node.text.contains(needle, ignoreCase = true) } &&
-        node.bounds.top >= screen.top + (screen.height() * 0.55f).toInt()
-    }
-    .sortedByDescending { it.bounds.top }
-    .firstOrNull()
-  if (candidate != null) {
-    return tapBlocking(candidate.bounds.centerX().toFloat(), candidate.bounds.centerY().toFloat())
-  }
   return tapShopeeComposerPlusFallback(root, textNodes, screen)
 }
 
-// บางเครื่องปุ่มโพสต์มุมขวาล่างเป็นไอคอน "+" ล้วน ไม่มีข้อความ/contentDescription ให้จับ
+// รับเฉพาะ label ของปุ่มแบบตรงตัวในโซนล่างของจอ เพื่อไม่ให้ข้อความ
+// "โพสต์วิดีโอแบบไม่จำกัด" ในส่วน Video Health กลางหน้าถูกเลือกแทนปุ่มจริง
+internal fun KubdeeAccessibilityService.findShopeeVideoComposerTextTarget(
+  onlyRoot: AccessibilityNodeInfo? = null
+): TextNode? {
+  val roots = onlyRoot?.let { listOf(it) } ?: shopeeWindowRoots()
+  for (root in roots) {
+    if (!containsNodeFromPackage(root, TARGET_PACKAGE_SHOPEE)) continue
+    val screen = screenBounds(root)
+    val regionTop = screen.top + (screen.height() * 0.68f).toInt()
+    val textNodes = mutableListOf<TextNode>()
+    collectTextNodes(root, textNodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    val candidate = textNodes
+      .filter { node ->
+        node.node.isVisibleToUser &&
+          node.bounds.centerY() >= regionTop &&
+          isSafeShopeeVideoComposerLabel(node.node)
+      }
+      .sortedWith(
+        compareByDescending<TextNode> { node -> node.bounds.centerY() }
+          .thenBy { node -> kotlin.math.abs(node.bounds.centerX() - screen.centerX()) }
+      )
+      .firstOrNull()
+    if (candidate != null) return candidate
+  }
+  return null
+}
+
+internal fun KubdeeAccessibilityService.isSafeShopeeVideoComposerLabel(node: AccessibilityNodeInfo): Boolean {
+  val values = listOfNotNull(node.text?.toString(), node.contentDescription?.toString())
+    .map { cleanNodeText(it) }
+    .filter { it.isNotBlank() }
+  return values.any { value ->
+    SHOPEE_VIDEO_COMPOSER_TEXTS.any { label ->
+      value.equals(label, ignoreCase = true) ||
+        Regex("^${Regex.escape(label)}\\s*[,|·-]?\\s*(?:button|ปุ่ม)$", RegexOption.IGNORE_CASE).matches(value)
+    }
+  }
+}
+
+// จำกัด ancestor ให้มีขนาดคล้ายปุ่มและอยู่ล่างจอเท่านั้น ป้องกัน Shopee WebView ที่ mark
+// container ใหญ่ทั้งหน้าเป็น clickable แล้ว ACTION_CLICK พาวงแตะไปกลางจอ
+internal fun KubdeeAccessibilityService.findShopeeComposerClickableAncestor(
+  node: AccessibilityNodeInfo,
+  labelBounds: Rect,
+  screen: Rect
+): Pair<AccessibilityNodeInfo, Rect>? {
+  var current: AccessibilityNodeInfo? = node
+  while (current != null) {
+    val bounds = Rect()
+    current.getBoundsInScreen(bounds)
+    val validButtonBounds =
+      bounds.contains(labelBounds.centerX(), labelBounds.centerY()) &&
+        bounds.top >= screen.top + (screen.height() * 0.62f).toInt() &&
+        bounds.bottom <= screen.bottom &&
+        bounds.width() >= labelBounds.width() &&
+        bounds.height() >= labelBounds.height() &&
+        bounds.width() <= (screen.width() * 0.88f).toInt() &&
+        bounds.height() <= (screen.height() * 0.16f).toInt()
+    if (
+      validButtonBounds &&
+      current.isVisibleToUser &&
+      current.isClickable &&
+      isAllowedPackageNode(current, TARGET_PACKAGE_SHOPEE)
+    ) {
+      return current to Rect(bounds)
+    }
+    current = current.parent
+  }
+  return null
+}
+
+internal fun AccessibilityNodeInfo.rootOrSelf(): AccessibilityNodeInfo {
+  var current = this
+  while (true) {
+    val parent = current.parent ?: return current
+    current = parent
+  }
+}
+
+// บางเครื่องปุ่มโพสต์เป็นไอคอน "+" ล้วน ไม่มีข้อความ/contentDescription ให้จับ รองรับทั้ง
+// ตำแหน่งล่างกลางของหน้า Live & Video ใหม่ และล่างขวาของหน้าบัญชี Shopee Video แบบเดิม
 internal fun KubdeeAccessibilityService.tapShopeeComposerPlusFallback(
   root: AccessibilityNodeInfo,
   textNodes: List<TextNode>,
   screen: Rect
 ): Boolean {
-  val regionLeft = screen.left + (screen.width() * 0.6f).toInt()
-  val regionTop = screen.top + (screen.height() * 0.6f).toInt()
-
-  val plusNode = textNodes
-    .filter { node ->
-      (node.text == "+" || node.text == "＋") &&
-        node.bounds.left >= regionLeft &&
-        node.bounds.top >= regionTop
-    }
-    .maxByOrNull { it.bounds.top }
+  val plusNode = findShopeeComposerPlusTarget(root, textNodes, screen)
   if (plusNode != null) {
-    logShopeePostStep("ไม่พบข้อความ โพสต์วิดีโอ ใช้ปุ่ม + มุมขวาล่างแทน")
-    if (clickNode(plusNode.node)) return true
-    return tapBlocking(plusNode.bounds.centerX().toFloat(), plusNode.bounds.centerY().toFloat())
+    logShopeePostStep("ไม่พบข้อความ โพสต์วิดีโอ ใช้ปุ่ม + โซนล่างแทน")
+    return tapBlocking(plusNode.bounds.centerX().toFloat(), plusNode.bounds.centerY().toFloat(), durationMs = 100L)
   }
 
+  val placement = resolveShopeeComposerFabPlacement(textNodes, screen) ?: return false
+  val regionLeft = if (placement == "center") {
+    screen.left + (screen.width() * 0.28f).toInt()
+  } else {
+    screen.left + (screen.width() * 0.62f).toInt()
+  }
+  val regionRight = if (placement == "center") {
+    screen.left + (screen.width() * 0.72f).toInt()
+  } else {
+    screen.right - (screen.width() * 0.04f).toInt()
+  }
+  val regionTop = screen.top + (screen.height() * 0.76f).toInt()
   val fabBounds = mutableListOf<Rect>()
-  collectShopeeComposerFabCandidates(root, screen, regionLeft, regionTop, fabBounds)
+  collectShopeeComposerFabCandidates(root, screen, regionLeft, regionRight, regionTop, fabBounds)
+  val targetY = screen.bottom - (screen.height() * 0.09f).toInt()
+  val targetX = if (placement == "center") screen.centerX() else screen.right - (screen.width() * 0.11f).toInt()
   val fab = fabBounds.minByOrNull { bounds ->
-    val dx = (screen.right - bounds.centerX()).toLong()
-    val dy = (screen.bottom - bounds.centerY()).toLong()
-    dx * dx + dy * dy
+    val dx = kotlin.math.abs(targetX - bounds.centerX()).toLong()
+    val dy = kotlin.math.abs(targetY - bounds.centerY()).toLong()
+    dx * dx * 3L + dy * dy
   } ?: return false
-  logShopeePostStep("ไม่พบข้อความ โพสต์วิดีโอ ใช้ปุ่มกดได้มุมขวาล่างแทน")
-  return tapBlocking(fab.centerX().toFloat(), fab.centerY().toFloat())
+  logShopeePostStep("ไม่พบข้อความ โพสต์วิดีโอ ใช้ปุ่มกดได้โซนล่างแทน (${fab.centerX()},${fab.centerY()})")
+  return tapBlocking(fab.centerX().toFloat(), fab.centerY().toFloat(), durationMs = 100L)
+}
+
+internal fun KubdeeAccessibilityService.findShopeeComposerPlusTarget(
+  onlyRoot: AccessibilityNodeInfo? = null,
+  knownTextNodes: List<TextNode>? = null,
+  knownScreen: Rect? = null
+): TextNode? {
+  val roots = onlyRoot?.let { listOf(it) } ?: shopeeWindowRoots()
+  for (root in roots) {
+    if (!containsNodeFromPackage(root, TARGET_PACKAGE_SHOPEE)) continue
+    val screen = knownScreen ?: screenBounds(root)
+    val textNodes = knownTextNodes ?: mutableListOf<TextNode>().also { nodes ->
+      collectTextNodes(root, nodes, allowedPackageName = TARGET_PACKAGE_SHOPEE)
+    }
+    val regionLeft = screen.left + (screen.width() * 0.08f).toInt()
+    val regionRight = screen.right - (screen.width() * 0.05f).toInt()
+    val regionTop = screen.top + (screen.height() * 0.68f).toInt()
+    val targetY = screen.bottom - (screen.height() * 0.09f).toInt()
+    val placement = resolveShopeeComposerFabPlacement(textNodes, screen)
+    if (placement == null) continue
+    val targetX = if (placement == "center") screen.centerX() else screen.right - (screen.width() * 0.11f).toInt()
+    val candidate = textNodes
+      .filter { node ->
+        val clickable = findShopeeComposerClickableAncestor(node.node, node.bounds, screen)
+        val inExpectedHorizontalZone = when (placement) {
+          "center" -> node.bounds.centerX() in
+            (screen.left + (screen.width() * 0.28f).toInt())..(screen.left + (screen.width() * 0.72f).toInt())
+          "right" -> node.bounds.centerX() >= screen.left + (screen.width() * 0.62f).toInt()
+          else -> false
+        }
+        node.node.isVisibleToUser &&
+          (node.text == "+" || node.text == "＋") &&
+          node.bounds.centerX() in regionLeft..regionRight &&
+          node.bounds.centerY() >= regionTop &&
+          inExpectedHorizontalZone &&
+          clickable != null
+      }
+      .minByOrNull { node ->
+        val dx = kotlin.math.abs(targetX - node.bounds.centerX()).toLong()
+        val dy = kotlin.math.abs(targetY - node.bounds.centerY()).toLong()
+        dx * dx * 3L + dy * dy
+      }
+    if (candidate != null) return candidate
+  }
+  return null
+}
+
+// Anonymous FAB ใช้ได้เมื่อยืนยันตัวตนหน้าปลายทางจาก header ก่อนเท่านั้น หน้าใหม่วางปุ่มกลางล่าง
+// ส่วนหน้าบัญชี Shopee Video แบบเดิมวางปุ่มขวาล่าง
+internal fun KubdeeAccessibilityService.resolveShopeeComposerFabPlacement(
+  knownTextNodes: List<TextNode>,
+  screen: Rect
+): String? {
+  val headerBottom = screen.top + (screen.height() * 0.35f).toInt()
+  val headerNodes = knownTextNodes.filter { node ->
+    node.node.isVisibleToUser && node.bounds.centerY() <= headerBottom
+  }
+  if (
+    headerNodes.any { node ->
+      SHOPEE_LIVE_VIDEO_MENU_TEXTS.any { label -> node.text.equals(label, ignoreCase = true) }
+    }
+  ) {
+    return "center"
+  }
+  if (
+    headerNodes.any { node ->
+      SHOPEE_VIDEO_ACCOUNT_TEXTS.any { label -> node.text.equals(label, ignoreCase = true) }
+    }
+  ) {
+    return "right"
+  }
+  return null
 }
 
 internal fun KubdeeAccessibilityService.collectShopeeComposerFabCandidates(
   node: AccessibilityNodeInfo?,
   screen: Rect,
   regionLeft: Int,
+  regionRight: Int,
   regionTop: Int,
   output: MutableList<Rect>
 ) {
@@ -2723,19 +3009,22 @@ internal fun KubdeeAccessibilityService.collectShopeeComposerFabCandidates(
   if (node.isVisibleToUser && node.isClickable && isAllowedPackageNode(node, TARGET_PACKAGE_SHOPEE)) {
     val bounds = Rect()
     node.getBoundsInScreen(bounds)
-    val minSize = dp(36)
-    val maxSize = dp(120)
+    val label = cleanNodeText(readNodeText(node))
+    val minSize = dp(32)
+    val maxWidth = dp(180)
+    val maxHeight = dp(100)
     if (
-      bounds.left >= regionLeft &&
-      bounds.top >= regionTop &&
+      label.isBlank() &&
+      bounds.centerX() in regionLeft..regionRight &&
+      bounds.centerY() >= regionTop &&
       bounds.bottom <= screen.bottom - dp(8) &&
-      bounds.width() in minSize..maxSize &&
-      bounds.height() in minSize..maxSize
+      bounds.width() in minSize..maxWidth &&
+      bounds.height() in minSize..maxHeight
     ) {
       output.add(Rect(bounds))
     }
   }
   for (index in 0 until node.childCount) {
-    collectShopeeComposerFabCandidates(node.getChild(index), screen, regionLeft, regionTop, output)
+    collectShopeeComposerFabCandidates(node.getChild(index), screen, regionLeft, regionRight, regionTop, output)
   }
 }

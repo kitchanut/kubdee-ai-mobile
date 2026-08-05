@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.23',
+    date: '2026-08-05',
+    highlight: 'แก้ Shopee Post กดปุ่มโพสต์วิดีโอผิดตำแหน่งในบางเครื่อง',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'บางเครื่องระบบจับข้อความ “โพสต์วิดีโอแบบไม่จำกัด” กลางหน้าแทนปุ่มโพสต์วิดีโอด้านล่าง ตอนนี้เลือกเฉพาะปุ่มในโซนล่าง แตะตำแหน่งจริง และลองใหม่หากคลังวิดีโอยังไม่เปิด'
+      }
+    ]
+  },
+  {
     version: '0.9.22',
     date: '2026-08-05',
     highlight: 'อัปเดตหมวดข้อเสนอ Shopee ให้ตรงกับหน้าจอเวอร์ชัน 3.79.27',
