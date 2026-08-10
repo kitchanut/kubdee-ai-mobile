@@ -3,7 +3,15 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { refreshAuthToken } from '@/auth/api';
 import { APP_TYPE, CLIENT_APP } from '@/auth/constants';
 import { getStoredAuthTokens, saveStoredAuthTokens } from '@/auth/storage';
+import {
+  BufferAssetUploadError,
+  createBufferAssetRateLimitError,
+  isStaleLocalFileError,
+  staleLocalFileError,
+} from '@/autopilot/bufferPostingErrors';
 import { readUriAsDataUrl } from '@/native/AccessibilityBridge';
+
+export { isBufferAssetUploadRateLimitError } from '@/autopilot/bufferPostingErrors';
 
 // Thin client for kubdee-ai-api's Buffer (buffer.com) integration — status,
 // Facebook channel listing, and posting a video generated on-device. Mirrors
@@ -15,24 +23,13 @@ const BUFFER_API_URL = 'https://api.kubdee.ai';
 // this one product. Upload gets longer since it can carry a multi-MB video.
 const BUFFER_REQUEST_TIMEOUT_MS = 30_000;
 const BUFFER_UPLOAD_TIMEOUT_MS = 90_000;
+// API เก็บ asset ไว้ 48 ชม. ใช้ TTL สั้นกว่านั้นเพื่อเผื่อเวลาที่ Buffer ดึงไฟล์หลังสร้างโพสต์
+// cache นี้อยู่แค่ใน JS session จึงช่วยทั้ง retry หลัง post ล้มเหลวและโพสต์ไฟล์เดียวกันหลาย platform
+// โดยไม่ทิ้ง URL เก่าไว้ข้ามการเปิดแอป
+const BUFFER_ASSET_CACHE_TTL_MS = 45 * 60 * 60 * 1000;
+const BUFFER_RATE_LIMIT_FALLBACK_MS = 10 * 60 * 1000;
 
 class BufferRequestTimeoutError extends Error {}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new BufferRequestTimeoutError(message)), timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-}
 
 export interface BufferConnectionStatus {
   connected: boolean;
@@ -133,6 +130,16 @@ function extractApiError(data: Record<string, unknown>, fallback: string): strin
   return typeof data.error === 'string' && data.error ? data.error : fallback;
 }
 
+function readPayloadText(data: Record<string, unknown>, key: string): string | null {
+  const value = data[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readPositiveNumber(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 // Facebook/Instagram/YouTube posting screens each mount their own channel
 // picker, and switching between those tabs used to re-fetch status + the
 // full channel list every time — this cache (short TTL, shared across the 3
@@ -222,24 +229,121 @@ export async function listBufferChannelsByService(service: BufferChannelService)
   return channels.filter((channel) => channel.service === service);
 }
 
+interface BufferAssetCacheEntry {
+  expiresAt: number;
+  url: string;
+}
+
+const bufferAssetCache = new Map<string, BufferAssetCacheEntry>();
+const bufferAssetUploadPromises = new Map<string, Promise<string>>();
+let bufferAssetRateLimit: { message: string; retryAt: number } | null = null;
+
+function bufferAssetCacheKey(fileUri: string, mimeType: string): string {
+  return `${mimeType.trim().toLowerCase()}\u0000${fileUri.trim()}`;
+}
+
+function getCachedBufferAssetUrl(cacheKey: string): string | null {
+  const cached = bufferAssetCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now() + 60_000) {
+    bufferAssetCache.delete(cacheKey);
+    return null;
+  }
+  return cached.url;
+}
+
+function getActiveBufferAssetRateLimitError(): BufferAssetUploadError | null {
+  if (!bufferAssetRateLimit) return null;
+  const retryAfterMs = bufferAssetRateLimit.retryAt - Date.now();
+  if (retryAfterMs <= 0) {
+    bufferAssetRateLimit = null;
+    return null;
+  }
+  return new BufferAssetUploadError(bufferAssetRateLimit.message, 'rate-limit', {
+    retryAfterMs,
+    status: 429,
+  });
+}
+
+function getAssetCacheExpiresAt(data: Record<string, unknown>): number {
+  const raw = data.expiresAt ?? data.expires_at;
+  if (typeof raw === 'string') {
+    const parsedDate = Date.parse(raw);
+    if (Number.isFinite(parsedDate) && parsedDate > Date.now()) {
+      return Math.min(parsedDate, Date.now() + BUFFER_ASSET_CACHE_TTL_MS);
+    }
+  }
+
+  const numeric = readPositiveNumber(raw);
+  if (numeric) {
+    const milliseconds = numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+    if (milliseconds > Date.now()) {
+      return Math.min(milliseconds, Date.now() + BUFFER_ASSET_CACHE_TTL_MS);
+    }
+  }
+  return Date.now() + BUFFER_ASSET_CACHE_TTL_MS;
+}
+
+async function assertLocalUploadFileExists(fileUri: string): Promise<void> {
+  if (fileUri.startsWith('content://')) return;
+  if (!fileUri.startsWith('file://') && !fileUri.startsWith('/')) return;
+
+  const info = await FileSystem.getInfoAsync(fileUri).catch((error: unknown) => {
+    if (isStaleLocalFileError(error)) throw staleLocalFileError(error);
+    throw error;
+  });
+  if (!info.exists || info.isDirectory) {
+    throw staleLocalFileError();
+  }
+}
+
 async function uploadBufferAssetOnce(
   fileUri: string,
   mimeType: string,
   forceRefresh: boolean
 ): Promise<FileSystem.FileSystemUploadResult> {
   const headers = await buildHeaders({ 'Content-Type': mimeType }, forceRefresh);
-  // FileSystem.uploadAsync has no AbortSignal/cancellation support, so a timeout here can only
-  // stop *waiting* on it (via Promise.race), not cancel the underlying native upload task — still
-  // far better than hanging the whole auto pilot run forever on a stalled connection.
-  return withTimeout(
-    FileSystem.uploadAsync(`${BUFFER_API_URL}/api/v1/integrations/buffer/assets`, fileUri, {
+  const task = FileSystem.createUploadTask(
+    `${BUFFER_API_URL}/api/v1/integrations/buffer/assets`,
+    fileUri,
+    {
       headers,
       httpMethod: 'POST',
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    }),
-    BUFFER_UPLOAD_TIMEOUT_MS,
-    'อัปโหลดไฟล์ไป Buffer หมดเวลา (นานเกิน 90 วินาที)'
+    }
   );
+
+  // ต้อง cancel native task ให้เสร็จก่อน reject เพื่อให้ caller ลบ temp file ได้อย่างปลอดภัย
+  // (Promise.race แบบเดิมหยุดแค่การรอ แล้ว finally ลบไฟล์ขณะที่ native ยัง upload อยู่)
+  return new Promise<FileSystem.FileSystemUploadResult>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      void task.cancelAsync()
+        .catch(() => {})
+        .finally(() => reject(new BufferRequestTimeoutError('อัปโหลดไฟล์ไป Buffer หมดเวลา (นานเกิน 90 วินาที)')));
+    }, BUFFER_UPLOAD_TIMEOUT_MS);
+
+    void task.uploadAsync().then(
+      (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (!result) {
+          reject(new Error('การอัปโหลดไฟล์ไป Buffer ถูกยกเลิก'));
+          return;
+        }
+        resolve(result);
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 }
 
 // FileSystem.uploadAsync only knows how to stream a real file:// path — it can't read a
@@ -256,7 +360,7 @@ async function materializeUploadableFileUri(fileUri: string): Promise<{ path: st
   const dataUrl = await readUriAsDataUrl(fileUri);
   const commaIndex = dataUrl?.indexOf(',') ?? -1;
   if (!dataUrl || commaIndex === -1) {
-    throw new Error('อ่านไฟล์วิดีโอจาก content URI ไม่สำเร็จ');
+    throw staleLocalFileError();
   }
 
   const cacheDir = FileSystem.cacheDirectory;
@@ -276,7 +380,8 @@ async function materializeUploadableFileUri(fileUri: string): Promise<{ path: st
   };
 }
 
-export async function uploadBufferAsset(fileUri: string, mimeType: string): Promise<string> {
+async function uploadBufferAssetUncached(fileUri: string, mimeType: string): Promise<string> {
+  await assertLocalUploadFileExists(fileUri);
   const { path: uploadPath, cleanup } = await materializeUploadableFileUri(fileUri);
   let result: FileSystem.FileSystemUploadResult;
   try {
@@ -289,15 +394,63 @@ export async function uploadBufferAsset(fileUri: string, mimeType: string): Prom
   }
 
   if (result.status < 200 || result.status >= 300) {
-    throw new Error(extractApiError(parseJsonSafe(result.body), `อัปโหลดไฟล์ไป Buffer ไม่สำเร็จ (${result.status})`));
+    const data = parseJsonSafe(result.body);
+    if (result.status === 429) {
+      const rateLimitError = createBufferAssetRateLimitError(data, result.headers, result.status);
+      bufferAssetRateLimit = {
+        message: rateLimitError.message,
+        retryAt: Date.now() + (rateLimitError.retryAfterMs ?? BUFFER_RATE_LIMIT_FALLBACK_MS),
+      };
+      throw rateLimitError;
+    }
+    const error = extractApiError(data, `อัปโหลดไฟล์ไป Buffer ไม่สำเร็จ (${result.status})`);
+    const detail = readPayloadText(data, 'message');
+    throw new BufferAssetUploadError(
+      detail && detail !== error ? `${error}: ${detail}` : error,
+      'upload',
+      { status: result.status }
+    );
   }
 
   const parsed = parseJsonSafe(result.body);
   if (typeof parsed.url !== 'string' || !parsed.url) {
-    throw new Error('ไม่ได้ URL ไฟล์กลับจาก Buffer');
+    throw new BufferAssetUploadError('ไม่ได้ URL ไฟล์กลับจาก Buffer', 'upload', { status: result.status });
   }
 
+  const cacheKey = bufferAssetCacheKey(fileUri, mimeType);
+  bufferAssetCache.set(cacheKey, { url: parsed.url, expiresAt: getAssetCacheExpiresAt(parsed) });
   return parsed.url;
+}
+
+export async function uploadBufferAsset(fileUri: string, mimeType: string): Promise<string> {
+  const cleanFileUri = fileUri.trim();
+  if (!cleanFileUri) throw staleLocalFileError();
+  const normalizedFileUri = cleanFileUri.startsWith('/') ? `file://${cleanFileUri}` : cleanFileUri;
+  const normalizedMimeType = mimeType.trim().toLowerCase() || 'video/mp4';
+  const cacheKey = bufferAssetCacheKey(normalizedFileUri, normalizedMimeType);
+  const cachedUrl = getCachedBufferAssetUrl(cacheKey);
+  if (cachedUrl) return cachedUrl;
+
+  const rateLimitError = getActiveBufferAssetRateLimitError();
+  if (rateLimitError) throw rateLimitError;
+
+  const inFlight = bufferAssetUploadPromises.get(cacheKey);
+  if (inFlight) return inFlight;
+
+  const uploadPromise = uploadBufferAssetUncached(normalizedFileUri, normalizedMimeType).catch((error: unknown) => {
+    if (error instanceof BufferAssetUploadError) throw error;
+    if (isStaleLocalFileError(error)) throw staleLocalFileError(error);
+    throw error;
+  });
+  bufferAssetUploadPromises.set(cacheKey, uploadPromise);
+
+  try {
+    return await uploadPromise;
+  } finally {
+    if (bufferAssetUploadPromises.get(cacheKey) === uploadPromise) {
+      bufferAssetUploadPromises.delete(cacheKey);
+    }
+  }
 }
 
 export async function createFacebookBufferPost({

@@ -1,6 +1,6 @@
 {
   "name": "kubdee-ai-mobile",
-  "version": "0.9.23",
+  "version": "0.9.24",
   "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -89,13 +89,14 @@
     "prebuild:android": "expo prebuild --platform android",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "test:buffer": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/bufferPostingErrors.test.mjs",
     "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "check:native-drift": "node scripts/check-native-drift.mjs",
     "check:release": "node scripts/check-release.mjs",
     "check:action-bodies": "node scripts/check-action-bodies.mjs",
-    "verify": "npm run typecheck && npm run lint && npm run check:native-drift && npm run check:release && npm run check:action-bodies"
+    "verify": "npm run typecheck && npm run lint && npm run test:buffer && npm run check:native-drift && npm run check:release && npm run check:action-bodies"
   },
   "private": true
 }
