@@ -10,6 +10,7 @@ import {
   createFacebookBufferPost,
   createInstagramBufferPost,
   createYoutubeBufferPost,
+  isBufferAssetUploadRateLimitError,
   uploadBufferAsset,
 } from '@/autopilot/bufferPosting';
 import {
@@ -268,6 +269,7 @@ export default function SocialPostScreen({
     const postedIds: string[] = [];
     let failureCount = 0;
     let stoppedEarly = false;
+    let rateLimitMessage: string | null = null;
 
     const shouldGenerateAiContent = aiContentSettings.aiGenerateCaption || aiContentSettings.aiGenerateHashtags;
     const aiSettings = {
@@ -361,10 +363,16 @@ export default function SocialPostScreen({
           assetUrl = await uploadBufferAsset(effectiveAsset.fileUri, effectiveAsset.mimeType || 'video/mp4');
         } catch (error) {
           failureCount += 1;
+          const errorMessage = error instanceof Error ? error.message : String(error);
           recordResult(asset.id, {
             ok: false,
-            message: `อัปโหลดไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`,
+            message: `อัปโหลดไม่สำเร็จ: ${errorMessage}`,
           });
+          if (isBufferAssetUploadRateLimitError(error)) {
+            rateLimitMessage = errorMessage;
+            stoppedEarly = true;
+            break;
+          }
           continue;
         }
 
@@ -410,7 +418,9 @@ export default function SocialPostScreen({
     }
 
     const stopSuffix = stoppedEarly ? ' · หยุดก่อนครบคิว' : '';
-    if (postedIds.length > 0 && failureCount === 0) {
+    if (rateLimitMessage) {
+      toast.error(rateLimitMessage);
+    } else if (postedIds.length > 0 && failureCount === 0) {
       toast.success(`โพสต์ ${meta.label} สำเร็จ ${postedIds.length}/${assets.length} คลิป${stopSuffix}`);
     } else if (postedIds.length > 0) {
       toast.warning(
