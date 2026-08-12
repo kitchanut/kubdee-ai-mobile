@@ -16,12 +16,12 @@ const FLOW_WEBVIEW_DEBUG_ENABLED = true;
 export type FlowConnectionState = 'unknown' | 'signin' | 'loggedout' | 'connected';
 
 // Renderer (process แยกของ Chromium) crash/ถูกระบบฆ่าแล้ว native WebView ตัวนี้ตายถาวร
-// (RNCWebViewClient คืน true กันแอป crash แต่ inject อะไรต่อก็เงียบหมด) — ทางฟื้นเดียวคือ
-// parent remount ด้วย key ใหม่ ระหว่างนั้นทุก action ต้อง fail ทันทีด้วยข้อความนี้
-// แทนที่จะปล่อยให้รอ timeout เต็มทีละ 20-120 วิ แบบแยกไม่ออกว่าเกิดอะไร
-// (runnerPlanning จับคำว่า "WebView renderer gone" เพื่อ abort run — ห้ามเปลี่ยนข้อความโดยไม่แก้คู่กัน)
+// (RNCWebViewClient คืน true กันแอป crash แต่ inject อะไรต่อก็เงียบหมด) — ทางฟื้นคือ
+// parent remount ด้วย key ใหม่ แล้ว runner จะกู้หน้าเดิมและทำงานต่อเมื่อทำได้
+// ระหว่างช่วงสั้นๆ นี้ทุก action ต้อง fail ทันทีด้วยข้อความ marker นี้ แทนที่จะปล่อยให้
+// รอ timeout เต็มทีละ 20-120 วิ แบบแยกไม่ออกว่าเกิดอะไร
 export const FLOW_RENDERER_GONE_ERROR =
-  'หน้า Google Flow crash (WebView renderer gone) — รีสตาร์ทหน้า Flow ใหม่แล้ว กรุณาเริ่มรันใหม่';
+  'หน้า Google Flow crash (WebView renderer gone) — กำลังรีสตาร์ทหน้า Flow เพื่อรันต่อ';
 
 type PendingFlowAction = { resolve: (r: FlowActionResult) => void; timer: ReturnType<typeof setTimeout> };
 
@@ -290,6 +290,8 @@ export interface FlowWebViewHandle {
     args?: Record<string, unknown>,
     timeoutMs?: number
   ) => Promise<FlowActionResult>;
+  /** เปิด URL ของโปรเจกต์เดิมหลัง renderer crash เพื่อกู้ generation ที่ส่งไปแล้ว */
+  navigate: (url: string) => void;
   goHome: () => void;
   reload: () => void;
   /** ออกจากระบบ Google ทั้ง session (cookie แชร์ทั้งแอปผ่าน CookieManager — WebView ตัวอื่นหลุดด้วย) */
@@ -357,6 +359,11 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
           innerRef.current?.injectJavaScript(buildActionScript(id, action, args));
         });
       },
+      navigate(url: string) {
+        const target = String(url || '').trim();
+        if (!/^https?:\/\//i.test(target)) return;
+        innerRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(target)}; true;`);
+      },
       goHome() {
         innerRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(FLOW_ENGLISH_URL)}; true;`);
       },
@@ -399,11 +406,13 @@ const FlowWebView = forwardRef<FlowWebViewHandle, FlowWebViewProps>(function Flo
       originWhitelist={['https://*', 'http://*']}
       setSupportMultipleWindows={false}
       onRenderProcessGone={(event: WebViewRenderProcessGoneEvent) => {
+        if (rendererGoneRef.current) return;
         rendererGoneRef.current = true;
         failAllPendingActions(pendingRef.current, FLOW_RENDERER_GONE_ERROR);
         onRendererGone?.(event.nativeEvent?.didCrash === true);
       }}
       onContentProcessDidTerminate={(_event: WebViewTerminatedEvent) => {
+        if (rendererGoneRef.current) return;
         rendererGoneRef.current = true;
         failAllPendingActions(pendingRef.current, FLOW_RENDERER_GONE_ERROR);
         onRendererGone?.(true);

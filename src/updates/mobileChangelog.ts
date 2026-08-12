@@ -44,6 +44,21 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.25',
+    date: '2026-08-13',
+    highlight: 'ให้ Auto Pilot ทำงานต่อได้เมื่อหน้า Google Flow หยุดทำงาน',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'เมื่อหน้า Google Flow หยุดทำงานระหว่าง Auto Pilot ระบบจะเปิดหน้าเดิมกลับมาและทำงานต่อ โดยไม่กดสร้างซ้ำจนเกิดงานหรือเครดิตซ้ำ'
+      },
+      {
+        type: 'improved',
+        text: 'เพิ่มการกู้โปรเจกต์เดิมและตรวจผลการสร้างที่อาจส่งไปแล้ว ช่วยให้รันงานต่อได้ปลอดภัยขึ้นบนมือถือ'
+      }
+    ]
+  },
+  {
     version: '0.9.24',
     date: '2026-08-10',
     highlight: 'แก้การโพสต์ Facebook ผ่าน Buffer ให้จัดการไฟล์หายและการอัปโหลดซ้ำได้ดีขึ้น',

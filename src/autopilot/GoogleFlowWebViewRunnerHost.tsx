@@ -20,6 +20,7 @@ import type {
 } from '@/autopilot/types';
 import FlowWebView, {
   FLOW_ENGLISH_URL,
+  FLOW_RENDERER_GONE_ERROR,
   type FlowActionLogEntry,
   type FlowConnectionState,
   type FlowWebViewHandle,
@@ -38,6 +39,7 @@ import {
 import {
   AUTO_MULTI_SCENE_TRIM_END_SECONDS,
   GoogleFlowCountedStepFailure,
+  GoogleFlowSubmitUncertainError,
   GoogleFlowWebViewRunnerStopped,
   OverlayStatChip,
   STRUCTURAL_FLOW_FAILURE_LIMIT,
@@ -72,6 +74,7 @@ import {
   imageModelForProduct,
   isAudioGenerationFailure,
   isAutoMultiSceneVideo,
+  isFlowSubmissionAction,
   isRetryableFlowError,
   isStructuralFlowError,
   isWebViewRendererGoneError,
@@ -114,6 +117,33 @@ interface TrackedProductAsset extends AutoPilotProductVideoAsset {
   step: AutoPilotStepType;
 }
 
+function isGoogleFlowProjectUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url || '');
+    return parsed.hostname === 'labs.google' && parsed.pathname.includes('/project/');
+  } catch {
+    return false;
+  }
+}
+
+async function waitForStepResultWithSubmissionGuard(
+  submitUncertain: boolean,
+  wait: () => Promise<FlowResultPoll>
+): Promise<FlowResultPoll> {
+  try {
+    return await wait();
+  } catch (error) {
+    if (
+      submitUncertain &&
+      !(error instanceof GoogleFlowCountedStepFailure) &&
+      !(error instanceof GoogleFlowWebViewRunnerStopped)
+    ) {
+      throw new GoogleFlowSubmitUncertainError('submit', error);
+    }
+    throw error;
+  }
+}
+
 function describeReferenceTransport(args: Record<string, unknown>): string {
   const dataUrl = typeof args.dataUrl === 'string' ? args.dataUrl : '';
   if (dataUrl.startsWith('data:image/')) {
@@ -153,11 +183,37 @@ export default function GoogleFlowWebViewRunnerHost({
   theme,
 }: GoogleFlowWebViewRunnerHostProps): React.JSX.Element {
   const flowRef = useRef<FlowWebViewHandle>(null);
+  // ทุก workflow ถือ proxy ตัวเดิมไว้ตลอด run — หลัง remount เมื่อ renderer ตาย
+  // proxy จะเปลี่ยนไปเรียก handle ของ WebView ตัวใหม่เอง ไม่ค้าง handle native ตัวเก่า
+  const flowHandleProxyRef = useRef<FlowWebViewHandle>({
+    runAction: (action, args, timeoutMs) => {
+      const handle = flowRef.current;
+      if (!handle) {
+        return Promise.resolve({ ok: false, error: FLOW_RENDERER_GONE_ERROR });
+      }
+      return handle.runAction(action, args, timeoutMs);
+    },
+    navigate: (url) => {
+      flowRef.current?.navigate(url);
+    },
+    goHome: () => {
+      flowRef.current?.goHome();
+    },
+    reload: () => {
+      flowRef.current?.reload();
+    },
+    signOutGoogle: () => {
+      flowRef.current?.signOutGoogle();
+    },
+  });
   const runningRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const payloadRef = useRef<GoogleFlowRunnerPayload | null>(null);
   const flowStatusRef = useRef<FlowConnectionState>('unknown');
   const flowUrlRef = useRef('');
+  const flowRendererGenerationRef = useRef(0);
+  const rendererResumeUrlRef = useRef<string | null>(null);
+  const rendererRecoveryPromiseRef = useRef<Promise<void> | null>(null);
   const actionLogContextRef = useRef<FlowActionLogContext | null>(null);
   // เก็บ "file URI" ของรูปที่ generate แล้ว (ไม่ใช่ base64 data URL) ต่อ product+round —
   // data URL ตัวละ ~2MB ถ้าถือไว้ทั้ง run จะ OOM บนเครื่อง heap 256MB; ผู้ใช้ cache
@@ -313,6 +369,64 @@ export default function GoogleFlowWebViewRunnerHost({
     setIsFlowReady(handle !== null);
   }, []);
 
+  const recoverFlowRenderer = useCallback(
+    async (generationBeforeAction: number, previousHandle: FlowWebViewHandle | null): Promise<void> => {
+      const existingRecovery = rendererRecoveryPromiseRef.current;
+      if (existingRecovery) {
+        await existingRecovery;
+        return;
+      }
+
+      const recovery = (async (): Promise<void> => {
+        let recoveredHandle: FlowWebViewHandle | null = null;
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          checkStop();
+          const candidate = flowRef.current;
+          const hasNewRenderer =
+            candidate &&
+            candidate !== previousHandle &&
+            (previousHandle === null || flowRendererGenerationRef.current > generationBeforeAction);
+          if (hasNewRenderer) {
+            recoveredHandle = candidate;
+            break;
+          }
+          await sleep(250);
+        }
+        if (!recoveredHandle) {
+          throw new Error('WebView renderer gone — รีสตาร์ทหน้า Flow ใหม่ไม่สำเร็จ');
+        }
+
+        const resumeUrl = rendererResumeUrlRef.current;
+        rendererResumeUrlRef.current = null;
+        if (resumeUrl) {
+          recoveredHandle.navigate(resumeUrl);
+        }
+
+        const pageWaitStartedAt = Date.now();
+        while (Date.now() - pageWaitStartedAt < 15_000) {
+          checkStop();
+          const pageReady =
+            flowStatusRef.current !== 'unknown' && (!resumeUrl || isGoogleFlowProjectUrl(flowUrlRef.current));
+          if (pageReady) {
+            return;
+          }
+          await sleep(500);
+        }
+        throw new Error('WebView renderer gone — หน้า Flow ใหม่ไม่พร้อมทำงานต่อ');
+      })();
+
+      rendererRecoveryPromiseRef.current = recovery;
+      try {
+        await recovery;
+      } finally {
+        if (rendererRecoveryPromiseRef.current === recovery) {
+          rendererRecoveryPromiseRef.current = null;
+        }
+      }
+    },
+    [checkStop]
+  );
+
   const runActionOrThrow = useCallback(
     async (
       handle: FlowWebViewHandle,
@@ -321,14 +435,29 @@ export default function GoogleFlowWebViewRunnerHost({
       timeoutMs: number
     ): Promise<Record<string, unknown>> => {
       checkStop();
-      const result = await handle.runAction(action, args, timeoutMs);
+      const generationBeforeAction = flowRendererGenerationRef.current;
+      const previousHandle = flowRef.current;
+      let result = await handle.runAction(action, args, timeoutMs);
       checkStop();
       if (!result.ok) {
-        throw new Error(result.error || `${action} ไม่สำเร็จ`);
+        const error = new Error(result.error || `${action} ไม่สำเร็จ`);
+        if (!isWebViewRendererGoneError(error)) {
+          throw error;
+        }
+        await recoverFlowRenderer(generationBeforeAction, previousHandle);
+        checkStop();
+        if (isFlowSubmissionAction(action)) {
+          throw new GoogleFlowSubmitUncertainError(action, error);
+        }
+        result = await flowHandleProxyRef.current.runAction(action, args, timeoutMs);
+        checkStop();
+        if (!result.ok) {
+          throw new Error(result.error || `${action} ไม่สำเร็จหลัง recovery`);
+        }
       }
       return result.result ?? {};
     },
-    [checkStop]
+    [checkStop, recoverFlowRenderer]
   );
 
   const downloadLatestFlowImage = useCallback(
@@ -494,7 +623,7 @@ export default function GoogleFlowWebViewRunnerHost({
           }
         } catch (error) {
           if (isWebViewRendererGoneError(error)) {
-            // handle นี้ตายถาวร — วนต่อจนครบ 120 วิ ก็ fail เหมือนเดิมทุกรอบ
+            // ถ้าหลุดมาถึงตรงนี้แปลว่า renderer recovery ไม่สำเร็จแล้ว — หยุดทันที
             throw error;
           }
           lastError = error instanceof Error ? error.message : String(error);
@@ -1072,7 +1201,7 @@ export default function GoogleFlowWebViewRunnerHost({
       prompt: string;
       round: number;
       step: AutoPilotStepType;
-    }): Promise<void> => {
+    }): Promise<{ submitUncertain: boolean }> => {
       checkStop();
       const startChecks = step === 'video' ? 8 : 7;
       const runActionWithLogContext = async (
@@ -1179,12 +1308,35 @@ export default function GoogleFlowWebViewRunnerHost({
 
       const fillPromptResult = await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'fill_prompt');
       emitPromptFillVerification(fillPromptResult, 'fill_prompt_verified');
-      const submitResult = await runActionWithLogContext('submit', {}, 45_000, 'submitted');
+      let submitResult: Record<string, unknown>;
+      try {
+        submitResult = await runActionWithLogContext('submit', {}, 45_000, 'submitted');
+      } catch (error) {
+        if (!(error instanceof GoogleFlowSubmitUncertainError)) {
+          throw error;
+        }
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'warning',
+          step,
+          stage: 'submit_renderer_recovered',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: 'renderer หยุดระหว่างส่งคำสั่ง — กู้หน้า Flow แล้ว จะไม่กดสร้างซ้ำ และจะรอผลเดิม',
+        });
+        return { submitUncertain: true };
+      }
       const promptAutoCleared = submitResult.clearedPrompt === true;
       await sleep(step === 'video' ? 10_000 : 8_000);
 
       if (await checkFlowStarted(startChecks, 'submit_start_check')) {
-        return;
+        return { submitUncertain: false };
       }
 
       // prompt ถูก Flow auto-clear = submit ลงหลังบ้านแล้วแน่นอน (ยืนยันจากการดัก network:
@@ -1207,7 +1359,7 @@ export default function GoogleFlowWebViewRunnerHost({
           totalProducts: payload.products.length,
           message: `ยังไม่เห็น tile ${stepLabel(step)}ใน DOM แต่ prompt ถูก auto-clear = submit ลงแล้ว จะไม่กดสร้างซ้ำ และรอผลผ่านการ reload หน้าแทน`,
         });
-        return;
+        return { submitUncertain: false };
       }
 
       // retype วิดีโอได้ แต่ต้องมีรูปแนบในช่อง Start เสมอ (ดีไซน์จาก user 2026-07-14):
@@ -1268,7 +1420,7 @@ export default function GoogleFlowWebViewRunnerHost({
             message:
               'แนบรูปกลับเข้าช่อง Start ไม่สำเร็จ จะไม่ retype+submit (กันสร้างวิดีโอแบบไม่มีรูปแนบ) — รอผลต่อ ถ้าไม่เริ่มจริงรอบ retry ใหญ่จะตั้งค่า+แนบรูปใหม่ทั้งชุด',
           });
-          return;
+          return { submitUncertain: false };
         }
       }
 
@@ -1289,11 +1441,33 @@ export default function GoogleFlowWebViewRunnerHost({
 
       const retypePromptResult = await runActionWithLogContext('fillPrompt', { prompt }, 45_000, 'retype_prompt_retry');
       emitPromptFillVerification(retypePromptResult, 'retype_prompt_verified');
-      await runActionWithLogContext('submit', {}, 45_000, 'retype_submitted');
+      try {
+        await runActionWithLogContext('submit', {}, 45_000, 'retype_submitted');
+      } catch (error) {
+        if (!(error instanceof GoogleFlowSubmitUncertainError)) {
+          throw error;
+        }
+        emit({
+          event: 'progress',
+          runId: payload.runId,
+          status: 'running',
+          level: 'warning',
+          step,
+          stage: 'submit_renderer_recovered',
+          productId: product.id,
+          productName: product.name,
+          currentRound: round,
+          totalRounds: payload.settings.totalRounds,
+          currentProduct: productIndex + 1,
+          totalProducts: payload.products.length,
+          message: 'renderer หยุดระหว่าง retry submit — กู้หน้า Flow แล้ว จะไม่กดสร้างซ้ำ และจะรอผลเดิม',
+        });
+        return { submitUncertain: true };
+      }
       await sleep(step === 'video' ? 10_000 : 8_000);
 
       if (await checkFlowStarted(Math.max(4, Math.ceil(startChecks / 2)), 'retype_start_check')) {
-        return;
+        return { submitUncertain: false };
       }
 
       emit({
@@ -1310,6 +1484,7 @@ export default function GoogleFlowWebViewRunnerHost({
         totalProducts: payload.products.length,
         message: `ยังไม่เห็น Flow เริ่มสร้าง${stepLabel(step)}หลัง retype จะรอผลต่อโดยไม่กดสร้างซ้ำ`,
       });
+      return { submitUncertain: false };
     },
     [checkStop, emit, runActionOrThrow]
   );
@@ -1920,7 +2095,7 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalProducts: payload.products.length,
                 message: `บันทึกสถานะเดิมก่อนสร้างรูปฉาก ${sceneNumber}: รูป ${baselineImageUrls.length} · failed ${baselineFailedCount} · tiles ${imageSnapshot.tileCount ?? 0}`,
               });
-              await fillPromptAndSubmit({
+              const imageSubmitState = await fillPromptAndSubmit({
                 baselineVideoUrls: [],
                 baselineImageUrls,
                 baselineFailedCount,
@@ -1933,31 +2108,35 @@ export default function GoogleFlowWebViewRunnerHost({
                 round,
                 step: 'image',
               });
-              const imageResult = await waitForStepResult({
-                baselineVideoUrls: [],
-                baselineImageUrls,
-                baselineFailedCount,
-                countFailure: finalImageAttempt,
-                count: 1,
-                handle,
-                payload,
-                product,
-                productIndex,
-                round,
-                step: 'image',
-                refreshProject: () =>
-                  refreshGoogleFlowProject({
+              const imageResult = await waitForStepResultWithSubmissionGuard(
+                imageSubmitState.submitUncertain,
+                () =>
+                  waitForStepResult({
+                    baselineVideoUrls: [],
+                    baselineImageUrls,
+                    baselineFailedCount,
+                    countFailure: finalImageAttempt,
+                    count: 1,
                     handle,
                     payload,
                     product,
                     productIndex,
                     round,
                     step: 'image',
-                    stage: 'waiting_result_refresh',
-                    message: `รีเฟรชหน้า Flow ระหว่างรอผลรูปฉาก ${sceneNumber} (DOM ไม่อัปเดต)`,
-                    expectedMinTiles: knownProjectTileCount,
-                  }),
-              });
+                    refreshProject: () =>
+                      refreshGoogleFlowProject({
+                        handle,
+                        payload,
+                        product,
+                        productIndex,
+                        round,
+                        step: 'image',
+                        stage: 'waiting_result_refresh',
+                        message: `รีเฟรชหน้า Flow ระหว่างรอผลรูปฉาก ${sceneNumber} (DOM ไม่อัปเดต)`,
+                        expectedMinTiles: knownProjectTileCount,
+                      }),
+                  })
+              );
               const imageCount = Math.max(1, Number(imageResult.images ?? 1) || 1);
               const sceneDownload = await downloadLatestFlowImage(handle, imageCount, baselineImageUrls);
               if (!sceneDownload.image?.dataUrl) {
@@ -2312,7 +2491,7 @@ export default function GoogleFlowWebViewRunnerHost({
             const baselineVideoUrls = [...new Set([...(snapshot.videoUrls ?? []), ...knownFlowVideoUrls])];
             const baselineImageUrls = snapshot.imageUrls ?? [];
             const baselineFailedCount = snapshot.failedCount ?? 0;
-            await fillPromptAndSubmit({
+            const sceneSubmitState = await fillPromptAndSubmit({
               baselineVideoUrls,
               baselineImageUrls,
               baselineFailedCount,
@@ -2325,31 +2504,35 @@ export default function GoogleFlowWebViewRunnerHost({
               round,
               step,
             });
-            return waitForStepResult({
-              baselineVideoUrls,
-              baselineImageUrls,
-              baselineFailedCount,
-              countFailure,
-              count: 1,
-              handle,
-              payload,
-              product,
-              productIndex,
-              round,
-              step,
-              refreshProject: () =>
-                refreshGoogleFlowProject({
+            return waitForStepResultWithSubmissionGuard(
+              sceneSubmitState.submitUncertain,
+              () =>
+                waitForStepResult({
+                  baselineVideoUrls,
+                  baselineImageUrls,
+                  baselineFailedCount,
+                  countFailure,
+                  count: 1,
                   handle,
                   payload,
                   product,
                   productIndex,
                   round,
                   step,
-                  stage: 'waiting_result_refresh',
-                  message: `รีเฟรชหน้า Flow ระหว่างรอผลวิดีโอฉาก ${sceneNumber} (DOM ไม่อัปเดต)`,
-                  expectedMinTiles: knownProjectTileCount,
-                }),
-            });
+                  refreshProject: () =>
+                    refreshGoogleFlowProject({
+                      handle,
+                      payload,
+                      product,
+                      productIndex,
+                      round,
+                      step,
+                      stage: 'waiting_result_refresh',
+                      message: `รีเฟรชหน้า Flow ระหว่างรอผลวิดีโอฉาก ${sceneNumber} (DOM ไม่อัปเดต)`,
+                      expectedMinTiles: knownProjectTileCount,
+                    }),
+                })
+            );
           };
 
           const maxSceneVideoAttempts = 2;
@@ -3045,7 +3228,7 @@ export default function GoogleFlowWebViewRunnerHost({
               ? `กรอก prompt ${label}: ${(product.name || 'สินค้า').slice(0, 34)}`
               : `Retry ${label} รอบ ${retryAttempt}: กรอก prompt ซ้ำ`,
         });
-        await fillPromptAndSubmit({
+        const submitState = await fillPromptAndSubmit({
           baselineVideoUrls,
           baselineImageUrls,
           baselineFailedCount,
@@ -3073,30 +3256,34 @@ export default function GoogleFlowWebViewRunnerHost({
           message: attempt === 1 ? `ส่ง prompt ${label} แล้ว` : `Retry ${label} รอบ ${retryAttempt}: ส่ง prompt แล้ว`,
         });
 
-        return waitForStepResult({
-          baselineVideoUrls,
-          baselineImageUrls,
-          baselineFailedCount,
-          countFailure: attempt >= maxSingleStepAttempts,
-          count,
-          handle,
-          payload,
-          product,
-          productIndex,
-          round,
-          step,
-          refreshProject: () =>
-            refreshGoogleFlowProject({
+        return waitForStepResultWithSubmissionGuard(
+          submitState.submitUncertain,
+          () =>
+            waitForStepResult({
+              baselineVideoUrls,
+              baselineImageUrls,
+              baselineFailedCount,
+              countFailure: attempt >= maxSingleStepAttempts,
+              count,
               handle,
               payload,
               product,
               productIndex,
               round,
               step,
-              stage: 'waiting_result_refresh',
-              message: `รีเฟรชหน้า Flow ระหว่างรอผล${label} (DOM ไม่อัปเดต)`,
-            }),
-        });
+              refreshProject: () =>
+                refreshGoogleFlowProject({
+                  handle,
+                  payload,
+                  product,
+                  productIndex,
+                  round,
+                  step,
+                  stage: 'waiting_result_refresh',
+                  message: `รีเฟรชหน้า Flow ระหว่างรอผล${label} (DOM ไม่อัปเดต)`,
+                }),
+            })
+        );
       };
 
       let result: FlowResultPoll | null = null;
@@ -3225,39 +3412,72 @@ export default function GoogleFlowWebViewRunnerHost({
                 totalProducts: payload.products.length,
                 message: `บันทึกสถานะเดิมก่อน Reuse Prompt: วิดีโอ ${baselineVideoUrls.length} · รูป ${baselineImageUrls.length} · failed ${baselineFailedCount} · tiles ${reuseSnapshot.tileCount ?? 0}`,
               });
-              await runActionWithProductContext(
-                'reusePromptAndSubmit',
-                {},
-                70_000,
-                'single_step_reuse_prompt'
-              );
-              result = await waitForStepResult({
-                baselineVideoUrls,
-                baselineImageUrls,
-                baselineFailedCount,
-                // ไม่นับ failure ที่นี่ — เส้น Reuse ไม่ใช่ attempt สุดท้าย (ยังมี retry รอบ 2-3 ต่อ)
-                countFailure: false,
-                count,
-                handle,
-                payload,
-                product,
-                productIndex,
-                round,
-                step,
-                refreshProject: () =>
-                  refreshGoogleFlowProject({
+              let reuseSubmitUncertain = false;
+              try {
+                await runActionWithProductContext(
+                  'reusePromptAndSubmit',
+                  {},
+                  70_000,
+                  'single_step_reuse_prompt'
+                );
+              } catch (reuseSubmitError) {
+                if (!(reuseSubmitError instanceof GoogleFlowSubmitUncertainError)) {
+                  throw reuseSubmitError;
+                }
+                reuseSubmitUncertain = true;
+                emit({
+                  event: 'progress',
+                  runId: payload.runId,
+                  status: 'running',
+                  level: 'warning',
+                  step,
+                  stage: 'submit_renderer_recovered',
+                  productId: product.id,
+                  productName: product.name,
+                  currentRound: round,
+                  totalRounds: payload.settings.totalRounds,
+                  currentProduct: productIndex + 1,
+                  totalProducts: payload.products.length,
+                  message: 'renderer หยุดระหว่าง Reuse Prompt — กู้หน้า Flow แล้ว จะไม่กดสร้างซ้ำ และจะรอผลเดิม',
+                });
+              }
+              result = await waitForStepResultWithSubmissionGuard(
+                reuseSubmitUncertain,
+                () =>
+                  waitForStepResult({
+                    baselineVideoUrls,
+                    baselineImageUrls,
+                    baselineFailedCount,
+                    // ไม่นับ failure ที่นี่ — เส้น Reuse ไม่ใช่ attempt สุดท้าย (ยังมี retry รอบ 2-3 ต่อ)
+                    countFailure: false,
+                    count,
                     handle,
                     payload,
                     product,
                     productIndex,
                     round,
                     step,
-                    stage: 'waiting_result_refresh',
-                    message: `รีเฟรชหน้า Flow ระหว่างรอผล${label} หลัง Reuse Prompt (DOM ไม่อัปเดต)`,
-                  }),
-              });
+                    refreshProject: () =>
+                      refreshGoogleFlowProject({
+                        handle,
+                        payload,
+                        product,
+                        productIndex,
+                        round,
+                        step,
+                        stage: 'waiting_result_refresh',
+                        message: `รีเฟรชหน้า Flow ระหว่างรอผล${label} หลัง Reuse Prompt (DOM ไม่อัปเดต)`,
+                      }),
+                  })
+              );
               break;
             } catch (reuseError) {
+              if (
+                reuseError instanceof GoogleFlowSubmitUncertainError ||
+                isWebViewRendererGoneError(reuseError)
+              ) {
+                throw reuseError;
+              }
               const reuseReason = reuseError instanceof Error ? reuseError.message : String(reuseError);
               emit({
                 event: 'progress',
@@ -3467,7 +3687,8 @@ export default function GoogleFlowWebViewRunnerHost({
   const runPayload = useCallback(
     async (payload: GoogleFlowRunnerPayload): Promise<void> => {
       try {
-        const handle = await waitForHandle();
+        await waitForHandle();
+        const handle = flowHandleProxyRef.current;
         emit({
           event: 'progress',
           runId: payload.runId,
@@ -3694,7 +3915,8 @@ export default function GoogleFlowWebViewRunnerHost({
                   throw stepError;
                 }
                 if (isWebViewRendererGoneError(stepError)) {
-                  // WebView ตายถาวรทั้ง run — เดินต่อก็ fail ทุกสินค้า abort เลยดีกว่า
+                  // ถ้าหลุดมาถึงตรงนี้แปลว่า remount/recovery เองไม่สำเร็จแล้ว —
+                  // หยุดเพื่อกันการกด Generate ซ้ำบนสถานะที่ยืนยันไม่ได้
                   throw stepError;
                 }
 
@@ -3868,6 +4090,8 @@ export default function GoogleFlowWebViewRunnerHost({
         setFlowWebViewKey((key) => key + 1);
         setVisible(true);
         flowUrlRef.current = '';
+        flowRendererGenerationRef.current = 0;
+        rendererResumeUrlRef.current = null;
         void runPayload(payload);
         return true;
       },
@@ -4018,8 +4242,13 @@ export default function GoogleFlowWebViewRunnerHost({
             onActionLog={emitFlowActionLog}
             onRendererGone={(didCrash) => {
               // instance เดิมใช้ต่อไม่ได้แล้ว — action ที่ค้างถูก fail ไปแล้วใน FlowWebView
-              // remount ด้วย key ใหม่เพื่อให้ run ถัดไปใช้งานได้ (run ปัจจุบัน abort ผ่าน
-              // isWebViewRendererGoneError ใน step loop)
+              // เก็บ URL โปรเจกต์ไว้เพื่อให้ runner กลับไป poll งานที่อาจถูกส่งไปแล้ว
+              // จากนั้น remount ด้วย key ใหม่และให้ action ที่ปลอดภัยทำงานต่อ
+              rendererResumeUrlRef.current = isGoogleFlowProjectUrl(flowUrlRef.current)
+                ? flowUrlRef.current
+                : null;
+              flowRendererGenerationRef.current += 1;
+              flowStatusRef.current = 'unknown';
               const payload = payloadRef.current;
               if (payload && runningRef.current) {
                 emit({
@@ -4030,7 +4259,7 @@ export default function GoogleFlowWebViewRunnerHost({
                   stage: 'webview_renderer_gone',
                   totalRounds: payload.settings.totalRounds,
                   totalProducts: payload.products.length,
-                  message: `WebView renderer ${didCrash ? 'crash' : 'ถูกระบบปิด (หน่วยความจำไม่พอ)'} — กำลังรีสตาร์ทหน้า Flow ใหม่`,
+                  message: `WebView renderer ${didCrash ? 'crash' : 'ถูกระบบปิด (หน่วยความจำไม่พอ)'} — กำลังกู้หน้า Flow เพื่อรันต่อ`,
                 });
               }
               setFlowHandle(null);

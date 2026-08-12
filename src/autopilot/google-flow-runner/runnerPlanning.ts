@@ -25,6 +25,26 @@ export class GoogleFlowWebViewRunnerStopped extends Error {
   }
 }
 
+/**
+ * The renderer died after a generation action had already been sent (or while
+ * the native bridge was waiting for its response). Retrying the submit action
+ * could charge/create the same output twice, so callers must recover the page
+ * and only poll the existing generation.
+ */
+export class GoogleFlowSubmitUncertainError extends Error {
+  readonly action: string;
+
+  constructor(action: string, cause?: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause || '');
+    super(
+      `WebView renderer gone ระหว่างส่งคำสั่ง ${action} — กู้หน้า Flow แล้ว จะไม่กดสร้างซ้ำ` +
+        (detail && !detail.includes('WebView renderer gone') ? `: ${detail}` : '')
+    );
+    this.name = 'GoogleFlowSubmitUncertainError';
+    this.action = action;
+  }
+}
+
 export class GoogleFlowCountedStepFailure extends Error {
   readonly step: AutoPilotStepType;
   readonly failedOutputs: number;
@@ -65,12 +85,15 @@ export function isRetryableFlowError(error: unknown): boolean {
   );
 }
 
-// WebView renderer ตาย = handle เดิมใช้ต่อไม่ได้ทั้ง run (ทุก action fail ทันที) —
-// ต้อง abort run เดี๋ยวนั้น ไม่ต้องรอ circuit breaker นับครบ 3 สินค้า
-// ข้อความ marker มาจาก FLOW_RENDERER_GONE_ERROR ใน FlowWebView.tsx (แก้ต้องแก้คู่กัน)
+// WebView renderer ตาย = handle native เดิมใช้ต่อไม่ได้ แต่ host จะ remount WebView
+// และ retry action ที่ปลอดภัย/เปลี่ยน submit เป็น poll ผลเดิมก่อนปล่อย error นี้หลุดถึง run loop
 export function isWebViewRendererGoneError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
   return message.includes('WebView renderer gone');
+}
+
+export function isFlowSubmissionAction(action: string): boolean {
+  return action === 'submit' || action === 'reusePromptAndSubmit';
 }
 
 // error เชิงโครงสร้าง = แก้เองระหว่างรันไม่ได้ (ยังไม่ login / Flow เปิดผิดภาษา /
