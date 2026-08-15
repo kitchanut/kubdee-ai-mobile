@@ -44,6 +44,17 @@ const MOBILE_CHANGELOG_CACHE_KEY = 'kubdee_ai_mobile_changelog_v1';
 
 export const MOBILE_CHANGELOG: MobileChangelogRelease[] = [
   {
+    version: '0.9.26',
+    date: '2026-08-15',
+    highlight: 'คลังวิดีโอแสดงรายการครบ แม้มีรูปและวิดีโอรวมเกิน 300 รายการ',
+    changes: [
+      {
+        type: 'fixed',
+        text: 'คลังวิดีโอไม่ซ่อนคลิปเก่าเมื่อมีรูปและวิดีโอรวมกันเกิน 300 รายการอีกต่อไป จำนวนคลิปจึงเพิ่มขึ้นตามคลิปที่สร้างใหม่และแยกถูกต้องในแต่ละโปรไฟล์'
+      }
+    ]
+  },
+  {
     version: '0.9.25',
     date: '2026-08-13',
     highlight: 'ให้ Auto Pilot ทำงานต่อได้เมื่อหน้า Google Flow หยุดทำงาน',

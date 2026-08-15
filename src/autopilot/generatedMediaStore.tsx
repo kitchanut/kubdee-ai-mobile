@@ -4,6 +4,12 @@ import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import {
+  buildLegacyGeneratedMediaCache,
+  buildLiveGeneratedMediaAssets,
+  dedupeGeneratedMediaAssets,
+  DEVICE_MEDIA_IMPORT_SCAN_BATCH_SIZE,
+} from '@/autopilot/generatedMediaCollection';
 import { useCreativeLibrary } from '@/library/CreativeLibraryContext';
 import { useLibrary } from '@/library/LibraryContext';
 import type { CreativeMediaAsset } from '@/library/CreativeLibraryContext';
@@ -113,7 +119,6 @@ interface GeneratedMediaContextType {
 
 const GENERATED_MEDIA_STORE_KEY = 'kubdee_ai_mobile_generated_media_v1';
 const LEGACY_GENERATED_MEDIA_STORE_KEY = GENERATED_MEDIA_STORE_KEY;
-const MAX_GENERATED_MEDIA_ASSETS = 300;
 
 const GeneratedMediaContext = createContext<GeneratedMediaContextType | undefined>(undefined);
 
@@ -223,20 +228,6 @@ function creativeMediaToGeneratedAsset(asset: CreativeMediaAsset): GeneratedMedi
   };
 }
 
-function dedupeGeneratedAssets(input: GeneratedMediaAsset[]): GeneratedMediaAsset[] {
-  const seenKeys = new Set<string>();
-  const result: GeneratedMediaAsset[] = [];
-  for (const asset of input) {
-    const key = asset.fileUri || asset.id;
-    if (seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
-    result.push(asset);
-  }
-  return result;
-}
-
 function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
   if (!raw) {
     return [];
@@ -248,37 +239,39 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
       return [];
     }
 
-    return dedupeGeneratedAssets(parsed
-      .filter((item): item is GeneratedMediaAsset => {
-        if (!item || typeof item !== 'object') {
-          return false;
-        }
-        const asset = item as Partial<GeneratedMediaAsset>;
-        return (
-          typeof asset.id === 'string' &&
-          (asset.kind === 'images' || asset.kind === 'videos') &&
-          typeof asset.productName === 'string' &&
-          typeof asset.createdAt === 'number'
-        );
-      })
-      .map((asset) => ({
-        ...asset,
-        productUrl: cleanText(asset.productUrl) || null,
-        caption: cleanText(asset.caption) || null,
-        hashtags: cleanText(asset.hashtags) || null,
-        cta: cleanText(asset.cta) || null,
-        platform: cleanText(asset.platform) || null,
-        thumbnailUri: cleanText(asset.thumbnailUri) || null,
-        width: typeof asset.width === 'number' && Number.isFinite(asset.width) && asset.width > 0 ? asset.width : null,
-        height: typeof asset.height === 'number' && Number.isFinite(asset.height) && asset.height > 0 ? asset.height : null,
-        durationMs: typeof asset.durationMs === 'number' && Number.isFinite(asset.durationMs) && asset.durationMs > 0 ? asset.durationMs : null,
-        postedPlatforms:
-          asset.postedPlatforms && typeof asset.postedPlatforms === 'object' && !Array.isArray(asset.postedPlatforms)
-            ? asset.postedPlatforms
-            : null,
-        source: normalizeSource(asset.source),
-      }))
-    ).slice(0, MAX_GENERATED_MEDIA_ASSETS);
+    return buildLegacyGeneratedMediaCache(
+      dedupeGeneratedMediaAssets(parsed
+        .filter((item): item is GeneratedMediaAsset => {
+          if (!item || typeof item !== 'object') {
+            return false;
+          }
+          const asset = item as Partial<GeneratedMediaAsset>;
+          return (
+            typeof asset.id === 'string' &&
+            (asset.kind === 'images' || asset.kind === 'videos') &&
+            typeof asset.productName === 'string' &&
+            typeof asset.createdAt === 'number'
+          );
+        })
+        .map((asset) => ({
+          ...asset,
+          productUrl: cleanText(asset.productUrl) || null,
+          caption: cleanText(asset.caption) || null,
+          hashtags: cleanText(asset.hashtags) || null,
+          cta: cleanText(asset.cta) || null,
+          platform: cleanText(asset.platform) || null,
+          thumbnailUri: cleanText(asset.thumbnailUri) || null,
+          width: typeof asset.width === 'number' && Number.isFinite(asset.width) && asset.width > 0 ? asset.width : null,
+          height: typeof asset.height === 'number' && Number.isFinite(asset.height) && asset.height > 0 ? asset.height : null,
+          durationMs: typeof asset.durationMs === 'number' && Number.isFinite(asset.durationMs) && asset.durationMs > 0 ? asset.durationMs : null,
+          postedPlatforms:
+            asset.postedPlatforms && typeof asset.postedPlatforms === 'object' && !Array.isArray(asset.postedPlatforms)
+              ? asset.postedPlatforms
+              : null,
+          source: normalizeSource(asset.source),
+        }))
+      )
+    );
   } catch {
     return [];
   }
@@ -287,7 +280,7 @@ function parseStoredAssets(raw: string | null): GeneratedMediaAsset[] {
 async function persistAssets(assets: GeneratedMediaAsset[]): Promise<void> {
   await AsyncStorage.setItem(
     GENERATED_MEDIA_STORE_KEY,
-    JSON.stringify(assets.slice(0, MAX_GENERATED_MEDIA_ASSETS))
+    JSON.stringify(buildLegacyGeneratedMediaCache(assets))
   );
 }
 
@@ -365,12 +358,17 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
   const {
     addMediaAsset,
     deleteMediaAssets,
+    isLoading: isCreativeLibraryLoading,
     markMediaPosted,
     markMediaPostedByFileUri,
     mediaAssets,
     refreshCreativeLibrary,
   } = useCreativeLibrary();
-  const [assets, setAssets] = useState<GeneratedMediaAsset[]>([]);
+  const [isLegacyStoreLoaded, setIsLegacyStoreLoaded] = useState(false);
+  const assets = useMemo(
+    () => buildLiveGeneratedMediaAssets(mediaAssets.map(creativeMediaToGeneratedAsset)),
+    [mediaAssets]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -465,6 +463,10 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       } catch {
         // สแกนไม่สำเร็จรอบนี้ — ไม่ set flag เพื่อให้ลองใหม่ตอนเปิดแอปครั้งถัดไป
       }
+    }).finally(() => {
+      if (!cancelled) {
+        setIsLegacyStoreLoaded(true);
+      }
     });
 
     return () => {
@@ -473,18 +475,11 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
   }, [addMediaAsset]);
 
   useEffect(() => {
-    const nextAssets = dedupeGeneratedAssets(
-      mediaAssets
-        .map(creativeMediaToGeneratedAsset)
-        .sort((first, second) => second.createdAt - first.createdAt)
-    ).slice(0, MAX_GENERATED_MEDIA_ASSETS);
-    void persistAssets(nextAssets);
-
-    const syncTimer = setTimeout(() => {
-      setAssets(nextAssets);
-    }, 0);
-    return () => clearTimeout(syncTimer);
-  }, [mediaAssets]);
+    if (!isLegacyStoreLoaded || isCreativeLibraryLoading) {
+      return;
+    }
+    void persistAssets(assets);
+  }, [assets, isCreativeLibraryLoading, isLegacyStoreLoaded]);
 
   // ลิงก์/ชื่อสินค้าใน asset ถูกแช่แข็งตอน gen — พอดึงสินค้าชุดใหม่ (ลิงก์ affiliate เปลี่ยน)
   // ให้ sync จากคลังสินค้าปัจจุบันเข้ารูป/วิดีโอที่ productCode ตรงกัน จะได้ไม่พาไปลิงก์เก่าที่ใช้ไม่ได้
@@ -571,15 +566,6 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       source: asset.source,
       createdAt: asset.createdAt,
     });
-    setAssets((current) => {
-      const duplicateKey = asset.fileUri || asset.id;
-      const next = [
-        asset,
-        ...current.filter((item) => (item.fileUri || item.id) !== duplicateKey),
-      ].slice(0, MAX_GENERATED_MEDIA_ASSETS);
-      void persistAssets(next);
-      return next;
-    });
     return asset;
   }, [addMediaAsset]);
 
@@ -662,12 +648,6 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
         createdAt: nextAsset.createdAt,
       });
 
-      setAssets((current) => {
-        const next = current.map((asset) => (asset.id === cleanId ? nextAsset : asset));
-        void persistAssets(next);
-        return next;
-      });
-
       return nextAsset;
     },
     [addMediaAsset, assets]
@@ -681,12 +661,6 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
       }
 
       await deleteMediaAssets(cleanIds);
-      const idSet = new Set(cleanIds);
-      setAssets((current) => {
-        const next = current.filter((asset) => !idSet.has(asset.id));
-        void persistAssets(next);
-        return next;
-      });
     },
     [deleteMediaAssets]
   );
@@ -707,7 +681,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
   const importGeneratedMediaAssets = useCallback(
     async (kind: GeneratedMediaKind, profileLocalId?: string | null): Promise<number> => {
       const step = kind === 'images' ? 'image' : 'video';
-      const deviceAssets = await listGoogleFlowAssets(step, MAX_GENERATED_MEDIA_ASSETS);
+      const deviceAssets = await listGoogleFlowAssets(step, DEVICE_MEDIA_IMPORT_SCAN_BATCH_SIZE);
       if (deviceAssets.length === 0) {
         return 0;
       }
@@ -795,11 +769,6 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
           source: nextAsset.source,
           createdAt: nextAsset.createdAt,
         });
-        setAssets((current) => {
-          const next = current.map((item) => (item.id === nextAsset.id ? nextAsset : item));
-          void persistAssets(next);
-          return next;
-        });
         updated += 1;
       }
       return updated;
@@ -812,7 +781,7 @@ export function GeneratedMediaProvider({ children }: { children: ReactNode }): R
   }, [refreshCreativeLibrary]);
 
   // มาร์กว่าวิดีโอ/รูปถูกโพสต์ไปแพลตฟอร์มปลายทางแล้ว (สะสมได้หลายแพลตฟอร์มต่อ 1 asset)
-  // อัปเดต mediaAssets ใน CreativeLibrary แล้ว effect ด้านบนจะ sync กลับเข้า assets + persist ให้เอง
+  // อัปเดต mediaAssets ใน CreativeLibrary แล้ว assets ที่ derive จาก SQLite จะเปลี่ยนตามทันที
   const markPosted = useCallback(
     async (id: string, platform: string): Promise<void> => {
       await markMediaPosted(id, platform);
