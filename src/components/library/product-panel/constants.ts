@@ -15,8 +15,8 @@ export const SHOPEE_IMPORT_AMOUNT_OPTIONS: { label: string; value: ShopeeImportA
 
 export const SHOPEE_OFFER_CATEGORY_OPTIONS: { label: string; value: ShopeeOfferCategory }[] = [
   { label: 'แนะนำ', value: 'แนะนำ' },
-  { label: 'เครื่องใช้ในบ้าน', value: 'เครื่องใช้ในบ้าน' },
   { label: 'กีฬาและกิจกรรมกลางแจ้ง', value: 'กีฬาและกิจกรรมกลางแจ้ง' },
+  { label: 'เครื่องใช้ในบ้าน', value: 'เครื่องใช้ในบ้าน' },
   { label: 'เสื้อผ้าแฟชั่นผู้ชาย', value: 'เสื้อผ้าแฟชั่นผู้ชาย' },
   { label: 'เครื่องใช้ไฟฟ้าภายในบ้าน', value: 'เครื่องใช้ไฟฟ้าภายในบ้าน' },
   { label: 'กลุ่มผลิตภัณฑ์เพื่อสุขภาพ', value: 'กลุ่มผลิตภัณฑ์เพื่อสุขภาพ' },

@@ -30,8 +30,8 @@ internal const val SHOPEE_OFFER_CATEGORY_RECOMMENDED = "แนะนำ"
 
 internal val SHOPEE_OFFER_CATEGORY_TEXTS = listOf(
   SHOPEE_OFFER_CATEGORY_RECOMMENDED,
-  "เครื่องใช้ในบ้าน",
   "กีฬาและกิจกรรมกลางแจ้ง",
+  "เครื่องใช้ในบ้าน",
   "เสื้อผ้าแฟชั่นผู้ชาย",
   "เครื่องใช้ไฟฟ้าภายในบ้าน",
   "กลุ่มผลิตภัณฑ์เพื่อสุขภาพ"
